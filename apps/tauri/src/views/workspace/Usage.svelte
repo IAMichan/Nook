@@ -4,6 +4,9 @@
   import { agents } from "../../lib/agents.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
+  /** `heading`: off where the surrounding view already says "Usage" (the usage modal). */
+  let { heading = true }: { heading?: boolean } = $props();
+
   $effect(() => {
     agents.loadHistory();
   });
@@ -16,7 +19,7 @@
   );
 </script>
 
-<h3>{tr("Gebruik", "Usage")}</h3>
+{#if heading}<h3>{tr("Gebruik", "Usage")}</h3>{/if}
 <div class="group">
   {#each rows as r (r.id)}
     <div class="row">

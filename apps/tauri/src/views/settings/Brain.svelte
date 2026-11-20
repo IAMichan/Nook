@@ -1,5 +1,8 @@
 <script lang="ts">
-  // Brein: welke AI denkt. Lokaal eerst; een externe AI is een bewuste keuze.
+  // Brain (the Mac's `brainSection`): what Nook thinks with, said once at the top; then on this computer or an online
+  // service, and each section below follows from that choice: for local the advised models, the connection check and
+  // every other runtime folded away; for external the service, signing in, its model and who reads your screen.
+  // Local first; an external AI is a choice made on purpose.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../../lib/api";
   import { brainApi, type EvalResult } from "../../lib/brain";
@@ -7,6 +10,10 @@
   import { nook } from "../../lib/state.svelte";
   import type { ProviderId, ProviderInfo } from "../../lib/types";
   import { tr } from "../../lib/i18n.svelte";
+  import StatusRow from "./StatusRow.svelte";
+  import InfoLabel from "./InfoLabel.svelte";
+  import Segmented from "./Segmented.svelte";
+  import Fold from "./Fold.svelte";
 
   let providers = $state<ProviderInfo[]>([]);
   let models = $state<string[]>([]);
@@ -67,8 +74,28 @@
   }
 
   function chooseProvider(id: ProviderId) {
+    if (!providers.find((p) => p.id === id)?.isLocal) {
+      try { localStorage.setItem("brain.external", id); } catch { /* remembering is a convenience */ }
+    }
     nook.saveSettings({ provider: id });
   }
+
+  // Local or external: switching goes back to the last one of that kind.
+  const isLocal = $derived(current?.isLocal ?? true);
+  const localProviders = $derived(providers.filter((p) => p.isLocal));
+  const externalProviders = $derived(providers.filter((p) => !p.isLocal));
+  function chooseKind(kind: "local" | "external") {
+    if (kind === "local") {
+      const id = localProviders[0]?.id;
+      if (id) chooseProvider(id);
+      return;
+    }
+    let last: string | null = null;
+    try { last = localStorage.getItem("brain.external"); } catch { /* not remembered */ }
+    const id = externalProviders.find((p) => p.id === last)?.id ?? externalProviders.find((p) => p.isSubscription)?.id ?? externalProviders[0]?.id;
+    if (id) chooseProvider(id);
+  }
+  let foldOpen = $state(false);
 
   // Screen work: who reads the screen while an external brain answers (the Mac's ScreenBrainSection).
   let localModels = $state<string[]>([]);
@@ -126,17 +153,91 @@
   }
 </script>
 
-<p class="muted">{tr("Lokaal eerst: met Ollama of LM Studio verlaat niets je computer en kost het niets per vraag. Een externe AI kies je bewust; Nook schakelt nooit zelf naar de cloud.", "Local first: with Ollama or LM Studio nothing leaves your computer and nothing costs per question. You choose an external AI on purpose; Nook never switches to the cloud by itself.")}</p>
-<div class="providers">
-  {#each providers as p (p.id)}
-    <button class="provider" class:on={p.id === s.provider} onclick={() => chooseProvider(p.id)}>
-      <span>{p.title}</span>
-      <span class="faint">{p.isLocal ? tr("op deze computer", "on this computer") : p.needsKey ? tr("API-sleutel", "API key") : tr("abonnement", "subscription")}</span>
-    </button>
-  {/each}
+<div class="group">
+  <StatusRow done={!!nook.info?.brainReady}
+    title={nook.info?.brainReady ? tr("Nook denkt met {name}.", "Nook thinks with {name}.", { name: nook.info?.brainLabel ?? "" }) : tr("Kies een brein", "Choose a brain")}
+    detail={nook.info?.brainReady ? "" : tr("Claude, een andere AI of gratis op je computer.", "Claude, another AI, or free on your computer.")} />
 </div>
-{#if current}
+
+<h3>{tr("Waar Nook denkt", "Where Nook thinks")}</h3>
+<div class="group">
+  <div class="row">
+    <InfoLabel label={tr("Nook denkt", "Nook thinks")} info={tr("Lokaal eerst: met Ollama of LM Studio verlaat niets je computer en kost het niets per vraag. Een externe AI kies je bewust; Nook schakelt nooit zelf naar de cloud.", "Local first: with Ollama or LM Studio nothing leaves your computer and nothing costs per question. You choose an external AI on purpose; Nook never switches to the cloud by itself.")} />
+    <Segmented label={tr("Nook denkt", "Nook thinks")} value={isLocal ? "local" : "external"} onchange={chooseKind}
+      options={[{ value: "local", label: tr("Lokaal op je computer", "Locally on your computer") }, { value: "external", label: tr("Extern", "External") }]} />
+  </div>
+</div>
+{#if !isLocal}<p class="note warn">{tr("Een externe AI krijgt je vraag en de context. Nook schakelt nooit vanzelf over.", "An external AI gets your question and its context. Nook never switches to one by itself.")}</p>{/if}
+
+{#snippet connection()}
+  <div class="row">
+    <span>{tr("Verbinding", "Connection")}<br /><small>{#if testResult}<span class:ok={testResult.ok} class:err={!testResult.ok}>{testResult.text}</span>{:else}{tr("Laat het model een kort bericht beantwoorden, om te controleren of het werkt.", "Has the model answer a short message, to check that it works.")}{/if}</small></span>
+    <button class="small" onclick={test} disabled={testing || !nook.info?.brainReady}>{testing ? tr("Testen…", "Testing…") : tr("Test verbinding", "Test connection")}</button>
+  </div>
+{/snippet}
+
+{#if isLocal}
+  <h3>{tr("Model", "Model")}</h3>
   <div class="group">
+    <ModelAdvice rows />
+    {@render connection()}
+  </div>
+  {#if current}
+    <Fold title={tr("Alle modellen en runtimes", "All models and runtimes")} summary={current.title.split(" (")[0]} bind:open={foldOpen}>
+      {#if localProviders.length > 1}
+        <div class="row">
+          <span>{tr("Draait met", "Runs with")}</span>
+          <Segmented label={tr("Draait met", "Runs with")} value={current.id} onchange={(id) => chooseProvider(id as ProviderId)}
+            options={localProviders.map((p) => ({ value: p.id, label: p.title.split(" (")[0] }))} />
+        </div>
+      {/if}
+      <p class="note">{tr("Draait {name} nog niet?", "{name} not running yet?", { name: current.title.split(" (")[0] })} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Download", "Download")}</a> {tr("en start hem, en haal dan de modellen op.", "and start it, then fetch the models.")}</p>
+      <div class="row">
+      <span>{tr("Model", "Model")}</span>
+      <div class="inline">
+        <input value={model} onchange={(e) => setModel(e.currentTarget.value)} list="models" />
+        <datalist id="models">
+          {#each [...new Set([...current.suggestedModels, ...models])] as m (m)}<option value={m}></option>{/each}
+        </datalist>
+        <button onclick={fetchModels}>{tr("Modellen ophalen", "Fetch models")}</button>
+      </div>
+    </div>
+    {#if models.length}
+      <div class="models">
+        {#each models as m (m)}<button class:on={m === model} onclick={() => setModel(m)}>{m}</button>{/each}
+      </div>
+    {/if}
+    {#if modelError}<p class="err">{modelError}</p>{/if}
+      {#if models.length}
+        <div class="models">
+          {#each models as m (m)}<button class:on={m === model} onclick={() => setModel(m)}>{m}</button>{/each}
+        </div>
+      {/if}
+      {#if modelError}<p class="note err">{modelError}</p>{/if}
+      <label class="row">
+        <span>{tr("Lokaal brein zelf starten", "Start the local brain myself")}<br /><small>{tr("Is Ollama of LM Studio geïnstalleerd maar niet gestart? Dan start Nook hem op de achtergrond.", "Ollama or LM Studio installed but not running? Then Nook starts it in the background.")}</small></span>
+        <input type="checkbox" role="switch" checked={s.startLocalBrain} onchange={(e) => nook.saveSettings({ startLocalBrain: e.currentTarget.checked })} />
+      </label>
+    </Fold>
+  {/if}
+{:else if current}
+  <h3>{tr("Dienst", "Service")}</h3>
+  <div class="group">
+    <div class="row">
+      <InfoLabel label={tr("Aanbieder", "Provider")} info={tr("Een externe AI krijgt je vraag en de context. Nook schakelt nooit vanzelf over.", "An external AI gets your question and its context. Nook never switches to one by itself.")} />
+      <select value={current.id} onchange={(e) => chooseProvider(e.currentTarget.value as ProviderId)}>
+        <optgroup label={tr("Inloggen met je account", "Sign in with your account")}>
+          {#each externalProviders.filter((p) => p.isSubscription) as p (p.id)}<option value={p.id}>{p.title}</option>{/each}
+        </optgroup>
+        <optgroup label={tr("Met een API-sleutel", "With an API key")}>
+          {#each externalProviders.filter((p) => !p.isSubscription) as p (p.id)}<option value={p.id}>{p.title}</option>{/each}
+        </optgroup>
+      </select>
+    </div>
+  </div>
+  {#if current.needsKey || current.isSubscription}
+    <h3>{tr("Inloggen", "Sign in")}</h3>
+    <div class="group">
     {#if current.needsKey}
       <div class="row">
         <span>{tr("Sleutel", "Key")}</span>
@@ -152,12 +253,14 @@
           <button onclick={openrouterSignIn} disabled={signingIn}>{signingIn ? tr("Wacht op OpenRouter…", "Waiting for OpenRouter…") : tr("Inloggen", "Sign in")}</button>
         </div>
       {/if}
-      <p class="faint note">{tr("De sleutel staat in de kluis van je systeem (Windows Referentiebeheer, GNOME Keyring/KWallet), nooit in een bestand.", "The key is kept in your system's keychain (Windows Credential Manager, GNOME Keyring/KWallet), never in a file.")} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Sleutel maken", "Create a key")}</a></p>
-    {:else if current.isSubscription}
-      <p class="faint note">{tr("Nook denkt met je eigen login bij {name}: geen sleutel, binnen de limieten van je abonnement. Het draait afgeschermd: geen shell, geen bestanden, geen eigen plug-ins of MCP-servers.", "Nook thinks with your own sign-in to {name}: no key, within your plan's limits. It runs locked down: no shell, no files, none of your own plugins or MCP servers.", { name: current.title.split(" (")[0] })} {#if current.loginCommand}{tr("Installeer het en log één keer in met {command} in een terminal.", "Install it and sign in once with {command} in a terminal.", { command: current.loginCommand })}{/if} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Installeren", "Install")}</a></p>
-    {:else if current.isLocal}
-      <p class="faint note">{tr("Draait {name} nog niet?", "{name} not running yet?", { name: current.title.split(" (")[0] })} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Download", "Download")}</a> {tr("en start hem, en haal dan de modellen op.", "and start it, then fetch the models.")}</p>
+      <p class="note">{tr("De sleutel staat in de kluis van je systeem (Windows Referentiebeheer, GNOME Keyring/KWallet), nooit in een bestand.", "The key is kept in your system's keychain (Windows Credential Manager, GNOME Keyring/KWallet), never in a file.")} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Sleutel maken", "Create a key")}</a></p>
+    {:else}
+      <p class="note">{tr("Nook denkt met je eigen login bij {name}: geen sleutel, binnen de limieten van je abonnement. Het draait afgeschermd: geen shell, geen bestanden, geen eigen plug-ins of MCP-servers.", "Nook thinks with your own sign-in to {name}: no key, within your plan's limits. It runs locked down: no shell, no files, none of your own plugins or MCP servers.", { name: current.title.split(" (")[0] })} {#if current.loginCommand}{tr("Installeer het en log één keer in met {command} in een terminal.", "Install it and sign in once with {command} in a terminal.", { command: current.loginCommand })}{/if} <a href={current.keyUrl} onclick={(e) => { e.preventDefault(); openUrl(current.keyUrl); }}>{tr("Installeren", "Install")}</a></p>
     {/if}
+    </div>
+  {/if}
+  <h3>{tr("Model", "Model")}</h3>
+  <div class="group">
     <div class="row">
       <span>{tr("Model", "Model")}</span>
       <div class="inline">
@@ -174,9 +277,13 @@
       </div>
     {/if}
     {#if modelError}<p class="err">{modelError}</p>{/if}
-    {#if s.provider === "claude"}
-      <label class="row"><span>{tr("Zoeken op het web", "Search the web")}</span><input type="checkbox" role="switch" checked={s.webSearch} onchange={(e) => nook.saveSettings({ webSearch: e.currentTarget.checked })} /></label>
+    {#if models.length}
+      <div class="models">
+        {#each models as m (m)}<button class:on={m === model} onclick={() => setModel(m)}>{m}</button>{/each}
+      </div>
     {/if}
+    {#if modelError}<p class="note err">{modelError}</p>{/if}
+    {@render connection()}
   </div>
 {/if}
 
@@ -219,23 +326,13 @@
   </p>
 {/if}
 
-{#if current?.isLocal || !nook.info?.brainReady}
-  <h3>{tr("Lokaal model voor deze computer", "Local model for this computer")}</h3>
-  <ModelAdvice />
-{/if}
-
-<h3>{tr("Antwoorden", "Answers")}</h3>
+<h3>{tr("Kwaliteit van het lokale brein", "Local brain quality")}</h3>
+<p class="section-info">{tr("Stelt het huidige brein 20 vragen met bekende antwoorden, zodat je in cijfers ziet of een wijziging helpt. Blijft op je computer.", "Asks the current brain 20 questions with known answers, to show in numbers whether a change helps. Stays on your computer.")}</p>
 <div class="group">
-  <label class="row"><span>{tr("Eerst bewijs zoeken, dan antwoorden", "Find evidence first, then answer")}<br /><span class="faint small">{tr("Nook haalt eerst de relevante zinnen uit je bronnen en antwoordt alleen daarmee.", "Nook first pulls the relevant sentences from your sources and answers only with those.")}</span></span><input type="checkbox" role="switch" checked={s.evidenceFirst} onchange={(e) => nook.saveSettings({ evidenceFirst: e.currentTarget.checked })} /></label>
-  <label class="row"><span>{tr("Antwoorden controleren", "Check answers")}<br /><span class="faint small">{tr("Een antwoord dat niet op de bronnen steunt, vraagt Nook één keer opnieuw.", "If an answer isn't backed by the sources, Nook asks once more.")}</span></span><input type="checkbox" role="switch" checked={s.checkAnswers} onchange={(e) => nook.saveSettings({ checkAnswers: e.currentTarget.checked })} /></label>
-  <label class="row"><span>{tr("Vraag over geselecteerde tekst", "Ask about selected text")}<br /><span class="faint small">{tr("Selecteer woorden waar dan ook in Nook (een bericht, een antwoord, een pull request) en een kleine balk erboven beantwoordt, legt uit of vertaalt ze meteen, zonder de chat te openen.", "Select words anywhere in Nook (a message, an answer, a pull request) and a small bar above them answers, explains or translates them right there, without opening the chat.")}</span></span><input type="checkbox" role="switch" checked={s.selectionAsk !== false} onchange={(e) => nook.saveSettings({ selectionAsk: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Bewijs eerst", "Evidence first")}<br /><span class="faint small">{tr("Een extra stap citeert per document de zinnen die ertoe doen en antwoordt daaruit. Trager, minder verzinsels.", "An extra step quotes the sentences that matter from each document and answers from those. Slower, fewer inventions.")}</span></span><input type="checkbox" role="switch" checked={s.evidenceFirst} onchange={(e) => nook.saveSettings({ evidenceFirst: e.currentTarget.checked })} /></label>
+  <label class="row"><span>{tr("Antwoorden controleren", "Check answers")}<br /><span class="faint small">{tr("Staat er een getal, tijd, adres of link in het antwoord dat in geen enkele bron voorkomt, dan schrijft het brein het antwoord opnieuw.", "If an answer contains a number, time, address or link that is in none of the sources, the brain writes the answer again.")}</span></span><input type="checkbox" role="switch" checked={s.checkAnswers} onchange={(e) => nook.saveSettings({ checkAnswers: e.currentTarget.checked })} /></label>
   <div class="row">
-    <span>{tr("Werkt dit brein?", "Does this brain work?")}{#if testResult}<br /><span class="small" class:ok={testResult.ok} class:err={!testResult.ok}>{testResult.text}</span>{/if}</span>
-    <button onclick={test} disabled={testing}>{testing ? tr("Testen…", "Testing…") : tr("Test", "Test")}</button>
-  </div>
-  <div class="row">
-    <span>{tr("Meet dit brein", "Measure this brain")}<br /><span class="faint small">{tr("Twintig vragen met bekende antwoorden: hoe goed gebruikt dit model je bronnen?", "Twenty questions with known answers: how well does this model use your sources?")}</span></span>
-    <button onclick={evaluate} disabled={evalRunning}>{evalRunning ? (evalProgress ? tr("Bezig {done}/{total}", "Working {done}/{total}", { done: evalProgress[0], total: evalProgress[1] }) : tr("Bezig…", "Working…")) : tr("Meet", "Measure")}</button>
+    <button class="small" onclick={evaluate} disabled={evalRunning}>{evalRunning ? (evalProgress ? tr("Bezig {done}/{total}", "Working {done}/{total}", { done: evalProgress[0], total: evalProgress[1] }) : tr("Bezig…", "Working…")) : tr("Meet dit brein", "Measure this brain")}</button>
   </div>
 </div>
 {#if evalResults}
@@ -253,7 +350,8 @@
 {/if}
 
 <style>
-  .small { font-size: 11px; }
+  .small { font: var(--text-detail); }
+  .warn { color: var(--amber) !important; }
   .ok { color: var(--mint); }
   .eval { display: block; }
   .eval summary { cursor: pointer; }

@@ -3,14 +3,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { api, events } from "./api";
 import { agentApi, agentEvents } from "./agents";
-import { connectorEvents, connectorsApi } from "./connectors";
+import { chatsApi, connectorEvents, connectorsApi } from "./connectors";
+import { appName } from "./chats-list";
 import { coachingText, games } from "./games";
 import { appLanguage, locale as uiLocale, tr } from "./i18n.svelte";
 import { inbox, type InboxProvider } from "./inbox.svelte";
 import type { InboxItem } from "./inbox";
 import { pullRequests } from "./pulls.svelte";
 import { serviceEvents, services } from "./services";
-import { nook } from "./state.svelte";
+import { nook, relativeTime } from "./state.svelte";
 
 type Unlisten = Promise<() => void>;
 const unlisten = (...all: Unlisten[]) => () => all.forEach((u) => u.then((f) => f()));
@@ -184,6 +185,27 @@ const messages: InboxProvider = {
   watch: (changed) => unlisten(connectorEvents.onWhatsApp(changed), connectorEvents.onChanged(changed)),
 };
 
+/// The chats you owe a reply in, every chat app at once (the Mac's `owedChatAttention`): the first few, questions first.
+const owed: InboxProvider = {
+  id: "owed",
+  async load() {
+    return (await chatsApi.owed(3)).map((t): InboxItem => ({
+      id: `owed:${t.chat}:${t.date ?? ""}`,
+      provider: "owed",
+      ref: t.chat,
+      source: "messages",
+      type: "action_required",
+      cared: true,
+      title: tr("{name} wacht op je antwoord", "{name} is waiting for your reply", { name: t.name }),
+      detail: [appName(t.app), t.date ? relativeTime(t.date) : ""].filter(Boolean).join(" · "),
+      at: t.date ?? new Date().toISOString(),
+      actions: [{ id: "reply", label: tr("Antwoorden", "Reply") }],
+    }));
+  },
+  act: (item) => (item.ref ? { kind: "chat", key: item.ref } : undefined),
+  watch: (changed) => unlisten(connectorEvents.onChats(changed)),
+};
+
 /// Pull requests waiting for your review, and your own whose checks fail, from the list Agents › Pull requests keeps.
 const code: InboxProvider = {
   id: "code",
@@ -279,5 +301,5 @@ let registered = false;
 export function registerInboxSources() {
   if (registered) return;
   registered = true;
-  for (const p of [agents, chats, tasks, calendar, messages, code, today, gamerMode]) inbox.register(p);
+  for (const p of [agents, chats, owed, tasks, calendar, messages, code, today, gamerMode]) inbox.register(p);
 }

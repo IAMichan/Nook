@@ -7,6 +7,7 @@
   import { nook } from "../../lib/state.svelte";
   import DiffView from "../agents/DiffView.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import AgentMark from "../companion/ui/AgentMark.svelte";
 
   let integrations = $state<Integration[]>([]);
   let profiles = $state<AgentProfile[]>([]);
@@ -66,6 +67,16 @@
     }
   }
 
+  /// The one word for where a link stands, as on the Mac (`agents.link.*`).
+  function linkWord(i: Integration): string {
+    switch (i.state.kind) {
+      case "installed": return tr("Gekoppeld", "Linked");
+      case "outdated": return tr("Verouderd", "Outdated");
+      case "unreadable": return tr("Instellingen niet leesbaar", "Can't read its settings");
+      default: return tr("Niet gekoppeld", "Not linked");
+    }
+  }
+
   const groups = $derived(
     (Object.keys(agentNames) as AgentKind[]).filter((k) => k === "claude" || k === "codex"),
   );
@@ -119,28 +130,26 @@
   {#if status}<p class="ok note">{status}</p>{/if}
   {#if error}<p class="err">{error}</p>{/if}
 
-    <h3>{tr("Koppel je agents", "Link your agents")}</h3>
+    <!-- The Mac's "Your agents": each agent's logo, name and where its link stands (a colored dot and a word), and a
+         switch that links or unlinks it after showing the change. -->
+    <h3>{tr("Je agents", "Your agents")}</h3>
+    <p class="section-info">{tr("Koppelen zet de hooks van Nook in de eigen instellingen van een agent, zodat zijn voortgang en vragen in Nook verschijnen. De schakelaar koppelt of ontkoppelt; je ziet de wijziging voordat er iets wordt geschreven.", "Linking adds Nook's hooks to an agent's own settings, so its progress and questions show in Nook. The switch links or unlinks it; you see the change before anything is written.")}</p>
     <div class="group">
       {#each integrations.filter((i) => !i.profileId) as i (i.target)}
-        <div class="row">
-          <div class="info">
-            <div class="name"><span class="dot {i.state.kind === 'installed' ? 'unread' : i.state.kind === 'outdated' ? 'waiting' : i.state.kind === 'unreadable' ? 'error' : ''}"></span>{i.title}</div>
-            <div class="faint small">{stateText(i)}</div>
-          </div>
-          <div class="inline">
-            {#if i.state.kind === "notInstalled"}
-              <button onclick={() => prepare(i, true)}>{tr("Koppel…", "Link…")}</button>
-            {:else if i.state.kind === "outdated"}
-              <button class="primary" onclick={() => prepare(i, true)}>{tr("Werk bij…", "Update…")}</button>
-              <button onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
-            {:else if i.state.kind === "installed"}
-              <button onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
-            {/if}
-          </div>
+        {@const linked = i.state.kind === "installed" || i.state.kind === "outdated"}
+        <div class="row agent-row">
+          <div class="mark"><AgentMark agent={i.title} size={26} /></div>
+          <span class="info">
+            <span class="name">{i.title}</span>
+            <span class="status {i.state.kind}"><span class="dot"></span>{linkWord(i)}</span>
+          </span>
+          {#if i.state.kind === "outdated"}<button class="small" onclick={() => prepare(i, true)}>{tr("Koppeling bijwerken…", "Update link…")}</button>{/if}
+          <input type="checkbox" role="switch" aria-label={i.title} title={stateText(i)} checked={linked} disabled={i.state.kind === "unreadable"}
+            onchange={(e) => { const on = e.currentTarget.checked; e.currentTarget.checked = linked; prepare(i, on); }} />
         </div>
       {/each}
     </div>
-    <p class="faint note">
+    <p class="note">
       {tr(
         "Nook laat eerst precies zien wat er verandert en maakt een backup voordat er iets wordt geschreven. Draait Nook niet, dan doen de koppelingen niets. Toestemming geven vanuit de balk kan bij Claude Code en Codex; bij de andere agents beslist Nook nooit iets.",
         "Nook first shows exactly what changes and makes a backup before anything is written. If Nook isn't running, the links do nothing. Granting permission from the bar works for Claude Code and Codex; for the other agents Nook never decides anything.",
@@ -228,15 +237,25 @@
 {/if}
 
 <style>
+  .agent-row { flex-wrap: nowrap; justify-content: flex-start; gap: var(--space-12); }
+  .agent-row > .mark { flex: none; display: grid; }
+  .agent-row .info { flex: 1; }
+  .agent-row .name { font: var(--text-emphasis); color: var(--paper); }
+  .status { display: inline-flex; align-items: center; gap: var(--space-6); font: var(--text-detail); color: var(--text2); }
+  .status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+  .status.installed .dot { background: var(--mint); }
+  .status.outdated .dot { background: var(--amber); }
+  .status.outdated { color: var(--amber); }
+  .status.unreadable .dot { background: var(--coral); }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { display: flex; align-items: center; gap: 6px; }
-  .small { font-size: 12px; }
-  .badge { font-size: 10px; background: var(--smoke); border-radius: 6px; padding: 1px 6px; color: var(--text2); }
+  .small { font: var(--text-detail); }
+  .badge { font: var(--text-caption); background: var(--smoke); border-radius: var(--radius-chip); padding: 1px 6px; color: var(--text2); }
   .ok { color: var(--mint); }
   .key input { width: 220px; }
   .row input:not([type="checkbox"]) { flex: 1; }
-  .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; z-index: 20; }
-  .sheet { background: var(--graphite); border: 1px solid var(--line2); border-radius: 16px; padding: 16px 18px; width: min(720px, 92vw); max-height: 86vh; display: flex; flex-direction: column; gap: 10px; }
-  .sheet h3 { margin: 0; color: var(--paper); font-size: 15px; }
+  .modal { position: fixed; inset: 0; background: color-mix(in srgb, black 55%, transparent); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .sheet { background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius-composer); padding: 16px 18px; width: min(720px, 92vw); max-height: 86vh; display: flex; flex-direction: column; gap: 10px; }
+  .sheet h3 { margin: 0; color: var(--paper); font: var(--text-title); }
   .end { justify-content: flex-end; }
 </style>

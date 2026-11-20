@@ -19,6 +19,47 @@ pub struct FolderAgentChoice {
     pub effort: Option<String>,
 }
 
+/// What one project sets for itself (Settings › Projects & pull requests › Projects, `ProjectOverrides` on the Mac):
+/// every value `None` follows the setting for all projects ("Inherited"). Kept per cleaned-up project path.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProjectOverride {
+    /// The name the project shows under instead of its folder's.
+    pub name: Option<String>,
+    pub provider: Option<RunProvider>,
+    pub mode: Option<ExecutionMode>,
+    pub permission: Option<PermissionPolicy>,
+    pub isolation: Option<IsolationMode>,
+    pub branch_prefix: Option<String>,
+    /// Rules for this project's session titles, used instead of the ones for all projects.
+    pub title_instructions: Option<String>,
+    /// Instructions every agent in this project gets, instead of the ones for all projects.
+    pub agent_instructions: Option<String>,
+    /// Archived: kept, but no longer offered in the lists (`ArchivedProjectsSection`).
+    pub archived: bool,
+}
+
+impl ProjectOverride {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// A project's values for a new session, with which of them it sets itself.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDefaults {
+    pub provider: RunProvider,
+    pub mode: ExecutionMode,
+    pub permission: PermissionPolicy,
+    pub isolation: IsolationMode,
+    pub branch_prefix: String,
+    pub title_instructions: String,
+    pub agent_instructions: String,
+    /// The fields this project sets itself ("provider", "mode", …); the others are inherited.
+    pub own: Vec<&'static str>,
+}
+
 /// What the new-session composer last chose in one folder (`FolderChoices` on the Mac).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +105,17 @@ pub struct WorkspaceSettings {
     pub recent_projects: Vec<String>,
     /// The composer's last choices per folder, on top of the `default_*` values above.
     pub folder_choices: BTreeMap<String, FolderChoices>,
+    /// What every branch Nook names for a new worktree starts with ("nook" → "nook/fix-login-3fa2"; Settings ›
+    /// Sessions › Worktrees, `ws.branchPrefix` on the Mac). Cleaned up by `models::normalized_branch_prefix`.
+    pub branch_prefix: String,
+    /// Keep what Nook and each agent send each other, to replay a bug (`traffic::Recorder`); off by default.
+    pub keep_traffic: bool,
+    /// Instructions every agent gets at launch, in every project that does not set its own (`agentInstructions`).
+    pub agent_instructions: String,
+    /// The editor a session's folder opens in (`open_in::CANDIDATES`); empty: the file manager.
+    pub editor: String,
+    /// What each project sets for itself, by cleaned-up path.
+    pub project_overrides: BTreeMap<String, ProjectOverride>,
 }
 
 impl Default for WorkspaceSettings {
@@ -86,6 +138,11 @@ impl Default for WorkspaceSettings {
             favorite_projects: vec![],
             recent_projects: vec![],
             folder_choices: BTreeMap::new(),
+            branch_prefix: super::models::DEFAULT_BRANCH_PREFIX.into(),
+            keep_traffic: false,
+            agent_instructions: String::new(),
+            editor: String::new(),
+            project_overrides: BTreeMap::new(),
         }
     }
 }
@@ -109,10 +166,15 @@ impl WorkspaceSettings {
     }
 
     pub fn load_from(file: &std::path::Path) -> Self {
-        std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        let settings: Self = std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        super::models::set_branch_prefix(&settings.branch_prefix);
+        super::traffic::set_enabled(settings.keep_traffic);
+        settings
     }
 
     pub fn save_to(&self, file: &std::path::Path) {
+        super::models::set_branch_prefix(&self.branch_prefix);
+        super::traffic::set_enabled(self.keep_traffic);
         if let Ok(bytes) = serde_json::to_vec_pretty(self) {
             let _ = crate::paths::write_atomic(file, &bytes);
         }
@@ -154,6 +216,54 @@ impl WorkspaceSettings {
         );
         self.folder_choices
             .insert(path, FolderChoices { provider: config.provider, mode: config.mode, permission, isolation: config.isolation, agents });
+    }
+
+    /// What `path` sets for itself (empty when nothing).
+    pub fn project(&self, path: &str) -> ProjectOverride {
+        self.project_overrides.get(&clean_project_path(path)).cloned().unwrap_or_default()
+    }
+
+    /// Sets what `path` sets for itself; an override with nothing in it is removed.
+    pub fn set_project(&mut self, path: &str, mut value: ProjectOverride) {
+        let key = clean_project_path(path);
+        if key.is_empty() {
+            return;
+        }
+        value.name = value.name.filter(|n| !n.trim().is_empty());
+        value.branch_prefix = value.branch_prefix.filter(|p| !p.trim().is_empty()).map(|p| super::models::normalized_branch_prefix(&p));
+        if value.is_empty() {
+            self.project_overrides.remove(&key);
+        } else {
+            self.project_overrides.insert(key, value);
+        }
+    }
+
+    /// The values a new session in `path` starts with: the project's own where it sets them, else the ones for all.
+    pub fn defaults_for(&self, path: &str) -> ProjectDefaults {
+        let o = self.project(path);
+        let mut own = vec![];
+        let mut pick = |set: bool, name: &'static str| {
+            if set {
+                own.push(name);
+            }
+        };
+        pick(o.provider.is_some(), "provider");
+        pick(o.mode.is_some(), "mode");
+        pick(o.permission.is_some(), "permission");
+        pick(o.isolation.is_some(), "isolation");
+        pick(o.branch_prefix.is_some(), "branchPrefix");
+        pick(o.title_instructions.is_some(), "titleInstructions");
+        pick(o.agent_instructions.is_some(), "agentInstructions");
+        ProjectDefaults {
+            provider: o.provider.unwrap_or(self.default_provider),
+            mode: o.mode.unwrap_or(self.default_mode),
+            permission: o.permission.unwrap_or(self.default_permission),
+            isolation: o.isolation.unwrap_or(self.default_isolation),
+            branch_prefix: super::models::normalized_branch_prefix(o.branch_prefix.as_deref().unwrap_or(&self.branch_prefix)),
+            title_instructions: o.title_instructions.unwrap_or_default(),
+            agent_instructions: o.agent_instructions.unwrap_or_else(|| self.agent_instructions.clone()),
+            own,
+        }
     }
 
     pub fn forget_project(&mut self, path: &str) {

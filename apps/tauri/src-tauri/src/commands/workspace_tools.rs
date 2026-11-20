@@ -230,3 +230,29 @@ pub fn browser_close(app: AppHandle) {
     #[cfg(not(desktop))]
     let _ = app;
 }
+
+/// The editors on this computer, for Settings › Sessions › Editor & browser.
+#[tauri::command]
+pub async fn workspace_editors() -> Vec<nook_core::workspace::open_in::Editor> {
+    tauri::async_runtime::spawn_blocking(nook_core::workspace::open_in::installed).await.unwrap_or_default()
+}
+
+/// Opens `folder` where you chose (Settings › Sessions › Editor & browser): the editor, or the file manager. The session
+/// view's "Open in" button calls this.
+#[tauri::command]
+pub fn workspace_open_in(app: AppHandle, state: State<'_, WorkspaceState>, folder: String) -> Res<()> {
+    let editor = state.settings.lock().unwrap_or_else(|e| e.into_inner()).editor.clone();
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    if let Some(program) = (!editor.is_empty()).then(|| nook_core::workspace::open_in::find(&editor, &path_var)).flatten() {
+        let mut cmd = std::process::Command::new(program);
+        cmd.arg(&folder);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        return cmd.spawn().map(|_| ()).map_err(|e| e.to_string());
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_path(folder, None::<&str>).map_err(|e| e.to_string())
+}

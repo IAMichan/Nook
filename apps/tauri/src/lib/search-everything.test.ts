@@ -1,0 +1,122 @@
+import { describe, expect, it } from "vitest";
+import { answerPieces, answerTokens, backendRequest, citations, cleanAnswer, cycleKind, gather, keywordQuery, looksLikeQuestion, mergeBackend, orderedByCitation, rememberOpened, rememberSearch, recentlyOpened, type BackendHit, grouped, highlightRanges, parseDate, parseQuery, search, segments, type SearchDoc } from "./search-everything";
+
+const now = new Date(2026, 10, 19, 12).getTime();
+const day = 86400000;
+const docs: SearchDoc[] = [
+  { id: "conversation:1", kind: "conversation", title: "Release notes for 1.4", date: now - day, flags: ["pinned"] },
+  { id: "run:1", kind: "session", title: "Fix the checkout", subtitle: "Claude Code · shop · main", date: now - 2 * day,
+    facets: { agent: "Claude Code", project: "shop", branch: "main" }, flags: ["running"] },
+  { id: "past:1", kind: "session", title: "Write the release script", subtitle: "Codex · tools", date: now - 40 * day,
+    facets: { agent: "Codex", project: "tools" }, flags: ["settled"] },
+  { id: "setting:appearance", kind: "setting", title: "Appearance", text: "Nook" },
+  { id: "action:usage", kind: "action", title: "Usage" },
+];
+
+describe("search everything", () => {
+  it("reads words, phrases, exclusions, OR and filters", () => {
+    const q = parseQuery('"exact words" -draft a OR b in:agents is:unread -is:settled project:Shop after:2026-10-01 /re.ex/', now);
+    expect(q.alternatives).toEqual([["exact words", "a"], ["b"]]);
+    expect(q.excluded).toEqual(["draft"]);
+    expect(q.kinds).toEqual(["session"]);
+    expect(q.is).toEqual(["unread"]);
+    expect(q.isNot).toEqual(["settled"]);
+    expect(q.facets).toEqual([["project", "shop"]]);
+    expect(q.after).toBe(new Date(2026, 9, 1).getTime());
+    expect(q.regex?.source).toBe("re.ex");
+  });
+
+  it("takes relative dates", () => {
+    expect(parseDate("7d", now)).toBe(new Date(2026, 10, 12).getTime());
+    expect(parseDate("yesterday", now)).toBe(new Date(2026, 10, 18).getTime());
+    expect(parseDate("soon", now)).toBeUndefined();
+  });
+
+  it("ranks title matches first and filters by kind, flag, facet and date", () => {
+    expect(search(docs, parseQuery("release", now), now).map((h) => h.doc.id)).toEqual(["conversation:1", "past:1"]);
+    expect(search(docs, parseQuery("release in:sessions", now), now).map((h) => h.doc.id)).toEqual(["past:1"]);
+    expect(search(docs, parseQuery("release -script", now), now).map((h) => h.doc.id)).toEqual(["conversation:1"]);
+    expect(search(docs, parseQuery("in:agents -is:settled", now), now).map((h) => h.doc.id)).toEqual(["run:1"]);
+    expect(search(docs, parseQuery("branch:main", now), now).map((h) => h.doc.id)).toEqual(["run:1"]);
+    expect(search(docs, parseQuery("after:7d", now), now).map((h) => h.doc.id).sort()).toEqual(["conversation:1", "run:1"]);
+    expect(search(docs, parseQuery("checkout OR usage", now), now).map((h) => h.doc.id).sort()).toEqual(["action:usage", "run:1"]);
+    expect(search(docs, parseQuery("/^fix/", now), now).map((h) => h.doc.id)).toEqual(["run:1"]);
+    expect(search(docs, parseQuery("in:chats", now), now)).toEqual([]);
+    expect(search(docs, parseQuery("", now), now)).toEqual([]);
+  });
+
+  it("asks the backend for words, authors and its kinds, and merges what it found", () => {
+    expect(backendRequest(parseQuery("invoice -spam from:anna in:chats"))).toEqual({
+      alternatives: [["invoice"]], excluded: ["spam"], regex: null, from: ["anna"], kinds: ["chat"], limit: 200,
+    });
+    expect(backendRequest(parseQuery("in:settings appearance"))).toBeNull();
+    expect(backendRequest(parseQuery("is:unread"))).toBeNull();
+    const hit = (id: string, kind: string): BackendHit => ({
+      id, kind, title: "Taxes", subtitle: "", date: null, flags: [], facets: {}, boost: 0, snippet: "the invoice for March",
+      author: "me", passageDate: null, anchor: "m1", matches: 2, score: 1,
+    });
+    const merged = mergeBackend(docs, [hit("run:1", "session"), hit("chat:whatsapp:1", "chat")]);
+    expect(merged.find((d) => d.id === "run:1")?.snippet).toBe("the invoice for March");
+    expect(merged.find((d) => d.id === "chat:whatsapp:1")?.contentHit).toBe(true);
+    const found = search(merged, parseQuery("invoice"), now).map((h) => h.doc.id).sort();
+    expect(found).toEqual(["chat:whatsapp:1", "run:1"]);
+    // from: keeps only what the backend found by its author.
+    expect(search(merged, parseQuery("from:me"), now).map((h) => h.doc.id).sort()).toEqual(["chat:whatsapp:1", "run:1"]);
+  });
+
+  it("reads questions for Search with AI and its citations", () => {
+    expect(looksLikeQuestion("when does the flight leave")).toBe(true);
+    expect(looksLikeQuestion("flight lisbon")).toBe(false);
+    expect(keywordQuery("When does the flight to Lisbon leave?")).toBe("flight OR lisbon OR leave");
+    expect(citations("It leaves at 9:40 [2], booked by you [1, 2] [9].", 3)).toEqual([2, 1]);
+    expect(orderedByCitation(["a", "b", "c"], [3, 1])).toEqual(["c", "a", "b"]);
+    expect(answerPieces("At 9:40 [2].", 2)).toEqual([{ text: "At 9:40 ", cite: false }, { text: "[2]", cite: true }, { text: ".", cite: false }]);
+    expect(cleanAnswer("<think>hmm</think>\n```md\nThe release is **Friday** [1].\n```")).toBe("The release is **Friday** [1].");
+    expect(answerTokens("Move to **Friday** (`main`), *confirmed* by [Anna](https://example.com) [2] [9].", 2)).toEqual([
+      { kind: "text", text: "Move to " },
+      { kind: "bold", text: "Friday" },
+      { kind: "text", text: " (" },
+      { kind: "code", text: "main" },
+      { kind: "text", text: "), " },
+      { kind: "italic", text: "confirmed" },
+      { kind: "text", text: " by " },
+      { kind: "link", text: "Anna", href: "https://example.com" },
+      { kind: "text", text: " " },
+      { kind: "cite", text: "[2]" },
+      { kind: "text", text: " [9]." },
+    ]);
+    const hits = search(docs, parseQuery("e", now), now);
+    expect(gather([hits, hits]).every((h) => h.doc.kind !== "action" && h.doc.kind !== "setting")).toBe(true);
+  });
+
+  it("remembers searches and what was opened", () => {
+    expect(rememberSearch("Flight", rememberSearch("hotel", rememberSearch("flight")))).toEqual(["Flight", "hotel"]);
+    const log = rememberOpened(docs[1], now, rememberOpened(docs[0], now - 1000, {}));
+    expect(recentlyOpened(log).map((d) => d.id)).toEqual(["run:1", "conversation:1"]);
+    expect(rememberOpened(docs[4], now, log)).toBe(log);
+  });
+
+  it("marks the matched words, accents folded", () => {
+    const text = "Réglages and reglages";
+    const ranges = highlightRanges(text, parseQuery("reglages"));
+    expect(ranges).toEqual([[0, 8], [13, 21]]);
+    expect(segments(text, ranges)).toEqual([
+      { text: "Réglages", marked: true }, { text: " and ", marked: false }, { text: "reglages", marked: true },
+    ]);
+  });
+
+  it("puts the best hit on top, then each kind with open sessions first", () => {
+    const hits = search(docs, parseQuery("e", now), now);
+    const rows = grouped(hits, null);
+    expect(rows[0].top).toBe(true);
+    expect(grouped(search(docs, parseQuery("the", now), now), "session").map((r) => r.hit.doc.id)).toEqual(["run:1", "past:1"]);
+    expect(grouped(hits, "session").every((r) => !r.top && r.hit.doc.kind === "session")).toBe(true);
+  });
+
+  it("cycles through the kinds that have hits", () => {
+    const hits = search(docs, parseQuery("e", now), now);
+    expect(cycleKind(hits, null)).toBe("conversation");
+    expect(cycleKind(hits, null, true)).toBe("action");
+    expect(cycleKind([], "session")).toBeNull();
+  });
+});

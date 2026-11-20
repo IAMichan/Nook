@@ -672,10 +672,15 @@ impl AgentHub {
     }
 
     pub fn decide(&self, id: &str, decision: ApprovalDecision) {
+        self.decide_with_reason(id, decision, None)
+    }
+
+    /// Decides, and with Deny tells the agent why (the companion's and the Mac's "Deny with reason").
+    pub fn decide_with_reason(&self, id: &str, decision: ApprovalDecision, reason: Option<&str>) {
         let response = {
             let s = self.lock();
             let Some(pending) = s.pending_approvals.get(id) else { return };
-            response_for(decision, &pending.kind)
+            response_for(decision, &pending.kind, reason)
         };
         if decision != ApprovalDecision::Terminal {
             self.recap.note(|r, now| r.decision(decision != ApprovalDecision::Deny, now));
@@ -1225,7 +1230,8 @@ fn complete(record: &mut Record, mark: StepMark) {
     }
 }
 
-fn response_for(decision: ApprovalDecision, kind: &PendingKind) -> Option<String> {
+fn response_for(decision: ApprovalDecision, kind: &PendingKind, reason: Option<&str>) -> Option<String> {
+    let denied = reason.map(str::trim).filter(|r| !r.is_empty()).unwrap_or("Denied via Nook");
     let payload = match kind {
         PendingKind::LegacyPreToolUse => {
             let value = match decision {
@@ -1234,7 +1240,7 @@ fn response_for(decision: ApprovalDecision, kind: &PendingKind) -> Option<String
                 ApprovalDecision::Terminal => return None,
             };
             json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": value,
-                "permissionDecisionReason": if value == "allow" { "Approved via Nook" } else { "Denied via Nook" }}})
+                "permissionDecisionReason": if value == "allow" { "Approved via Nook" } else { denied }}})
         }
         PendingKind::Permission { suggestions, can_always } => {
             let result = match decision {
@@ -1249,7 +1255,7 @@ fn response_for(decision: ApprovalDecision, kind: &PendingKind) -> Option<String
                     }
                     r
                 }
-                ApprovalDecision::Deny => json!({"behavior": "deny", "message": "Denied via Nook"}),
+                ApprovalDecision::Deny => json!({"behavior": "deny", "message": denied}),
                 ApprovalDecision::Terminal => return None,
             };
             json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": result}})

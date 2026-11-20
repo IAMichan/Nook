@@ -30,7 +30,7 @@ describe("sourceGroups", () => {
     expect(groups.map((g) => g.title)).toEqual(["Notion", "GitHub", "Agenda", "Mail"]);
     expect(groups.map(statusText)).toEqual(["Not read", "2 results", "Sent as context", "Nothing found"]);
     expect(groups[0].reason).toBe("401");
-    expect(sourcesSummary(groups, false)).toBe("2 sources used");
+    expect(sourcesSummary(groups, false)).toBe("Used 2 sources");
   });
 
   it("shows a search that never finished as interrupted once the answer is done", () => {

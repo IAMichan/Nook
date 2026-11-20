@@ -4,6 +4,9 @@
   // koppelingen). Open ones by default; the Filters dropdown also shows closed and merged ones. A click opens the pull
   // request here, where it can be read in full and merged.
   import { api } from "../../../lib/api";
+  import Ico from "../../../components/ui/Ico.svelte";
+  import EmptyState from "../EmptyState.svelte";
+  import PageHeader from "../PageHeader.svelte";
   import { connectorsApi, type AccountPullRequests, type PullRequestItem } from "../../../lib/connectors";
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { apply, authors, defaultFilter, isActive, isEmpty, itemId, stateNames, unreadable } from "../../../lib/pulls";
@@ -80,18 +83,16 @@
   {/key}
 {:else}
   <div class="pulls">
-    <div class="head">
-      <strong>Pull requests</strong>
-      <span class="spacer"></span>
+    <PageHeader title="Pull requests">
       {#if pullRequests.loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
-      <button class="ghost" title={tr("Organisaties en repositories volgen", "Follow organizations and repositories")} onclick={openSettings}>{tr("Volgen", "Follow")}</button>
-      <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={pullRequests.loading} onclick={() => pullRequests.refresh(true)}>{tr("Vernieuwen", "Refresh")}</button>
-    </div>
-
+      <button class="page-icon" title={tr("Organisaties en repositories volgen", "Follow organizations and repositories")} aria-label={tr("Volgen", "Follow")} onclick={openSettings}><Ico name="binoculars" size={15} /></button>
+      <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={pullRequests.loading} onclick={() => pullRequests.refresh(true)}><Ico name="refresh-cw" size={15} /></button>
+    </PageHeader>
+    <div class="body">
     {#if pullRequests.error && !accounts.length}<p class="err">{pullRequests.error}</p>{/if}
 
     {#if pullRequests.loaded && !pullRequests.available && !accounts.length}
-      {@render empty(tr("GitHub is nog niet gekoppeld", "GitHub is not connected yet"), tr("Koppel je GitHub-account (of accounts) onder Instellingen › Accounts & koppelingen, dan zie je hier al je pull requests.", "Connect your GitHub account (or accounts) under Settings › Accounts & connections to see all your pull requests here."), [tr("Koppel GitHub", "Connect GitHub"), openSettings])}
+      {@render empty(tr("GitHub is nog niet gekoppeld", "GitHub isn't connected yet"), tr("Koppel je GitHub-account (of accounts) onder Instellingen › Accounts & koppelingen, dan zie je hier al je pull requests.", "Connect your GitHub account (or accounts) under Settings › Accounts & connections and all your pull requests show up here."), [tr("Koppel GitHub", "Connect GitHub"), openSettings], "user-plus")}
     {:else if pullRequests.loaded && accounts.every((a) => isEmpty(a) && !a.error)}
       {@render empty(tr("Geen open pull requests", "No open pull requests"), tr("Je hebt niets open staan en niemand wacht op jouw review.", "You have nothing open and nobody is waiting for your review."))}
     {:else if !pullRequests.loaded}
@@ -110,7 +111,7 @@
       {/if}
       {#if shown.every((a) => isEmpty(a) && !a.error)}
         {#if isActive(filter)}
-          {@render empty(tr("Geen pull requests gevonden", "No pull requests found"), tr("Niets past bij je zoekopdracht of filter.", "Nothing matches your search or filter."), [tr("Wis filter", "Clear filter"), () => (filter = defaultFilter())])}
+          {@render empty(tr("Geen pull requests gevonden", "No pull requests found"), tr("Niets past bij je zoekopdracht of filter.", "Nothing matches your search or filter."), [tr("Wis filter", "Clear filter"), () => (filter = defaultFilter())], "list-filter")}
         {:else}
           <!-- Only closed or merged pull requests: nothing open, but the Status filter shows them. -->
           {@render empty(tr("Geen open pull requests", "No open pull requests"), tr("Je hebt niets open staan en niemand wacht op jouw review.", "You have nothing open and nobody is waiting for your review."))}
@@ -149,15 +150,12 @@
         </div>
       {/if}
     {/if}
+    </div>
   </div>
 {/if}
 
-{#snippet empty(title: string, detail: string, action?: [string, () => void])}
-  <div class="empty">
-    <strong>{title}</strong>
-    <span class="muted small">{detail}</span>
-    {#if action}<button class="primary" onclick={action[1]}>{action[0]}</button>{/if}
-  </div>
+{#snippet empty(title: string, detail: string, action?: [string, () => void], symbol = "circle-check")}
+  <EmptyState {symbol} {title} message={detail} action={action ? { title: action[0], run: action[1] } : undefined} />
 {/snippet}
 
 {#snippet group(title: string, items: PullRequestItem[], account: string, showAuthor: boolean)}
@@ -185,9 +183,8 @@
 {/snippet}
 
 <style>
-  .pulls { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
-  .head { display: flex; align-items: center; gap: 6px; min-height: 30px; }
-  .spacer { flex: 1; }
+  .pulls { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space-12); padding: 0 var(--space-16) var(--space-12) calc(var(--space-24) + var(--space-6)); }
   .small { font-size: 12px; }
   .err { color: var(--coral); font-size: 12px; margin: 0; }
   .note { color: var(--coral); opacity: 0.85; font-size: 12px; margin: 0; }
@@ -195,8 +192,6 @@
   .search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; background: var(--field); border: 1px solid var(--line2); border-radius: 9px; }
   .search input { flex: 1; min-width: 0; border: none; background: none; padding: 0; font-size: 12.5px; }
   .clear { border: none; background: none; padding: 0 2px; color: var(--text3); font-size: 11px; }
-  .empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 8px; }
-  .empty strong { font-size: 15px; }
   .list { overflow-y: auto; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 18px; }
   .account { display: flex; flex-direction: column; gap: 8px; }
   .who { font-size: 12.5px; }

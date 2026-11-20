@@ -13,6 +13,7 @@ mod browser;
 mod browser_tab;
 mod calls;
 mod charts;
+pub mod chats;
 mod clipboard;
 mod connectors;
 mod files;
@@ -148,6 +149,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(connectors::Hub("resend")),
         Box::new(connectors::Hub("customsources")),
         Box::new(connectors::Hub("whatsapp")),
+        Box::new(chats::Chats),
         Box::new(connectors::Mcp),
         Box::new(connectors::Sources),
         Box::new(memory::Memory),

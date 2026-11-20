@@ -895,15 +895,26 @@ pub async fn answer_question(
 
 fn finish(app: &AppHandle, nook_id: &str) {
     let state = app.state::<AppState>();
-    state.with_chat(|c| {
+    let away = state.with_chat(|c| {
         let is_active = c.active_id.as_deref() == Some(nook_id);
-        if let Some(conv) = c.get_mut(nook_id) {
-            conv.busy = false;
-            if !is_active {
-                conv.unread = true;
+        let conv = c.get_mut(nook_id)?;
+        conv.busy = false;
+        if is_active {
+            return None;
+        }
+        conv.unread = true;
+        Some((conv.title.clone(), conv.preview()))
+    });
+    // An answer that finished while you looked elsewhere: in the list's "For you" card, and as a system notification
+    // when Settings › Notifications chose that for Nook (`notices::decide`; quiet hours and quiet while sharing hold it).
+    if let Some((title, preview)) = away {
+        use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
+        if crate::notices::decide(app, NoticeSource::Nook, "", false) == NoticeDecision::Show(NoticeStyle::System) {
+            if let Ok(id) = uuid::Uuid::parse_str(nook_id) {
+                crate::notices::notice(app, &format!("nook-{nook_id}"), &title, &preview, nook_core::services::toast::NoticeTarget::Conversation(id));
             }
         }
-    });
+    }
     state.running.lock().unwrap_or_else(|e| e.into_inner()).remove(nook_id);
     state.save_chat();
     updated(app, nook_id);

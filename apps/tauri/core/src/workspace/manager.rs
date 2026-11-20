@@ -27,6 +27,7 @@ use super::models::*;
 use super::parsers::{self, ClaudeEvent, CodexEvent, GeminiEvent, TokenCounts};
 use super::paths::{self, Verdict};
 use super::queue::MessageQueue;
+use super::rollback::{self, ConversationLog, ConversationMark, Plan};
 use super::store::{RunStore, UsageFilter, UsageReport, EVENT_LIMIT};
 use crate::agents::models::{
     approval_title, AgentApproval, ApprovalDecision, ApprovalOrigin, QuestionItem, QuestionOption, QuestionRequest,
@@ -169,6 +170,35 @@ struct TurnState {
     limit_windows: BTreeMap<String, Option<DateTime<Utc>>>,
 }
 
+/// A session a search found (`Manager::search`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub run_id: Uuid,
+    /// The words around the first match in the conversation; empty when the title matched.
+    pub snippet: String,
+    pub archived: bool,
+}
+
+/// About forty characters on either side of the first place `needle` (lower case) is in `text`, on one line.
+pub fn snippet(text: &str, needle: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let at = lower.find(needle)?;
+    // Lower-casing can change byte lengths; fall back to the start when the offset is not a boundary in `text`.
+    let chars: Vec<char> = text.chars().collect();
+    let start_char = lower[..at].chars().count();
+    let from = start_char.saturating_sub(40);
+    let to = (start_char + needle.chars().count() + 40).min(chars.len());
+    let mut out: String = chars[from..to].iter().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+    if from > 0 {
+        out.insert(0, '…');
+    }
+    if to < chars.len() {
+        out.push('…');
+    }
+    Some(out)
+}
+
 #[derive(Default)]
 struct Inner {
     runs: Vec<WorkspaceRun>,
@@ -189,6 +219,8 @@ struct Inner {
     limited: HashMap<Uuid, Option<DateTime<Utc>>>,
     /// Het lopende "hervat bij reset" per sessie (een teller, zodat een oud wachten niets meer doet).
     limit_resumes: HashMap<Uuid, u64>,
+    /// The `/` commands each session's agent announced (ACP), kept while Nook runs.
+    commands: HashMap<Uuid, Vec<driver::SlashCommand>>,
 }
 
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
@@ -269,6 +301,38 @@ impl Manager {
         let mut s = self.lock();
         Self::load_timeline(&self.store, &mut s, id);
         s.events.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Every session whose title or conversation holds `query` (`TimelineSearch` across sessions, #1498), archived
+    /// ones too, newest first: the run and the words around the first match. Timelines not open are read from disk
+    /// without being kept.
+    pub fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
+        let needle = query.trim().to_lowercase();
+        if needle.chars().count() < 2 {
+            return vec![];
+        }
+        let mut runs = self.lock().runs.clone();
+        runs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        let mut hits = vec![];
+        for run in runs {
+            if hits.len() >= limit {
+                break;
+            }
+            if run.title.to_lowercase().contains(&needle) {
+                hits.push(SearchHit { run_id: run.id, snippet: String::new(), archived: run.archived });
+                continue;
+            }
+            let loaded = self.lock().events.get(&run.id).cloned();
+            let events = loaded.unwrap_or_else(|| self.store.load_events(run.id));
+            let found = events
+                .iter()
+                .filter(|e| matches!(e.kind, EventKind::User | EventKind::Assistant))
+                .find_map(|e| snippet(&e.text, &needle));
+            if let Some(snippet) = found {
+                hits.push(SearchHit { run_id: run.id, snippet, archived: run.archived });
+            }
+        }
+        hits
     }
 
     fn load_timeline(store: &RunStore, s: &mut Inner, id: Uuid) {
@@ -502,19 +566,26 @@ impl Manager {
             reviewed_at: None,
             last_change_at: None,
             changed_files: None,
+            lines_added: None,
+            lines_removed: None,
             checkpoints: vec![],
             limited_at: None,
             limit_reset_at: None,
             auto_resume: false,
             effort: config.effort.clone(),
             pending_handoff: None,
+            conversation: None,
+            pending_rollback: None,
         };
         if let (Some(path), Some(git)) = (&worktree, &self.git) {
             // De eerste momentopname, voor de agent iets doet: "terug naar hier" bij het eerste bericht.
             let r = git::checkpoint_ref(&id.to_string(), 0);
             if git.checkpoint_head(path, &r).is_ok() {
-                run.checkpoints.push(RunCheckpoint { r#ref: r, date: Utc::now() });
+                run.checkpoints.push(RunCheckpoint { r#ref: r, date: Utc::now(), conversation: Some(ConversationMark::empty()) });
             }
+        }
+        if run.checkpoints.is_empty() && rollback::can_roll_back(run.provider) {
+            run.checkpoints.push(RunCheckpoint { r#ref: String::new(), date: Utc::now(), conversation: Some(ConversationMark::empty()) });
         }
         let mut out = Out::default();
         {
@@ -619,12 +690,16 @@ impl Manager {
             reviewed_at: None,
             last_change_at: None,
             changed_files: None,
+            lines_added: None,
+            lines_removed: None,
             checkpoints: vec![],
             limited_at: None,
             limit_reset_at: None,
             auto_resume: false,
             effort: None,
             pending_handoff: None,
+            conversation: None,
+            pending_rollback: None,
         };
         let mut out = Out::default();
         {
@@ -845,11 +920,44 @@ impl Manager {
                 }
             }
             Self::finish_live_text(&mut s, id);
-            Self::append(&mut s, id, RunEvent::new(EventKind::User, text), &mut out);
+            // An agent that says when it read a steer (`echoes_steers`): the message waits marked until then.
+            let mut event = RunEvent::new(EventKind::User, text).with_tool("steer");
+            if provider.is_some_and(|p| p.capabilities().echoes_steers) {
+                event.state = Some(EventState::Pending);
+            }
+            Self::append(&mut s, id, event, &mut out);
             true
         };
         self.emit(out);
         ok
+    }
+
+    /// The agent read a steered message (`SteerReceipts`): the oldest one still waiting with that text (or else the
+    /// oldest waiting at all) is read.
+    fn steer_read(s: &mut Inner, id: Uuid, text: &str, out: &mut Out) {
+        let waiting = |e: &RunEvent| e.kind == EventKind::User && e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Pending);
+        let Some(list) = s.events.get(&id) else { return };
+        let target = list.iter().find(|e| waiting(e) && e.text.trim() == text.trim()).or_else(|| list.iter().find(|e| waiting(e))).map(|e| e.id.clone());
+        if let Some(event_id) = target {
+            Self::mutate(s, id, event_id, out, |e| e.state = Some(EventState::Done));
+        }
+    }
+
+    /// The turn ended: a steer the agent never took in stays unread (`SteerReceipts` "not read").
+    fn steers_unread(s: &mut Inner, id: Uuid, out: &mut Out) {
+        let ids: Vec<_> = s
+            .events
+            .get(&id)
+            .map(|l| {
+                l.iter()
+                    .filter(|e| e.kind == EventKind::User && e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Pending))
+                    .map(|e| e.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        for event_id in ids {
+            Self::mutate(s, id, event_id, out, |e| e.state = Some(EventState::Expired));
+        }
     }
 
     /// Probeert de vorige opdracht opnieuw (na een fout of een stop).
@@ -874,7 +982,7 @@ impl Manager {
             driver::warm(provider, &executable);
         }
         let mut out = Out::default();
-        let (spec, mut turn_driver) = {
+        let (spec, mut turn_driver, used_claude_rollback) = {
             let mut s = self.lock();
             if s.processes.contains_key(&id) {
                 return;
@@ -883,6 +991,16 @@ impl Manager {
             Self::clear_usage_limit(&mut s, id);
             Self::load_timeline(&self.store, &mut s, id);
             let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
+            let claude_rollback = run
+                .pending_rollback
+                .as_ref()
+                .filter(|p| !p.is_codex() && p.resume_session.is_some() && p.resume_at.is_some())
+                .cloned();
+            let (resume_session_id, fork_session, resume_at, used_claude_rollback) = match claude_rollback {
+                Some(pending) => (pending.resume_session, true, pending.resume_at, true),
+                None => (run.provider_session_id.clone(), s.fork_next.contains(&id), None, false),
+            };
+            let codex_rollback = run.pending_rollback.clone().filter(|p| p.is_codex());
             let input = CommandInput {
                 provider: run.provider,
                 executable: executable.clone(),
@@ -892,8 +1010,10 @@ impl Manager {
                 permission: run.permission,
                 instructions: run.instructions.clone(),
                 working_directory: run.working_directory.clone(),
-                resume_session_id: run.provider_session_id.clone(),
-                fork_session: s.fork_next.contains(&id),
+                resume_session_id,
+                fork_session,
+                resume_at,
+                pending_rollback: codex_rollback,
                 account_environment: (self.hooks.account_environment)(&run.profile_id),
                 run_id: id.to_string(),
                 profile_id: run.profile_id.clone(),
@@ -910,7 +1030,31 @@ impl Manager {
                             Self::append(&mut s, id, RunEvent::new(EventKind::System, note), &mut out);
                         }
                     }
-                    (planned.spec, planned.driver)
+                    // Codex over `codex exec`: cannot roll back its conversation and Nook cannot trust its turn count.
+                    if run.provider == RunProvider::Codex && planned.driver.is_none() {
+                        Self::mark_conversation_inexact(&mut s, id);
+                        if run.pending_rollback.is_some() {
+                            Self::update(&mut s, id, |r| r.pending_rollback = None);
+                            let reason = tr(
+                                "Codex draait via codex exec, dat zijn gesprek niet kan terugzetten.",
+                                "Codex runs through codex exec, which cannot roll back its conversation.",
+                            );
+                            Self::append(
+                                &mut s,
+                                id,
+                                RunEvent::new(
+                                    EventKind::Error,
+                                    trf(
+                                        "Het gesprek van de agent kon niet worden teruggezet: {reason}",
+                                        "The agent's conversation could not be rolled back: {reason}",
+                                        &[("reason", &reason)],
+                                    ),
+                                ),
+                                &mut out,
+                            );
+                        }
+                    }
+                    (planned.spec, planned.driver, used_claude_rollback)
                 }
                 Err(message) => {
                     if let Some(run) = s.runs.iter_mut().find(|r| r.id == id) {
@@ -983,14 +1127,22 @@ impl Manager {
             s.fork_next.remove(&id);
             s.turns.insert(id, TurnState { started: Some(Utc::now()), ..Default::default() });
             let now = Utc::now();
+            let mut is_claude = false;
             if let Some(run) = s.runs.iter_mut().find(|r| r.id == id) {
                 if matches!(run.status, RunStatus::Completed | RunStatus::Failed | RunStatus::Stopped) {
                     run.move_to(RunStatus::Preparing, None, now);
                 }
                 run.move_to(RunStatus::Running, None, now);
                 run.turn_started_at = Some(now);
+                if used_claude_rollback {
+                    run.pending_rollback = None;
+                }
+                is_claude = run.provider == RunProvider::Claude;
                 let (project, agent) = (run.project_name(), run.provider.display_name());
                 self.recap.note(|r, now| r.prompt(&format!("run-{id}"), &project, agent, now));
+            }
+            if is_claude {
+                Self::note_conversation_turn(&mut s, id, None);
             }
             s.dirty_runs = true;
             let mut launch = RunEvent::new(EventKind::System, spec.display_command());
@@ -1001,11 +1153,17 @@ impl Manager {
         out.push(ManagerEvent::Changed);
         self.emit(out);
 
+        // "Keep agent traffic": what goes in and out of this process, when it is on.
+        let traffic = super::traffic::Recorder::open(&id.to_string(), pid).map(Arc::new);
         // Schrijven naar stdin: eerst de eerste regels, dan wat Nook later stuurt (antwoorden, onderbreken).
         if let Some(mut stdin) = stdin {
             let initial = spec.initial_input.clone();
+            let traffic = traffic.clone();
             self.runtime.spawn(async move {
                 for line in initial {
+                    if let Some(t) = &traffic {
+                        t.line(true, &line);
+                    }
                     if stdin.write_all(line.as_bytes()).await.is_err() {
                         return;
                     }
@@ -1014,6 +1172,9 @@ impl Manager {
                 while let Some(msg) = rx.recv().await {
                     match msg {
                         Input::Line(l) => {
+                            if let Some(t) = &traffic {
+                                t.line(true, &l);
+                            }
                             if stdin.write_all(l.as_bytes()).await.is_err() || stdin.flush().await.is_err() {
                                 return;
                             }
@@ -1045,9 +1206,13 @@ impl Manager {
         let manager = self.clone();
         let reader = stdout.map(|out| {
             let manager = manager.clone();
+            let traffic = traffic.clone();
             self.runtime.spawn(async move {
                 let mut lines = BufReader::new(out).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(t) = &traffic {
+                        t.line(false, &line);
+                    }
                     let line = line.trim().to_string();
                     if !line.is_empty() {
                         manager.handle_line(id, generation, &line);
@@ -1102,6 +1267,29 @@ impl Manager {
                         }
                         driver::DriverEvent::FileChange { path, kind } => Self::record_file_change(&mut s, id, &path, &kind, &mut out),
                         driver::DriverEvent::System(text) => Self::append(&mut s, id, RunEvent::new(EventKind::System, text), &mut out),
+                        driver::DriverEvent::Commands(list) => {
+                            s.commands.insert(id, list);
+                        }
+                        driver::DriverEvent::UserMessageRead(text) => Self::steer_read(&mut s, id, &text, &mut out),
+                        driver::DriverEvent::TurnStarted(turn_id) => Self::note_conversation_turn(&mut s, id, turn_id.as_deref()),
+                        driver::DriverEvent::RollbackApplied => Self::update(&mut s, id, |r| r.pending_rollback = None),
+                        driver::DriverEvent::RollbackFailed(reason) => {
+                            Self::update(&mut s, id, |r| r.pending_rollback = None);
+                            Self::mark_conversation_inexact(&mut s, id);
+                            Self::append(
+                                &mut s,
+                                id,
+                                RunEvent::new(
+                                    EventKind::Error,
+                                    trf(
+                                        "Het gesprek van de agent kon niet worden teruggezet: {reason}",
+                                        "The agent's conversation could not be rolled back: {reason}",
+                                        &[("reason", &reason)],
+                                    ),
+                                ),
+                                &mut out,
+                            );
+                        }
                     }
                 }
             }
@@ -1263,10 +1451,13 @@ impl Manager {
     fn handle_claude(s: &mut Inner, id: Uuid, event: ClaudeEvent, out: &mut Out) -> (bool, bool) {
         match event {
             ClaudeEvent::Initialized { session_id, model } => Self::update(s, id, |r| {
-                r.provider_session_id = Some(session_id);
+                r.provider_session_id = Some(session_id.clone());
                 if let Some(m) = model.filter(|m| !m.is_empty()) {
                     r.resolved_model = Some(m);
                 }
+                let mut log = r.conversation.take().unwrap_or_else(|| ConversationLog::new(None, r.provider));
+                log.note_session(&session_id, r.provider);
+                r.conversation = Some(log);
             }),
             ClaudeEvent::TextDelta(text) => {
                 let live = s.turns.get(&id).and_then(|t| t.live_text);
@@ -1468,6 +1659,7 @@ impl Manager {
                     r.usage.add(&usage);
                     if let Some(session) = &result.session_id {
                         r.provider_session_id = Some(session.clone());
+                        r.conversation.get_or_insert_with(|| ConversationLog::new(None, r.provider)).note_session(session, r.provider);
                     }
                     let now = Utc::now();
                     if stopping {
@@ -1527,13 +1719,20 @@ impl Manager {
                     Self::note_claude_limit(s, id, event, out);
                 }
             }
+            ClaudeEvent::ChainEntry(uuid) => Self::note_conversation_head(s, id, &uuid),
         }
         (false, false)
     }
 
     fn handle_codex(s: &mut Inner, id: Uuid, event: CodexEvent, out: &mut Out) -> bool {
         match event {
-            CodexEvent::ThreadStarted(thread) => Self::update(s, id, |r| r.provider_session_id = Some(thread)),
+            CodexEvent::ThreadStarted(thread) => Self::update(s, id, |r| {
+                r.provider_session_id = Some(thread.clone());
+                let mut log = r.conversation.take().unwrap_or_else(|| ConversationLog::new(None, r.provider));
+                log.note_session(&thread, r.provider);
+                log.exact = false;
+                r.conversation = Some(log);
+            }),
             CodexEvent::Message(text) => Self::append(s, id, RunEvent::new(EventKind::Assistant, text).with_state(EventState::Done), out),
             CodexEvent::Reasoning(text) => Self::append(s, id, RunEvent::new(EventKind::Thinking, text), out),
             CodexEvent::CommandStarted { id: call, command } => {
@@ -1722,6 +1921,7 @@ impl Manager {
             let state = s.turns.remove(&id);
             Self::finish_live_text(&mut s, id);
             Self::expire_approvals(&mut s, id, &mut out);
+            Self::steers_unread(&mut s, id, &mut out);
             let stopping = state.as_ref().is_some_and(|t| t.stopping);
             // Wat nog liep, wordt afgesloten: niets mag open blijven als het proces weg is.
             Self::settle_open_work(&mut s, id, stopping, &mut out);
@@ -1807,6 +2007,7 @@ impl Manager {
             run
         };
         self.emit(out);
+        let mark = Self::conversation_mark(&run);
         if run.isolation == IsolationMode::Worktree && run.worktree_path.as_deref().is_some_and(|p| Path::new(p).exists()) {
             if let Some(git) = self.git.clone() {
                 let index = run.checkpoints.len();
@@ -1815,15 +2016,26 @@ impl Manager {
                 let date = Utc::now();
                 self.runtime.spawn_blocking(move || {
                     let r = git::checkpoint_ref(&id.to_string(), index);
-                    if git.checkpoint(&dir, &r).is_ok() {
+                    let git_ok = git.checkpoint(&dir, &r).is_ok();
+                    if git_ok || mark.is_some() {
                         let mut s = manager.lock();
-                        Self::update(&mut s, id, |run| run.checkpoints.push(RunCheckpoint { r#ref: r, date }));
+                        Self::update(&mut s, id, |run| {
+                            run.checkpoints.push(RunCheckpoint { r#ref: if git_ok { r } else { String::new() }, date, conversation: mark })
+                        });
                     }
                     manager.refresh_git(id);
                     manager.send_queued(id);
                 });
                 return;
             }
+        }
+        if let Some(mark) = mark {
+            let mut s = self.lock();
+            Self::update(&mut s, id, |run| {
+                run.checkpoints.push(RunCheckpoint { r#ref: String::new(), date: Utc::now(), conversation: Some(mark) });
+            });
+            drop(s);
+            self.emit(Out(vec![ManagerEvent::Changed]));
         }
         self.refresh_git(id);
         self.send_queued(id);
@@ -1923,6 +2135,14 @@ impl Manager {
     // MARK: Toestemming en vragen
 
     pub fn decide(&self, run_id: Uuid, request_id: &str, decision: ApprovalDecision) -> Result<(), String> {
+        self.decide_with_reason(run_id, request_id, decision, None)
+    }
+
+    /// Decides; with Deny and a reason the agent hears why. Claude Code takes it as the denial's message; the agents on
+    /// a driver (Codex, ACP) have no field for it, so it goes to them as a steer, or else first in the queue.
+    pub fn decide_with_reason(&self, run_id: Uuid, request_id: &str, decision: ApprovalDecision, reason: Option<&str>) -> Result<(), String> {
+        let reason = reason.map(str::trim).filter(|r| !r.is_empty() && decision == ApprovalDecision::Deny).map(String::from);
+        let mut tell_after = None;
         let mut out = Out::default();
         {
             let mut s = self.lock();
@@ -1945,8 +2165,11 @@ impl Manager {
             self.recap.note(|r, now| r.decision(allow, now));
             let rules = (decision == ApprovalDecision::Always && pending.can_always()).then_some(pending.suggestions.clone()).flatten();
             let lines = match s.processes.get_mut(&run_id).and_then(|p| p.driver.as_mut()) {
-                Some(d) => d.decide(request_id, allow, rules.is_some()),
-                None => vec![parsers::claude_permission_response(request_id, allow, &pending.input, rules.as_ref(), "")],
+                Some(d) => {
+                    tell_after = reason.clone();
+                    d.decide(request_id, allow, rules.is_some())
+                }
+                None => vec![parsers::claude_permission_response(request_id, allow, &pending.input, rules.as_ref(), reason.as_deref().unwrap_or(""))],
             };
             for line in lines {
                 let _ = input.send(Input::Line(line));
@@ -1966,6 +2189,11 @@ impl Manager {
             out.push(ManagerEvent::Changed);
         }
         self.emit(out);
+        if let Some(text) = tell_after {
+            if !self.steer(run_id, &text) {
+                self.enqueue(run_id, &text);
+            }
+        }
         Ok(())
     }
 
@@ -2226,6 +2454,29 @@ impl Manager {
 
     // MARK: Git
 
+    /// A folder became a git repository (`git init` on a session without a project): the sessions working there get it
+    /// as their repository, and their changes are read.
+    pub fn adopt_repository(self: &Arc<Self>, dir: &str) {
+        let clean = dir.trim_end_matches(['/', '\\']);
+        let ids: Vec<Uuid> = {
+            let mut s = self.lock();
+            let ids: Vec<Uuid> = s
+                .runs
+                .iter()
+                .filter(|r| r.repo_root.is_none() && r.working_directory.trim_end_matches(['/', '\\']) == clean)
+                .map(|r| r.id)
+                .collect();
+            for id in &ids {
+                Self::update(&mut s, *id, |r| r.repo_root = Some(clean.to_string()));
+            }
+            ids
+        };
+        for id in ids {
+            self.refresh_git(id);
+        }
+        self.emit(Out(vec![ManagerEvent::Changed]));
+    }
+
     pub fn refresh_git(self: &Arc<Self>, id: Uuid) {
         let Some(git) = self.git.clone() else { return };
         let Some(run) = self.run(id).filter(|r| r.repo_root.is_some()) else { return };
@@ -2256,7 +2507,13 @@ impl Manager {
                 let mut s = manager.lock();
                 if let Some(st) = &snap.status {
                     let count = st.files.len() as u32;
-                    Self::update(&mut s, id, |r| r.changed_files = Some(count));
+                    let added = st.files.iter().filter_map(|f| f.added).sum::<u64>();
+                    let removed = st.files.iter().filter_map(|f| f.removed).sum::<u64>();
+                    Self::update(&mut s, id, |r| {
+                        r.changed_files = Some(count);
+                        r.lines_added = Some(added);
+                        r.lines_removed = Some(removed);
+                    });
                 }
                 s.git.insert(id, snap);
             }
@@ -2390,6 +2647,38 @@ impl Manager {
         self.emit(out);
     }
 
+    /// The first line of a session that someone else started ("Started by …", "Delegated by …"): a note tagged
+    /// `origin`, so the transcript draws it with the Mac's arrow (`TranscriptWorkLine`) instead of an info mark.
+    pub fn note_origin(&self, id: Uuid, text: &str) {
+        let mut out = Out::default();
+        Self::append(&mut self.lock(), id, RunEvent::new(EventKind::System, text).with_tool("origin"), &mut out);
+        self.emit(out);
+    }
+
+    /// `/clear` (`clearConversation` on the Mac): the session goes on in a new, empty conversation with the same agent,
+    /// in the same folder and on the same branch. The agent forgets everything so far; the timeline stays, with a
+    /// divider (`tool: "clear"`) where the new conversation starts. Not while the agent works. The same for every agent:
+    /// each one starts its next turn without a session to resume.
+    pub fn clear_conversation(&self, id: Uuid) -> bool {
+        let cleared = self.update_between_turns(id, |r| {
+            r.provider_session_id = None;
+            r.pending_handoff = None;
+            r.conversation = None;
+            r.pending_rollback = None;
+        });
+        let mut out = Out::default();
+        let event = if cleared {
+            RunEvent::new(EventKind::System, tr("Nieuw gesprek", "New conversation")).with_tool("clear")
+        } else {
+            RunEvent::new(EventKind::System, tr("/clear wacht tot de agent gestopt is.", "/clear waits until the agent has stopped."))
+        };
+        if self.run(id).is_some() {
+            Self::append(&mut self.lock(), id, event, &mut out);
+            self.emit(out);
+        }
+        cleared
+    }
+
     /// Changes a session between turns, for features in their own files (handing it to another agent, `handoff.rs`).
     /// `false` while it works or when it is gone; nothing changes then.
     pub fn update_between_turns(&self, id: Uuid, change: impl FnOnce(&mut WorkspaceRun)) -> bool {
@@ -2403,6 +2692,16 @@ impl Manager {
             self.emit(Out(vec![ManagerEvent::Changed]));
         }
         free
+    }
+
+    /// The `/` commands the session's agent announced itself (`acpCommands` on the Mac).
+    pub fn agent_commands(&self, id: Uuid) -> Vec<driver::SlashCommand> {
+        self.lock().commands.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// The process of the agent working for a session now, for its CPU and memory (`agentPIDs` on the Mac).
+    pub fn agent_pid(&self, id: Uuid) -> Option<u32> {
+        self.lock().processes.get(&id).and_then(|p| p.pid)
     }
 
     pub fn git(&self) -> Option<&Git> {
@@ -2503,14 +2802,143 @@ impl Manager {
         });
     }
 
+    fn conversation_mark(run: &WorkspaceRun) -> Option<ConversationMark> {
+        if !rollback::can_roll_back(run.provider) {
+            return None;
+        }
+        Some(run.conversation.as_ref().map_or_else(ConversationMark::empty, ConversationLog::mark))
+    }
+
+    fn note_conversation_turn(s: &mut Inner, id: Uuid, turn_id: Option<&str>) {
+        Self::update(s, id, |r| {
+            if !rollback::can_roll_back(r.provider) {
+                return;
+            }
+            let session = r.provider_session_id.clone();
+            let log = r.conversation.get_or_insert_with(|| ConversationLog::new(None, r.provider));
+            if let Some(sid) = session.as_deref() {
+                log.note_session(sid, r.provider);
+            }
+            log.start_turn(turn_id);
+        });
+    }
+
+    fn note_conversation_head(s: &mut Inner, id: Uuid, uuid: &str) {
+        Self::update(s, id, |r| {
+            if r.provider != RunProvider::Claude {
+                return;
+            }
+            let session = r.provider_session_id.clone();
+            let log = r.conversation.get_or_insert_with(|| ConversationLog::new(None, r.provider));
+            if let Some(sid) = session.as_deref() {
+                log.note_session(sid, r.provider);
+            }
+            log.note_head(uuid);
+        });
+    }
+
+    fn mark_conversation_inexact(s: &mut Inner, id: Uuid) {
+        Self::update(s, id, |r| {
+            if !rollback::can_roll_back(r.provider) {
+                return;
+            }
+            let log = r.conversation.get_or_insert_with(|| ConversationLog::new(None, r.provider));
+            log.exact = false;
+        });
+    }
+
+    fn plan_for(run: &WorkspaceRun, mark: Option<&ConversationMark>) -> Plan {
+        rollback::plan(run.provider, mark, run.conversation.as_ref(), run.provider_session_id.as_deref())
+    }
+
     /// Bestanden kunnen terug naar hoe ze waren vóór een bericht: een worktree-sessie die niets doet, alleen in zijn map.
     pub fn can_revert(&self, id: Uuid, before: DateTime<Utc>) -> bool {
         let s = self.lock();
         let Some(run) = s.runs.iter().find(|r| r.id == id) else { return false };
         run.isolation == IsolationMode::Worktree
             && !run.status.is_active()
-            && run.checkpoints.iter().any(|c| c.date <= before)
+            && !s.processes.contains_key(&id)
+            && run.checkpoints.iter().any(|c| c.date <= before && !c.r#ref.is_empty())
             && Self::active_sharing(&s, &run.working_directory, Some(id)).is_none()
+    }
+
+    /// Whether the agent's conversation itself can be rolled back to before `before` (AG-62).
+    pub fn can_rollback_conversation(&self, id: Uuid, before: DateTime<Utc>) -> bool {
+        let s = self.lock();
+        let Some(run) = s.runs.iter().find(|r| r.id == id) else { return false };
+        !run.status.is_active()
+            && !s.processes.contains_key(&id)
+            && run
+                .checkpoints
+                .iter()
+                .rev()
+                .find(|c| c.date <= before && c.conversation.is_some())
+                .is_some_and(|c| !matches!(Self::plan_for(run, c.conversation.as_ref()), Plan::Unavailable))
+    }
+
+    /// Whether the user can edit from a message at `before` ("Edit from here").
+    pub fn can_edit_from_here(&self, id: Uuid, before: DateTime<Utc>) -> bool {
+        self.can_rollback_conversation(id, before)
+    }
+
+    fn apply_conversation_rollback(
+        &self,
+        s: &mut Inner,
+        id: Uuid,
+        checkpoint_index: usize,
+        checkpoint: &RunCheckpoint,
+        before: DateTime<Utc>,
+        out: &mut Out,
+    ) -> (bool, Vec<String>) {
+        let mut rolled_back = false;
+        let mut removed_refs = Vec::new();
+        let planned = s.runs.iter().find(|r| r.id == id).map(|run| Self::plan_for(run, checkpoint.conversation.as_ref()));
+        Self::update(s, id, |r| {
+            if let Some(plan) = planned {
+                match plan {
+                    Plan::Unavailable => {}
+                    Plan::Nothing => {
+                        rolled_back = true;
+                    }
+                    Plan::Fresh => {
+                        r.provider_session_id = None;
+                        r.pending_rollback = None;
+                        if let (Some(log), Some(mark)) = (r.conversation.as_mut(), checkpoint.conversation.as_ref()) {
+                            log.rewind(mark);
+                        }
+                        rolled_back = true;
+                    }
+                    Plan::Codex { .. } | Plan::ClaudeResume { .. } => {
+                        r.pending_rollback = rollback::merge(r.pending_rollback.take(), &plan);
+                        if let (Some(log), Some(mark)) = (r.conversation.as_mut(), checkpoint.conversation.as_ref()) {
+                            log.rewind(mark);
+                        }
+                        rolled_back = true;
+                    }
+                }
+            }
+            let (kept, trimmed) = rollback::trim(&r.checkpoints, checkpoint_index);
+            removed_refs = trimmed.into_iter().filter(|r| !r.is_empty()).collect();
+            r.checkpoints = kept;
+        });
+        if rolled_back {
+            Self::load_timeline(&self.store, s, id);
+            if let Some(events) = s.events.get_mut(&id) {
+                let cutoff = checkpoint.date.min(before - chrono::Duration::nanoseconds(1));
+                let ids = rollback::rolled_back_ids(events, cutoff);
+                if !ids.is_empty() {
+                    for e in events.iter_mut() {
+                        if ids.contains(&e.id) {
+                            e.rolled_back = Some(true);
+                        }
+                    }
+                    s.dirty_events.insert(id);
+                    out.push(ManagerEvent::Timeline(id));
+                }
+            }
+        }
+        out.push(ManagerEvent::Changed);
+        (rolled_back, removed_refs)
     }
 
     pub fn revert_files(self: &Arc<Self>, id: Uuid, before: DateTime<Utc>) -> Result<(), String> {
@@ -2522,24 +2950,80 @@ impl Manager {
             .into());
         }
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let checkpoint = run
+        let (index, checkpoint) = run
             .checkpoints
             .iter()
+            .enumerate()
             .rev()
-            .find(|c| c.date <= before)
-            .cloned()
+            .find(|(_, c)| c.date <= before && !c.r#ref.is_empty())
+            .map(|(i, c)| (i, c.clone()))
             .ok_or(tr("Geen eerder punt gevonden.", "No earlier point found."))?;
         let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.restore(&run.working_directory, &checkpoint.r#ref).map_err(|e| e.0)?;
         let mut out = Out::default();
-        Self::append(
-            &mut self.lock(),
-            id,
-            RunEvent::new(EventKind::System, tr("Bestanden teruggezet naar een eerder punt.", "Files restored to an earlier point.")),
-            &mut out,
-        );
+        let removed_refs = {
+            let mut s = self.lock();
+            let (rolled_back, removed_refs) = self.apply_conversation_rollback(&mut s, id, index, &checkpoint, before, &mut out);
+            let note = if rolled_back {
+                tr(
+                    "Bestanden en gesprek teruggezet naar een eerder punt. De agent weet niets meer van de latere berichten.",
+                    "Files and conversation restored to an earlier point. The agent no longer remembers the later messages.",
+                )
+            } else {
+                tr("Bestanden teruggezet naar een eerder punt.", "Files restored to an earlier point.")
+            };
+            Self::append(&mut s, id, RunEvent::new(EventKind::System, note), &mut out);
+            removed_refs
+        };
+        if !removed_refs.is_empty() {
+            git.remove_checkpoint_refs(&run.working_directory, &removed_refs);
+        }
         self.emit(out);
         self.refresh_git(id);
+        Ok(())
+    }
+
+    /// Rewinds the conversation to before a user message ("Edit from here"), optionally restoring files too.
+    pub fn edit_from_here(self: &Arc<Self>, id: Uuid, before: DateTime<Utc>, reverting_files: bool) -> Result<(), String> {
+        if reverting_files {
+            return self.revert_files(id, before);
+        }
+        if !self.can_edit_from_here(id, before) {
+            return Err(tr("Deze sessie kan niet terug tot vóór dit bericht.", "This session can't go back to before this message.").into());
+        }
+        let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let (index, checkpoint) = run
+            .checkpoints
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, c)| c.date <= before && !matches!(Self::plan_for(&run, c.conversation.as_ref()), Plan::Unavailable))
+            .map(|(i, c)| (i, c.clone()))
+            .ok_or(tr("Geen eerder punt gevonden.", "No earlier point found."))?;
+        let mut out = Out::default();
+        let removed_refs = {
+            let mut s = self.lock();
+            let (_, removed_refs) = self.apply_conversation_rollback(&mut s, id, index, &checkpoint, before, &mut out);
+            Self::append(
+                &mut s,
+                id,
+                RunEvent::new(
+                    EventKind::System,
+                    tr(
+                        "Teruggegaan tot vóór je bericht. De bestanden zijn gebleven zoals ze waren.",
+                        "Went back to before your message. The files stayed as they were.",
+                    ),
+                ),
+                &mut out,
+            );
+            removed_refs
+        };
+        if !removed_refs.is_empty() {
+            if let Some(git) = &self.git {
+                git.remove_checkpoint_refs(&run.working_directory, &removed_refs);
+            }
+        }
+        self.emit(out);
         Ok(())
     }
 
@@ -2739,6 +3223,90 @@ pub fn attention_summary(text: &str) -> String {
 }
 
 impl Manager {
+    /// A new session that starts from this one (`fork` on the Mac). Claude Code copies its own conversation
+    /// (`--fork-session` on its first turn); any other agent, and a fork from an earlier point (`keep`: the number of
+    /// timeline entries that stay), starts from a summary of what happened. It works in the same folder and never owns
+    /// a worktree, so removing it cannot take the original's. Not while the original works.
+    pub fn fork(&self, id: Uuid, keep: Option<usize>) -> Result<Uuid, String> {
+        let mut out = Out::default();
+        let new_id = Uuid::new_v4();
+        {
+            let mut s = self.lock();
+            Self::load_timeline(&self.store, &mut s, id);
+            let source = s
+                .runs
+                .iter()
+                .find(|r| r.id == id)
+                .cloned()
+                .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+            if source.status.is_active() || s.processes.contains_key(&id) {
+                return Err(tr(
+                    "Dat kan niet terwijl de agent werkt. Wacht tot de beurt klaar is of stop hem.",
+                    "Not while the agent works. Wait for the turn to finish, or stop it.",
+                )
+                .into());
+            }
+            let all = s.events.get(&id).cloned().unwrap_or_default();
+            let partial = keep.is_some_and(|k| k < all.len());
+            let events: Vec<RunEvent> = all.into_iter().take(keep.unwrap_or(usize::MAX)).collect();
+            // The agent's own fork copies the whole conversation, so a fork from an earlier point always gets a summary.
+            let native = source.provider.capabilities().native_fork && !partial && source.provider_session_id.is_some();
+            let now = Utc::now();
+            let mut copy = source.clone();
+            copy.id = new_id;
+            copy.title = trf("Vork van {title}", "Fork of {title}", &[("title", &source.title)]);
+            copy.status = RunStatus::Completed;
+            copy.status_detail = None;
+            copy.created_at = now;
+            copy.updated_at = now;
+            copy.archived = false;
+            copy.usage = RunUsage::default();
+            copy.turn_started_at = None;
+            copy.reviewed_at = None;
+            copy.checkpoints = vec![];
+            copy.limited_at = None;
+            copy.limit_reset_at = None;
+            copy.auto_resume = false;
+            copy.isolation = IsolationMode::Folder;
+            copy.worktree_path = None;
+            copy.base_branch = None;
+            copy.pending_handoff = None;
+            copy.conversation = None;
+            copy.pending_rollback = None;
+            if !native {
+                copy.provider_session_id = None;
+                copy.pending_handoff =
+                    super::handoff::render(&events, 0, source.provider.display_name(), super::handoff::TOKEN_BUDGET).map(|h| h.text);
+            }
+            s.runs.insert(0, copy);
+            s.events.insert(new_id, events);
+            s.dirty_events.insert(new_id);
+            s.dirty_runs = true;
+            if native {
+                s.fork_next.insert(new_id);
+            }
+            let text = if native {
+                trf(
+                    "Vork van \"{title}\": de agent gaat verder in een kopie van zijn eigen gesprek.",
+                    "Fork of \"{title}\": the agent continues in a copy of its own conversation.",
+                    &[("title", &source.title)],
+                )
+            } else {
+                trf(
+                    "Vork van \"{title}\": de agent start met een samenvatting van wat er gebeurde.",
+                    "Fork of \"{title}\": the agent starts from a summary of what happened.",
+                    &[("title", &source.title)],
+                )
+            };
+            Self::append(&mut s, new_id, RunEvent::new(EventKind::System, text), &mut out);
+        }
+        out.push(ManagerEvent::Changed);
+        self.emit(out);
+        Ok(new_id)
+    }
+}
+
+impl Manager {
     /// Voor tests: wacht tot de sessie niet meer loopt.
     pub async fn wait_idle(&self, id: Uuid, limit: Duration) -> bool {
         let start = std::time::Instant::now();
@@ -2871,5 +3439,19 @@ read rest
             result_line(&TurnUsage { duration_seconds: Some(3.0), input_tokens: Some(1200), ..Default::default() }, 1),
             "3s · 1,2k tokens · 1 geweigerd"
         );
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::snippet;
+
+    #[test]
+    fn cuts_the_words_around_a_match() {
+        assert_eq!(snippet("Fix the login bug", "login").as_deref(), Some("Fix the login bug"));
+        let long = format!("{}needle{}", "a ".repeat(40), " b".repeat(40));
+        let s = snippet(&long, "needle").unwrap();
+        assert!(s.starts_with('…') && s.ends_with('…') && s.contains("needle"));
+        assert_eq!(snippet("nothing here", "needle"), None);
     }
 }

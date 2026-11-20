@@ -7,7 +7,9 @@
   import CompanionAway from "./CompanionAway.svelte";
   import CompanionScopes from "./CompanionScopes.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import QRCodeView from "../../components/ui/QRCodeView.svelte";
+  import Fold from "./Fold.svelte";
 
   let info = $state<CompanionInfo | null>(null);
   let error = $state<string | null>(null);
@@ -36,6 +38,13 @@
 
   const listening = $derived(info?.state?.state === "listening");
   const minutesLeft = $derived(info?.pairing ? Math.max(0, Math.ceil((new Date(info.pairing.until).getTime() - Date.now()) / 60000)) : 0);
+  const awaySummary = $derived.by(() => {
+    const away = info?.away;
+    if (!away || !away.relay.enabled) return tr("Alleen thuisnetwerk", "Home network only");
+    if (away.relayStatus.state === "connected") return tr("Relay verbonden", "Relay connected");
+    if (away.relayStatus.state === "failed") return tr("Relay werkt niet", "Relay not working");
+    return tr("Relay aan", "Relay on");
+  });
 
   async function copy() {
     if (!info?.pairing) return;
@@ -48,7 +57,9 @@
   }
 </script>
 
-<p class="muted">
+<!-- The Mac's Devices › iPhone: the title, what a paired phone does, and the switch. -->
+<h3>{tr("Telefoon", "Phone")}</h3>
+<p class="section-info">
   {tr(
     "Laat een gekoppelde telefoon in je eigen wifi zien welke sessies je nodig hebben, en laat je goedkeuren, antwoorden, een bericht sturen of stoppen. Werkt met Nook Companion op de iPhone en met Nook op Android. Alles gaat versleuteld; riskante goedkeuringen (zoals onbekende commando’s) kun je vanaf de telefoon alleen weigeren.",
     "Let a paired phone on your own Wi-Fi show which sessions need you, and let you approve, answer, send a message or stop. Works with Nook Companion on iPhone and with Nook on Android. Everything is encrypted; risky approvals (like unknown commands) can only be denied from the phone.",
@@ -80,7 +91,7 @@
       {#each info.devices as device (device.id)}
         <div class="row">
           <div class="device">
-            <span>📱 {device.name}</span>
+            <span class="device-name"><Ico name="smartphone" size={14} />{device.name}</span>
             <span class="faint small">{device.lastSeen ? tr("Laatst gezien: {when}", "Last seen: {when}", { when: relativeTime(device.lastSeen) }) : tr("Nog niet verbonden", "Not connected yet")}</span>
             <span class="faint small">{tr("Appversie", "App version")}: <span class:mono={!!device.appVersion}>{device.appVersion ?? tr("Nog niet bekend", "Not known yet")}</span></span>
             {#if device.outdated}
@@ -89,14 +100,14 @@
               <span class="muted small">{tr("Op deze telefoon draait een oudere versie. Werk hem bij voor pull requests, delen en de andere nieuwe onderdelen.", "This phone runs an older version. Update it to use pull requests, sharing and the other new parts.")}</span>
             {/if}
           </div>
-          <button onclick={() => run(() => companion.removeDevice(device.id))}>{tr("Ontkoppel", "Unpair")}</button>
+          <button class="small" onclick={() => run(() => companion.removeDevice(device.id))}>{tr("Ontkoppel", "Unpair")}</button>
         </div>
         <details class="scopes">
           <summary class="faint small">{tr("Wat deze telefoon mag", "What this phone may do")}</summary>
           <CompanionScopes scopes={device.scopes} onchange={(s) => run(() => companion.setScopes(device.id, s))} />
         </details>
       {:else}
-        <p class="faint note">{tr("Nog geen telefoon gekoppeld.", "No phone paired yet.")}</p>
+        <p class="empty-note">{tr("Nog geen telefoon gekoppeld.", "No phone paired yet.")}</p>
       {/each}
     </div>
 
@@ -112,7 +123,7 @@
           <p>{minutesLeft === 1 ? tr("Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog 1 minuut en één keer.", "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for 1 more minute and only once.") : tr("Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog {n} minuten en één keer.", "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for {n} more minutes and only once.", { n: minutesLeft })}</p>
           <code class="link">{info.pairing.url}</code>
           <div class="inline">
-            <button onclick={copy}>{copied ? tr("Gekopieerd", "Copied") : tr("Kopieer link", "Copy link")}</button>
+            <button class="small" onclick={copy}>{copied ? tr("Gekopieerd", "Copied") : tr("Kopieer link", "Copy link")}</button>
             <button class="ghost" onclick={() => { copied = false; run(companion.cancelPairing); }}>{tr("Stop koppelen", "Stop pairing")}</button>
           </div>
         </div>
@@ -138,7 +149,11 @@
       )}
     </p>
 
-    {#if info.away}<CompanionAway {info} onchange={(i) => (info = i)} />{/if}
+    {#if info.away}
+      <Fold title={tr("Buiten de deur", "Away from home")} summary={awaySummary}>
+        <CompanionAway {info} onchange={(i) => (info = i)} />
+      </Fold>
+    {/if}
 
     <h3>{tr("Meldingen op je telefoon", "Notifications on your phone")}</h3>
     {#if info.push}<CompanionPush {info} onchange={(i) => (info = i)} />{/if}
@@ -148,7 +163,8 @@
 
 <style>
   .device { display: flex; flex-direction: column; gap: 2px; }
-  .small { font-size: 11px; }
+  .device-name { display: inline-flex; align-items: center; gap: var(--space-6); }
+  .small { font: var(--text-detail); line-height: 1.3; }
   .mono { font-family: var(--mono); }
   .scopes { padding: 0 0 6px; }
   .scopes summary { cursor: pointer; padding: 2px 0 4px; }
@@ -156,6 +172,6 @@
   .pairing { display: flex; gap: 16px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap; }
   .steps { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 10px; }
   .steps p { margin: 0; }
-  .link { font-family: var(--mono); font-size: 11px; word-break: break-all; user-select: text; background: var(--field); border: 1px solid var(--line2); border-radius: 8px; padding: 6px 8px; }
+  .link { font: var(--text-code); word-break: break-all; user-select: text; background: var(--field); border: 1px solid var(--line2); border-radius: var(--radius-control); padding: 6px 8px; }
   .pairrow { margin-top: 14px; }
 </style>

@@ -8,6 +8,9 @@
   // or a tab shows what is already known at once (the matching runs of the list read before, a tab's last read) while
   // GitHub's answer is on its way.
   import { untrack } from "svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
+  import EmptyState from "../EmptyState.svelte";
+  import PageHeader from "../PageHeader.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import {
     actionsApi, candidateRepos, eventName, filterRuns, isLive, latestPerWorkflow, neighborTab, openTab, parseRepo, repoStatus,
@@ -321,16 +324,14 @@
       <RunView repo={repo ?? ""} {account} run={openedRun} narrow onclose={() => (opened = null)} onchanged={() => reload++} />
     {/key}
   {:else}
-    <div class="head">
-      <strong>Actions</strong>
-      {#if !tabs.length}<RepoPicker {repos} value={repo} onpick={pick} />{/if}
-      <span class="spacer"></span>
+    <PageHeader title="Actions" flush>
       <!-- A first read has the list's skeleton; this only marks a refresh. -->
       {#if loading && loaded}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
-      <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={() => reload++}>{tr("Vernieuwen", "Refresh")}</button>
-      {#if repo && !notConnected}<button title={tr("Start een workflow die met de hand kan starten", "Start a workflow that can be run by hand")} onclick={() => (dispatching = true)}>{tr("Workflow starten", "Run workflow")}</button>{/if}
-      {#if repo}<button class="ghost" title={tr("Open de Actions van deze repository op GitHub", "Open this repository's Actions on GitHub")} onclick={() => open(`https://github.com/${repo}/actions`)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
-    </div>
+      {#if repo && !notConnected}<button class="page-icon" title={tr("Start een workflow die met de hand kan starten", "Start a workflow that can be run by hand")} aria-label={tr("Workflow starten", "Run workflow")} onclick={() => (dispatching = true)}><Ico name="play" size={15} /></button>{/if}
+      {#if repo}<button class="page-icon" title={tr("Open de Actions van deze repository op GitHub", "Open this repository's Actions on GitHub")} aria-label={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(`https://github.com/${repo}/actions`)}><Ico name="external-link" size={15} /></button>{/if}
+      <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={() => reload++}><Ico name="refresh-cw" size={15} /></button>
+    </PageHeader>
+    {#if !tabs.length && !notConnected}<div class="head"><RepoPicker {repos} value={repo} onpick={pick} /></div>{/if}
 
     {#if tabs.length && !notConnected}
       <div class="repos">
@@ -341,13 +342,14 @@
 
     {#if notConnected}
       {@render empty(
-        tr("GitHub is nog niet gekoppeld", "GitHub is not connected yet"),
-        tr("Koppel je GitHub-account onder Instellingen › Accounts & koppelingen, dan zie je hier de workflow-runs van je repositories.", "Connect your GitHub account under Settings › Accounts & connections to see your repositories' workflow runs here."),
+        tr("GitHub is nog niet gekoppeld", "GitHub isn't connected yet"),
+        tr("Verbind GitHub in Instellingen om de workflow-runs van een repository hier te volgen.", "Connect GitHub in Settings to follow a repository's workflow runs here."),
         [tr("Koppel GitHub", "Connect GitHub"), openSettings],
+        "user-plus",
       )}
     {:else if !repo}
       {#if reposLoaded}
-        {@render empty(tr("Kies een repository", "Choose a repository"), tr("Kies er een in de lijst hierboven, of typ eigenaar/naam.", "Pick one in the list above, or type owner/name."))}
+        {@render empty(tr("Kies een repository", "Pick a repository"), tr("Kies hierboven een repository om de workflow-runs te zien: CI, promotes, releases.", "Choose a repository above to see its workflow runs: CI, promotes, releases."), undefined, "circle-play")}
       {:else}
         <RunSkeleton />
       {/if}
@@ -418,18 +420,13 @@
   </button>
 {/snippet}
 
-{#snippet empty(title: string, detail: string, action?: [string, () => void])}
-  <div class="empty">
-    <strong>{title}</strong>
-    <span class="muted small">{detail}</span>
-    {#if action}<button class="primary" onclick={action[1]}>{action[0]}</button>{/if}
-  </div>
+{#snippet empty(title: string, detail: string, action?: [string, () => void], symbol = "circle-play")}
+  <EmptyState {symbol} {title} message={detail} action={action ? { title: action[0], run: action[1] } : undefined} />
 {/snippet}
 
 <style>
-  .actions { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; min-width: 0; }
+  .actions { display: flex; flex-direction: column; gap: var(--space-12); height: 100%; min-height: 0; min-width: 0; padding: 0 var(--space-16) var(--space-12) calc(var(--space-24) + var(--space-6)); }
   .head { display: flex; align-items: center; gap: 8px; min-height: 30px; min-width: 0; }
-  .spacer { flex: 1; min-width: 0; }
   .small { font-size: 12px; }
   .mono { font-family: var(--mono); font-size: 11px; }
   .err { color: var(--coral); font-size: 12px; margin: 0; user-select: text; }
@@ -452,6 +449,4 @@
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .name { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-  .empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 8px; }
-  .empty strong { font-size: 15px; }
 </style>

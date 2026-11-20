@@ -29,6 +29,11 @@ pub trait CompanionBackend: Send + Sync {
     async fn sessions(&self) -> Vec<BackendSession>;
     /// Een goedkeuring toestaan of weigeren.
     async fn decide(&self, session: &str, item: &str, allow: bool) -> Result<(), String>;
+    /// Deny with the reason you typed on the phone, so the agent hears why; without one (or a backend that has no
+    /// way to pass it) a plain decision.
+    async fn decide_with_reason(&self, session: &str, item: &str, allow: bool, _reason: Option<&str>) -> Result<(), String> {
+        self.decide(session, item, allow).await
+    }
     /// Een vraag met één onderdeel beantwoorden (een van de opties, of een eigen antwoord als dat mag).
     async fn answer(&self, session: &str, item: &str, text: &str) -> Result<(), String>;
     /// Een bericht van jou aan de agent: meteen als de sessie rust, anders in de wachtrij.

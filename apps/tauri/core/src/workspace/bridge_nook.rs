@@ -187,32 +187,27 @@ pub fn verdict(tool: BridgeTool, caller: &BridgeCaller, nook_action: bool) -> Ve
 
 // MARK: The user's chat apps
 
-/// The chat apps Nook links on this platform, by the name an agent gives them.
-pub const CHAT_APPS: [&str; 1] = ["whatsapp"];
-
 /// `chat_list`, `chat_read` and `chat_send` as the Nook tool they run through `nook_use` and its arguments: the same
-/// tools Nook Chat uses, so a message from an agent goes the same route, checks and approval as one from Nook Chat. On
-/// Windows and Linux Nook links WhatsApp, so these are its tools (the Mac maps them onto `chat_inbox` and `chat_send`,
-/// which cover every chat app it links).
+/// tools Nook Chat uses (`chat_inbox` and `chat_send` over the shared inbox, every chat app alike, as on the Mac), so a
+/// message from an agent goes the same route, checks and approval as one from Nook Chat. The limit is clamped here.
 pub fn chat_use(tool: BridgeTool, arguments: &serde_json::Map<String, Value>) -> Result<(&'static str, Value), String> {
     let text = |key: &str| arguments.get(key).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty());
-    if let Some(app) = text("app") {
-        if !CHAT_APPS.contains(&app.to_lowercase().as_str()) {
-            return Err(format!("Nook links only WhatsApp on this device, not {app}. Leave app out or use whatsapp."));
+    let app = text("app").map(crate::chats::tools::app_id);
+    let with_app = |mut input: Value| {
+        if let Some(app) = &app {
+            input["app"] = json!(app);
         }
-    }
+        input
+    };
     match tool {
         BridgeTool::ChatList => Ok(match text("query") {
-            Some(query) => ("search_whatsapp", json!({"query": query})),
-            None => ("whatsapp_live", json!({})),
+            Some(query) => ("chat_inbox", with_app(json!({"query": query}))),
+            None => ("chat_inbox", with_app(json!({}))),
         }),
         BridgeTool::ChatRead => {
             let chat = text("chat").ok_or("Give the chat's name (a person or group) as chat_list shows it.")?;
-            let mut input = json!({"chat": chat});
-            if let Some(limit) = arguments.get("limit").and_then(Value::as_i64) {
-                input["limit"] = json!(limit);
-            }
-            Ok(("whatsapp_live", input))
+            let limit = crate::chats::tools::clamp_limit(arguments.get("limit").and_then(Value::as_f64));
+            Ok(("chat_inbox", with_app(json!({"chat": chat, "limit": limit}))))
         }
         BridgeTool::ChatSend => {
             let to = text("to").ok_or("Give the chat to send to (to), as chat_list shows it.")?;
@@ -221,7 +216,7 @@ pub fn chat_use(tool: BridgeTool, arguments: &serde_json::Map<String, Value>) ->
             if message.trim().is_empty() {
                 return Err("Give the message to send.".into());
             }
-            Ok(("whatsapp_send", json!({"to": to, "message": message})))
+            Ok(("chat_send", with_app(json!({"to": to, "message": message}))))
         }
         _ => Err("Unknown chat tool.".into()),
     }
@@ -634,25 +629,25 @@ mod tests {
     }
 
     #[test]
-    fn chat_tools_run_nooks_own_whatsapp_tools() {
+    fn chat_tools_run_nooks_own_chat_tools_for_every_app() {
         let args = |v: Value| v.as_object().unwrap().clone();
-        assert_eq!(chat_use(BridgeTool::ChatList, &args(json!({}))).unwrap(), ("whatsapp_live", json!({})));
+        assert_eq!(chat_use(BridgeTool::ChatList, &args(json!({}))).unwrap(), ("chat_inbox", json!({})));
         assert_eq!(
-            chat_use(BridgeTool::ChatList, &args(json!({"query": " pizza ", "app": "WhatsApp"}))).unwrap(),
-            ("search_whatsapp", json!({"query": "pizza"}))
+            chat_use(BridgeTool::ChatList, &args(json!({"query": " pizza ", "app": "Telegram"}))).unwrap(),
+            ("chat_inbox", json!({"query": "pizza", "app": "telegram"}))
         );
         assert_eq!(
-            chat_use(BridgeTool::ChatRead, &args(json!({"chat": "Lisa ", "limit": 5}))).unwrap(),
-            ("whatsapp_live", json!({"chat": "Lisa", "limit": 5}))
+            chat_use(BridgeTool::ChatRead, &args(json!({"chat": "Lisa ", "limit": 500}))).unwrap(),
+            ("chat_inbox", json!({"chat": "Lisa", "limit": 50})),
+            "the limit is clamped"
         );
         assert_eq!(
-            chat_use(BridgeTool::ChatSend, &args(json!({"to": "Lisa", "message": " Hi! "}))).unwrap(),
-            ("whatsapp_send", json!({"to": "Lisa", "message": " Hi! "})),
+            chat_use(BridgeTool::ChatSend, &args(json!({"to": "Lisa", "message": " Hi! ", "app": "WhatsApp"}))).unwrap(),
+            ("chat_send", json!({"to": "Lisa", "message": " Hi! ", "app": "whatsapp"})),
             "the message goes exactly as written"
         );
         assert!(chat_use(BridgeTool::ChatSend, &args(json!({"to": "Lisa", "message": "\n"}))).is_err());
         assert!(chat_use(BridgeTool::ChatRead, &args(json!({"chat": " "}))).is_err());
-        assert!(chat_use(BridgeTool::ChatList, &args(json!({"app": "telegram"}))).is_err(), "only what this device links");
     }
 
     fn info(name: &str, action: bool, source: &str) -> ToolInfo {

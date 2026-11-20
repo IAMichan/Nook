@@ -9,7 +9,7 @@
   import { workspace } from "../../../lib/workspace/store.svelte";
   import UnifiedDiffView from "../UnifiedDiffView.svelte";
 
-  let { run, file = null, onclose }: { run: WorkspaceRun; file?: string | null; onclose: () => void } = $props();
+  let { run, file = null, embedded = false, onclose }: { run: WorkspaceRun; file?: string | null; embedded?: boolean; onclose: () => void } = $props();
 
   let view = $state<GitView | null>(null);
   let quick = $state<QuickView | null>(null);
@@ -222,9 +222,9 @@
   }
 </script>
 
-<div class="changes">
+<div class="changes" class:embedded>
   <div class="top">
-    <strong>{tr("Wijzigingen", "Changes")}</strong>
+    {#if !embedded}<strong>{tr("Wijzigingen", "Changes")}</strong>{/if}
     <span class="faint small">{run.branch ? tr("Op {branch}", "On {branch}", { branch: run.branch }) : ""}{view?.snapshot?.status ? " · " + tr("{n} bestanden", "{n} files", { n: files.length }) : ""}</span>
     <span class="spacer"></span>
     {#if quick?.pullRequest}<button class="ghost" onclick={() => openUrl(quick!.pullRequest!)}>{tr("Bekijk PR", "View PR")}</button>{/if}
@@ -236,7 +236,7 @@
       <button class="ghost" disabled={active || !!busy} title={tr("Zet deze wijzigingen op een nieuwe branch met een eigen pull request.", "Put these changes on a new branch with its own pull request.")} onclick={() => quickClick(other)}>{label(other)}</button>
     {/each}
     <button class="ghost" title={tr("Opnieuw lezen", "Reload")} onclick={() => load(true)}>↻</button>
-    <button class="ghost" onclick={onclose}>{tr("Sluit", "Close")}</button>
+    {#if !embedded}<button class="ghost" onclick={onclose}>{tr("Sluit", "Close")}</button>{/if}
   </div>
   {#if quick && !quick.action && quick.reason}<p class="faint small">{quick.reason}</p>{/if}
   {#if quick?.action && quick.destination && !busy}<p class="faint small">{quick.destination}</p>{/if}

@@ -125,8 +125,7 @@ pub const SHARING_CALL_APPS: [&str; 11] =
 pub const SHARING_WORDS: [&str; 11] =
     ["share", "sharing", "deelt", "delen", "gedeeld", "teilt", "freigabe", "freigeben", "partage", "compartiendo", "compartir"];
 /// Browsers: while a site shares your screen they show a small bar ("meet.google.com is sharing your screen.").
-pub const BROWSERS: [&str; 12] =
-    ["chrome", "chromium", "edge", "brave", "arc", "vivaldi", "opera", "firefox", "librewolf", "floorp", "zen", "epiphany"];
+pub use super::app_catalog::BROWSERS;
 /// The sentence in that bar, in the browser's language.
 pub const BROWSER_SHARING_PHRASES: [&str; 14] = [
     "is sharing",
@@ -177,45 +176,8 @@ pub fn is_sharing_window(window: &Window, count_system_capture: bool) -> bool {
 
 // Meetings
 
-/// Apps you hold calls in, by program name (the exe on Windows, the binary on Linux, a package name for Store apps);
-/// while one of them has the microphone open, you are in a call.
-pub const CALL_APPS: [&str; 16] = [
-    "zoom",
-    "ms-teams",
-    "msteams",
-    "teams",
-    "microsoft.teams",
-    "webex",
-    "ciscocollabhost",
-    "atmgr",
-    "discord",
-    "slack",
-    "skype",
-    "whatsapp",
-    "telegram",
-    "signal",
-    "gather",
-    "around",
-];
-
-fn program(name: &str) -> String {
-    let lower = name.trim().to_lowercase();
-    let file = lower.rsplit(['\\', '/']).next().unwrap_or(&lower).to_string();
-    file.strip_suffix(".exe").map(str::to_string).unwrap_or(file)
-}
-
-/// A call app; helpers and Store packages share its name as a prefix ("ms-teams", "MSTeams_8wekyb3d8bbwe").
-pub fn is_call_app(name: &str) -> bool {
-    let name = program(name);
-    CALL_APPS.iter().any(|app| name.starts_with(app))
-}
-
-/// A browser by program name ("chrome", "msedge", "google-chrome-stable", "firefox").
-pub fn is_browser(name: &str) -> bool {
-    let name = program(name);
-    let bare = name.trim_start_matches("google-").trim_start_matches("ms");
-    BROWSERS.iter().any(|b| bare.starts_with(b))
-}
+/// Call apps and browsers come from the shared catalog (`app_catalog`), so every part of Nook knows the same apps.
+pub use super::app_catalog::{is_browser, is_call_app, CALLS as CALL_APPS};
 
 /// Browser window titles that are a meeting on the web.
 pub const MEETING_SITES: [&str; 11] = [

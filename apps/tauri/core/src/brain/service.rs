@@ -228,7 +228,7 @@ pub fn local_system_prompt(
         "read_note",
         "read_mail",
         "read_file",
-        "read_messages",
+        "chat_inbox",
         "read_whatsapp",
         "read_bear",
         "notion_read_page",
@@ -242,7 +242,7 @@ pub fn local_system_prompt(
         "search_notes",
         "search_mail",
         "search_files",
-        "search_messages",
+        "chat_inbox",
         "search_whatsapp",
         "search_bear",
         "search_things",
@@ -719,6 +719,15 @@ async fn fill_in(
     prompt += &format!("Request: {request}");
     let plan = execute(settings, env, profile, &system, &prompt, "", &[], &[], false, false, &mut tool_runner, on_text).await?;
     Ok(tool_runner.trace.contains(&spec.name).then_some(plan))
+}
+
+/// Proposes steps with these tools without running them (`writeInChat` on the Mac): read tools run in the loop, action
+/// tools become the plan's actions, which only run after the user's click. For the steps suggested from a conversation
+/// (`action_suggestion`).
+pub async fn propose(settings: &Settings, env: &BrainEnv, system: &str, prompt: &str, tools: Vec<LoopTool>, rounds: usize) -> Result<BrainPlan> {
+    let profile = profile_for(settings, env.memory_gb);
+    let mut tool_runner = runner(tools, rounds, 3);
+    execute(settings, env, profile, system, prompt, "", &[], &[], false, false, &mut tool_runner, None).await
 }
 
 /// Eén antwoord zonder tools (plannen, bewijs, reflectie). Met Claude doet een snel model dit kleine werk.

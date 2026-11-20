@@ -116,6 +116,13 @@ impl RunProvider {
                 policies: vec![Ask, AcceptEdits, Bypass],
                 steering: true,
                 native_fork: true,
+                can_fork_from_turn: true,
+                can_rollback_conversation: true,
+                live_settings: true,
+                deny_reason_in_response: true,
+                speed_tiers: true,
+                ultracode: true,
+                echoes_steers: false,
             },
             Self::Codex => ProviderCapabilities {
                 approvals: true,
@@ -128,6 +135,13 @@ impl RunProvider {
                 policies: vec![Ask, AcceptEdits, Bypass],
                 steering: true,
                 native_fork: false,
+                can_fork_from_turn: false,
+                can_rollback_conversation: true,
+                live_settings: false,
+                deny_reason_in_response: false,
+                speed_tiers: true,
+                ultracode: false,
+                echoes_steers: true,
             },
             Self::Gemini => ProviderCapabilities {
                 approvals: true,
@@ -140,6 +154,13 @@ impl RunProvider {
                 policies: vec![Ask, AcceptEdits, Bypass],
                 steering: false,
                 native_fork: false,
+                can_fork_from_turn: false,
+                can_rollback_conversation: false,
+                live_settings: true,
+                deny_reason_in_response: false,
+                speed_tiers: false,
+                ultracode: false,
+                echoes_steers: false,
             },
             Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => ProviderCapabilities {
                 approvals: true,
@@ -152,6 +173,15 @@ impl RunProvider {
                 policies: vec![Ask, AcceptEdits, Bypass],
                 steering: false,
                 native_fork: false,
+                can_fork_from_turn: false,
+                can_rollback_conversation: false,
+                // Antigravity restarts its agent session to switch models, which ends a running prompt.
+                live_settings: self != Self::Antigravity,
+                // Here OpenCode runs over ACP, whose reject outcome has no text (the Mac's `opencode serve` has one).
+                deny_reason_in_response: false,
+                speed_tiers: false,
+                ultracode: false,
+                echoes_steers: false,
             },
         }
     }
@@ -192,6 +222,25 @@ pub struct ProviderCapabilities {
     pub steering: bool,
     /// De agent kan zijn eigen gesprek kopiëren (`--fork-session`).
     pub native_fork: bool,
+    /// The agent can fork its conversation at an earlier turn, not only at its end (Claude Code's
+    /// `--resume-session-at` with `--fork-session`).
+    pub can_fork_from_turn: bool,
+    /// Going back to before a message rolls back the agent's own conversation too (Claude Code and Codex).
+    pub can_rollback_conversation: bool,
+    /// A model, mode or effort picked during a turn reaches the agent at once (Claude Code's control requests, ACP's
+    /// `session/set_model`); otherwise it counts from the next message. Codex's app-server and Antigravity (which
+    /// restarts its session to switch) wait for the next message.
+    pub live_settings: bool,
+    /// A denial's reason goes in the answer to the agent's request (Claude Code's `control_response` message); otherwise
+    /// it goes as a message of its own right after it (`Manager::decide_with_reason`).
+    pub deny_reason_in_response: bool,
+    /// A faster tier of the same model beside the effort: Codex's service tiers, Claude Code's fast mode.
+    pub speed_tiers: bool,
+    /// Claude Code's Ultracode beside the effort; no other agent has the concept.
+    pub ultracode: bool,
+    /// The agent echoes a steered message as yours once it reads it (a Codex app-server `userMessage` item), so a steer
+    /// can show "waiting to be read" until then (`SteerReceipts`).
+    pub echoes_steers: bool,
 }
 
 /// Agent: mag uitvoeren. Plan: alleen lezen en een plan maken, niets wijzigen.
@@ -342,6 +391,8 @@ pub struct TurnUsage {
 pub struct RunCheckpoint {
     pub r#ref: String,
     pub date: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<super::rollback::ConversationMark>,
 }
 
 /// Eén sessie in de werkruimte. Bewaard door `RunStore`, blijft na een herstart.
@@ -398,6 +449,12 @@ pub struct WorkspaceRun {
     pub last_change_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub changed_files: Option<u32>,
+    /// The lines the session's changes add and remove (`git diff --numstat` against its base), for "+120 −8" in the
+    /// Agents list (`AgentListRow.changeCount` on the Mac). `None` until git was read.
+    #[serde(default)]
+    pub lines_added: Option<u64>,
+    #[serde(default)]
+    pub lines_removed: Option<u64>,
     #[serde(default)]
     pub checkpoints: Vec<RunCheckpoint>,
     /// Gestopt op een gebruikslimiet: sinds wanneer, wanneer de limiet weer vrij is, en of hij dan vanzelf verdergaat.
@@ -413,6 +470,12 @@ pub struct WorkspaceRun {
     /// De samenvatting waarmee de volgende beurt begint, na een kopie of een wissel van agent.
     #[serde(default)]
     pub pending_handoff: Option<String>,
+    /// Where the agent's own conversation stands live, so a checkpoint can record it for rollback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<super::rollback::ConversationLog>,
+    /// A conversation rollback waiting for the next turn (Codex `thread/rollback`, Claude `--resume-session-at`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_rollback: Option<super::rollback::PendingRollback>,
 }
 
 impl WorkspaceRun {
@@ -500,6 +563,9 @@ pub struct RunEvent {
     pub output: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<EventState>,
+    /// Undone by going back to before an earlier message: the agent no longer remembers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolled_back: Option<bool>,
 }
 
 impl RunEvent {
@@ -516,6 +582,7 @@ impl RunEvent {
             detail: None,
             output: None,
             state: None,
+            rolled_back: None,
         }
     }
 
@@ -681,9 +748,42 @@ pub fn title_from(task: &str, limit: usize) -> String {
     format!("{cut}…")
 }
 
-/// "nook/fix-login-bug-3fa2": herkenbaar en uniek dankzij een stukje van het id.
+/// The prefix of a branch Nook names when none is set (`WorktreeNaming.defaultBranchPrefix` on the Mac).
+pub const DEFAULT_BRANCH_PREFIX: &str = "nook";
+
+/// The prefix from Settings › Sessions › Worktrees, kept for every place that names a branch (set when the workspace
+/// settings are read or saved).
+static BRANCH_PREFIX: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+/// " Team/Michan " → "team/michan": every path component slugged, without leading, trailing or double slashes; empty
+/// falls back to "nook", so Nook's branches always carry a prefix.
+pub fn normalized_branch_prefix(raw: &str) -> String {
+    let parts: Vec<String> = raw
+        .split('/')
+        .map(str::trim)
+        .filter(|p| p.chars().any(char::is_alphanumeric))
+        .map(|p| slug(p, 32))
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.is_empty() { DEFAULT_BRANCH_PREFIX.to_string() } else { parts.join("/") }
+}
+
+pub fn set_branch_prefix(raw: &str) {
+    *BRANCH_PREFIX.write().unwrap_or_else(|e| e.into_inner()) = normalized_branch_prefix(raw);
+}
+
+fn branch_prefix() -> String {
+    let prefix = BRANCH_PREFIX.read().unwrap_or_else(|e| e.into_inner()).clone();
+    if prefix.is_empty() { DEFAULT_BRANCH_PREFIX.to_string() } else { prefix }
+}
+
+/// "nook/fix-login-bug-3fa2": herkenbaar en uniek dankzij een stukje van het id; the prefix is the one from Settings.
 pub fn branch_name(task: &str, id: Uuid) -> String {
-    format!("nook/{}-{}", slug(task, 32), &id.simple().to_string()[..4])
+    branch_name_with(&branch_prefix(), task, id)
+}
+
+pub fn branch_name_with(prefix: &str, task: &str, id: Uuid) -> String {
+    format!("{}/{}-{}", normalized_branch_prefix(prefix), slug(task, 32), &id.simple().to_string()[..4])
 }
 
 /// Snelle controle zonder git.
@@ -823,12 +923,16 @@ pub(crate) mod tests {
             reviewed_at: None,
             last_change_at: None,
             changed_files: None,
+            lines_added: None,
+            lines_removed: None,
             checkpoints: vec![],
             limited_at: None,
             limit_reset_at: None,
             auto_resume: false,
             effort: None,
             pending_handoff: None,
+            conversation: None,
+            pending_rollback: None,
         }
     }
 
@@ -898,7 +1002,9 @@ pub(crate) mod tests {
             assert!(is_plausible_branch_name(&branch_name(task, Uuid::new_v4())), "{task}");
         }
         let id = Uuid::parse_str("3FA2C1D0-0000-0000-0000-000000000000").unwrap();
-        assert_eq!(branch_name("Add archive button", id), "nook/add-archive-button-3fa2");
+        assert_eq!(branch_name_with("nook", "Add archive button", id), "nook/add-archive-button-3fa2");
+        assert_eq!(branch_name_with(" Team/Michan ", "Fix", id), "team/michan/fix-3fa2");
+        assert_eq!(normalized_branch_prefix("//"), "nook");
         for bad in ["", "-x", "a..b", "a b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "x.lock", "x/", "/x", "@", "a@{b", "x."] {
             assert!(!is_plausible_branch_name(bad), "{bad}");
         }

@@ -49,6 +49,12 @@ pub fn agents_decide(app: AppHandle, id: String, decision: ApprovalDecision) -> 
     crate::agents::decide(&app, &id, decision)
 }
 
+/// "Deny with reason": the agent hears why it may not.
+#[tauri::command]
+pub fn agents_deny(app: AppHandle, id: String, reason: String) -> Res<()> {
+    crate::agents::decide_with_reason(&app, &id, ApprovalDecision::Deny, Some(&reason))
+}
+
 #[tauri::command]
 pub fn agents_answer(app: AppHandle, state: State<'_, AgentsState>, id: String, selections: Vec<Vec<String>>) -> Res<()> {
     if id.starts_with("runq:") {

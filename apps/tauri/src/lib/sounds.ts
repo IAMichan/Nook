@@ -2,10 +2,11 @@
 // Geluiden gaat voor; anders een zacht ingebouwd toontje (zoals Ping, Glass en Basso op de Mac).
 import { services } from "./services";
 import { quiet } from "./quiet.svelte";
+import { nook } from "./state.svelte";
 
 export type SoundName = "attention" | "done" | "error";
 
-const custom = new Map<SoundName, string | null>();
+const custom = new Map<string, string | null>();
 let context: AudioContext | null = null;
 let playing: HTMLAudioElement | null = null;
 
@@ -36,8 +37,16 @@ function synth(name: SoundName) {
 export async function play(name: SoundName, enabled = true) {
   // Silent while you share your screen or sit in a meeting, when you chose so.
   if (!enabled || quiet.silent) return;
-  if (!custom.has(name)) custom.set(name, await services.soundFile(name).catch(() => null));
-  const file = custom.get(name);
+  await playChoice(name, nook.settings?.soundChoices?.[name] ?? "");
+}
+
+/** Plays a moment's sound as `choice` sets it (Settings › Sound & voice): "" is Nook's own (your file first), "file" your
+ *  file, "none" nothing, anything else a system sound. The settings page calls this to let you hear a choice. */
+export async function playChoice(name: SoundName, choice: string) {
+  if (choice === "none") return;
+  const key = `${name}:${choice}`;
+  if (!custom.has(key)) custom.set(key, await services.soundFile(name, choice).catch(() => null));
+  const file = custom.get(key);
   if (file) {
     playing?.pause();
     playing = new Audio(file);

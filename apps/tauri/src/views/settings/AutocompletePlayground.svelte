@@ -183,7 +183,7 @@
   .box { position: relative; margin-top: 12px; }
   .mirror, textarea {
     font: inherit;
-    font-size: 14px;
+    font: var(--text-body);
     line-height: 1.5;
     padding: 10px 12px;
     box-sizing: border-box;
@@ -194,10 +194,10 @@
   .mirror { position: absolute; inset: 0; color: transparent; pointer-events: none; border: 1px solid transparent; overflow: hidden; }
   .ghost { color: var(--text2); opacity: 0.7; }
   textarea { position: relative; background: transparent; resize: vertical; }
-  .picker { display: grid; grid-template-columns: repeat(9, 34px); grid-auto-rows: 34px; gap: 0; margin-top: 8px; background: var(--field); border: 1px solid var(--line); border-radius: 12px; padding: 8px; width: max-content; }
-  .cell { position: relative; font-size: 20px; padding: 0; border: none; background: none; border-radius: 8px; }
+  .picker { display: grid; grid-template-columns: repeat(9, 34px); grid-auto-rows: 34px; gap: 0; margin-top: 8px; background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: 8px; width: max-content; }
+  .cell { position: relative; font: var(--text-heading); padding: 0; border: none; background: none; border-radius: var(--radius-control); }
   .cell.on { background: color-mix(in srgb, var(--iris) 28%, transparent); }
-  .number { position: absolute; right: 3px; bottom: 1px; font-size: 9px; color: var(--text2); }
-  .mono { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; text-align: right; }
-  .prompt { white-space: pre-wrap; font-size: 11px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 260px; overflow: auto; }
+  .number { position: absolute; right: 3px; bottom: 1px; font: var(--text-caption); color: var(--text2); }
+  .mono { font: var(--text-code); white-space: pre-wrap; text-align: right; }
+  .prompt { white-space: pre-wrap; font: var(--text-detail); background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 10px; max-height: 260px; overflow: auto; }
 </style>

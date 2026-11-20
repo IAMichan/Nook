@@ -1,11 +1,13 @@
 <script lang="ts">
+  import Energy from "./Energy.svelte";
   // Settings › Maintenance (`SettingsView+Maintenance` and `UpdateSettingsSection` on the Mac), for Windows and Linux:
   // updates (check, channel, install and what is new), the data folder, caches, exporting and resetting the settings,
   // and the versions. Nook's own setup and the AppImage update themselves; an .msi or .deb links to the release.
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { invoke } from "@tauri-apps/api/core";
+  import { workspaceApi, type WorkspaceSettings } from "../../lib/workspace/api";
   import { api } from "../../lib/api";
   import { nook, relativeTime } from "../../lib/state.svelte";
-  import OnOffSwitch from "../../components/OnOffSwitch.svelte";
   import Segmented from "./Segmented.svelte";
   import { STEPS, startUpdates, updater, updates, type UpdateChannel, type UpdateStep } from "../../lib/updates.svelte";
   import { tr } from "../../lib/i18n.svelte";
@@ -49,6 +51,29 @@
   $effect(() => {
     load();
   });
+
+  // Diagnostics (`settings.maintenance.diagnostics` on the Mac): keeping agent traffic is a workspace setting; the
+  // report is made by the backend (`diagnostics_report`), redacted, and only copied.
+  let ws = $state<WorkspaceSettings | null>(null);
+  $effect(() => {
+    if (desktop) workspaceApi.overview().then((o) => (ws = o.settings)).catch(() => {});
+  });
+  async function setTraffic(on: boolean) {
+    if (!ws) return;
+    ws = { ...ws, keepTraffic: on };
+    await workspaceApi.saveSettings($state.snapshot(ws)).catch((e) => toast.error(tr("Kon het niet bewaren", "Could not save it"), e));
+  }
+  async function copyDiagnostics() {
+    try {
+      await navigator.clipboard.writeText(await invoke<string>("diagnostics_report"));
+      toast.success(tr("Diagnose gekopieerd", "Diagnostics copied"));
+    } catch (e) {
+      toast.error(tr("Kopiëren mislukt", "Could not copy"), e);
+    }
+  }
+  async function showLogs() {
+    await invoke("diagnostics_show_logs").catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e));
+  }
 
   async function openFolder() {
     await maintenance.openDataFolder().catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e));
@@ -108,7 +133,7 @@
   <div class="row">
     <span>{tr("Versie", "Version")}<br /><small class="faint">
       {#if update?.phase === "checking" || update?.checking}{tr("Zoeken naar updates…", "Checking for updates…")}
-      {:else if update?.phase === "upToDate"}{tr("Je hebt de nieuwste versie.", "You have the newest version.")}{#if update.lastChecked} {tr("Gecontroleerd {time}.", "Checked {time}.", { time: relativeTime(update.lastChecked) })}{/if}
+      {:else if update?.phase === "upToDate"}{tr("Je hebt de nieuwste versie.", "You have the newest version.")}{#if update.lastChecked}{" "}{tr("Gecontroleerd {time}.", "Checked {time}.", { time: relativeTime(update.lastChecked) })}{/if}
       {:else if update?.phase === "available" && update.candidate}{tr("Nook {version} staat klaar. Je gegevens en instellingen blijven gewoon staan.", "Nook {version} is ready. Your data and settings stay as they are.", { version: update.candidate.version })}
       {:else if update?.phase === "unavailable" && update.unavailableReason}{update.unavailableReason}
       {:else if !update}{tr("Deze versie werkt zichzelf niet bij. De nieuwste staat op de releasepagina.", "This version does not update itself. The newest one is on the releases page.")}
@@ -117,7 +142,7 @@
     <span class="inline">
       <code>{update?.version || info?.version || nook.info?.version || "–"}</code>
       {#if update && update.phase !== "unavailable"}
-        <button disabled={update.checking || update.phase === "installing"} onclick={checkNow}>{tr("Nu controleren", "Check now")}</button>
+        <button class="small" disabled={update.checking || update.phase === "installing"} onclick={checkNow}>{tr("Nu controleren", "Check now")}</button>
       {:else}
         <button onclick={() => openUrl(LINKS.releases)}>{tr("Releasepagina", "Releases page")}</button>
       {/if}
@@ -183,7 +208,7 @@
   {#if update && update.phase !== "unavailable"}
     <div class="row">
       <span>{tr("Automatisch zoeken", "Check automatically")}<br /><small class="faint">{tr("Een paar keer per uur een kleine vraag aan GitHub. Installeren doe je altijd zelf.", "A small question to GitHub a few times an hour. Installing is always your click.")}</small></span>
-      <OnOffSwitch on={update.autoCheck} label={tr("Automatisch zoeken", "Check automatically")} onchange={(v) => updates.setPrefs({ autoCheck: v })} />
+      <input type="checkbox" role="switch" aria-label={tr("Automatisch zoeken", "Check automatically")} checked={update.autoCheck} onchange={(e) => updates.setPrefs({ autoCheck: e.currentTarget.checked })} />
     </div>
     <div class="row">
       <span>{tr("Kanaal", "Channel")}<br /><small class="faint">{tr("Bèta krijgt nieuwe versies eerder. Nook gaat nooit terug naar een oudere versie.", "Beta gets new versions earlier. Nook never goes back to an older version.")}</small></span>
@@ -195,15 +220,31 @@
     </div>
   {/if}
 </div>
+<Energy />
+{#if desktop}
+  <h3>{tr("Diagnose", "Diagnostics")}</h3>
+  <div class="group">
+    {#if ws}
+      <label class="row">
+        <span>{tr("Agentverkeer bewaren", "Keep agent traffic")}<br /><small>{tr("Bewaart per sessie wat Nook en de agent elkaar sturen (tot 4 MB per proces), om een fout na te spelen. Het bevat je prompts en de antwoorden en blijft op deze computer, in workspace/provider-traffic; omgevingsvariabelen en sleutels worden nooit opgeslagen.", "Keeps, per session, what Nook and the agent send each other (up to 4 MB per process), to replay a bug. It holds your prompts and the answers and stays on this computer, in workspace/provider-traffic; environment variables and keys are never written.")}</small></span>
+        <input type="checkbox" role="switch" checked={!!ws.keepTraffic} onchange={(e) => setTraffic(e.currentTarget.checked)} />
+      </label>
+    {/if}
+    <div class="row">
+      <span>{tr("Diagnose exporteren", "Export diagnostics")}<br /><small>{tr("Kopieert versies, instellingen en het logboek van het afgelopen halfuur, zonder mailadressen, sleutels, telefoonnummers of je naam in paden. Er wordt niets verstuurd.", "Copies versions, set-up facts and the log of the last half hour, without mail addresses, keys, phone numbers or your name in paths. Nothing is sent.")}</small></span>
+      <span class="inline"><button class="small" onclick={showLogs}>{tr("Logbestanden tonen", "Show log files")}</button><button class="small" onclick={copyDiagnostics}>{tr("Diagnose kopiëren", "Copy diagnostics")}</button></span>
+    </div>
+  </div>
+{/if}
 <h3>{tr("Gegevens", "Data")}</h3>
 <div class="group">
   <div class="row">
     <span>{tr("Gegevensmap", "Data folder")}<br /><small class="faint path">{info?.dataFolder ?? ""}</small></span>
-    {#if desktop}<button onclick={openFolder}>{tr("Openen", "Open")}</button>{/if}
+    {#if desktop}<button class="small" onclick={openFolder}>{tr("Openen", "Open")}</button>{/if}
   </div>
   <div class="row">
     <span>{tr("Caches", "Caches")}<br /><small class="faint">{tr("Iconen van diensten en korte geluidsbestanden. Nook haalt ze zelf weer op als het nodig is.", "Service icons and short-lived audio files. Nook fetches them again when needed.")}</small></span>
-    <span class="inline"><span class="faint">{info ? readableSize(info.cacheBytes) : ""}</span><button disabled={!info || info.cacheBytes === 0} onclick={clearCaches}>{tr("Legen", "Clear")}</button></span>
+    <span class="inline"><span class="faint">{info?.cacheBytes != null ? readableSize(info.cacheBytes) : ""}</span><button class="small" disabled={!info?.cacheBytes} onclick={clearCaches}>{tr("Legen", "Clear")}</button></span>
   </div>
 </div>
 <h3>{tr("Instellingen", "Settings")}</h3>
@@ -211,7 +252,7 @@
   {#if desktop}
     <div class="row">
       <span>{tr("Exporteren", "Export")}<br /><small class="faint">{tr("Alle instellingen als één bestand. Sleutels en wachtwoorden staan er niet in: die blijven in de beveiligde opslag van je computer.", "All settings as one file. Keys and passwords are not in it: they stay in your computer's secure storage.")}</small></span>
-      <button onclick={exportSettings}>{tr("Exporteren…", "Export…")}</button>
+      <button class="small" onclick={exportSettings}>{tr("Exporteren…", "Export…")}</button>
     </div>
   {/if}
   <div class="row">
@@ -222,19 +263,19 @@
         <button class="danger" onclick={reset}>{tr("Terugzetten", "Restore")}</button>
       </span>
     {:else}
-      <button onclick={() => (confirmReset = true)}>{tr("Terugzetten…", "Restore…")}</button>
+      <button class="small" onclick={() => (confirmReset = true)}>{tr("Terugzetten…", "Restore…")}</button>
     {/if}
   </div>
 </div>
 <h3>{tr("Versies", "Versions")}</h3>
 <div class="group">
   <pre class="versions">{versions}</pre>
-  <div class="row"><span class="faint">{tr("Handig om mee te sturen als je een probleem meldt.", "Useful to include when you report a problem.")}</span><button onclick={copyVersions}>{copied ? tr("Gekopieerd", "Copied") : tr("Kopiëren", "Copy")}</button></div>
+  <div class="row"><span class="faint">{tr("Handig om mee te sturen als je een probleem meldt.", "Useful to include when you report a problem.")}</span><button class="small" onclick={copyVersions}>{copied ? tr("Gekopieerd", "Copied") : tr("Kopiëren", "Copy")}</button></div>
 </div>
 
 <style>
-  small { font: var(--text-detail); color: var(--text3); display: inline-block; max-width: 480px; }
-  .path { font: var(--text-code); font-size: 11.5px; word-break: break-all; user-select: text; }
+  small { font: var(--text-detail); line-height: 1.3; color: var(--text2); display: inline-block; }
+  .path { font: var(--text-code); word-break: break-all; user-select: text; }
   code { font: var(--text-code); color: var(--text2); }
   ul { margin: var(--space-8) 0 0; padding-left: var(--space-16); font: var(--text-detail); color: var(--text2); }
   .steps { justify-content: flex-start; gap: var(--space-12); }

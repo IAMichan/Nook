@@ -48,6 +48,33 @@ impl BrainSelection {
     }
 }
 
+/// Nook's face (Settings › Appearance › Style and Face and finish, `NookLook` on the Mac): eyes "round", "bars" or
+/// "dots"; mouth "expressive", "line" or "none"; lit like a ball; a soft glow around him; blushing when petted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NookLook {
+    pub eyes: String,
+    pub mouth: String,
+    pub gloss: bool,
+    pub glow: bool,
+    pub cheeks: bool,
+}
+
+impl Default for NookLook {
+    /// The classic look Nook always had.
+    fn default() -> Self {
+        Self { eyes: "bars".into(), mouth: "none".into(), gloss: true, glow: true, cheeks: true }
+    }
+}
+
+/// Colors set by hand over a theme, per appearance: token name ("canvas", "accent", …) to "#rrggbb".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColorOverrides {
+    pub dark: BTreeMap<String, String>,
+    pub light: BTreeMap<String, String>,
+}
+
 /// Alle instellingen, als één JSON-bestand in de gegevensmap. Namen gelijk aan de `UserDefaults`-sleutels op de Mac,
 /// zodat een export van de ene naar de andere te lezen is. Onbekende of ontbrekende velden krijgen hun standaard.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -73,11 +100,27 @@ pub struct Settings {
     pub accent_hex: u32,
     pub hide_when_idle: bool,
     pub panel_large: bool,
+    /// Quitting from the tray asks first while a Workspace session is still at work (Settings › General ›
+    /// Confirmations; `nook.quit.confirmWorking` on the Mac). On by default.
+    pub confirm_quit: bool,
+    /// The bar at the top of the screen shows (`showNotch` on the Mac); off, Nook stays out of sight until a shortcut or
+    /// the tray opens him, and goes again when he closes. On by default.
+    pub show_bar: bool,
+    /// The main window opens every time Nook starts, in front when you started Nook and behind your app at login
+    /// (Settings › General › Bar & windows, `openWindowAtLaunch` on the Mac). On by default.
+    pub open_window_at_launch: bool,
     /// How large the bar's notification is when an agent (terminal or Workspace) finishes, fails or waits on you:
     /// "detailed" (a card with the summary and what changed), "compact" (one slim line in the bar) or "system" (a system
     /// notification, with Allow and Deny on a permission request; `nook_core::services::toast`).
     pub agent_notice: String,
+    /// How the other sources show, which apps may notify, and quiet hours (Settings › Notifications,
+    /// `services::notice_rules`). The agents' style is `agent_notice` (detailed = card, compact = one line).
+    pub notice_rules: crate::services::notice_rules::NoticeRules,
     pub sounds: bool,
+    /// Which sound each moment plays (Settings › Notifications › Sound & voice, `soundChoices` on the Mac), by
+    /// `NookSound` name: missing or "" is Nook's own (your file in the Sounds folder first), "none" is silent, any
+    /// other value the name of a system sound (`services::sounds::system_sounds`).
+    pub sound_choices: BTreeMap<String, String>,
     pub speak_answers: bool,
     pub wake_word: bool,
     pub web_search: bool,
@@ -140,6 +183,32 @@ pub struct Settings {
     pub theme: String,
     /// How much room text and rows get (`NookDensity` on the Mac): "compact", "comfortable" or "spacious".
     pub density: String,
+    /// The theme shown in dark and in light (Settings › Appearance › Theme, `darkThemeID`/`lightThemeID` on the Mac):
+    /// a built-in id ("nook", "warm", "mono", "midnight", "paper", "contrast") or an imported theme's id.
+    pub dark_theme: String,
+    pub light_theme: String,
+    /// VS Code themes you imported, as the window draws them (`lib/palette.ts`): id, name, and a palette for dark and/or
+    /// light. Kept as JSON; only the main window reads it.
+    pub custom_themes: Vec<serde_json::Value>,
+    /// Colors set one by one over the chosen themes (Settings › Appearance › Colors): per appearance, a token and its
+    /// color ("#rrggbb").
+    pub color_overrides: ColorOverrides,
+    /// The colors of added and removed lines: "redGreen" or "blueOrange" (for red-green color blindness).
+    pub diff_colors: String,
+    /// `$…$`, `$$…$$` and math blocks are typeset with KaTeX (bundled, offline); off shows their source.
+    pub render_math: bool,
+    /// Markdown shows its style in the composer as you type (bold, italic, code, headings, lists); what is sent stays
+    /// plain Markdown (`richComposer` on the Mac).
+    pub rich_composer: bool,
+    /// Nook reads the newest messages of an open conversation and offers above the field what it can do for them
+    /// (`suggestChatActions` on the Mac); nothing runs until you click Do it.
+    pub suggest_chat_actions: bool,
+    /// The model of the brain's service that looks for those suggestions; empty is the brain's own model.
+    pub action_suggestion_model: String,
+    /// Nook's face (`NookLook`).
+    pub nook_look: NookLook,
+    /// Nook as a buddy: the small moments (a hop hello, waking up, a giggle after three pokes, a blush when petted).
+    pub buddy_moments: bool,
     /// The default answer style (`ResponseStyle` on the Mac, Settings › Instructions); see `crate::instructions`.
     pub answer_style: String,
     /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
@@ -193,8 +262,13 @@ impl Default for Settings {
             accent_hex: 0xF4_F3_F7,
             hide_when_idle: false,
             panel_large: false,
+            confirm_quit: true,
+            show_bar: true,
+            open_window_at_launch: true,
             agent_notice: "detailed".into(),
+            notice_rules: Default::default(),
             sounds: true,
+            sound_choices: BTreeMap::new(),
             speak_answers: false,
             wake_word: false,
             web_search: true,
@@ -230,6 +304,17 @@ impl Default for Settings {
             main_window: None,
             theme: "dark".into(),
             density: "comfortable".into(),
+            dark_theme: "nook".into(),
+            light_theme: "nook".into(),
+            custom_themes: Vec::new(),
+            color_overrides: ColorOverrides::default(),
+            diff_colors: "redGreen".into(),
+            render_math: true,
+            rich_composer: true,
+            suggest_chat_actions: true,
+            action_suggestion_model: String::new(),
+            nook_look: NookLook::default(),
+            buddy_moments: true,
             answer_style: "standard".into(),
             instructions: String::new(),
         }

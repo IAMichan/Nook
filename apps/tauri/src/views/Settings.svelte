@@ -4,6 +4,7 @@
   // with where you are (Settings › group › page), the page's name, and for a page with several subjects the tab bar
   // between them (`SettingsPartTabs`). The layout is `lib/settings-pages.ts`; what each subject shows is in `views`.
   import { tick, type Component } from "svelte";
+  import { leaveSettings } from "../lib/shell-routes";
   import { events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import { tr } from "../lib/i18n.svelte";
@@ -12,11 +13,20 @@
     groupTitle, pageTitle, sectionTitle, sectionTrail, settingsGroup, settingsGroups, settingsHost, settingsPages, settingsParts,
     settingsSection, settingsSections, type SettingsSectionId,
   } from "../lib/settings-pages";
-  import Icon from "../components/Icon.svelte";
+  import Ico from "../components/ui/Ico.svelte";
+  import CountBadge from "../components/ui/CountBadge.svelte";
+  import ConfirmedButton from "../components/ui/ConfirmedButton.svelte";
+  import { toast } from "../lib/toast.svelte";
+  import { ACCENTS } from "../lib/theme";
+  import { LOOK_PRESETS } from "../lib/types";
+  import { loadAgentsView, onAgentsView, saveAgentsView } from "../lib/agents-view";
+  import { attention } from "./settings/attention.svelte";
+  import { pageSubtitle, sectionSubtitle, sectionInfo } from "./settings/intro";
   import "./settings/settings.css";
   import SettingsPartTabs from "./settings/SettingsPartTabs.svelte";
   import Overview from "./settings/Overview.svelte";
   import General from "./settings/General.svelte";
+  import Notch from "./settings/Notch.svelte";
   import Brain from "./settings/Brain.svelte";
   import Memory from "./settings/Memory.svelte";
   import Privacy from "./settings/Privacy.svelte";
@@ -36,8 +46,10 @@
   import Instructions from "./settings/Instructions.svelte";
   import Archive from "./settings/Archive.svelte";
   import Maintenance from "./settings/Maintenance.svelte";
+  import Projects from "./settings/Projects.svelte";
+  import NoticeApps from "./settings/NoticeApps.svelte";
+  import PullRequests from "./settings/PullRequests.svelte";
 
-  type IconName = "home" | "settings" | "voice" | "gamepad" | "brain" | "sparkle" | "memory" | "pencil" | "terminal" | "link" | "phone" | "hand" | "note" | "palette" | "keyboard" | "message" | "archive" | "wrench" | "bell" | "tasks" | "calendar" | "chat";
 
   // What each subject shows: a page component, with the part of it this subject is.
   interface Subject { component: Component<any>; props?: Record<string, unknown>; when?: () => boolean }
@@ -47,9 +59,10 @@
   const subjects: Record<SettingsSectionId, Subject> = {
     start: { component: Overview },
     general: { component: General },
-    notch: { component: Voice, props: { part: "quiet" }, when: desktop },
+    notch: { component: Notch, when: desktop },
     appearance: { component: Appearance },
     notifications: { component: Voice, props: { part: "notices" }, when: desktop },
+    notificationApps: { component: NoticeApps, when: desktop },
     sound: { component: Voice, props: { part: "sound" } },
     shortcuts: { component: Shortcuts },
     games: { component: GamesSettings },
@@ -65,9 +78,13 @@
     dictation: { component: Voice, props: { part: "dictation" }, when: () => !!(caps()?.microphone || caps()?.flow) },
     agents: { component: AgentsSettings },
     usage: { component: AgentsUsage, when: localAgents },
-    sessions: { component: AgentsWorkspace, when: localAgents },
+    sessions: { component: AgentsWorkspace, props: { part: "sessions" }, when: localAgents },
+    worktrees: { component: AgentsWorkspace, props: { part: "worktrees" }, when: localAgents },
+    openIn: { component: AgentsWorkspace, props: { part: "openIn" }, when: localAgents },
     archive: { component: Archive },
     automation: { component: AgentsAutomation, when: localAgents },
+    projects: { component: Projects, when: localAgents },
+    pullRequests: { component: PullRequests },
     chats: { component: Accounts, props: { part: "chats" } },
     connections: { component: Accounts, props: { part: "services" } },
     iphone: { component: Companion, when: desktop },
@@ -75,11 +92,15 @@
     maintenance: { component: Maintenance },
     about: { component: About },
   };
-  const icons: Partial<Record<SettingsSectionId, IconName>> = {
-    start: "home", general: "settings", appearance: "palette", notifications: "bell", shortcuts: "keyboard", games: "gamepad",
-    brain: "brain", assistant: "sparkle", autocomplete: "pencil",
-    agents: "terminal", sessions: "tasks", automation: "calendar",
-    chats: "chat", connections: "link", iphone: "phone", privacy: "hand", maintenance: "wrench",
+  // The line icon in front of each page in the sidebar and on its tab, the Mac's `SettingsSection.sidebarSymbol` drawn
+  // with the Lucide icon `NookIcon` maps it to.
+  const icons: Record<SettingsSectionId, string> = {
+    start: "house", general: "settings", notch: "laptop", appearance: "palette", notifications: "bell", notificationApps: "bell-dot", sound: "volume-2",
+    shortcuts: "keyboard", games: "gamepad-2", brain: "brain", assistant: "sparkles", memory: "library", instructions: "list-checks",
+    autocomplete: "text-cursor", autocompleteApps: "layout-grid", autocompleteStyle: "type", autocompletePlayground: "text-cursor-input",
+    autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", usage: "chart-column", sessions: "messages-square",
+    worktrees: "folder", openIn: "external-link", archive: "archive", automation: "calendar-clock", projects: "folder-cog", pullRequests: "git-branch", chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone",
+    privacy: "hand", maintenance: "wrench", about: "info",
   };
 
   const shown = (id: SettingsSectionId) => subjects[id].when?.() ?? true;
@@ -120,6 +141,8 @@
     active = 0;
   });
 
+  $effect(() => attention.refresh());
+
   async function open(id: SettingsSectionId) {
     section = id;
     query = "";
@@ -143,6 +166,35 @@
     e.preventDefault();
     searchField?.focus();
   }
+
+  // "Restore defaults" in the bar (`SettingsRestore`): for Appearance, its look back to how Nook ships. General has
+  // nothing of its own to restore here (the languages are yours, not a default), so only Appearance shows it.
+  // Imported themes stay: they are yours, not a default (as on the Mac).
+  const appearanceChanged = $derived(!!nook.settings && (nook.settings.theme !== "dark" || nook.settings.accentHex !== ACCENTS[0] || nook.settings.density !== "comfortable"
+    || (nook.settings.darkTheme ?? "nook") !== "nook" || (nook.settings.lightTheme ?? "nook") !== "nook" || (nook.settings.diffColors ?? "redGreen") !== "redGreen"
+    || Object.keys(nook.settings.colorOverrides?.dark ?? {}).length > 0 || Object.keys(nook.settings.colorOverrides?.light ?? {}).length > 0
+    || JSON.stringify(nook.settings.nookLook ?? LOOK_PRESETS[1].look) !== JSON.stringify(LOOK_PRESETS[1].look)));
+  // General's own settings (`GeneralListAndConfirmations`): the session list's layout and asking before quitting; the
+  // languages are yours, not a default.
+  let listView = $state(loadAgentsView());
+  $effect(() => onAgentsView((v) => (listView = v)));
+  const generalChanged = $derived(listView.projectFolders || !listView.showWorking || nook.settings?.confirmQuit === false);
+  async function restoreGeneral() {
+    saveAgentsView({ projectFolders: false, showWorking: true });
+    await nook.saveSettings({ confirmQuit: true });
+    toast.success(tr("Standaardwaarden hersteld", "Defaults restored"));
+  }
+  const restore = $derived(host === "appearance" ? { changed: appearanceChanged, run: restoreAppearance } : host === "general" ? { changed: generalChanged, run: restoreGeneral } : null);
+
+  async function restoreAppearance() {
+    await nook.saveSettings({ theme: "dark", accentHex: ACCENTS[0], density: "comfortable", darkTheme: "nook", lightTheme: "nook", diffColors: "redGreen", colorOverrides: { dark: {}, light: {} }, nookLook: { ...LOOK_PRESETS[1].look } });
+    toast.success(tr("Standaardwaarden hersteld", "Defaults restored"));
+  }
+
+  /// Back to the page Settings was opened from (`Main.svelte` keeps it).
+  function leave() {
+    leaveSettings();
+  }
 </script>
 
 <svelte:window onkeydown={windowKeys} />
@@ -150,11 +202,18 @@
 {#if nook.settings}
   <div class="settings">
     <nav aria-label={tr("Instellingen", "Settings")}>
+      <!-- Settings is a window of its own on the Mac, its sidebar under the traffic lights. Here it takes the whole main
+           window, and that top row leads back to where you were (Escape too). -->
+      <div class="settings-head" data-tauri-drag-region>
+        <button class="settings-back" onclick={leave} title={tr("Terug (Esc)", "Back (Esc)")}><Ico name="chevron-left" size={14} /><span>{tr("Terug", "Back")}</span></button>
+      </div>
       <div class="settings-search">
-        <Icon name="search" size={14} />
-        <input bind:this={searchField} bind:value={query} onkeydown={searchKeys} placeholder={tr("Zoek in de instellingen", "Search settings")}
-          aria-label={tr("Zoek in de instellingen", "Search settings")} />
-        {#if !query}<kbd>/</kbd>{/if}
+        <Ico name="search" size={13} />
+        <input bind:this={searchField} bind:value={query} onkeydown={searchKeys} placeholder={tr("Zoek in alle instellingen", "Search all settings")}
+          aria-label={tr("Zoek in alle instellingen", "Search all settings")} />
+        {#if query}
+          <button class="clear" onclick={() => { query = ""; searchField?.focus(); }} aria-label={tr("Wissen", "Clear")}><Ico name="circle-x" size={14} /></button>
+        {:else}<kbd>/</kbd>{/if}
       </div>
       <div class="pages">
         {#if searching}
@@ -163,8 +222,8 @@
           {/if}
           {#each hits as id, i (id)}
             <button class="navrow" class:on={i === active} aria-current={i === active ? "true" : undefined} onclick={() => open(id)}>
-              <span class="mark"><Icon name={icons[settingsHost(id)] ?? "settings"} size={15} /></span>
-              <span class="label"><span>{sectionTitle(id)}</span><span class="detail">{[groupTitle(settingsGroup(id)), settingsHost(id) === id ? null : pageTitle(settingsHost(id))].filter(Boolean).join(" › ") || tr("Instellingen", "Settings")}</span></span>
+              <span class="mark"><Ico name={icons[id]} size={15} /></span>
+              <span class="label"><span>{sectionTitle(id)}</span><span class="detail">{sectionTrail(id)}</span></span>
             </button>
           {/each}
         {:else}
@@ -174,9 +233,11 @@
               <div class="group-rows">
                 {#if groupTitle(g)}<div class="heading">{groupTitle(g)}</div>{/if}
                 {#each rows as p (p.page)}
+                  {@const badge = p.page === "start" ? attention.items.length : 0}
                   <button class="navrow" class:on={host === p.page} aria-current={host === p.page ? "page" : undefined} onclick={() => open(visibleParts(p.page)[0])}>
-                    <span class="mark"><Icon name={icons[p.page] ?? "settings"} size={15} /></span>
+                    <span class="mark"><Ico name={icons[p.page]} size={15} /></span>
                     <span class="label"><span>{pageTitle(p.page)}</span></span>
+                    <CountBadge count={badge} />
                   </button>
                 {/each}
               </div>
@@ -186,19 +247,32 @@
       </div>
     </nav>
     <div class="main-col">
-      <div class="crumbs" aria-label={tr("Waar je bent", "Where you are")}>
+      <!-- The bar over the page (`SettingsPageBar`): where you are, Settings › page. -->
+      <div class="crumbs" aria-label={tr("Waar je bent", "Where you are")} data-tauri-drag-region>
         <span class="faint">{tr("Instellingen", "Settings")}</span>
-        {#if groupTitle(settingsGroup(current))}
-          <span class="chev"><Icon name="chevron-right" size={11} /></span>
-          <span class="faint">{groupTitle(settingsGroup(current))}</span>
-        {/if}
-        <span class="chev"><Icon name="chevron-right" size={11} /></span>
+        <span class="chev"><Ico name="chevron-right" size={10} stroke={2.5} /></span>
         <span class="here" title={sectionTrail(current)}>{pageTitle(host)}</span>
+        {#if restore}
+          <span class="spacer"></span>
+          <ConfirmedButton class="restore" question={tr("De standaardwaarden van {page} herstellen?", "Restore the defaults of {page}?", { page: pageTitle(host) })}
+            confirmTitle={tr("Standaardwaarden herstellen", "Restore defaults")} disabled={!restore.changed} onconfirm={restore.run}>
+            <Ico name="rotate-ccw" size={12} /><span>{tr("Standaardwaarden herstellen", "Restore defaults")}</span>
+          </ConfirmedButton>
+        {/if}
       </div>
       <div class="pane" bind:this={pane}>
         <div class="page">
-          <h2>{pageTitle(host)}</h2>
-          {#if parts.length > 1}<SettingsPartTabs {parts} selected={current} onselect={open} />{/if}
+          <!-- The top of every page (`SettingsPageIntro`): its name, one line on what it holds, the tabs of its subjects
+               with a line on the one shown, and for a few subjects how they treat your data. -->
+          <header class="intro">
+            <h2>{pageTitle(host)}</h2>
+            <p class="lead">{pageSubtitle(host, parts.length > 1)}</p>
+            {#if parts.length > 1}
+              <SettingsPartTabs {parts} selected={current} onselect={open} icon={(id) => icons[id]} />
+              {#if current !== host}<p class="part-lead">{sectionSubtitle(current)}</p>{/if}
+            {/if}
+            {#if sectionInfo(current)}<p class="info">{sectionInfo(current)}</p>{/if}
+          </header>
           {#key current}
             {#if current === "start"}<Overview onopen={open} />{:else}<Current {...subjects[current].props ?? {}} />{/if}
           {/key}

@@ -3,6 +3,7 @@
   // hoe ze gaan: verzegeld via de relay (Nook op Android altijd), of met je eigen Apple-sleutel rechtstreeks naar Apple.
   import { companion, type CompanionInfo, type PushKind, type PushRoute, type PushSettings } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
+  import Segmented from "./Segmented.svelte";
 
   let { info, onchange }: { info: CompanionInfo; onchange: (i: CompanionInfo) => void } = $props();
   const push = $derived(info.push!);
@@ -24,6 +25,10 @@
     ["finished", tr("Sessie klaar", "Session done")],
     ["failed", tr("Sessie mislukt", "Session failed")],
     ["limited", tr("Limiet bereikt", "Limit reached")],
+  ]);
+  const routes = $derived([
+    { value: "relay" as PushRoute, label: tr("Nooks relay", "Nook's relay") },
+    { value: "own" as PushRoute, label: tr("Mijn eigen APNs-sleutel", "My own APNs key") },
   ]);
   const hours = Array.from({ length: 24 }, (_, h) => h);
 
@@ -104,13 +109,10 @@
 {#if s.enabled}
   <h3>{tr("Versturen via", "Send through")}</h3>
   <div class="group">
-    <label class="row">
+    <div class="row">
       <span>{tr("Versturen via", "Send through")}</span>
-      <select value={push.route} onchange={async (e) => onchange(await companion.setPushRoute(e.currentTarget.value as PushRoute))}>
-        <option value="relay">{tr("Nooks relay", "Nook's relay")}</option>
-        <option value="own">{tr("Mijn eigen APNs-sleutel", "My own APNs key")}</option>
-      </select>
-    </label>
+      <Segmented options={routes} value={push.route} label={tr("Versturen via", "Send through")} onchange={async (v) => onchange(await companion.setPushRoute(v))} />
+    </div>
     {#if push.route === "relay"}
       <p class="faint note">
         {tr(
@@ -122,7 +124,7 @@
         <p class="err small">{tr("Er is nog geen relay in gebruik. Zet hierboven bij Altijd bereikbaar een relay aan, of gebruik je eigen APNs-sleutel.", "No relay is in use yet. Turn on a relay under Always reachable above, or use your own APNs key.")}</p>
       {/if}
       <div class="row">
-        <button disabled={!push.relayActive || !info.devices.some((d) => d.push) || testing} onclick={test}>{tr("Stuur testmelding", "Send a test notification")}</button>
+        <button class="small" disabled={!push.relayActive || !info.devices.some((d) => d.push) || testing} onclick={test}>{tr("Stuur testmelding", "Send a test notification")}</button>
       </div>
       {#if testResult ?? push.lastResult}<p class="faint note">{testResult ?? push.lastResult}</p>{/if}
     {:else}
@@ -155,14 +157,14 @@
       <span class="inline">
         {#if push.hasKey}
           <span class="muted">✓ {tr("Sleutel bewaard", "Key saved")}</span>
-          <button onclick={async () => onchange(await companion.removeApnsKey())}>{tr("Verwijder", "Remove")}</button>
+          <button class="small" onclick={async () => onchange(await companion.removeApnsKey())}>{tr("Verwijder", "Remove")}</button>
         {:else}
           <label class="file">
             {tr("Importeer .p8-sleutel", "Import .p8 key")}
             <input type="file" accept=".p8,application/x-pem-file,text/plain" onchange={importKey} />
           </label>
         {/if}
-        <button disabled={!push.canPush || !info.devices.some((d) => d.push) || testing} onclick={test}>{tr("Stuur testmelding", "Send a test notification")}</button>
+        <button class="small" disabled={!push.canPush || !info.devices.some((d) => d.push) || testing} onclick={test}>{tr("Stuur testmelding", "Send a test notification")}</button>
       </span>
     </div>
     {#if keyProblem}<p class="err">{keyProblem}</p>{/if}
@@ -173,8 +175,8 @@
 
 <style>
   .sub { padding-left: 14px; }
-  .small { font-size: 11px; }
-  .file { position: relative; overflow: hidden; display: inline-block; background: var(--smoke); border: 1px solid var(--line2); border-radius: 9px; padding: 6px 12px; cursor: pointer; }
+  .small { font: var(--text-detail); line-height: 1.3; }
+  .file { position: relative; overflow: hidden; display: inline-block; background: var(--smoke); border: 1px solid var(--line2); border-radius: var(--radius-control); padding: 6px 12px; cursor: pointer; }
   .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .inline input { width: 170px; }
 </style>

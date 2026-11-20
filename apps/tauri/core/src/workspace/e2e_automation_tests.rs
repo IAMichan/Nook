@@ -135,3 +135,34 @@ async fn a_session_is_handed_to_another_agent_and_back() {
     assert!(run.pending_handoff.as_deref().is_none_or(|t| !t.contains("- User: Fix the login")));
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_forks_natively_or_from_a_summary() {
+    let root = std::env::temp_dir().join(format!("nook-fork-{}", Uuid::new_v4()));
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let manager = manager(&root);
+    let config = NewRunConfig { task: "Fix the login".into(), project_path: project.to_string_lossy().into(), ..Default::default() };
+    let id = manager.start(config, false).unwrap();
+    assert!(manager.fork(id, None).is_err(), "not while it works");
+    assert!(manager.wait_idle(id, Duration::from_secs(10)).await);
+
+    // The whole conversation: Claude Code copies its own (`--fork-session` on the first turn).
+    let whole = manager.fork(id, None).unwrap();
+    let run = manager.run(whole).unwrap();
+    assert_eq!(run.provider_session_id.as_deref(), Some("fake-1"));
+    assert!(run.pending_handoff.is_none());
+    assert!(run.title.starts_with("Fork of"));
+    assert!(run.worktree_path.is_none() && run.checkpoints.is_empty());
+
+    // Up to before the first message: nothing of the agent's own conversation, a summary of what stays.
+    let events = manager.timeline(id);
+    let answer = events.iter().position(|e| e.kind == EventKind::Assistant).unwrap();
+    let early = manager.fork(id, Some(answer)).unwrap();
+    let run = manager.run(early).unwrap();
+    assert_eq!(run.provider_session_id, None);
+    let summary = run.pending_handoff.unwrap();
+    assert!(summary.contains("- User: Fix the login"));
+    assert!(!summary.contains("Done here."));
+    let _ = std::fs::remove_dir_all(root);
+}

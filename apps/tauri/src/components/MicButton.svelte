@@ -4,10 +4,11 @@
   import { nook } from "../lib/state.svelte";
   import { listening } from "../lib/listening.svelte";
   import Icon from "./Icon.svelte";
+  let { size = 16 }: { size?: number } = $props();
 </script>
 
 {#if nook.info?.capabilities.microphone}
-  <button class="ghost mic" class:on={listening.active} aria-pressed={listening.active} title={tr("Praat met Nook", "Talk to Nook")} aria-label={tr("Praat met Nook", "Talk to Nook")} onclick={() => listening.toggle()}><Icon name="mic" size={18} /></button>
+  <button class="ghost mic" class:on={listening.active} aria-pressed={listening.active} title={tr("Praat met Nook", "Talk to Nook")} aria-label={tr("Praat met Nook", "Talk to Nook")} onclick={() => listening.toggle()}><Icon name="mic" {size} /></button>
 {/if}
 
 <style>

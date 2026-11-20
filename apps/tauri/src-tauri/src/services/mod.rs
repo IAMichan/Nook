@@ -5,6 +5,7 @@
 pub mod autocomplete;
 pub mod energy;
 pub mod flow;
+pub mod lyrics;
 pub mod media;
 pub mod notes;
 pub mod part;
@@ -84,7 +85,11 @@ pub fn setup(app: &AppHandle) {
         platform,
         prefs: RwLock::new(ServicePrefs::load()),
         live: Mutex::new(LiveScreen::default()),
-        think: Mutex::new(ThinkAlong::default()),
+        // The backoff after offers you declined lasts across restarts (`ThinkAlongBackoff` on the Mac).
+        think: Mutex::new(ThinkAlong::resuming(
+            nook_core::services::think_along::Backoff::load(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
+        )),
         nudge: Mutex::new(None),
         flow: Mutex::new(FlowStore::open_default()),
         notes: Mutex::new(NoteStore::open_default()),

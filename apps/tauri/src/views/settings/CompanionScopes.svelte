@@ -27,6 +27,6 @@
 {#each COMPANION_SCOPES as scope (scope)}
   <label class="row">
     <span>{label(scope)}</span>
-    <input type="checkbox" checked={scopes.includes(scope)} onchange={(e) => onchange(withScope(scopes, scope, e.currentTarget.checked))} />
+    <input type="checkbox" role="switch" checked={scopes.includes(scope)} onchange={(e) => onchange(withScope(scopes, scope, e.currentTarget.checked))} />
   </label>
 {/each}

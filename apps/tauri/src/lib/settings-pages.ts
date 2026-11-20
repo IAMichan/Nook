@@ -5,7 +5,7 @@
 // the subjects of one page.
 //
 // The Tauri app follows the Mac's pages and names. Where it has no content for a Mac subject yet (Notifications per
-// app, Worktrees, Editor & browser, Projects & pull requests, Machines, the privacy parts), the subject is left out until
+// app, Editor & browser, Machines, the privacy parts), the subject is left out until
 // its item in docs/WINDOWS-PARITY.md lands; Gamer Mode is a Tauri-first page in the Nook group.
 import { tr } from "./i18n.svelte";
 
@@ -14,10 +14,10 @@ export type SettingsGroupId = (typeof settingsGroups)[number];
 
 /** Every subject, in the order of the sidebar and its pages' tab bars. */
 export const settingsSections = [
-  "start", "general", "notch", "appearance", "notifications", "sound", "shortcuts", "games",
+  "start", "general", "notch", "appearance", "notifications", "notificationApps", "sound", "shortcuts", "games",
   "brain", "assistant", "memory", "instructions",
   "autocomplete", "autocompleteApps", "autocompleteStyle", "autocompletePlayground", "autocompleteStats", "dictation",
-  "agents", "usage", "sessions", "archive", "automation",
+  "agents", "usage", "sessions", "worktrees", "openIn", "archive", "automation", "projects", "pullRequests",
   "chats", "connections", "iphone", "privacy",
   "maintenance", "about",
 ] as const;
@@ -29,7 +29,7 @@ export const settingsPages: Record<SettingsGroupId, { page: SettingsSectionId; p
     { page: "start", parts: ["start"] },
     { page: "general", parts: ["general", "notch"] },
     { page: "appearance", parts: ["appearance"] },
-    { page: "notifications", parts: ["notifications", "sound"] },
+    { page: "notifications", parts: ["notifications", "notificationApps", "sound"] },
     { page: "shortcuts", parts: ["shortcuts"] },
     { page: "games", parts: ["games"] },
   ],
@@ -40,8 +40,9 @@ export const settingsPages: Record<SettingsGroupId, { page: SettingsSectionId; p
   ],
   agents: [
     { page: "agents", parts: ["agents", "usage"] },
-    { page: "sessions", parts: ["sessions", "archive"] },
+    { page: "sessions", parts: ["sessions", "worktrees", "openIn", "archive"] },
     { page: "automation", parts: ["automation"] },
+    { page: "projects", parts: ["projects", "pullRequests"] },
   ],
   connect: [
     { page: "chats", parts: ["chats"] },
@@ -106,6 +107,7 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "notch": return tr("Balk en vensters", "Bar & windows");
     case "appearance": return tr("Uiterlijk", "Appearance");
     case "notifications": return tr("Meldingen", "Notifications");
+    case "notificationApps": return tr("Meldingen per app", "Notifications per app");
     case "sound": return tr("Geluid en stem", "Sound & voice");
     case "shortcuts": return tr("Sneltoetsen", "Shortcuts");
     case "games": return "Gamer Mode";
@@ -114,16 +116,20 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "memory": return tr("Geheugen", "Memory");
     case "instructions": return tr("Instructies", "Instructions");
     case "autocomplete": return tr("Aanvullen", "Autocomplete");
-    case "autocompleteApps": return tr("Apps", "Apps");
+    case "autocompleteApps": return tr("Apps en sites", "Apps and sites");
     case "autocompleteStyle": return tr("Stijl en context", "Style and context");
-    case "autocompletePlayground": return tr("Testen", "Try it");
-    case "autocompleteStats": return tr("Statistiek", "Statistics");
+    case "autocompletePlayground": return tr("Proefveld", "Playground");
+    case "autocompleteStats": return tr("Statistieken", "Statistics");
     case "dictation": return tr("Dicteren", "Dictation");
     case "agents": return "Coding agents";
     case "usage": return tr("Gebruik en kosten", "Usage & costs");
     case "sessions": return tr("Sessies", "Sessions");
+    case "worktrees": return tr("Worktrees", "Worktrees");
+    case "openIn": return tr("Editor en browser", "Editor & browser");
     case "archive": return tr("Archief", "Archive");
     case "automation": return tr("Automatisering", "Automation");
+    case "projects": return tr("Projecten", "Projects");
+    case "pullRequests": return tr("Pull requests", "Pull requests");
     case "chats": return tr("Chat-apps", "Chat apps");
     case "connections": return tr("Diensten", "Services");
     case "iphone": return "Companion";
@@ -139,6 +145,7 @@ export function pageTitle(page: SettingsSectionId): string {
     case "autocomplete": return tr("Typen", "Typing");
     case "iphone": return tr("Apparaten", "Devices");
     case "maintenance": return tr("Systeem", "System");
+    case "projects": return tr("Projecten & pull requests", "Projects & pull requests");
     default: return sectionTitle(page);
   }
 }

@@ -19,6 +19,8 @@
 </script>
 
 <script lang="ts">
+  import { nook, accentCss } from "../lib/state.svelte";
+  import { LOOK_PRESETS, type NookLook } from "../lib/types";
   // Nook zelf: een bol met licht en schaduw waarvan de ogen je muis volgen. Hij knippert, ademt, knikt als iets klaar
   // is, springt op als je iets verstuurt, krijgt blosjes als je muis even op hem rust en giechelt na drie snelle klikken.
   // In het open paneel draagt hij een ring met alles waar hij mee bezig is (NookOrb en NookTaskRing op de Mac).
@@ -29,7 +31,15 @@
     ring = [],
     onpiece,
     movable = false,
-  }: { size?: number; mood?: Mood; level?: number; ring?: RingPiece[]; onpiece?: (id: string) => void; movable?: boolean } = $props();
+    look: lookOverride,
+  }: { size?: number; mood?: Mood; level?: number; ring?: RingPiece[]; onpiece?: (id: string) => void; movable?: boolean; look?: NookLook } = $props();
+
+  // His face (Settings › Appearance, `NookLook` on the Mac): the eyes, a mouth, gloss, glow and blush; his color is the
+  // accent you chose. A preview passes its own look.
+  const face = $derived<NookLook>(lookOverride ?? nook.settings?.nookLook ?? LOOK_PRESETS[1].look);
+  const faceColor = $derived(accentCss(nook.settings?.accentHex ?? 0xf4f3f7));
+  // Nook as a buddy: the small moments (hello, waking up, a giggle, a blush) can be switched off.
+  const moments = $derived(nook.settings?.buddyMoments !== false);
 
   let el: HTMLDivElement;
   let look = $state({ x: 0, y: 0 });
@@ -81,6 +91,7 @@
   }
 
   function enter() {
+    if (!moments) return activity();
     const now = Date.now();
     if (drowsy || now - lastActivity > DROWSY_AFTER) play("wake", 700);
     else if (now - greeted > GREETING_GAP) {
@@ -106,7 +117,7 @@
     const now = Date.now();
     pokes = [...pokes.filter((t) => now - t < 1000), now];
     activity();
-    if (pokes.length >= 3) {
+    if (pokes.length >= 3 && moments) {
       pokes = [];
       play("giggle", 1100);
     } else {
@@ -121,7 +132,8 @@
     let timer: ReturnType<typeof setTimeout>;
     const next = () => {
       timer = setTimeout(() => {
-        if (mood !== "done" && mood !== "working") {
+        // Taking it easy (the energy plan, `body.easy`), he does not blink either: no wake-up of the page for it.
+        if (mood !== "done" && mood !== "working" && !document.body.classList.contains("easy")) {
           blinking = true;
           setTimeout(() => (blinking = false), 130);
           if (i % 4 === 1) setTimeout(() => { blinking = true; setTimeout(() => (blinking = false), 120); }, 260);
@@ -265,7 +277,7 @@
 
 <svelte:window onmousemove={follow} />
 
-<div class="wrap" style="--s:{size}px;--r:{ringSize}px" class:ringed={ring.length > 0}>
+<div class="wrap" style="--s:{size}px;--r:{ringSize}px;--face:{faceColor}" class:ringed={ring.length > 0}>
   {#if ring.length}
     <svg class="ring" width={ringSize} height={ringSize} viewBox="0 0 {ringSize} {ringSize}" aria-hidden="true">
       {#each ring as piece, i (piece.id)}
@@ -302,8 +314,10 @@
   >
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div
-      class="orb {mood} {moment}"
+      class="orb {mood} {moment} eyes-{face.eyes} mouth-{face.mouth}"
       class:drowsy
+      class:flat={!face.gloss}
+      class:noglow={!face.glow}
       bind:this={el}
       onmouseenter={enter}
       onmouseleave={leave}
@@ -312,7 +326,8 @@
     >
       <span class="eye" class:blink={blinking || moment === "poke" || moment === "giggle"} style="transform: translate({gaze.x}px, {gaze.y}px)"></span>
       <span class="eye" class:blink={blinking || moment === "poke" || moment === "giggle"} style="transform: translate({gaze.x}px, {gaze.y}px)"></span>
-      {#if blush || held || moment === "giggle"}
+      {#if face.mouth !== "none"}<span class="mouth"></span>{/if}
+      {#if face.cheeks && (blush || held || moment === "giggle")}
         <span class="cheek left"></span><span class="cheek right"></span>
       {/if}
     </div>
@@ -320,7 +335,7 @@
 </div>
 
 <style>
-  .wrap { position: relative; width: var(--s); height: var(--s); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .wrap { --eye: color-mix(in srgb, black 98%, var(--face)); position: relative; width: var(--s); height: var(--s); display: inline-flex; align-items: center; justify-content: center; flex: none; }
   .wrap.ringed { width: var(--r); height: var(--r); }
   .orb {
     width: var(--s);
@@ -328,8 +343,8 @@
     border-radius: 50%;
     /* Belicht als een bal: hoogtepunt linksboven dat tegen de blik in schuift, schaduw naar de rand, wat teruggekaatst licht onderin. */
     background:
-      radial-gradient(circle at calc(34% + var(--lx)) calc(30% + var(--ly)), #fff 0%, #f6f6f8 45%, #d9d9df 100%),
-      #f6f6f8;
+      radial-gradient(circle at calc(34% + var(--lx)) calc(30% + var(--ly)), color-mix(in srgb, var(--face) 20%, white) 0%, var(--face) 45%, color-mix(in srgb, var(--face) 86%, black) 100%),
+      var(--face);
     box-shadow:
       inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.18) rgba(0, 0, 0, 0.12),
       0 0 calc(var(--s) * (0.5 + var(--level) * 0.6)) rgba(255, 255, 255, 0.12);
@@ -345,9 +360,21 @@
     width: calc(var(--s) * 0.13);
     height: calc(var(--s) * 0.22);
     border-radius: 999px;
-    background: #050507;
+    background: var(--eye);
     transition: transform 0.08s linear, height 0.08s;
   }
+  /* Face and finish: flat without gloss, no light around him without glow, and the three kinds of eyes. */
+  .orb.flat { background: var(--face); box-shadow: 0 0 calc(var(--s) * (0.5 + var(--level) * 0.6)) color-mix(in srgb, white 12%, transparent); }
+  .orb.noglow:not(.waiting):not(.listen):not(.error) { box-shadow: inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.18) color-mix(in srgb, black 12%, transparent); }
+  .orb.flat.noglow:not(.waiting):not(.listen):not(.error) { box-shadow: none; }
+  .eyes-dots .eye { width: calc(var(--s) * 0.11); height: calc(var(--s) * 0.11); }
+  .eyes-round .eye { width: calc(var(--s) * 0.19); height: calc(var(--s) * 0.19); background: radial-gradient(circle at 34% 30%, white 0 16%, transparent 18%), radial-gradient(circle at 66% 68%, color-mix(in srgb, white 70%, transparent) 0 7%, transparent 9%), var(--eye); }
+  .eyes-dots .eye.blink, .eyes-round .eye.blink { height: calc(var(--s) * 0.03); }
+  /* A mouth: a line that smiles when done and frowns on an error; expressive also opens while he works or listens. */
+  .mouth { position: absolute; left: 50%; top: 66%; width: calc(var(--s) * 0.2); height: calc(var(--s) * 0.035); transform: translateX(-50%); border-radius: var(--radius-pill); background: var(--eye); transition: all 0.2s ease; }
+  .done .mouth, .heard .mouth, .hello .mouth { height: calc(var(--s) * 0.08); background: none; border: calc(var(--s) * 0.03) solid var(--eye); border-top: none; border-radius: 0 0 calc(var(--s) * 0.1) calc(var(--s) * 0.1); }
+  .error .mouth { height: calc(var(--s) * 0.07); background: none; border: calc(var(--s) * 0.03) solid var(--eye); border-bottom: none; border-radius: calc(var(--s) * 0.1) calc(var(--s) * 0.1) 0 0; top: 70%; }
+  .mouth-expressive.working .mouth, .mouth-expressive.listen .mouth { width: calc(var(--s) * 0.12); height: calc(var(--s) * 0.09); border-radius: 50%; }
   .hold { display: flex; position: relative; z-index: 1; will-change: transform; }
   .hold.movable { cursor: grab; user-select: none; touch-action: none; }
   .hold.movable .orb { cursor: inherit; }
@@ -364,6 +391,9 @@
   .idle:not(.drowsy) { animation: rest 4.5s ease-in-out infinite; }
   /* Taking it easy (battery, saver, paused): the idle float rests, so the webview stops drawing frames for it. */
   :global(body.easy) .idle { animation: none; }
+  /* Under the energy plan the loops that stay run at a third of the pace. */
+  :global(body.easy) .working { animation-duration: 4.8s; }
+  :global(body.easy) .piece.waiting { animation-duration: 0.5s, 3.6s; }
   .waiting { box-shadow: 0 0 calc(var(--s) * 0.6) color-mix(in srgb, var(--amber) 55%, transparent); }
   .listen { box-shadow: 0 0 calc(var(--s) * (0.5 + var(--level) * 1.2)) color-mix(in srgb, var(--mint) 60%, transparent); }
   .listen .eye { height: calc(var(--s) * (0.22 + var(--level) * 0.06)); }

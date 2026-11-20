@@ -93,7 +93,7 @@ export function sourcesSummary(groups: SourceGroup[], streaming: boolean): strin
   if (streaming && groups.some((g) => g.status === "running")) return tr("Zoekt in je bronnen…", "Searching your sources…");
   const used = groups.filter((g) => g.status === "found" || g.status === "context").length;
   if (used === 0) return tr("Niets gevonden", "Nothing found");
-  return used === 1 ? tr("1 bron gebruikt", "1 source used") : tr("{n} bronnen gebruikt", "{n} sources used", { n: used });
+  return used === 1 ? tr("Gebruikte 1 bron", "Used 1 source") : tr("Gebruikte {n} bronnen", "Used {n} sources", { n: used });
 }
 
 const legacyIncomplete = new Set([

@@ -50,6 +50,10 @@ pub struct CommandInput {
     pub resume_session_id: Option<String>,
     /// Claude Code: verder als kopie van het gesprek (`--fork-session`); het origineel blijft onaangeroerd.
     pub fork_session: bool,
+    /// Claude Code: resume at this chain entry uuid (`--resume-session-at`), used for conversation rollback.
+    pub resume_at: Option<String>,
+    /// Codex: pending conversation rollback (`thread/rollback` or `thread/revert`) before starting the turn.
+    pub pending_rollback: Option<super::rollback::PendingRollback>,
     /// `CLAUDE_CONFIG_DIR` of `CODEX_HOME` (en een API-sleutel) van het gekozen account.
     pub account_environment: BTreeMap<String, String>,
     pub run_id: String,
@@ -104,6 +108,9 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
             }
             if let Some(r) = &resume {
                 args.extend(["--resume".into(), r.clone()]);
+                if let Some(at) = input.resume_at.as_ref().filter(|s| !s.is_empty()) {
+                    args.extend(["--resume-session-at".into(), at.clone()]);
+                }
                 if input.fork_session {
                     args.push("--fork-session".into());
                 }
@@ -280,6 +287,8 @@ mod tests {
             working_directory: "/tmp/w".into(),
             resume_session_id: resume.map(str::to_string),
             fork_session: false,
+            resume_at: None,
+            pending_rollback: None,
             account_environment: [("CLAUDE_CONFIG_DIR".to_string(), "/home/x/.claude-werk".to_string())].into_iter().collect(),
             run_id: "run-1".into(),
             profile_id: "default".into(),
@@ -290,6 +299,17 @@ mod tests {
 
     fn value<'a>(flag: &str, args: &'a [String]) -> Option<&'a str> {
         args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).map(String::as_str)
+    }
+
+    #[test]
+    fn claude_resume_session_at_and_fork() {
+        let mut i = input(RunProvider::Claude, "", Some("s1"), "");
+        i.fork_session = true;
+        i.resume_at = Some("u1".into());
+        let a = spec(&i).arguments;
+        assert_eq!(value("--resume", &a), Some("s1"));
+        assert_eq!(value("--resume-session-at", &a), Some("u1"));
+        assert!(a.contains(&"--fork-session".to_string()));
     }
 
     #[test]

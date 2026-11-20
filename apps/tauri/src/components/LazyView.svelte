@@ -2,8 +2,10 @@
   import type { ViewModule } from "../lib/shell-routes";
   import { tr } from "../lib/i18n.svelte";
 
-  let { load, label, onretry = () => window.location.reload() }: {
+  let { load, label, onretry = () => window.location.reload(), props = {} }: {
     load: () => Promise<ViewModule>; label: string; onretry?: () => void;
+    /** Passed to the view, such as `compact` for a tab beside another one. */
+    props?: Record<string, unknown>;
   } = $props();
   const view = $derived(load());
 </script>
@@ -14,7 +16,7 @@
     <p>{tr("Je kunt de navigatie blijven gebruiken terwijl dit scherm laadt.", "You can keep using navigation while this view loads.")}</p>
   </div>
 {:then module}
-  <module.default />
+  <module.default {...props} />
 {:catch}
   <div class="route-state" role="alert">
     <strong>{tr("{label} kon niet laden", "Could not load {label}", { label })}</strong>
@@ -25,5 +27,5 @@
 
 <style>
   .route-state { padding: 28px; color: var(--paper); }
-  p { color: var(--text2); font-size: 13px; }
+  p { color: var(--text2); font: var(--text-detail); }
 </style>

@@ -30,7 +30,8 @@ export function reloadRoute(route: Route) {
   window.location.reload();
 }
 
-export type ViewModule = { default: Component };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- a view takes the props its caller passes (`LazyView.props`)
+export type ViewModule = { default: Component<any> };
 
 // Share successful imports across visits, but let a failed download be retried.
 export function retryableView(load: () => Promise<ViewModule>): () => Promise<ViewModule> {
@@ -63,4 +64,11 @@ export function matchesSearch(query: string, ...texts: string[]): boolean {
   const words = fold(query).split(/\s+/).filter(Boolean);
   const haystack = fold(texts.join(" "));
   return words.every((w) => haystack.includes(w));
+}
+
+/// Leaves Settings for the page it was opened from. Settings takes the whole main window, as the Mac's Settings window
+/// does, so its sidebar's Back (and Escape) asks the shell (`Main.svelte`) to go back.
+export const LEAVE_SETTINGS = "nook-leave-settings";
+export function leaveSettings() {
+  window.dispatchEvent(new Event(LEAVE_SETTINGS));
 }

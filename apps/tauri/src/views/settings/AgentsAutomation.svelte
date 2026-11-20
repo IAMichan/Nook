@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Settings › Agents › Automation (`ScheduledTasksView` and the automation settings on the Mac): automatic titles,
-  // scheduled tasks that start a session at a time, at an interval or from a signed local webhook, and their list.
+  // Settings › Automation (`WorkspaceSettingsSection`, part automation, and `ScheduledTasksView` on the Mac): scheduled
+  // tasks that start a session at a time, at an interval or from a signed local webhook, their list, and the workspace
+  // Nook offers agents. The Mac lists the tasks in a sheet; here they stay on the page.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { api } from "../../lib/api";
   import { agents } from "../../lib/agents.svelte";
@@ -11,6 +12,8 @@
   } from "../../lib/workspace/automation";
   import { workspace } from "../../lib/workspace/store.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
+  import AgentsWorkspace from "./AgentsWorkspace.svelte";
 
   let view = $state<AutomationOverview | null>(null);
   let error = $state<string | null>(null);
@@ -121,29 +124,25 @@
 </script>
 
 {#if view}
-  <h3>{tr("Titels", "Titles")}</h3>
-  <div class="group">
-    <label class="check"><input type="checkbox" role="switch" bind:checked={view.settings.autoTitles} onchange={saveSettings} /> {tr("Geef nieuwe sessies vanzelf een korte titel", "Give new sessions a short title automatically")}</label>
-    <p class="faint note">{tr("Het gekozen brein schrijft een titel uit het eerste bericht. Tot dan, en als het niets bruikbaars geeft, zie je de eerste regel. Een naam die je zelf geeft, wint altijd; dubbelklik op de titel van een sessie om hem te wijzigen.", "The chosen brain writes a title from the first message. Until then, and when it gives nothing usable, you see the first line. A name you give yourself always wins; double-click a session's title to rename it.")}</p>
+  <!-- The Mac's Automation: scheduled tasks (on, the webhook port, the tasks), then the workspace for agents. Automatic
+       titles are under Sessions › Behavior, as on the Mac. -->
+  <div class="section-head">
+    <h3>{tr("Geplande taken", "Scheduled tasks")}</h3>
+    {#if !editing}
+      <button class="head-action" onclick={() => begin()}><Ico name="plus" size={12} />{tr("Nieuwe taak", "New task")}</button>
+    {/if}
   </div>
-
-  <h3>{tr("Geplande taken", "Scheduled tasks")}</h3>
+  <p class="section-info">{tr("Een taak start een gewone sessie met de rechten die jij bij de taak koos, standaard “Vragen”. Zolang dit uit staat, loopt er niets automatisch.", "A task starts an ordinary session with the permissions you chose for the task, “Ask” by default. While this is off nothing runs by itself.")}</p>
   <div class="group">
-    <label class="check"><input type="checkbox" role="switch" bind:checked={view.settings.scheduledTasks} onchange={saveSettings} /> {tr("Geplande taken toestaan", "Allow scheduled tasks")}</label>
-    <label class="row"><span>{tr("Poort voor webhooks (0 = uit)", "Port for webhooks (0 = off)")}</span>
-      <input class="port" inputmode="numeric" bind:value={portDraft} onchange={savePort} disabled={!view.settings.scheduledTasks} />
-    </label>
-    {#if !portValid}<p class="err">{tr("Kies een poort tussen 1024 en 65535, of 0 om webhooks uit te zetten.", "Choose a port between 1024 and 65535, or 0 to turn webhooks off.")}</p>{/if}
-    {#if view.listening}<p class="ok">{tr("Luistert op 127.0.0.1:{port} (alleen deze computer)", "Listening on 127.0.0.1:{port} (this computer only)", { port: view.listening })}</p>{/if}
-    {#if view.listenerError}<p class="err">{tr("De webhook-luisteraar kon niet starten: {error}", "The webhook listener could not start: {error}", { error: view.listenerError })}</p>{/if}
-    <p class="faint note">{tr("Een taak start een gewone sessie met de rechten die je voor de taak koos, standaard ‘Vraag’: elke wijziging en elk commando wacht op jouw OK. Taken draaien zolang Nook open is; een vast tijdstip dat meer dan 10 minuten gemist is (de computer sliep), wordt overgeslagen. Staat dit uit, dan draait er niets vanzelf.", "A task starts an ordinary session with the permissions you chose for the task, “Ask” by default: every edit and command waits for your OK. Tasks run while Nook is open; a fixed time missed by more than 10 minutes (the computer was asleep) is skipped. While this is off nothing runs by itself.")}</p>
-  </div>
-
-  {#if !view.settings.scheduledTasks && view.tasks.length}
-    <p class="faint note">{tr("Geplande taken staan uit. Tot je ze aanzet, draait er niets vanzelf.", "Scheduled tasks are off. Until you turn them on, nothing runs by itself.")}</p>
-  {/if}
-
-  <div class="list">
+    <label class="row"><span>{tr("Geplande taken toestaan", "Allow scheduled tasks")}</span><input type="checkbox" role="switch" bind:checked={view.settings.scheduledTasks} onchange={saveSettings} /></label>
+    {#if view.settings.scheduledTasks}
+      <label class="row"><span>{tr("Poort voor webhooks (0 = uit)", "Port for webhooks (0 = off)")}</span>
+        <input class="port" inputmode="numeric" bind:value={portDraft} onchange={savePort} />
+      </label>
+      {#if !portValid}<p class="note err">{tr("Kies een poort tussen 1024 en 65535, of 0 om webhooks uit te zetten.", "Choose a port between 1024 and 65535, or 0 to turn webhooks off.")}</p>{/if}
+      {#if view.listening}<p class="note ok">{tr("Luistert op 127.0.0.1:{port} (alleen deze computer)", "Listening on 127.0.0.1:{port} (this computer only)", { port: view.listening })}</p>{/if}
+      {#if view.listenerError}<p class="note err">{tr("De webhook-luisteraar kon niet starten: {error}", "The webhook listener could not start: {error}", { error: view.listenerError })}</p>{/if}
+    {/if}
     {#each view.tasks as t (t.id)}
       <div class="task" class:off={!t.enabled}>
         <div class="line">
@@ -185,9 +184,13 @@
         {/if}
       </div>
     {:else}
-      <p class="faint note">{tr("Nog geen geplande taken. Een taak start een sessie op een vast tijdstip, met een interval, één keer of vanuit een webhook.", "No scheduled tasks yet. A task starts a session at a fixed time, at an interval, once or from a webhook.")}</p>
+      <p class="empty-note">{tr("Nog geen geplande taken. Een taak start een sessie op een vast tijdstip, met een interval, één keer of vanuit een webhook.", "No scheduled tasks yet. A task starts a session at a fixed time, at an interval, once or from a webhook.")}</p>
     {/each}
   </div>
+  <p class="note">{tr("Taken draaien zolang Nook open is; een vast tijdstip dat meer dan 10 minuten gemist is (de computer sliep), wordt overgeslagen.", "Tasks run while Nook is open; a fixed time missed by more than 10 minutes (the computer was asleep) is skipped.")}</p>
+  {#if !view.settings.scheduledTasks && view.tasks.length}
+    <p class="faint note">{tr("Geplande taken staan uit. Tot je ze aanzet, draait er niets vanzelf.", "Scheduled tasks are off. Until you turn them on, nothing runs by itself.")}</p>
+  {/if}
 
   {#if editing}
     <div class="editor">
@@ -302,40 +305,38 @@
         <button class="primary" disabled={!!draftProblem} onclick={save}>{tr("Bewaar", "Save")}</button>
       </div>
     </div>
-  {:else}
-    <div class="line"><button onclick={() => begin()}>{tr("Nieuwe taak", "New task")}</button></div>
   {/if}
 
   {#if notice}<p class="ok">{notice}</p>{/if}
   {#if error}<p class="err">{error}</p>{/if}
+  <AgentsWorkspace part="bridge" />
 {:else}
   <p class="faint">{tr("Laden…", "Loading…")}</p>
 {/if}
 
 <style>
-  .group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
-  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
-  .col { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-  .inline { display: flex; gap: 6px; align-items: center; }
-  .check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
-  .note { font-size: 12px; margin: 0; }
-  .ok { color: var(--mint); font-size: 12px; margin: 0; }
-  .err { color: var(--coral); font-size: 12px; margin: 0; }
+  /* The tasks as rows in the card, as the Mac's task list; the editor as a card of its own under it. */
+  .col { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); }
+  .inline { display: flex; gap: var(--space-6); align-items: center; }
+  .check { display: flex; gap: var(--space-8); align-items: center; }
+  .ok { color: var(--mint) !important; }
+  .err { color: var(--coral) !important; }
   .port { width: 90px; }
-  .list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-  .task { border: 1px solid var(--line2); border-radius: var(--radius-panel); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .task { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); }
+  .task:last-child { border-bottom: none; }
   .task.off { opacity: 0.7; }
-  .line { display: flex; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+  .line { display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; margin-top: var(--space-8); }
+  .task .line { margin-top: 0; }
   .spacer { flex: 1; }
-  .meta { display: flex; gap: 10px; font-size: 12px; flex-wrap: wrap; }
+  .meta { display: flex; gap: 10px; font: var(--text-detail); flex-wrap: wrap; }
   .status.failed { color: var(--coral); }
   .status.succeeded { color: var(--mint); }
-  .hook { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
-  .mono { font-family: var(--mono); font-size: 11.5px; }
-  pre.mono { white-space: pre-wrap; word-break: break-all; margin: 0; padding: 6px 8px; background: var(--row-hover); border-radius: var(--radius-chip); }
-  .editor { border: 1px solid var(--line2); border-radius: var(--radius-panel); padding: 10px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-  .days { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; }
-  .day { display: flex; gap: 4px; align-items: center; }
-  .link { background: none; border: none; padding: 0; color: var(--accent, inherit); text-decoration: underline; cursor: pointer; font-size: 12px; }
+  .hook { display: flex; gap: var(--space-6); align-items: center; flex-wrap: wrap; font: var(--text-detail); }
+  .mono { font: var(--text-code); }
+  pre.mono { white-space: pre-wrap; word-break: break-all; margin: 0; padding: var(--space-6) var(--space-8); background: var(--row-hover); border-radius: var(--radius-chip); }
+  .editor { margin-top: var(--space-8); background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); padding: 0 var(--space-16) var(--space-12); display: flex; flex-direction: column; }
+  .days { display: flex; gap: var(--space-8); flex-wrap: wrap; font: var(--text-detail); padding: var(--space-8) 0; }
+  .day { display: flex; gap: var(--space-4); align-items: center; }
+  .link { background: none; border: none; padding: 0; color: var(--paper); text-decoration: underline; cursor: pointer; font: var(--text-detail); }
   .danger { color: var(--coral); }
 </style>

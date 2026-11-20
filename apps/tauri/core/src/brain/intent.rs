@@ -117,17 +117,9 @@ pub fn tools_for(kind: Kind) -> &'static [&'static str] {
         Kind::Network => &["network_status"],
         Kind::Memory => &["remember", "forget", "recall_memory"],
         Kind::Web => &["get_weather", "search_web", "read_webpage"],
-        Kind::ChatWrite => &["whatsapp_send", "whatsapp_live", "send_to_source", "search_contacts"],
-        Kind::Chats => &[
-            "whatsapp_live",
-            "search_whatsapp",
-            "read_whatsapp",
-            "whatsapp_open_chats",
-            "search_messages",
-            "read_messages",
-            "messages_open_chats",
-            "read_app",
-        ],
+        Kind::ChatWrite => &["chat_send", "chat_inbox", "whatsapp_send", "whatsapp_live", "send_to_source", "search_contacts"],
+        // Every chat app through the shared inbox (`chat_inbox`), WhatsApp's own tools beside it.
+        Kind::Chats => &["chat_inbox", "whatsapp_live", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "read_app"],
     }
 }
 

@@ -322,12 +322,16 @@ mod tests {
             reviewed_at: None,
             last_change_at: None,
             changed_files: None,
+            lines_added: None,
+            lines_removed: None,
             checkpoints: vec![],
             limited_at: None,
             limit_reset_at: None,
             auto_resume: false,
             effort: None,
             pending_handoff: None,
+            conversation: None,
+            pending_rollback: None,
         }
     }
 

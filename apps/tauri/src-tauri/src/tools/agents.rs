@@ -200,7 +200,7 @@ async fn start(ctx: &ToolCtx, input: &Value) -> Result<String, String> {
     .await
     .map_err(|e| e.to_string())??;
     let (id, provider, folder) = id;
-    ws.manager.note(id, tr("Gestart vanuit Nook Chat", "Started from Nook Chat"));
+    ws.manager.note_origin(id, tr("Gestart vanuit Nook Chat", "Started from Nook Chat"));
     Ok(trf(
         "{agent} gestart in {folder} | sessie-id {id}",
         "Started {agent} in {folder} | session id {id}",

@@ -37,6 +37,25 @@ pub struct InboxMessage {
     /// Deleted for everyone: the row stays, without its words or file.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deleted: bool,
+    /// The message this one answers (Nook's id of it), shown quoted at the top of its bubble.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+    /// The reactions on it, when its app says them; `None` leaves what Nook knows as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reactions: Option<Vec<Reaction>>,
+}
+
+/// One emoji on a message and who put it there (`ChatReactions` on the Mac).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reaction {
+    pub emoji: String,
+    /// Who reacted with it, by name; "" for you.
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// You are one of them.
+    #[serde(default)]
+    pub mine: bool,
 }
 
 impl InboxMessage {
@@ -53,6 +72,8 @@ impl InboxMessage {
             mentions_me: false,
             edited: false,
             deleted: false,
+            reply_to: None,
+            reactions: None,
         }
     }
 
@@ -411,6 +432,12 @@ impl ChatInbox {
             if message.mentions_me {
                 kept.mentions_me = true;
             }
+            if message.reply_to.is_some() && kept.reply_to != message.reply_to {
+                kept.reply_to = message.reply_to.clone();
+            }
+            if message.reactions.is_some() && kept.reactions != message.reactions {
+                kept.reactions = message.reactions.clone();
+            }
         }
         if !chat.deleted.is_empty() {
             let gone: HashSet<&String> = chat.deleted.iter().collect();
@@ -627,6 +654,64 @@ impl ChatInbox {
         }
     }
 
+    /// Your own message got new words (after its app took them).
+    pub fn edit_message(&mut self, key: &str, id: &str, text: &str) {
+        if let Some(m) = self.message_mut(key, id) {
+            m.text = text.to_string();
+            m.edited = true;
+        }
+    }
+
+    /// Deleted for everyone: the row stays, without its words or file.
+    pub fn withdraw_message(&mut self, key: &str, id: &str) {
+        if let Some(m) = self.message_mut(key, id) {
+            *m = m.withdrawn();
+        }
+    }
+
+    /// Deleted for you: the message leaves the chat in Nook.
+    pub fn forget_message(&mut self, key: &str, id: &str) {
+        if let Some(thread) = self.threads.get_mut(key) {
+            thread.messages.retain(|m| m.id != id);
+        }
+    }
+
+    /// Your reaction on a message: `emoji`, or none ("" takes yours off). One reaction of yours per message, as the apps
+    /// have it.
+    pub fn react_mine(&mut self, key: &str, id: &str, emoji: &str) {
+        self.react_as(key, id, emoji, "");
+    }
+
+    /// Someone's reaction on a message (`who` by name, "" for you), in place of the one they had: an empty `emoji` takes
+    /// theirs off. As the apps have it, everyone has one reaction per message.
+    pub fn react_as(&mut self, key: &str, id: &str, emoji: &str, who: &str) {
+        let Some(m) = self.message_mut(key, id) else { return };
+        let mut list = m.reactions.clone().unwrap_or_default();
+        for r in &mut list {
+            if let Some(at) = r.from.iter().position(|w| w == who) {
+                r.from.remove(at);
+                if who.is_empty() {
+                    r.mine = false;
+                }
+            }
+        }
+        list.retain(|r| !r.from.is_empty());
+        if !emoji.is_empty() {
+            match list.iter_mut().find(|r| r.emoji == emoji) {
+                Some(r) => {
+                    r.mine |= who.is_empty();
+                    r.from.push(who.to_string());
+                }
+                None => list.push(Reaction { emoji: emoji.to_string(), from: vec![who.to_string()], mine: who.is_empty() }),
+            }
+        }
+        m.reactions = Some(list);
+    }
+
+    fn message_mut(&mut self, key: &str, id: &str) -> Option<&mut InboxMessage> {
+        self.threads.get_mut(key)?.messages.iter_mut().find(|m| m.id == id)
+    }
+
     /// Every chat with something new read in Nook.
     pub fn mark_all_read(&mut self, date: DateTime<Utc>) {
         let keys: Vec<String> = self.threads.iter().filter(|(_, t)| t.unread > 0).map(|(k, _)| k.clone()).collect();
@@ -764,6 +849,43 @@ mod tests {
 
     fn at(min: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 11, 17, 12, 0, 0).unwrap() + Duration::minutes(min)
+    }
+
+    #[test]
+    fn message_steps_change_only_that_message() {
+        let mut inbox = ChatInbox::default();
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, true), msg("b", 1, false)]), at(2));
+        let key = ChatInbox::key("telegram", "1");
+        inbox.edit_message(&key, "a", "fixed");
+        inbox.react_mine(&key, "b", "👍");
+        inbox.react_mine(&key, "b", "❤️");
+        inbox.withdraw_message(&key, "zz");
+        let t = &inbox.threads[&key];
+        assert_eq!((t.messages[0].text.as_str(), t.messages[0].edited), ("fixed", true));
+        let r = t.messages[1].reactions.clone().unwrap();
+        assert_eq!(r, vec![Reaction { emoji: "❤️".into(), from: vec![String::new()], mine: true }]);
+        inbox.react_mine(&key, "b", "");
+        assert_eq!(inbox.threads[&key].messages[1].reactions, Some(vec![]));
+        inbox.withdraw_message(&key, "b");
+        assert!(inbox.threads[&key].messages[1].deleted);
+        inbox.forget_message(&key, "a");
+        assert_eq!(inbox.threads[&key].messages.len(), 1);
+    }
+
+    #[test]
+    fn a_read_brings_reactions_and_the_quoted_message() {
+        let mut inbox = ChatInbox::default();
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, false)]), at(1));
+        let mut again = msg("a", 0, false);
+        again.reply_to = Some("x".into());
+        again.reactions = Some(vec![Reaction { emoji: "😂".into(), from: vec!["Eva".into()], mine: false }]);
+        inbox.merge(chat("telegram", "1", vec![again]), at(2));
+        let m = &inbox.threads[&ChatInbox::key("telegram", "1")].messages[0];
+        assert_eq!(m.reply_to.as_deref(), Some("x"));
+        assert_eq!(m.reactions.as_ref().unwrap()[0].from, vec!["Eva".to_string()]);
+        // A read that does not say them (WhatsApp's webhook) leaves them.
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, false)]), at(3));
+        assert!(inbox.threads[&ChatInbox::key("telegram", "1")].messages[0].reactions.is_some());
     }
 
     fn msg(id: &str, min: i64, from_me: bool) -> InboxMessage {

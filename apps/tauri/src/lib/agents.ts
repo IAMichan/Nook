@@ -153,6 +153,8 @@ export const agentApi = {
   overview: () => invoke<Overview>("agents_overview"),
   decide: (id: string, decision: ApprovalDecision) => invoke<void>("agents_decide", { id, decision }),
   decideInTerminal: (id: string) => invoke<void>("agents_decide_in_terminal", { id }),
+  /** "Deny with reason": the agent hears why it may not. */
+  deny: (id: string, reason: string) => invoke<void>("agents_deny", { id, reason }),
   answer: (id: string, selections: string[][]) => invoke<void>("agents_answer", { id, selections }),
   answerInTerminal: (id: string) => invoke<void>("agents_answer_in_terminal", { id }),
   end: (sessionId: string) => invoke<void>("agents_end", { sessionId }),

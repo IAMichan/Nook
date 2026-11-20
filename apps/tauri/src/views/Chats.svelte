@@ -1,19 +1,30 @@
 <script lang="ts">
-  // Chats: every linked app in one place, as on the Mac. WhatsApp's chats open as a card to answer in; the other linked
-  // apps (calendar, mail, GitHub, ...) show what Nook sees in them. A chip per app filters the list.
+  // Chats as on the Mac (`ChatsTab`): the sidebar with the views (All chats, New, Only in Nook, Read), the apps and
+  // their accounts, the list of chats with the pinned ones on top and the rest grouped by when they last moved, and the
+  // open chat beside it. Every chat app goes through the same list and the same chat (`lib/chats-list.ts`): WhatsApp
+  // through its gateway, the others from the shared inbox Nook's chat helper fills (`chatsApi`). The other linked apps (calendar, mail,
+  // GitHub, ...) sit under Apps in the sidebar and show what Nook sees in them. With no chat app on, the page says what
+  // Chats is, with one click to start (`WSEmptyState`), and the window's sidebar may fold to its icons (`chatsShell`).
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../lib/api";
-  import { connectorEvents, connectorsApi, type ConnectorInfo, type Overview, type PullRequestItem, type WhatsAppConversation, type WhatsAppView } from "../lib/connectors";
+  import { chatsShell } from "../lib/chats-shell.svelte";
+  import { chatsApi, connectorEvents, connectorsApi, type ChatSummary, type ConnectorInfo, type Overview, type PullRequestItem, type WhatsAppConversation, type WhatsAppView } from "../lib/connectors";
+  import { appName, chatApps, groupTitle, inboxEntry, kindTitle, sections, shown as shownEntries, viewTitle, whatsAppEntry, whatsAppKey, type ChatEntry, type ChatGroup, type ChatListKind, type ChatView } from "../lib/chats-list";
   import { tr } from "../lib/i18n.svelte";
   import { itemId, laneCounts, triage } from "../lib/pulls";
   import { pullRequests } from "../lib/pulls.svelte";
-  import { time } from "../lib/whatsapp";
   import { whatsapp } from "../lib/whatsapp.svelte";
+  import DisclosureChevron from "../components/ui/DisclosureChevron.svelte";
+  import Ico from "../components/ui/Ico.svelte";
+  import IconButton from "../components/ui/IconButton.svelte";
+  import ListEmptyNote from "../components/ui/ListEmptyNote.svelte";
+  import SearchField from "../components/ui/SearchField.svelte";
   import PullRequestView from "./agents/pulls/PullRequestView.svelte";
-  import Avatar from "./connectors/Avatar.svelte";
+  import ChatDetail from "./chats/ChatDetail.svelte";
+  import ChatRow from "./chats/ChatRow.svelte";
+  import ChatsSidebar, { type SidebarApp } from "./chats/ChatsSidebar.svelte";
+  import { pins } from "./chats/chat-actions.svelte";
   import GitHubPanel from "./connectors/GitHubPanel.svelte";
-  import ServiceIcon from "./connectors/ServiceIcon.svelte";
-  import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
 
   let { onnook }: { onnook: (nookId: string) => void } = $props();
 
@@ -23,18 +34,24 @@
   let overview = $state<Overview | null>(null);
   let wa = $state<WhatsAppView | null>(null);
   let chats = $state<WhatsAppConversation[]>([]);
-  let filter = $state<string>("all");
+  /// Every app's chats in the shared inbox (WhatsApp's too, for their read state).
+  let inbox = $state<ChatSummary[]>([]);
+  /// The open chat, by the inbox's key.
+  let selected = $state<string | null>(null);
   let failed = $state(false);
-  /// The pull request open beside the GitHub dashboard, with the account it is listed under.
+  let turningOn = $state(false);
+  /// The pull request open beside the list while GitHub is chosen, with the account it is listed under.
   let gh = $state<{ account: string; item: PullRequestItem } | null>(null);
 
   async function load() {
     try {
-      const [o, w] = await Promise.all([connectorsApi.overview(), connectorsApi.whatsapp().catch(() => null)]);
+      const [o, w, i] = await Promise.all([connectorsApi.overview(), connectorsApi.whatsapp().catch(() => null), chatsApi.list().catch(() => [])]);
       overview = o;
       wa = w;
+      inbox = i;
       chats = w && w.link.kind === "connected" ? await connectorsApi.whatsappChatList().catch(() => []) : [];
       failed = false;
+      reopen();
     } catch {
       failed = true;
     }
@@ -47,212 +64,422 @@
   });
 
   $effect(() => {
-    load();
     const a = connectorEvents.onChanged(load);
     const b = connectorEvents.onWhatsApp(load);
+    const d = connectorEvents.onChats(load);
     const timer = setInterval(load, 30_000);
+    let day = new Date().toDateString();
+    // A new day: the groups ("Today", "Yesterday") and the rows' times move on with it.
+    const clock = setInterval(() => {
+      if (new Date().toDateString() !== day) { day = new Date().toDateString(); now = new Date(); }
+    }, 60_000);
     return () => {
       a.then((f) => f());
       b.then((f) => f());
+      d.then((f) => f());
       clearInterval(timer);
+      clearInterval(clock);
+      chatsShell.folded = false;
     };
   });
 
-  // Apps folded shut with the arrow, so a long WhatsApp list does not push the calendar off screen. Remembered between visits.
-  const FOLDED_KEY = "chats.folded";
-  function loadFolded(): string[] {
-    try {
-      const v = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]");
-      return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
-    } catch {
-      return [];
-    }
+  let now = $state(new Date());
+
+  // What the list shows, remembered between visits as on the Mac (`ChatsTab.kept`).
+  const KEPT = "chats.kept";
+  type Kept = { view: ChatView; app: string | null; account: string | null; kind: ChatListKind; collapsed: ChatGroup[] };
+  function loadKept(): Kept {
+    const fallback: Kept = { view: "all", app: null, account: null, kind: "chats", collapsed: [] };
+    try { return { ...fallback, ...JSON.parse(localStorage.getItem(KEPT) ?? "{}") }; } catch { return fallback; }
   }
-  let folded = $state<string[]>(loadFolded());
-  function fold(id: string) {
-    folded = folded.includes(id) ? folded.filter((x) => x !== id) : [...folded, id];
-    try {
-      localStorage.setItem(FOLDED_KEY, JSON.stringify(folded));
-    } catch {
-      // The choice only lasts until the window closes.
-    }
-  }
+  const kept = loadKept();
+  let view = $state<ChatView>(kept.view);
+  let filter = $state<string | null>(kept.app);
+  let account = $state<string | null>(kept.account);
+  let kind = $state<ChatListKind>(kept.kind);
+  let collapsed = $state<ChatGroup[]>(kept.collapsed);
+  let query = $state("");
+  $effect(() => {
+    const next: Kept = { view, app: filter, account, kind, collapsed };
+    try { localStorage.setItem(KEPT, JSON.stringify(next)); } catch { /* The choice lasts until the window closes. */ }
+  });
 
   const domainOf = (id: string) => overview?.services.find((s) => s.id === id)?.domain ?? null;
-  // The linked apps with something to show; WhatsApp has its own section.
-  const apps = $derived((overview?.connectors ?? []).filter((c) => c.configured && c.on && c.id !== WHATSAPP));
-  const whatsappOn = $derived(!!wa?.settings.enabled);
-  const sorted = $derived([...chats].sort((a, b) => b.lastActivity.localeCompare(a.lastActivity)));
+  // The other linked apps with something to show; WhatsApp is a chat app of its own.
+  const others = $derived((overview?.connectors ?? []).filter((c) => c.configured && c.on && c.id !== WHATSAPP));
+  const whatsappOn = $derived(!!wa?.settings?.enabled);
+  const byKey = $derived(new Map(inbox.map((s) => [s.key, s])));
+  const all = $derived<ChatEntry[]>([
+    ...chats.map((c) => whatsAppEntry(c, byKey.get(whatsAppKey(c.id)), wa?.link.kind === "connected")),
+    ...inbox.filter((s) => s.app !== WHATSAPP).map(inboxEntry),
+  ]);
+  /// The chat apps with chats here (or switched on), busiest first after WhatsApp.
+  const chatAppIds = $derived([...new Set([...(whatsappOn ? [WHATSAPP] : []), ...all.map((e) => e.app)])]);
+  const chatApp = $derived(!filter || chatAppIds.includes(filter));
+  /// The chosen app's accounts, while it has chats in more than one: they show under it.
+  const accounts = $derived(filter ? [...new Set(all.filter((e) => e.app === filter && e.account).map((e) => e.account!))] : []);
+  const shownAccount = $derived(account && accounts.length > 1 && accounts.includes(account) ? account : null);
+  const kinds = $derived<ChatListKind[]>((["chats", "status", "channels"] as ChatListKind[]).filter((k) => k === "chats" || all.some((e) => e.listKind === k)));
+  const shownKind = $derived(kinds.includes(kind) ? kind : "chats");
+  const list = $derived(shownEntries(all, { view, app: chatApp ? filter : null, account: shownAccount, kind: shownKind, query }));
+  const groups = $derived(sections(list, now, pins.keys));
+  const searching = $derived(!!query.trim());
+  const inScope = $derived(all.filter((e) => e.listKind === "chats" && (!filter || !chatApp || e.app === filter) && (!shownAccount || e.account === shownAccount)));
+  const counts = $derived({ unread: inScope.filter((e) => e.read === "unread").length, readInNook: inScope.filter((e) => e.read === "readInNook").length });
+  const newIn = (pick: (e: ChatEntry) => boolean) => all.filter((e) => e.listKind === "chats" && e.read === "unread" && pick(e)).length;
 
-  // What waits on you in GitHub (reviews asked, CI to fix) counts on its chip, not the number of rows in the status.
+  // What waits on you in GitHub (reviews asked, CI to fix) counts on its row, not the number of rows in the status.
   const githubCount = $derived.by(() => {
     const counts = laneCounts(triage(pullRequests.accounts));
     return counts.review + counts.fix;
   });
-
-  type Chip = { id: string; title: string; domain: string | null; count: number };
-  const chips = $derived<Chip[]>([
-    ...(whatsappOn ? [{ id: WHATSAPP, title: "WhatsApp", domain: "whatsapp.com", count: wa?.unread ?? 0 }] : []),
-    ...apps.map((c) => ({ id: c.id, title: c.title, domain: domainOf(c.id), count: c.id === GITHUB ? githubCount : c.status.items.length })),
+  const apps = $derived<SidebarApp[]>([
+    ...chatAppIds.map((id) => ({ id, title: appName(id), domain: chatApps[id]?.domain ?? null, count: newIn((e) => e.app === id) })),
+    ...others.map((c) => ({ id: c.id, title: c.title, domain: domainOf(c.id), count: c.id === GITHUB ? githubCount : c.status.items.length })),
   ]);
-  const shown = $derived(chips.filter((c) => filter === "all" || c.id === filter));
+  // A chosen app that is gone (switched off, unlinked) no longer filters the list.
+  $effect(() => {
+    if (overview && filter && !apps.some((a) => a.id === filter)) filter = null;
+  });
 
-  const last = (c: WhatsAppConversation) => c.messages[c.messages.length - 1];
-  const at = (c: WhatsAppConversation) => (last(c) ? time(last(c).date) : c.messages.length ? "" : time(c.lastActivity));
+  /// Nothing to show yet: the Mac's empty page instead of the three columns.
+  const empty = $derived(!!overview && !all.length && !others.length);
+  $effect(() => {
+    chatsShell.folded = empty;
+  });
 
-  // A chat Nook has no messages of yet (it only knows it from the phone) is fetched first, so its card has something to show.
-  async function openChat(c: WhatsAppConversation) {
-    gh = null;
-    if (!c.messages.length) await connectorsApi.whatsappCardLoad(c.id).catch(() => {});
-    whatsapp.show(c.id);
+  const open = $derived(selected ? all.find((e) => e.key === selected) ?? null : null);
+  // A chat you open is read in Nook once it has been on screen a moment, and so is what comes in while it stays open
+  // (`readOpenChat`, "Read in Nook when opened"): its badge goes and stays gone after a restart. Its app hears it when you
+  // answer or choose Mark as read in the app. The same for every app.
+  $effect(() => {
+    const e = open;
+    if (!e || e.read !== "unread") return;
+    const timer = setTimeout(() => {
+      if (document.visibilityState === "visible") chatsApi.markRead(e.key, false).then(() => whatsapp.version++).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  });
+
+  // The WhatsApp card closed elsewhere (muted, hidden): its chat closes here too.
+  $effect(() => {
+    if (selected?.startsWith(`${WHATSAPP}#`) && !whatsapp.chat) selected = null;
+  });
+
+  // The chat you opened last opens again when you come back, as the Mac's does (`ChatsTab.lastOpened`).
+  const LAST = "chats.lastOpened";
+  let reopened = false;
+  function reopen() {
+    if (reopened || selected || gh) return;
+    reopened = true;
+    let key: string | null = null;
+    try { key = localStorage.getItem(LAST); } catch { /* none remembered */ }
+    const entry = key ? all.find((e) => e.key === key) : undefined;
+    if (entry) openChat(entry);
   }
-  function preview(c: WhatsAppConversation): string {
-    const m = last(c);
-    if (!m) return "";
-    const text = m.text || (m.media.kind !== "none" ? `[${m.media.kind}]` : "");
-    return c.isGroup && !m.fromMe && m.senderName ? `${m.senderName}: ${text}` : m.fromMe ? `${tr("Jij", "You")}: ${text}` : text;
+
+  // A WhatsApp chat Nook has no messages of yet (it only knows it from the phone) is fetched first, so it opens filled.
+  // Every other app's chat reads itself from the inbox (`ChatDetail`).
+  async function openChat(e: ChatEntry) {
+    gh = null;
+    selected = e.key;
+    try { localStorage.setItem(LAST, e.key); } catch { /* not remembered */ }
+    if (e.app !== WHATSAPP) {
+      if (whatsapp.chat) whatsapp.dismiss();
+      return;
+    }
+    const chat = chats.find((c) => c.id === e.id);
+    if (chat && !chat.messages.length) await connectorsApi.whatsappCardLoad(e.id).catch(() => {});
+    whatsapp.show(e.id);
+  }
+
+  // A search hit (or anything else in Nook) opens a chat by its inbox key, also while Chats is already on screen.
+  $effect(() => {
+    const opened = (e: Event) => {
+      const key = (e as CustomEvent<string>).detail;
+      const entry = all.find((x) => x.key === key);
+      if (entry) {
+        filter = null;
+        view = "all";
+        query = "";
+        openChat(entry);
+      } else {
+        // Not listed yet (the list is still loading): it opens once it is.
+        try { localStorage.setItem(LAST, key); } catch { /* not remembered */ }
+        reopened = false;
+        selected = null;
+      }
+    };
+    window.addEventListener("nook-open-chat", opened);
+    // A chat notification's click, from Rust.
+    const off = connectorEvents.onOpenChat((key) => opened(new CustomEvent("nook-open-chat", { detail: key })));
+    return () => {
+      window.removeEventListener("nook-open-chat", opened);
+      off.then((f) => f());
+    };
+  });
+
+  function closeChat() {
+    try { localStorage.removeItem(LAST); } catch { /* nothing to forget */ }
+    selected = null;
+    whatsapp.dismiss();
   }
 
   function openPull(account: string, item: PullRequestItem) {
-    whatsapp.dismiss();
+    closeChat();
     gh = { account, item };
   }
 
-  function item(info: ConnectorInfo, url: string | null) {
+  function item(url: string | null) {
     if (url) openUrl(url).catch(() => {});
-    else api.showMain("settings");
+    else settings("connections");
   }
 
-  function settings() {
+  /// Every chat in the list with something new, read in Nook (`markAllChatsReadInNook`).
+  async function markAllRead() {
+    await chatsApi.markAllRead(list.filter((e) => e.read === "unread").map((e) => e.key)).catch(() => {});
+    whatsapp.version++;
+  }
+
+  function settings(section = "chats") {
     try {
-      localStorage.setItem("settings.section", "accounts");
+      localStorage.setItem("settings.section", section);
     } catch {
       // The window opens on its last section instead.
     }
     api.showMain("settings");
   }
+
+  /// One click starts collecting, as the Mac's Turn on does: WhatsApp is switched on; linking the phone is in Settings.
+  async function turnOn() {
+    if (!wa) return settings();
+    turningOn = true;
+    try {
+      await connectorsApi.whatsappSave({ ...wa.settings, enabled: true });
+      await load();
+    } catch {
+      settings();
+    } finally {
+      turningOn = false;
+    }
+  }
+
+  function toggle(g: ChatGroup) {
+    collapsed = collapsed.includes(g) ? collapsed.filter((x) => x !== g) : [...collapsed, g];
+  }
+
+  // Escape closes the open chat when nothing else has the key.
+  function keydown(e: KeyboardEvent) {
+    if (e.key !== "Escape" || e.defaultPrevented || !(selected || gh)) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest("input, textarea, [contenteditable], dialog, [role='dialog'], [role='menu']")) return;
+    if (gh) gh = null;
+    else closeChat();
+  }
+
+  // In the main window the sidebar's column moves into the window's sidebar, under the tabs, as on the Mac.
+  let docked = $state(false);
+  function dock(node: HTMLElement) {
+    const slot = document.getElementById("sidebar-slot");
+    // A narrow window folds the sidebar to icons: the column then stays in the page.
+    if (!slot || slot.offsetWidth < 180) return;
+    slot.appendChild(node);
+    docked = true;
+    return { destroy: () => node.remove() };
+  }
+
+  const listTitle = $derived([viewTitle(view), filter ? apps.find((a) => a.id === filter)?.title ?? filter : null, shownAccount, shownKind === "chats" ? null : kindTitle(shownKind)].filter(Boolean).join(" · "));
+  const otherApp = $derived<ConnectorInfo | null>(filter && !chatApp ? others.find((c) => c.id === filter) ?? null : null);
 </script>
 
-<div class="chats" class:split={!!whatsapp.chat || !!gh}>
+<svelte:window onkeydown={keydown} />
+
+<div class="chats" class:undocked={!docked}>
   {#if failed && !overview}
-    <p class="faint note">{tr("De gekoppelde apps konden niet worden geladen.", "The linked apps could not be loaded.")}</p>
+    <ListEmptyNote text={tr("De gekoppelde apps konden niet worden geladen.", "The linked apps could not be loaded.")} />
   {:else if !overview}
-    <p class="faint note">{tr("Laden…", "Loading…")}</p>
-  {:else if !chips.length}
-    <div class="none">
-      <p>{tr("Nog geen apps gekoppeld.", "No apps linked yet.")}</p>
-      <p class="faint">{tr("Koppel WhatsApp, je agenda, mail of GitHub, dan zie je ze hier bij elkaar.", "Link WhatsApp, your calendar, mail or GitHub and you will see them here together.")}</p>
-      <button onclick={settings}>{tr("Apps koppelen", "Link apps")}</button>
+    <ListEmptyNote text={tr("Laden…", "Loading…")} />
+  {:else if empty}
+    <!-- The Mac's empty page (`WSEmptyState`): what Chats is, and one click to start. -->
+    <div class="empty-page">
+      <span class="empty-icon"><Ico name="inbox" size={30} stroke={1.6} /></span>
+      {#if !whatsappOn}
+        <strong>{tr("Al je chats op één plek", "All your chats in one place")}</strong>
+        <p>{tr("Nook kan je WhatsApp-chats hier verzamelen, naast je Nooks en je agents, zodat je ze leest en beantwoordt zonder van app te wisselen. Alles blijft op deze computer. Telegram, Signal en de andere chatapps volgen. Eén klik en het begint.", "Nook can collect your WhatsApp chats here, next to your Nooks and your agents, so you read and answer them without switching apps. Everything stays on this computer. Telegram, Signal and the other chat apps follow. One click and it starts.")}</p>
+        <div class="empty-actions">
+          <button class="primary-button" onclick={turnOn} disabled={turningOn}><Ico name="inbox" size={13} stroke={2.4} />{tr("Zet aan", "Turn on")}</button>
+          <button class="ghost-button" onclick={() => settings()}><Ico name="settings" size={13} stroke={2.2} />{tr("Instellen", "Set up")}</button>
+        </div>
+      {:else}
+        <strong>{tr("Nog geen chats", "No chats yet")}</strong>
+        <p>{wa && wa.link.kind !== "connected" ? wa.statusLine : tr("Nieuwe WhatsApp-berichten verschijnen hier zodra ze binnenkomen.", "New WhatsApp messages show up here as soon as they arrive.")}</p>
+        <div class="empty-actions">
+          <button class="ghost-button" onclick={() => settings()}><Ico name="settings" size={13} stroke={2.2} />{tr("Instellen", "Set up")}</button>
+        </div>
+      {/if}
     </div>
   {:else}
-    <div class="pane">
-    <div class="chips" role="tablist">
-      <button class="chip" class:on={filter === "all"} onclick={() => (filter = "all")}>{tr("Alles", "All")}</button>
-      {#each chips as c (c.id)}
-        <button class="chip" class:on={filter === c.id} onclick={() => (filter = c.id)}>
-          <ServiceIcon domain={c.domain} title={c.title} size={14} />
-          {c.title}
-          {#if c.count}<span class="count">{c.count}</span>{/if}
-        </button>
-      {/each}
+    <div class="sidebar-column" use:dock>
+      <ChatsSidebar {view} app={filter} {counts} {apps} accounts={accounts.length > 1 ? accounts.map((a) => ({ name: a, count: newIn((e) => e.app === filter && e.account === a) })) : []} account={shownAccount}
+        onview={(v) => (view = v)} onapp={(id) => { filter = id; account = null; gh = null; }} onaccount={(a) => (account = a)} onadd={() => settings()} />
     </div>
 
-    <div class="list">
-      {#each shown as c (c.id)}
-        <section>
-          <h4>
-            <button class="fold" aria-expanded={!folded.includes(c.id)} onclick={() => fold(c.id)}>
-              <svg class="arrow" class:open={!folded.includes(c.id)} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              <ServiceIcon domain={c.domain} title={c.title} size={16} />
-              <span class="name">{c.title}</span>
-              {#if folded.includes(c.id) && c.count}<span class="count">{c.count}</span>{/if}
+    <section class="list" aria-label={listTitle}>
+      <!-- The list's title (`PanelListHeader`): the view, and the app when one is chosen, with the one action that fits. -->
+      <header class="list-head" data-tauri-drag-region>
+        <span class="list-title" data-tauri-drag-region>{listTitle}</span>
+        <span class="spacer" data-tauri-drag-region></span>
+        {#if chatApp && list.some((e) => e.read === "unread")}
+          <IconButton title={tr("Alles gelezen in Nook", "Mark all read in Nook")} onclick={markAllRead}><Ico name="circle-check" size={15} /></IconButton>
+        {/if}
+      </header>
+      {#if chatApp && kinds.length > 1}
+        <div class="kinds" role="tablist">
+          {#each kinds as k (k)}
+            {@const count = all.filter((e) => e.listKind === k && e.read === "unread" && (!filter || e.app === filter)).length}
+            <button role="tab" class="kind" class:on={shownKind === k} aria-selected={shownKind === k} onclick={() => (kind = k)}>
+              {kindTitle(k)}{#if count}<span class="kind-count">{count}</span>{/if}
             </button>
-          </h4>
-          {#if folded.includes(c.id)}
-            <!-- Folded: only the header shows. -->
-          {:else if c.id === WHATSAPP}
-            {#if wa && wa.link.kind !== "connected"}
-              <p class="faint note">{wa.statusLine}</p>
-              <button class="small" onclick={settings}>{tr("Naar instellingen", "Open settings")}</button>
-            {:else if !sorted.length}
-              <p class="faint note">{tr("Nog geen gesprekken. Zodra er berichten binnenkomen staan ze hier.", "No chats yet. They show up here as messages arrive.")}</p>
-            {/if}
-            {#each sorted.slice(0, 200) as chat (chat.id)}
-              <button class="row" class:active={whatsapp.chat === chat.id} onclick={() => openChat(chat)}>
-                <Avatar chat={chat.id} name={chat.name} size={28} />
-                <span class="what">
-                  <span class="line"><span class="title">{chat.name}</span><span class="when faint">{at(chat)}</span></span>
-                  <span class="sub faint">{preview(chat)}</span>
-                </span>
-                {#if chat.unread}<span class="count">{chat.unread}</span>{/if}
-              </button>
-            {/each}
-          {:else if c.id === GITHUB}
-            <GitHubPanel active={gh ? `${gh.account} ${itemId(gh.item)}` : null} onopen={openPull} />
+          {/each}
+        </div>
+      {/if}
+      {#if chatApp}
+        <div class="search"><SearchField bind:value={query} placeholder={tr("Zoek in chats", "Search chats")} /></div>
+      {/if}
+
+      <div class="rows">
+        {#if filter === GITHUB}
+          <GitHubPanel active={gh ? `${gh.account} ${itemId(gh.item)}` : null} onopen={openPull} />
+        {:else if otherApp}
+          {#if otherApp.status.headline}<ListEmptyNote text={otherApp.status.headline} />{/if}
+          {#each otherApp.status.items.slice(0, 30) as it (it.id)}
+            <button class="item" onclick={() => item(it.url)}>
+              <span class="item-dot {it.tone}"></span>
+              <span class="item-what">
+                <span class="item-title">{it.title}</span>
+                {#if it.subtitle}<span class="item-sub">{it.subtitle}</span>{/if}
+              </span>
+            </button>
           {:else}
-            {@const info = apps.find((a) => a.id === c.id)}
-            {#if info}
-              {#if info.status.headline}<p class="faint note">{info.status.headline}</p>{/if}
-              {#each info.status.items.slice(0, 12) as it (it.id)}
-                <button class="row" onclick={() => item(info, it.url)}>
-                  <span class="dot {it.tone === 'good' ? 'unread' : it.tone === 'attention' ? 'waiting' : it.tone === 'bad' ? 'error' : 'idle'}"></span>
-                  <span class="what">
-                    <span class="line"><span class="title">{it.title}</span></span>
-                    {#if it.subtitle}<span class="sub faint">{it.subtitle}</span>{/if}
-                  </span>
-                </button>
-              {:else}
-                <p class="faint note">{info.status.detail || tr("Niets nieuws.", "Nothing new.")}</p>
+            <ListEmptyNote text={otherApp.status.detail || tr("Niets nieuws.", "Nothing new.")} />
+          {/each}
+        {:else}
+          {#each groups as s, i (s.group)}
+            {@const isOpen = searching || !collapsed.includes(s.group)}
+            <button class="group" class:first={i === 0} aria-expanded={isOpen} disabled={searching} onclick={() => toggle(s.group)}>
+              <span>{groupTitle(s.group)}</span>
+              <span class="chev" class:shut={!isOpen}><DisclosureChevron open={isOpen} size={9} /></span>
+              <span class="spacer"></span>
+              {#if !isOpen}<span class="group-count">{s.entries.length}</span>{/if}
+            </button>
+            {#if isOpen}
+              {#each s.entries as e, j (e.id)}
+                {#if j > 0}<div class="separator" aria-hidden="true"></div>{/if}
+                <ChatRow entry={e} selected={selected === e.key} {now} onselect={() => openChat(e)} onclosed={() => { if (selected === e.key) closeChat(); }} />
               {/each}
             {/if}
+          {/each}
+          {#if !list.length}
+            <div class="list-empty">
+              {#if searching}
+                <ListEmptyNote text={tr("Geen chats gevonden", "No chats found")} />
+              {:else if view !== "all"}
+                <ListEmptyNote text={view === "unread" ? tr("Niets nieuw. Je bent helemaal bij.", "Nothing new. You're all caught up.") : view === "readInNook" ? tr("Alles wat je in Nook las, is ook in de apps gelezen.", "Everything you read in Nook is read in its app too.") : tr("Nog geen chats die overal gelezen zijn.", "No chats read everywhere yet.")} />
+                <button class="small-ghost" onclick={() => (view = "all")}>{tr("Toon alle chats", "Show all chats")}</button>
+              {:else if !whatsappOn}
+                <ListEmptyNote text={tr("Zet WhatsApp aan, dan staan je chats hier.", "Turn on WhatsApp and your chats show up here.")} />
+                <button class="small-ghost" onclick={turnOn} disabled={turningOn}>{tr("Zet aan", "Turn on")}</button>
+              {:else}
+                <ListEmptyNote text={wa && wa.link.kind !== "connected" ? wa.statusLine : tr("Nog geen chats", "No chats yet")} />
+                <button class="small-ghost" onclick={() => settings()}>{tr("Instellen", "Set up")}</button>
+              {/if}
+            </div>
           {/if}
-        </section>
-      {/each}
-    </div>
-    </div>
-    {#if gh}
-      <div class="detail pr">
-        {#key `${gh.account} ${itemId(gh.item)}`}
-          <PullRequestView accountId={gh.account} item={gh.item} onback={() => (gh = null)} />
-        {/key}
+        {/if}
       </div>
-    {:else if whatsapp.chat}
-      <div class="detail"><WhatsAppCard inline {onnook} /></div>
-    {/if}
+    </section>
+
+    <section class="detail">
+      {#if gh}
+        <div class="pr">
+          {#key `${gh.account} ${itemId(gh.item)}`}
+            <PullRequestView accountId={gh.account} item={gh.item} onback={() => (gh = null)} />
+          {/key}
+        </div>
+      {:else if open}
+        {#key open.key}<ChatDetail entry={open} targets={all.filter((e) => e.sends && e.listKind === "chats")} onclose={closeChat} {onnook} />{/key}
+      {:else}
+        <!-- No chat open (none picked yet, or closed with Escape). -->
+        <div class="placeholder" data-tauri-drag-region>
+          <span class="placeholder-icon"><Ico name="messages-square" size={30} stroke={1.4} /></span>
+          <span class="placeholder-title">{tr("Kies een chat", "Pick a chat")}</span>
+          <span class="placeholder-detail">{tr("Open een chat in de lijst. Esc sluit hem weer.", "Open a chat from the list. Escape closes it again.")}</span>
+        </div>
+      {/if}
+    </section>
   {/if}
 </div>
 
 <style>
-  .chats { height: 100%; display: flex; min-height: 0; }
-  /* The list of every chat, and beside it the open chat, so all your groups stay in view and scroll on their own. */
-  .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-  .split .pane { flex: none; width: 300px; border-right: 1px solid var(--line); }
-  .detail { flex: 1; min-width: 0; min-height: 0; }
-  .detail.pr { padding: 12px; box-sizing: border-box; }
-  .row.active { background: var(--smoke); border-color: var(--line2); }
-  .split .chips { padding: 4px 10px 8px; }
-  .split .list { padding: 0 6px 12px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 16px 8px; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--smoke); color: var(--text2); border: 1px solid var(--line); }
-  .chip.on { color: var(--paper); border-color: color-mix(in srgb, var(--iris) 55%, var(--line)); }
-  .count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--iris); color: var(--on-iris); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
-  .list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
-  h4 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); }
-  .fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left; cursor: pointer; }
-  .fold:hover { color: var(--text2); }
-  .fold .name { flex: 1; min-width: 0; }
-  .arrow { flex: none; transition: transform 0.12s ease; }
-  .arrow.open { transform: rotate(90deg); }
-  .note { margin: 4px 4px 8px; font-size: 11px; line-height: 1.5; }
-  .row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px; margin-bottom: 2px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; }
-  .row:hover { background: var(--row-hover); }
-  .what { min-width: 0; flex: 1; display: grid; gap: 2px; }
-  .line { display: flex; align-items: baseline; gap: 8px; }
-  .title { min-width: 0; flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .when { flex: none; font-size: 10px; }
-  .sub { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dot.idle { background: var(--text3); width: 5px; height: 5px; margin: 1px; }
-  .none { padding: 24px 20px; text-align: center; }
-  .none p { margin: 0 0 8px; font-size: 12px; line-height: 1.5; }
-  .small { font-size: 11px; padding: 4px 10px; }
+  .chats { height: 100%; min-height: 0; display: flex; }
+  /* Docked, the sidebar's column lives in the window's sidebar; else it is the page's first column. */
+  .sidebar-column { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .undocked .sidebar-column { flex: none; height: 100%; width: 184px; padding: var(--space-8) var(--space-6); border-right: 1px solid var(--border); box-sizing: border-box; }
+
+  /* The list (`PanelLayout.chatsList`): 320 wide beside the chat, with a line between them. */
+  .list { flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--space-8); padding: 0 var(--space-4) 0 var(--space-8); border-right: 1px solid var(--border); box-sizing: border-box; }
+  .list-head { display: flex; align-items: center; gap: var(--space-6); min-height: 52px; padding: 0 var(--space-4) 0 var(--space-12); flex: none; }
+  .list-title { font: var(--text-title); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spacer { flex: 1; }
+  .kinds { display: flex; gap: var(--space-2); padding: var(--space-2); margin: 0 var(--space-4); background: var(--surface); border-radius: var(--radius-control); flex: none; }
+  .kind { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-4); height: 26px; padding: 0 var(--space-8); border: 0; border-radius: var(--radius-chip); background: transparent; color: var(--text3); font: var(--text-label); }
+  .kind:hover:not(:disabled) { background: var(--row-hover); border: 0; color: var(--text2); }
+  .kind.on { background: var(--row-selected); color: var(--paper); }
+  .kind-count { color: var(--amber); font-variant-numeric: tabular-nums; }
+  .search { padding: 0 var(--space-4); flex: none; }
+  .search :global(.search) { background: var(--field); border-color: transparent; }
+  .rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-12); }
+
+  /* A group's title (`ChatsGroupHeader`): written as a group's name, the chevron shows under the pointer or when shut. */
+  .group { display: flex; align-items: center; gap: var(--space-4); width: 100%; padding: var(--space-12) var(--space-12) var(--space-4); border: 0; background: transparent; color: var(--text3); font: var(--text-label); text-align: left; }
+  .group.first { padding-top: var(--space-4); }
+  .group:hover:not(:disabled) { background: transparent; border: 0; color: var(--text2); }
+  .group:disabled { opacity: 1; }
+  .chev { display: inline-flex; opacity: 0; transition: opacity 120ms ease; }
+  .group:hover .chev, .chev.shut { opacity: 1; }
+  .group-count { font: var(--text-caption); font-variant-numeric: tabular-nums; }
+  .separator { height: 1px; margin: var(--space-2) var(--space-12); background: var(--separator); flex: none; }
+  .list-empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-6); padding-top: var(--space-16); text-align: center; }
+  .small-ghost { height: 26px; padding: 0 var(--space-8); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text2); font: var(--text-label); }
+  .small-ghost:hover:not(:disabled) { background: var(--row-hover); border: 0; color: var(--paper); }
+
+  .item { display: flex; align-items: center; gap: var(--space-8); width: 100%; padding: var(--space-8) var(--space-12); border: 0; border-radius: var(--radius-card); background: transparent; text-align: left; color: inherit; }
+  .item:hover:not(:disabled) { background: var(--row-hover); border: 0; }
+  .item-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text3); }
+  .item-dot.good { background: var(--mint); }
+  .item-dot.attention { background: var(--amber); }
+  .item-dot.bad { background: var(--coral); }
+  .item-what { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--space-2); }
+  .item-title { font: var(--text-emphasis); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-sub { font: var(--text-detail); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .detail { flex: 1; min-width: 0; min-height: 0; padding-left: var(--space-12); padding-right: var(--space-16); }
+  .pr { height: 100%; padding: var(--space-12) 0; box-sizing: border-box; }
+  .placeholder { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-6); text-align: center; }
+  .placeholder-icon { color: var(--text-muted); }
+  .placeholder-title { font: var(--text-body); color: var(--text2); }
+  .placeholder-detail { font: var(--text-detail); color: var(--text3); }
+
+  /* The empty page (`WSEmptyState` with `NookPrimaryButton` and `NookGhostButton`). */
+  /* The footer takes the foot of the page here (the folded rail), so the page centers in the room above it. */
+  .empty-page { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 30px 30px calc(var(--space-24) + var(--space-48)); text-align: center; }
+  .empty-icon { color: var(--text3); display: inline-flex; margin-bottom: calc(-1 * var(--space-2)); }
+  .empty-page strong { font: var(--text-title); color: var(--paper); }
+  .empty-page p { margin: 0; max-width: 380px; font: var(--text-body); line-height: 1.2; color: var(--text2); }
+  .empty-actions { display: flex; gap: var(--space-6); padding-top: var(--space-4); }
+  .primary-button, .ghost-button { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 var(--space-12); border: 0; border-radius: var(--radius-control); font: var(--text-emphasis); font-weight: 600; white-space: nowrap; }
+  .primary-button { padding: 0 14px; background: var(--iris); color: var(--on-iris); }
+  .primary-button:hover:not(:disabled) { background: color-mix(in srgb, var(--iris) 88%, var(--canvas)); border: 0; }
+  .ghost-button { gap: var(--space-6); background: transparent; color: var(--text2); }
+  .ghost-button:hover:not(:disabled) { background: var(--graphite); border: 0; color: var(--paper); }
 </style>

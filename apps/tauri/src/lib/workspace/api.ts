@@ -52,7 +52,14 @@ export interface WorkspaceRun {
   reviewedAt: string | null;
   lastChangeAt: string | null;
   changedFiles: number | null;
-  checkpoints: { ref: string; date: string }[];
+  /** The lines the session's changes add and remove, for "+120 −8" in the Agents list; null until git was read. */
+  linesAdded?: number | null;
+  linesRemoved?: number | null;
+  checkpoints: {
+    ref: string;
+    date: string;
+    conversation?: { session: string | null; provider: RunProvider | null; turns: number; head: string | null; exact: boolean };
+  }[];
   limitedAt: string | null;
   limitResetAt: string | null;
   autoResume: boolean;
@@ -69,6 +76,8 @@ export interface RunEvent {
   detail?: string;
   output?: string;
   state?: EventState;
+  /** This entry was rolled back: the agent no longer remembers it (AG-62). */
+  rolledBack?: boolean;
 }
 
 export interface QueuedMessage { id: string; text: string; createdAt: string; edited: boolean }
@@ -85,6 +94,18 @@ export interface ProviderCapabilities {
   policies: PermissionPolicy[];
   steering: boolean;
   nativeFork: boolean;
+  /** Forks at an earlier turn too, not only at the end. */
+  canForkFromTurn: boolean;
+  /** Rolls back its own conversation when restoring or editing from an earlier message (AG-62). */
+  canRollbackConversation: boolean;
+  /** Model, mode and effort picked during a turn reach it at once; otherwise from the next message. */
+  liveSettings: boolean;
+  /** A denial's reason goes in the answer; otherwise as a message right after it. */
+  denyReasonInResponse: boolean;
+  speedTiers: boolean;
+  ultracode: boolean;
+  /** A steered message comes back once the agent reads it ("waiting to be read" until then). */
+  echoesSteers: boolean;
 }
 
 export interface ProviderInfo {
@@ -134,6 +155,45 @@ export interface WorkspaceSettings {
   recentProjects: string[];
   /// The composer's last choices per folder, on top of the defaults above.
   folderChoices?: Record<string, FolderChoices>;
+  /// What every branch Nook names starts with ("nook"); Settings › Sessions › Worktrees.
+  branchPrefix?: string;
+  /// Keep what Nook and each agent send each other (Settings › System › Diagnostics).
+  keepTraffic?: boolean;
+  /// Instructions every agent gets at launch, in every project that does not set its own.
+  agentInstructions?: string;
+  /// The editor a session's folder opens in ("code", "cursor", …); empty: the file manager.
+  editor?: string;
+}
+
+/// What one project sets for itself (Settings › Projects); a field left out follows the setting for all projects.
+export interface ProjectOverride {
+  name?: string | null;
+  provider?: RunProvider | null;
+  mode?: ExecutionMode | null;
+  permission?: PermissionPolicy | null;
+  isolation?: IsolationMode | null;
+  branchPrefix?: string | null;
+  titleInstructions?: string | null;
+  agentInstructions?: string | null;
+  archived?: boolean;
+}
+
+/// The values a new session in a project starts with, and which of them the project sets itself (`own`).
+export interface ProjectDefaults {
+  provider: RunProvider;
+  mode: ExecutionMode;
+  permission: PermissionPolicy;
+  isolation: IsolationMode;
+  branchPrefix: string;
+  titleInstructions: string;
+  agentInstructions: string;
+  own: string[];
+}
+
+export interface ProjectSettingsView {
+  path: string;
+  override: ProjectOverride;
+  defaults: ProjectDefaults;
 }
 
 export interface WorkspaceOverview {
@@ -263,11 +323,19 @@ export const workspaceApi = {
   overview: () => invoke<WorkspaceOverview>("workspace_overview"),
   saveSettings: (settings: WorkspaceSettings) => invoke<void>("workspace_save_settings", { settings }),
   forgetProject: (path: string) => invoke<void>("workspace_forget_project", { path }),
+  /// The editors on this computer; and opening a folder where Settings says (the session view's "Open in").
+  editors: () => invoke<{ id: string; name: string }[]>("workspace_editors"),
+  openIn: (folder: string) => invoke<void>("workspace_open_in", { folder }),
+  /// What a project sets for itself and the values a new session there starts with.
+  projectSettings: (path: string) => invoke<ProjectSettingsView>("workspace_project_settings", { path }),
+  setProjectSettings: (path: string, value: ProjectOverride) => invoke<ProjectSettingsView>("workspace_set_project_settings", { path, value }),
   toggleFavoriteProject: (path: string) => invoke<void>("workspace_toggle_favorite_project", { path }),
   timeline: (id: string) => invoke<RunEvent[]>("workspace_timeline", { run: run(id) }),
   queue: (id: string) => invoke<MessageQueue>("workspace_queue", { run: run(id) }),
   inspect: (path: string) => invoke<ProjectInfo>("workspace_inspect", { path }),
   start: (config: NewRunConfig, allowShared: boolean) => invoke<string>("workspace_start", { config, allowShared }),
+  /** A new session that starts from this one; `keep`: the timeline entries that stay (a fork from an earlier point). */
+  fork: (id: string, keep?: number) => invoke<string>("workspace_fork", { run: run(id), keep: keep ?? null }),
   adopt: (a: { provider: RunProvider; sessionId: string; profileId: string; directory: string; title: string; history: [EventKind, string][]; fork: boolean }) =>
     invoke<string>("workspace_adopt", a),
   configure: (id: string, c: { mode?: ExecutionMode; permission?: PermissionPolicy; model?: string; effort?: string | null }) =>
@@ -311,8 +379,27 @@ export const workspaceApi = {
   createPullRequest: (id: string, d: PullRequestDraft & { draft: boolean }) =>
     invoke<{ url: string; created: boolean }>("workspace_create_pull_request", { run: run(id), ...d }),
   push: (id: string) => invoke<string>("workspace_push", { run: run(id) }),
-  canRevert: (id: string, before: string) => invoke<boolean>("workspace_can_revert", { run: run(id), before }),
-  revert: (id: string, before: string) => invoke<void>("workspace_revert", { run: run(id), before }),
+  canRevert: (id: string, before: string, conversationOnly = false) =>
+    invoke<boolean>("workspace_can_revert", { run: run(id), before, conversationOnly }),
+  revert: (id: string, before: string, keepFiles = false) =>
+    invoke<void>("workspace_revert", { run: run(id), before, keepFiles }),
+  saveMarkdown: (path: string, text: string) => invoke<void>("workspace_save_markdown", { path, text }),
+  /** A project's own icon as a data: address, or null (`ProjectFavicon`). */
+  favicon: (path: string) => invoke<string | null>("workspace_favicon", { path }),
+  /** Sessions whose title or conversation holds the words, archived ones too. */
+  search: (query: string) => invoke<{ runId: string; snippet: string; archived: boolean }[]>("workspace_search", { query }),
+  /** Files in a project folder matching `query`, for `@` mentions and the File side-panel tab. */
+  files: (root: string, query = "") => invoke<string[]>("workspace_files", { root, query }),
+  /** The `/` commands the session's agent announced itself (ACP). */
+  agentCommands: (id: string) => invoke<{ name: string; detail: string; takesInput: boolean }[]>("workspace_agent_commands", { run: run(id) }),
+  /** The CPU and memory of a working session's agent and what it started; null without a process or on a first read. */
+  resources: (id: string) => invoke<{ cpuPercent: number; memoryBytes: number; processes: number } | null>("workspace_resources", { run: run(id) }),
+  /** `/clear`: a new conversation with the agent; false while it works. */
+  clear: (id: string) => invoke<boolean>("workspace_clear", { run: run(id) }),
+  /** "Turn into project": a session's folder without a project becomes a favorite project. */
+  keepScratch: (path: string) => invoke<void>("workspace_keep_scratch", { path }),
+  /** "Make it a git repository": `git init` in a session's folder. */
+  initGit: (path: string) => invoke<void>("workspace_init_git", { path }),
   worktrees: (refresh = false) => invoke<WorktreeRow[]>("workspace_worktrees", { refresh }),
   removeWorktree: (repo: string, path: string, force: boolean) => invoke<void>("workspace_remove_worktree", { repo, path, force }),
 };
@@ -382,6 +469,11 @@ export const effortLabels: Record<string, string> = {
   get high() { return tr("Hoog", "High"); },
   get xhigh() { return tr("Extra hoog", "Extra high"); },
 };
+
+/// A folder Nook made for a session without a project (`ScratchProjects`): directly in ~/.nook/scratch.
+export function isScratch(path: string | null | undefined): boolean {
+  return !!path && /[\\/]\.nook[\\/]scratch[\\/][^\\/]+[\\/]?$/.test(path);
+}
 
 export function projectName(path: string): string {
   const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";

@@ -82,6 +82,8 @@ pub enum ClaudeEvent {
     Notice(String),
     /// Een limiet van het abonnement veranderde (`rate_limit_event`).
     RateLimits(Value),
+    /// Claude Code's chain entry uuid on a top-level message (used as `--resume-session-at` on rollback).
+    ChainEntry(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -202,26 +204,37 @@ pub fn parse_claude(line: &str) -> Vec<ClaudeEvent> {
                         model: s(message, "model").map(str::to_string),
                     });
                 }
+                if let Some(uuid) = s(&object, "uuid").filter(|u| !u.is_empty()) {
+                    events.push(ClaudeEvent::ChainEntry(uuid.into()));
+                }
             }
             events
         }
-        "user" => object
-            .pointer("/message/content")
-            .and_then(Value::as_array)
-            .map(|content| {
-                content
-                    .iter()
-                    .filter(|b| s(b, "type") == Some("tool_result"))
-                    .filter_map(|b| {
-                        Some(ClaudeEvent::ToolResult {
-                            id: s(b, "tool_use_id")?.into(),
-                            output: result_text(b.get("content")),
-                            is_error: b.get("is_error").and_then(Value::as_bool).unwrap_or(false),
+        "user" => {
+            let mut events: Vec<ClaudeEvent> = object
+                .pointer("/message/content")
+                .and_then(Value::as_array)
+                .map(|content| {
+                    content
+                        .iter()
+                        .filter(|b| s(b, "type") == Some("tool_result"))
+                        .filter_map(|b| {
+                            Some(ClaudeEvent::ToolResult {
+                                id: s(b, "tool_use_id")?.into(),
+                                output: result_text(b.get("content")),
+                                is_error: b.get("is_error").and_then(Value::as_bool).unwrap_or(false),
+                            })
                         })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !nested {
+                if let Some(uuid) = s(&object, "uuid").filter(|u| !u.is_empty()) {
+                    events.push(ClaudeEvent::ChainEntry(uuid.into()));
+                }
+            }
+            events
+        }
         "control_request" => {
             let (Some(request_id), Some(request)) = (s(&object, "request_id"), object.get("request")) else { return vec![] };
             if s(request, "subtype") != Some("can_use_tool") {

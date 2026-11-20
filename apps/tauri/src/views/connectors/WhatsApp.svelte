@@ -17,6 +17,7 @@
   import Avatar from "./Avatar.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
   import QRCodeView from "../../components/ui/QRCodeView.svelte";
+  import WhatsAppAccounts from "./WhatsAppAccounts.svelte";
 
   let view = $state<WhatsAppView | null>(null);
   let chats = $state<WhatsAppConversation[]>([]);
@@ -104,6 +105,7 @@
       <span class="head"><ServiceIcon domain="whatsapp.com" title="WhatsApp" /><span><strong>{tr("WhatsApp koppelen", "Connect WhatsApp")}</strong><br /><span class="faint small">{tr("Nieuwe berichten in Nook, antwoorden vanuit Nook, en Nook mag na jouw OK een bericht sturen.", "New messages in Nook, replies from Nook, and Nook may send a message after your OK.")}</span></span></span>
       <input type="checkbox" role="switch" checked={view.settings.enabled} onchange={(e) => save({ enabled: e.currentTarget.checked })} />
     </label>
+    <WhatsAppAccounts gateway={view.settings.gateway} enabled={view.settings.enabled} />
     {#if view.settings.enabled}
       <div class="row">
         <span class="inline"><span class="dot {dot}"></span>{view.statusLine}</span>

@@ -177,7 +177,7 @@ impl ChatHelper {
 
     /// Reads the helper into the inbox at its pace, sooner when the live line says a chat changed, and keeps the line
     /// open while the helper runs. `changed` is called after every read that changed the inbox.
-    pub fn run(self: &Arc<Self>, chats: Arc<InboxStore>, changed: impl Fn() + Send + Sync + 'static) {
+    pub fn run(self: &Arc<Self>, chats: Arc<InboxStore>, changed: impl Fn(&nook_core::chats::ChatInbox, &InboxStore) + Send + Sync + 'static) {
         let me = self.clone();
         tauri::async_runtime::spawn(async move {
             loop {
@@ -186,8 +186,10 @@ impl ChatHelper {
                 }
                 if me.is_running() {
                     me.ensure_live();
+                    // What the inbox held before the read, to tell what is new after it.
+                    let before = chats.read(|inbox| inbox.clone());
                     match chats.read_bridge(me.bridge.as_ref()).await {
-                        Ok(true) => changed(),
+                        Ok(true) => changed(&before, &chats),
                         Ok(false) => {}
                         Err(error) => log::info!("Chats: reading nook-chatd failed: {error}"),
                     }
@@ -242,8 +244,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 pub fn setup(app: &AppHandle, chats: Arc<InboxStore>) -> Arc<ChatHelper> {
     let helper = ChatHelper::new();
     let handle = app.clone();
-    helper.run(chats, move || {
+    helper.run(chats, move |before, store| {
         let _ = handle.emit("chats-changed", ());
+        store.read(|now| super::notify::arrived(&handle, before, now));
     });
     helper
 }

@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use crate::state::AppState;
+use nook_core::i18n::{tr, trf};
 
 pub const BAR: &str = "bar";
 
@@ -33,8 +34,24 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         start_local_brain(app, settings.provider);
     }
     restore_main(app);
+    own_title_bar(app);
     Ok(())
 }
+
+/// On Windows the main window draws its own title bar, as the Mac's does: the sidebar's head and the page's header fill
+/// the top row, with minimize, maximize and close on the right (`WindowControls.svelte`) instead of a grey system bar
+/// above the window. The window keeps its resize edges, and the shadow brings back Windows 11's border and corners.
+/// Linux keeps its window manager's frame, which also places the buttons where that desktop wants them.
+#[cfg(windows)]
+fn own_title_bar(app: &AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.set_decorations(false);
+        let _ = main.set_shadow(true);
+    }
+}
+
+#[cfg(not(windows))]
+fn own_title_bar(_app: &AppHandle) {}
 
 /// While a game or another app runs full screen, clicks pass through the closed bar to that app, so a click near the
 /// top of the screen never lands on Nook by accident. The open panel (from a shortcut, the tray or a message that opens
@@ -114,8 +131,11 @@ pub fn closed_main(app: &AppHandle) {
     state.update_settings(|s| s.tray_hint_shown = true);
     super::notify(
         app,
-        "Nook draait verder",
-        "Nook blijft bovenaan je scherm en in het systeemvak. Alt+Ctrl+W opent het venster weer; stoppen doe je via het systeemvak.",
+        nook_core::i18n::tr("Nook draait verder", "Nook keeps running"),
+        nook_core::i18n::tr(
+            "Nook blijft bovenaan je scherm en in het systeemvak. Alt+Ctrl+W opent het venster weer; stoppen doe je via het systeemvak.",
+            "Nook stays at the top of your screen and in the system tray. Alt+Ctrl+W opens the window again; quit from the system tray.",
+        ),
     );
 }
 
@@ -160,17 +180,17 @@ pub fn remember_main(app: &AppHandle) {
 }
 
 /// The tray tooltip says what waits on you, so a glance at the taskbar is enough.
+/// With the counts, the tray's menu and the taskbar badge follow too (`tray_live`).
 pub fn tray_status(app: &AppHandle, waiting: usize, working: usize) {
-    let Some(tray) = app.tray_by_id("nook") else { return };
-    let _ = tray.set_tooltip(Some(tray_tooltip(waiting, working)));
+    super::tray_live::set_counts(app, waiting, working);
 }
 
 pub fn tray_tooltip(waiting: usize, working: usize) -> String {
     match (waiting, working) {
         (0, 0) => "Nook".into(),
-        (0, n) => format!("Nook · bezig met {n}"),
-        (1, _) => "Nook · 1 Nook wacht op je".into(),
-        (n, _) => format!("Nook · {n} Nooks wachten op je"),
+        (0, n) => trf("Nook · bezig met {n}", "Nook · working on {n}", &[("n", &n)]),
+        (1, _) => tr("Nook · 1 Nook wacht op je", "Nook · 1 Nook is waiting for you").into(),
+        (n, _) => trf("Nook · {n} Nooks wachten op je", "Nook · {n} Nooks are waiting for you", &[("n", &n)]),
     }
 }
 
@@ -224,7 +244,9 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool, chip: bool
         // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
         set_clicks_pass(&window, false);
     }
-    let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten());
+    let monitor = chosen_monitor(app, &settings.screen_choice)
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| window.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else { return };
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
@@ -266,6 +288,61 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool, chip: bool
     let _ = window.set_position(LogicalPosition::new(x, y));
     if !expanded {
         let _ = window.set_max_size(Some(LogicalSize::new(w, h)));
+    }
+}
+
+/// The screen the bar sits on (Settings › General › Bar & windows, `screenChoice` on the Mac): "auto" keeps it where it
+/// is, "main" the primary screen, "mouse" the screen under the pointer, any other value a screen by its name. A chosen
+/// screen that is not connected right now falls back to where the bar is.
+fn chosen_monitor(app: &AppHandle, choice: &str) -> Option<tauri::Monitor> {
+    match choice {
+        "" | "auto" => None,
+        "main" => app.primary_monitor().ok().flatten(),
+        "mouse" => {
+            let cursor = app.cursor_position().ok()?;
+            app.available_monitors().ok()?.into_iter().find(|m| {
+                let (p, s) = (m.position(), m.size());
+                cursor.x >= p.x as f64 && cursor.y >= p.y as f64 && cursor.x < (p.x + s.width as i32) as f64 && cursor.y < (p.y + s.height as i32) as f64
+            })
+        }
+        name => app.available_monitors().ok()?.into_iter().find(|m| m.name().is_some_and(|n| n == name)),
+    }
+}
+
+/// The names of the connected screens, for the screen menu in Settings.
+pub fn screen_names(app: &AppHandle) -> Vec<String> {
+    app.available_monitors().map(|list| list.into_iter().filter_map(|m| m.name().cloned()).collect()).unwrap_or_default()
+}
+
+/// "Hide Nook when idle" (`hideWhenIdle`): the bar decides when it has nothing to show (closed, no notice or chip,
+/// nothing working or waiting) and hides its window; anything new, a shortcut or the tray shows it again.
+pub fn set_bar_visible(app: &AppHandle, visible: bool) {
+    if let Some(bar) = app.get_webview_window(BAR) {
+        if visible {
+            let _ = bar.show();
+        } else if !PANEL_OPEN.load(Ordering::Relaxed) {
+            let _ = bar.hide();
+        }
+    }
+}
+
+/// The main window at launch ("Open the main window when Nook starts"): in front, or without taking the keyboard when
+/// Windows started Nook at login.
+pub fn open_at_launch(app: &AppHandle, at_login: bool) {
+    if at_login {
+        if let Some(main) = app.get_webview_window("main") {
+            // Not focusable while it appears (`WS_EX_NOACTIVATE` on Windows), so showing it does not take the keyboard
+            // from the app you started working in; a moment later it takes clicks and focus as any window.
+            let _ = main.set_focusable(false);
+            let _ = main.show();
+            let main = main.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                let _ = main.set_focusable(true);
+            });
+        }
+    } else {
+        show_main(app, "chat");
     }
 }
 
@@ -338,7 +415,8 @@ fn tray_labels(language: &str) -> [&'static str; 5] {
     }
 }
 
-fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+/// The actions of the tray menu; `tray_live::build_menu` puts the status lines above them.
+pub(crate) fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let [open, window, new_nook, settings, quit] = tray_labels(&app.state::<AppState>().settings().app_language);
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let window = MenuItem::with_id(app, "window", window, true, Some("Alt+CommandOrControl+W"))?;
@@ -353,9 +431,7 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 /// Rebuilds the tray menu after the interface language changed.
 pub fn refresh_tray(app: &AppHandle) {
-    if let (Some(tray), Ok(menu)) = (app.tray_by_id("nook"), tray_menu(app)) {
-        let _ = tray.set_menu(Some(menu));
-    }
+    super::tray_live::refresh(app);
 }
 
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -373,11 +449,10 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit("new-nook", ());
             }
             "settings" => show_main(app, "settings"),
-            "quit" => {
-                remember_main(app);
-                app.exit(0)
+            "quit" => request_quit(app),
+            id => {
+                super::tray_live::handle_menu(app, id);
             }
-            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
@@ -386,6 +461,69 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
     Ok(())
+}
+
+/// Quit from the tray (`confirmQuit` on the Mac): while a Workspace session is still at work and Settings › General ›
+/// Confirmations asks for it, Nook asks first; otherwise, or after "Quit Anyway", it quits. A restart into an update
+/// (`updates.rs`) never asks.
+pub fn request_quit(app: &AppHandle) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let settings = app.state::<AppState>().settings();
+    let working = app
+        .try_state::<crate::workspace::WorkspaceState>()
+        .map(|state| state.manager.runs().into_iter().filter(|run| run.status.is_active()).count())
+        .unwrap_or(0);
+    if working == 0 || !settings.confirm_quit {
+        remember_main(app);
+        app.exit(0);
+        return;
+    }
+    let text = quit_texts(&settings.app_language, working);
+    let app = app.clone();
+    app.dialog()
+        .message(text.detail)
+        .title(text.title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(text.quit.into(), text.cancel.into()))
+        .show(move |quit| {
+            if quit {
+                remember_main(&app);
+                app.exit(0);
+            }
+        });
+}
+
+/// Quit from the main window (holding Ctrl+Q, `QuitHoldMonitor` on the Mac): the same as the tray's Quit.
+#[tauri::command]
+pub fn quit_nook(app: AppHandle) {
+    request_quit(&app);
+}
+
+struct QuitTexts {
+    title: String,
+    detail: &'static str,
+    quit: &'static str,
+    cancel: &'static str,
+}
+
+/// The Mac's words (`quit.working.*`) in the interface language.
+fn quit_texts(language: &str, working: usize) -> QuitTexts {
+    use nook_core::i18n::{fill, translate};
+    let title = if working == 1 {
+        translate(language, "Er werkt nog een sessie", "A session is still working").to_string()
+    } else {
+        fill(translate(language, "Er werken nog {n} sessies", "{n} sessions are still working"), &[("n", &working)])
+    };
+    QuitTexts {
+        title,
+        detail: translate(
+            language,
+            "Als je Nook stopt, stoppen zij ook. Je kunt ze voortzetten zodra je Nook weer opent.",
+            "Quitting Nook stops them. You can continue them after you open Nook again.",
+        ),
+        quit: translate(language, "Toch stoppen", "Quit Anyway"),
+        cancel: translate(language, "Annuleren", "Cancel"),
+    }
 }
 
 /// Globale sneltoetsen uit de instellingen. Een toets die al door een andere app bezet is, wordt overgeslagen
@@ -415,7 +553,7 @@ pub fn register_shortcuts(app: &AppHandle) {
             }
         });
         if let Err(e) = result {
-            log::warn!("Sneltoets {accelerator} kon niet worden vastgelegd: {e}");
+            log::warn!("{}", trf("Sneltoets {accelerator} kon niet worden vastgelegd: {e}", "Shortcut {accelerator} could not be registered: {e}", &[("accelerator", &accelerator), ("e", &e)]));
             problems.push(name);
         }
     }
@@ -429,9 +567,18 @@ mod tests {
 
     #[test]
     fn the_tray_says_what_waits() {
+        nook_core::i18n::set_language("nl");
         assert_eq!(tray_tooltip(0, 0), "Nook");
         assert_eq!(tray_tooltip(0, 2), "Nook · bezig met 2");
         assert_eq!(tray_tooltip(1, 3), "Nook · 1 Nook wacht op je");
         assert_eq!(tray_tooltip(4, 0), "Nook · 4 Nooks wachten op je");
+        nook_core::i18n::set_language("en");
+    }
+
+    #[test]
+    fn quitting_says_how_many_still_work() {
+        assert_eq!(quit_texts("en", 1).title, "A session is still working");
+        assert_eq!(quit_texts("en", 3).title, "3 sessions are still working");
+        assert_eq!(quit_texts("nl", 2).quit, "Toch stoppen");
     }
 }

@@ -213,7 +213,7 @@ fn start_one(app: &AppHandle, session: &StartSession, provider: RunProvider, pla
     // The caller asked for this place and the user approved it: a second agent in a folder is the point here.
     match ws.manager.start(config, true) {
         Ok(id) => {
-            ws.manager.note(id, &started_by(caller));
+            ws.manager.note_origin(id, &started_by(caller));
             automation::title_new_session(app, id, !session.title.is_empty());
             audit(app, BridgeTool::SessionStart, caller, &format!("{} · {name}", provider.display_name()), &id.to_string());
             let run = ws.manager.run(id);

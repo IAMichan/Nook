@@ -8,11 +8,15 @@ pub mod cli;
 mod commands;
 mod companion;
 mod connectors;
+mod diagnostics;
 mod games;
+mod keybindings;
 mod notices;
+mod permissions;
 mod platform;
 mod services;
 mod state;
+mod storage;
 mod tools;
 mod updates;
 mod workspace;
@@ -21,6 +25,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    diagnostics::start();
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
@@ -40,7 +45,7 @@ pub fn run() {
             }))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             // Starten bij het inloggen: de aan/uit-knop staat in Instellingen > Algemeen.
-            .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+            .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--login"])))
             .plugin(tauri_plugin_dialog::init());
     }
 
@@ -78,6 +83,9 @@ pub fn run() {
                 let args: Vec<String> = std::env::args().collect();
                 if let Some(route) = platform::desktop::route_from_args(&args) {
                     platform::desktop::show_main(app.handle(), route);
+                } else if app.state::<state::AppState>().settings().open_window_at_launch {
+                    // Started at login (`--login` from autostart): the window opens behind the app you are in.
+                    platform::desktop::open_at_launch(app.handle(), args.iter().any(|a| a == "--login"));
                 }
             }
             #[cfg(mobile)]
@@ -95,6 +103,8 @@ pub fn run() {
                     platform::desktop::closed_main(window.app_handle());
                     platform::desktop::remember_main(window.app_handle());
                     let _ = window.hide();
+                } else if window.label().starts_with("tab-") {
+                    platform::tab_windows::closed(window.app_handle(), window.label());
                 }
             }
             #[cfg(not(desktop))]
@@ -102,7 +112,37 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            #[cfg(desktop)]
+            platform::tab_windows::open_tab_window,
+            #[cfg(desktop)]
+            platform::tab_windows::close_tab_window,
+            #[cfg(desktop)]
+            platform::tray_live::tray_live,
+            #[cfg(desktop)]
+            platform::desktop::quit_nook,
+            workspace::clones::clone_jobs,
+            keybindings::keybindings_read,
+            keybindings::keybindings_write,
+            storage::storage_incidents,
+            storage::storage_incident_dismiss,
+            storage::storage_reveal,
+            services::lyrics::music_lyrics,
+            #[cfg(desktop)]
+            platform::file_preview::file_preview,
+            #[cfg(desktop)]
+            platform::file_preview::file_open_in_app,
+            workspace::clones::clone_hide,
+            workspace::clones::clone_cancel,
             commands::get_settings,
+            commands::bar_visible,
+            commands::screen_names,
+            commands::look_export,
+            commands::look_read,
+            diagnostics::diagnostics_report,
+            notices::notice_decide,
+            permissions::permissions_overview,
+            permissions::permissions_open,
+            diagnostics::diagnostics_show_logs,
             commands::instructions::instructions_view,
             commands::instructions::prompt_save,
             commands::instructions::prompt_remove,
@@ -127,6 +167,12 @@ pub fn run() {
             commands::set_key,
             commands::nooks_list,
             commands::nooks_search,
+            commands::search::search_everything,
+            commands::search::search_ai_plan,
+            commands::search::search_ai_answer,
+            commands::search::search_open_note,
+            commands::suggestions::suggest_actions,
+            commands::suggestions::run_suggested_actions,
             commands::nook_get,
             commands::nook_active,
             commands::nook_new,
@@ -235,6 +281,24 @@ pub fn run() {
             commands::connectors::whatsapp_ignore,
             commands::connectors::whatsapp_unmute,
             chats::helper::chat_helper_status,
+            chats::inbox::chat_inbox_list,
+            chats::inbox::chat_inbox_thread,
+            chats::inbox::chat_inbox_mark_read,
+            chats::inbox::chat_inbox_mark_unread,
+            chats::inbox::chat_inbox_mark_all_read,
+            chats::inbox::chat_inbox_send,
+            chats::inbox::chat_inbox_remove,
+            chats::inbox::chat_inbox_message,
+            chats::inbox::chat_inbox_older,
+            chats::inbox::chat_inbox_in_app,
+            chats::inbox::chat_inbox_send_file,
+            chats::inbox::chat_inbox_people,
+            chats::follow_up::chat_owed,
+            chats::follow_up::chat_follow_up_wait,
+            chats::follow_up::chat_snooze,
+            chats::follow_up::chat_schedule,
+            chats::follow_up::chat_scheduled,
+            chats::follow_up::chat_schedule_cancel,
             chats::link::chat_link_networks,
             chats::link::chat_link_start,
             chats::link::chat_link_session,
@@ -242,9 +306,20 @@ pub fn run() {
             chats::link::chat_link_cancel,
             chats::link::chat_link_remove,
             chats::link::chat_link_sign_in,
+            chats::call::chat_call_start,
+            chats::call::chat_call_active,
+            chats::call::chat_call_dismiss,
+            chats::call::chat_call_open_app,
             commands::whatsapp::whatsapp_card,
             commands::whatsapp::whatsapp_card_load,
             commands::whatsapp::whatsapp_avatars,
+            commands::whatsapp::whatsapp_accounts,
+            commands::whatsapp::whatsapp_account_add,
+            commands::whatsapp::whatsapp_account_remove,
+            commands::whatsapp::whatsapp_account_rename,
+            commands::whatsapp::whatsapp_account_retry,
+            commands::whatsapp::whatsapp_gowa_state,
+            commands::whatsapp::whatsapp_install_gowa,
             commands::whatsapp::whatsapp_open_file,
             commands::whatsapp::whatsapp_audio,
             commands::whatsapp::whatsapp_ask_nook,
@@ -299,6 +374,7 @@ pub fn run() {
             commands::services::aside_expand,
             commands::services::aside_hide,
             commands::services::aside_show,
+            commands::services::screen_forget,
             commands::services::screen_status,
             commands::services::energy_status,
             commands::services::quiet_status,
@@ -309,6 +385,7 @@ pub fn run() {
             commands::services::today_items,
             commands::services::recap_view,
             commands::services::sound_file,
+            commands::services::system_sounds,
             commands::services::open_sounds_folder,
             commands::autocomplete::autocomplete_view,
             commands::autocomplete::autocomplete_pause,
@@ -347,6 +424,7 @@ pub fn run() {
             commands::brain::plan_run_again,
             commands::agents::agents_overview,
             commands::agents::agents_decide,
+            commands::agents::agents_deny,
             commands::agents::agents_decide_in_terminal,
             commands::agents::agents_answer,
             commands::agents::agents_answer_in_terminal,
@@ -374,12 +452,30 @@ pub fn run() {
             commands::agents::agents_sound,
             commands::workspace::workspace_overview,
             commands::workspace::workspace_save_settings,
+            commands::workspace::workspace_project_settings,
+            commands::workspace::workspace_set_project_settings,
             commands::workspace::workspace_forget_project,
             commands::workspace::workspace_toggle_favorite_project,
             commands::workspace::workspace_timeline,
             commands::workspace::workspace_queue,
             commands::workspace::workspace_inspect,
             commands::workspace::workspace_start,
+            commands::workspace::workspace_keep_scratch,
+            commands::workspace::workspace_clear,
+            commands::workspace::workspace_resources,
+            commands::workspace::workspace_search,
+            commands::workspace::workspace_models,
+            commands::workspace::workspace_files,
+            commands::workspace::workspace_skills,
+            commands::workspace::workspace_fork,
+            commands::workspace::workspace_save_picture,
+            commands::workspace::workspace_favicon,
+            commands::workspace::workspace_agent_commands,
+            commands::workspace::antigravity_setup,
+            commands::workspace::antigravity_install,
+            commands::workspace::antigravity_uninstall,
+            commands::workspace::workspace_save_markdown,
+            commands::workspace::workspace_init_git,
             commands::workspace::workspace_adopt,
             commands::workspace::workspace_configure,
             commands::workspace::workspace_send,
@@ -439,6 +535,8 @@ pub fn run() {
             commands::workspace_tools::browser_step,
             commands::workspace_tools::browser_read,
             commands::workspace_tools::browser_close,
+            commands::workspace_tools::workspace_editors,
+            commands::workspace_tools::workspace_open_in,
         ])
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")

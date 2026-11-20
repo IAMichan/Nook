@@ -109,7 +109,7 @@ async fn chats(
         return Err(if offered {
             "The user keeps their chats on this device (Settings › Privacy): agents cannot read or send them.".into()
         } else {
-            "Nook has no chats for agents yet. Ask the user to link WhatsApp in Nook.".into()
+            "Nook has no chats for agents yet. Ask the user to link a chat app in Nook (Settings › Connections).".into()
         });
     }
     let mut use_args = Map::new();
@@ -117,7 +117,7 @@ async fn chats(
     use_args.insert("arguments".into(), input);
     let mut result = nook_use(app, &use_args, caller, context).await?;
     if tool == BridgeTool::ChatList && !result.is_error {
-        result.text.push_str("\n\nchat_send can write in these WhatsApp chats. Nook Chat itself: nook_chat_list and nook_chat_send.");
+        result.text.push_str("\n\nchat_send can write in the chats of the apps Nook links. Nook Chat itself: nook_chat_list and nook_chat_send.");
     }
     Ok(result)
 }
@@ -145,7 +145,10 @@ async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller
         if !problems.is_empty() {
             return Err(format!("{}\nArguments (JSON schema):\n{}", problems.join(" "), rules::pretty(&spec.schema)));
         }
-        return match tokio::time::timeout(Duration::from_secs(120), (spec.run)(input)).await {
+        // The chat apps kept on this device stay hidden from the agent, also inside `chat_inbox` (CH-81).
+        let withheld: Vec<String> = kept(app).into_iter().collect();
+        let run = tools::chats::WITHHELD.scope(withheld, (spec.run)(input));
+        return match tokio::time::timeout(Duration::from_secs(120), run).await {
             Ok(Ok(output)) => {
                 audit(app, BridgeTool::NookUse, caller, &name, "gelezen");
                 Ok(data(&output))
@@ -190,7 +193,8 @@ async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller
     }
     let executor = Executor { app: app.clone(), ctx: ToolCtx::new(app, ""), all: loop_tools, caller: caller.agent.clone() };
     let step = Step { tool: name.clone(), input };
-    let states = action_gate::run_plan(&executor, std::slice::from_ref(&step), &[], &[true], &[]).await;
+    let withheld: Vec<String> = kept(app).into_iter().collect();
+    let states = tools::chats::WITHHELD.scope(withheld, action_gate::run_plan(&executor, std::slice::from_ref(&step), &[], &[true], &[])).await;
     match states.into_iter().next() {
         Some(StepState::Done(r)) | Some(StepState::Verified(r)) => {
             audit(app, BridgeTool::NookUse, caller, &name, "uitgevoerd");

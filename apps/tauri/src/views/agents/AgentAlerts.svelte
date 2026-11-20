@@ -10,6 +10,8 @@
   import NoticeMark from "../../components/NoticeMark.svelte";
   import NoticeOk from "../../components/NoticeOk.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
+  import AgentMark from "../companion/ui/AgentMark.svelte";
+  import { folderName } from "./time";
 
   // `requests`: ook toestemmingsvragen en meerkeuzevragen tonen (niet als de tab Agents ze zelf al toont).
   // `left`: what is left of the notice's countdown (1 to 0), for the ring on OK; `ondismiss`: OK or Esc.
@@ -33,7 +35,13 @@
     else terminalName = "terminal";
   });
 
-  const stateText = $derived(card?.status === "done" ? tr("klaar", "done") : card?.status === "failed" ? tr("liep vast", "got stuck") : tr("wacht op je", "waiting for you"));
+  // A session Nook runs carries its title in `project`; a terminal session its first prompt.
+  const topic = $derived(card ? (card.id.startsWith("run:") ? card.project : card.lastPrompt).replace(/\s+/g, " ").trim().slice(0, 90) : "");
+  const headline = $derived(
+    !card ? "" : card.status === "done" ? tr("{agent} is klaar", "{agent} is done", { agent: card.name })
+      : card.status === "failed" ? tr("{agent} is gestopt met een fout", "{agent} stopped with an error", { agent: card.name })
+        : tr("{agent} wacht op je", "{agent} is waiting on you", { agent: card.name }),
+  );
   const fallback = $derived(
     card?.status === "done" ? tr("Klaar met je opdracht.", "Finished your task.") : card?.status === "failed" ? tr("Er ging iets mis.", "Something went wrong.") : tr("Wacht op je antwoord in de terminal.", "Waiting for your answer in the terminal."),
   );
@@ -93,12 +101,17 @@
   </div>
 {:else if card}
   <div class="alert">
+    <!-- One notice per finished turn (`AgentStatusNotice`): the agent's logo with "Claude Code is done" and where, then
+         what the session is about as the title and the gist of its reply under it. -->
     <div class="status" class:done={card.status === "done"} class:failed={card.status === "failed"}>
       <div class="context faint">
-        <span class="dot {card.status === 'done' ? 'unread' : card.status === 'failed' ? 'error' : 'waiting'}"></span>
-        {card.name} · {card.project} · {stateText}{#if card.linesAdded + card.linesRemoved > 0} · +{card.linesAdded} −{card.linesRemoved}{/if}
+        <AgentMark agent={card.name} size={14} />
+        <span class="headline">{headline}</span>
+        {#if card.cwd}<span class="where">· {folderName(card.cwd)}</span>{/if}
+        {#if card.linesAdded + card.linesRemoved > 0}<span class="lines"><span class="plus">+{card.linesAdded}</span> <span class="minus">−{card.linesRemoved}</span></span>{/if}
       </div>
-      <div class="title">{card.summary || fallback}</div>
+      <div class="title">{topic || card.summary || fallback}</div>
+      {#if topic && card.summary && card.summary !== topic}<div class="detail">{card.summary}</div>{/if}
       <div class="buttons">
         <div class="actions">
           <button class="action bright" onclick={view}>{tr("Bekijk", "View")}</button>
@@ -117,6 +130,11 @@
   .status.failed { border-color: color-mix(in srgb, var(--coral) 45%, var(--line2)); }
   .context { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .title { font-weight: 600; font-size: 14px; line-height: 1.35; }
+  .headline { color: var(--paper); font-weight: 500; }
+  .detail { font: var(--text-detail); color: var(--text2); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .lines { font-family: var(--mono); }
+  .lines .plus { color: var(--added); }
+  .lines .minus { color: var(--removed); }
   .buttons { display: flex; gap: 10px; align-items: center; }
   /* The notice's other actions side by side in one dark bar, split by thin lines; the first reads brightest. */
   .actions {

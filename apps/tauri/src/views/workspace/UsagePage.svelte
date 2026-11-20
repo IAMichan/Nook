@@ -8,12 +8,18 @@
   import { workspace } from "../../lib/workspace/store.svelte";
   import Usage from "./Usage.svelte";
 
-  let range = $state<UsageRange>((localStorage.getItem("ws.usage.range") as UsageRange) || "week");
-  let provider = $state<RunProvider | "">("");
+  // In the usage modal (`UsageModal` in the Agents tab) one tab shows one part: the account limits, or the workspace's
+  // tokens or costs, with the agent and the period chosen in the modal's filter menu instead of here.
+  let {
+    part = "all",
+    controls = true,
+    range = $bindable((localStorage.getItem("ws.usage.range") as UsageRange) || "week"),
+    provider = $bindable(""),
+  }: { part?: "all" | "limits" | "tokens" | "cost"; controls?: boolean; range?: UsageRange; provider?: RunProvider | "" } = $props();
   let report = $state<UsageReport | null>(null);
   let error = $state<string | null>(null);
 
-  const showCost = $derived(workspace.settings?.showCost ?? true);
+  const showCost = $derived((workspace.settings?.showCost ?? true) && part !== "tokens");
 
   $effect(() => {
     workspace.start();
@@ -41,14 +47,18 @@
 </script>
 
 <div class="usage">
+  {#if part === "all" || part === "limits"}
   <section>
-    <Usage />
+    <Usage heading={part === "all"} />
     <p class="faint small">
       {tr("Dit is je hele account, niet alleen de werkruimte. Claude meldt het via de statusregel (koppelen in Instellingen › Agents); Codex alleen voor het eerste account. Meldt een agent niets, dan toont Nook \"niet beschikbaar\".", "This is your whole account, not just the workspace. Claude reports it through the status line (connect it in Settings › Agents); Codex only for the first account. When an agent reports nothing, Nook shows \"not available\".")}
     </p>
   </section>
+  {/if}
 
+  {#if part !== "limits"}
   <section>
+    {#if controls}
     <div class="head">
       <div>
         <h3>{tr("Werkruimte", "Workspace")}</h3>
@@ -63,6 +73,7 @@
         {#each ranges as [r, label] (r)}<button class:on={range === r} onclick={() => (range = r)}>{label}</button>{/each}
       </div>
     </div>
+    {/if}
     {#if error}<p class="err">{error}</p>{/if}
     {#if report}
       {#if !report.sessions}
@@ -109,6 +120,7 @@
       {/if}
     {/if}
   </section>
+  {/if}
 </div>
 
 <style>

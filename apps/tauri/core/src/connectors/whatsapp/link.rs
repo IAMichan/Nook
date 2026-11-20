@@ -57,7 +57,10 @@ pub enum Webhook {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Arrived {
+    /// The chat's key across accounts (its JID for the first account).
     pub chat: String,
+    /// The shared inbox's key of the chat.
+    pub key: String,
     pub name: String,
     pub preview: String,
     pub unread: usize,
@@ -142,6 +145,8 @@ type ReceiptFn = Arc<dyn Fn(String) + Send + Sync>;
 
 pub struct WhatsAppLink {
     env: Arc<Env>,
+    /// The account this link is for: empty for the first, else its id ([`super::accounts::WaAccount`]).
+    account: String,
     inner: Mutex<Inner>,
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     gowa: Mutex<Gowa>,
@@ -164,9 +169,16 @@ struct Gowa {
 
 impl WhatsAppLink {
     pub fn new(env: Arc<Env>, desktop: bool) -> Arc<Self> {
-        let inbox = super::Inbox::new(env.chats.clone());
+        Self::for_account(env, desktop, "")
+    }
+
+    /// The link of one account (empty: the first), on a device (GOWA) or session (OpenWA) of its own.
+    pub fn for_account(env: Arc<Env>, desktop: bool, account: &str) -> Arc<Self> {
+        let inbox = super::Inbox::for_account(env.chats.clone(), account);
+        let files = if account.is_empty() { "WhatsApp files".to_string() } else { format!("WhatsApp files ({account})") };
         Arc::new(Self {
             env,
+            account: account.to_string(),
             inner: Mutex::new(Inner { inbox, ..Default::default() }),
             tasks: Mutex::default(),
             gowa: Mutex::default(),
@@ -174,8 +186,52 @@ impl WhatsAppLink {
             on_arrived: Mutex::default(),
             on_changed: Mutex::default(),
             on_receipt: Mutex::default(),
-            files_dir: Mutex::new(crate::paths::support_directory().join("WhatsApp files")),
+            files_dir: Mutex::new(crate::paths::support_directory().join(files)),
         })
+    }
+
+    /// The account this link is for: empty for the first.
+    pub fn account(&self) -> &str {
+        &self.account
+    }
+
+    /// This account's own number (JID), once linked.
+    pub fn me(&self) -> Option<String> {
+        self.with(|i| i.me.clone())
+    }
+
+    /// A chat of this account as the rest of Nook knows it ([`super::accounts::chat_key`]).
+    pub fn chat_key(&self, chat: &str) -> String {
+        super::accounts::chat_key(&jid::normalized(chat), &self.account)
+    }
+
+    fn keyed(&self, mut c: Conversation) -> Conversation {
+        c.id = self.chat_key(&c.id);
+        for m in &mut c.messages {
+            m.chat = c.id.clone();
+        }
+        c
+    }
+
+    /// The account's name on its chats from now on (`None` while only one account is linked).
+    pub fn set_label(&self, label: Option<String>) {
+        self.with(|i| i.inbox.set_label(label));
+    }
+
+    /// The port of this account's webhook; `None` for an account that is gone.
+    fn port(&self) -> Option<u16> {
+        self.settings().webhook_port_of(&self.account)
+    }
+
+    /// An added account you removed: its device or session goes from the gateway (which unlinks it from the phone) and
+    /// what Nook kept of it goes too.
+    pub async fn remove(&self) {
+        let provider = self.with(|i| i.provider.clone()).or_else(|| self.make_provider().map(Arc::new));
+        self.stop(true);
+        if let Some(p) = provider {
+            p.remove_account().await;
+        }
+        self.clear_files();
     }
 
     /// Your own messages in a chat got new ticks (delivered, read).
@@ -250,7 +306,9 @@ impl WhatsAppLink {
 
     fn make_provider(&self) -> Option<Provider> {
         let s = self.settings();
+        let others = s.accounts.iter().map(|a| a.id.clone()).filter(|id| *id != self.account);
         Provider::new(s.gateway, &s.address(), self.env.secret(CREDENTIAL_ACCOUNT).as_deref())
+            .map(|p| p.for_account(Some(self.account.as_str()), others))
     }
 
     pub fn is_connected(&self) -> bool {
@@ -341,7 +399,7 @@ impl WhatsAppLink {
             }
         });
         self.clear_files();
-        if !self.settings().enabled {
+        if !self.settings().enabled && self.account.is_empty() {
             self.stop_gowa();
         }
     }
@@ -484,7 +542,7 @@ impl WhatsAppLink {
 
     pub fn view(&self) -> LinkView {
         let settings = self.settings();
-        let port = settings.webhook_port();
+        let port = settings.webhook_port_of(&self.account).unwrap_or(0);
         let filters = settings.filters();
         self.with(|i| {
             let webhook = i.webhook.clone().unwrap_or(Webhook::Off);
@@ -511,7 +569,7 @@ impl WhatsAppLink {
     /// De gesprekken die de interface toont, nieuwste eerst.
     pub fn visible(&self) -> Vec<super::Conversation> {
         let filters = self.settings().filters();
-        self.with(|i| i.inbox.visible(&filters))
+        self.with(|i| i.inbox.visible(&filters)).into_iter().map(|c| self.keyed(c)).collect()
     }
 
     /// Every chat for the Chats tab, as on the Mac: the ones with messages here and then the rest of the phone's chats
@@ -540,6 +598,9 @@ impl WhatsAppLink {
             out.sort_by_key(|c| std::cmp::Reverse(c.last_activity));
             out
         })
+        .into_iter()
+        .map(|c| self.keyed(c))
+        .collect()
     }
 
     pub fn gowa_running(&self) -> bool {
@@ -554,7 +615,10 @@ impl WhatsAppLink {
 
     fn start_listener(self: &Arc<Self>, kind: super::GatewayKind) {
         let secret = self.webhook_secret();
-        let port = self.settings().webhook_port();
+        let Some(port) = self.port() else {
+            self.with(|i| i.webhook = Some(Webhook::PortBusy));
+            return;
+        };
         let me = self.clone();
         let task = tokio::spawn(async move {
             let listener = match TcpListener::bind(("127.0.0.1", port)).await {
@@ -624,7 +688,8 @@ impl WhatsAppLink {
     }
 
     async fn register(&self, provider: &Provider, gen: u64) {
-        let url = format!("http://127.0.0.1:{}{WEBHOOK_PATH}", self.settings().webhook_port());
+        let Some(port) = self.port() else { return };
+        let url = format!("http://127.0.0.1:{port}{WEBHOOK_PATH}");
         match provider.register_webhook(&url, &self.webhook_secret()).await {
             Ok(()) => self.with(|i| {
                 if i.generation == gen {
@@ -659,9 +724,44 @@ impl WhatsAppLink {
                     }
                 }
             }
+            Some(WebhookEvent::Reaction { chat, message, emoji, sender, from_me }) => {
+                let key = super::Inbox::key_in(&self.account, &chat);
+                let who = if from_me { String::new() } else { self.person_name(&chat, &sender) };
+                self.env.chats.with(|inbox| inbox.react_as(&key, &message, &emoji, &who));
+            }
+            Some(WebhookEvent::Edited { chat, message, text }) => {
+                let key = super::Inbox::key_in(&self.account, &chat);
+                self.env.chats.with(|inbox| inbox.edit_message(&key, &message, &text));
+            }
+            Some(WebhookEvent::Revoked { chat, message }) => {
+                let key = super::Inbox::key_in(&self.account, &chat);
+                self.env.chats.with(|inbox| inbox.withdraw_message(&key, &message));
+            }
             _ => {}
         }
         self.changed();
+    }
+
+    /// Who `sender` is in `chat`, by name: the person a private chat is with, the name a group member wrote under, a
+    /// chat on the phone with their number, else their number.
+    fn person_name(&self, chat: &str, sender: &str) -> String {
+        let person = jid::normalized(sender);
+        let key = super::Inbox::key_in(&self.account, chat);
+        let from_messages = self.env.chats.read(|inbox| {
+            let thread = inbox.threads.get(&key)?;
+            if !jid::is_group(chat) {
+                return Some(thread.name.clone());
+            }
+            thread
+                .messages
+                .iter()
+                .rev()
+                .find(|m| m.sender_id.as_deref().is_some_and(|s| jid::same_user(s, &person)) && !m.sender.is_empty())
+                .map(|m| m.sender.clone())
+        });
+        from_messages
+            .or_else(|| self.with(|i| i.known.iter().find(|k| jid::same_user(&k.jid, &person)).map(|k| k.name.clone()).filter(|n| !n.is_empty())))
+            .unwrap_or_else(|| jid::display_number(&person))
     }
 
     fn webhook_alive(&self) -> bool {
@@ -786,7 +886,8 @@ impl WhatsAppLink {
         if let (true, Some(chat), true) = (announce, fresh, self.settings().notify) {
             let arrived = self.with(|i| {
                 i.inbox.get(&chat).map(|c| Arrived {
-                    chat: c.id.clone(),
+                    chat: self.chat_key(&c.id),
+                    key: i.inbox.key_of(&c.id),
                     name: c.name.clone(),
                     preview: c.messages.last().map(|m| super::label(&m.media).unwrap_or_default() + &m.text).unwrap_or_default(),
                     unread: c.unread,
@@ -840,6 +941,71 @@ impl WhatsAppLink {
             }
         }
         Ok(self.with(|i| i.inbox.get(&key).map(|c| c.messages.clone()).unwrap_or_default()))
+    }
+
+    /// A group's members without you, as (JID, name), named as Nook knows them when the gateway gives no name.
+    pub async fn group_members(&self, chat: &str) -> Vec<(String, String)> {
+        let Some(provider) = self.with(|i| i.provider.clone()).filter(|_| self.is_connected()) else { return vec![] };
+        let me = self.with(|i| i.me.clone());
+        let mut list = provider.group_members(&jid::normalized(chat)).await;
+        list.retain(|(id, _)| !me.as_deref().is_some_and(|m| jid::same_user(id, m)));
+        for (id, name) in &mut list {
+            if name.is_empty() {
+                *name = self.person_name(chat, id);
+            }
+        }
+        list
+    }
+
+    /// Sends a file to a chat (`WASend`), after your own click, with its caption, as an answer when `reply_to` names a
+    /// message. The chat shows it as yours once the gateway took it.
+    pub async fn send_file(&self, chat: &str, file: &super::provider::OutgoingFile<'_>, reply_to: Option<&str>) -> CResult<()> {
+        use super::provider::FileKind;
+        let provider =
+            self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
+        if file.bytes.len() > files::MAX_BYTES {
+            return Err(ConnectorError::new("The file is larger than WhatsApp's gateway takes (50 MB)."));
+        }
+        if !self.with(|i| i.rate.get_or_insert_with(|| RateLimit::new(6, 60)).allow(Utc::now())) {
+            return Err(ConnectorError::new("Even rustig: Nook stuurt hoogstens 6 WhatsApp-berichten per minuut."));
+        }
+        let target = jid::normalized(chat);
+        let id = provider.send_file(&target, file, reply_to).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
+        let me = self.with(|i| i.me.clone()).unwrap_or_default();
+        let caption = if file.kind == FileKind::Audio || file.kind == FileKind::Voice { "" } else { file.caption.trim() };
+        let mut mine =
+            Message::new(&id.unwrap_or_else(|| format!("nook-{}", uuid::Uuid::new_v4())), &target, &me, "", caption, Utc::now(), true);
+        mine.media = match file.kind {
+            FileKind::Photo => super::Media::Image,
+            FileKind::Video => super::Media::Video,
+            FileKind::Audio => super::Media::Audio,
+            FileKind::Voice => super::Media::Voice,
+            FileKind::File => super::Media::Document { name: Some(file.name.to_string()) },
+        };
+        mine.reply_to = reply_to.map(str::to_string);
+        let filters = self.settings().filters();
+        self.with(|i| i.inbox.add(mine, &filters, None, false));
+        self.changed();
+        Ok(())
+    }
+
+    /// One step on one of a chat's messages, after your own click: its words changed, deleted for everyone or for you, or
+    /// an emoji on it ("" takes yours off). WhatsApp is told first; the chat shows it once WhatsApp took it.
+    pub async fn message_step(&self, chat: &str, message: &str, step: super::provider::MessageStep<'_>) -> CResult<()> {
+        use super::provider::MessageStep;
+        let provider =
+            self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
+        let target = jid::normalized(chat);
+        provider.message_step(&target, message, step).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
+        let key = super::Inbox::key_in(&self.account, &target);
+        self.env.chats.with(|inbox| match step {
+            MessageStep::Edit(text) => inbox.edit_message(&key, message, text),
+            MessageStep::Revoke => inbox.withdraw_message(&key, message),
+            MessageStep::DeleteForMe => inbox.forget_message(&key, message),
+            MessageStep::React(emoji) => inbox.react_mine(&key, message, emoji),
+        });
+        self.changed();
+        Ok(())
     }
 
     /// Markeert de chat hier en op WhatsApp als gelezen (tot het nieuwste ontvangen bericht).
@@ -908,6 +1074,11 @@ impl WhatsAppLink {
 
     /// Stuurt tekst naar een chat. Fouten zijn een zin waar de gebruiker iets mee kan.
     pub async fn send(&self, text: &str, recipient: &str) -> CResult<String> {
+        self.send_reply(text, recipient, None).await
+    }
+
+    /// Sends text to a chat, as an answer to one of its messages when `reply_to` names one (it shows quoted above it).
+    pub async fn send_reply(&self, text: &str, recipient: &str, reply_to: Option<&str>) -> CResult<String> {
         let provider =
             self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
         let body = text.trim();
@@ -927,7 +1098,13 @@ impl WhatsAppLink {
             return Err(ConnectorError::new("Even rustig: Nook stuurt hoogstens 6 WhatsApp-berichten per minuut."));
         }
         let gen = self.with(|i| i.generation);
-        let id = provider.send(body, &target).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
+        // "@Name" of a group member goes as WhatsApp's own tag: "@<number>" in the text, their JID in `mentions`.
+        let (sent, mentions) = if jid::is_group(&target) && body.contains('@') {
+            tag_members(body, &self.group_members(&target).await)
+        } else {
+            (body.to_string(), vec![])
+        };
+        let id = provider.send_message(&sent, &target, reply_to, &mentions).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
         if self.with(|i| i.generation) != gen {
             return Ok(name);
         }
@@ -948,7 +1125,7 @@ impl WhatsAppLink {
 
     /// One conversation as the card shows it (also a quiet or hidden one: the card asked for it by id).
     pub fn conversation(&self, chat: &str) -> Option<Conversation> {
-        self.with(|i| i.inbox.get(chat))
+        self.with(|i| i.inbox.get(chat)).map(|c| self.keyed(c))
     }
 
     /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
@@ -1235,6 +1412,10 @@ impl WhatsAppLink {
     /// Brengt GOWA in lijn met de instellingen: gestart als "GOWA automatisch starten" aan staat (en de koppeling GOWA
     /// op deze computer is), alleen herstart als binary, adres of wachtwoord veranderde, gestopt als het uit staat.
     pub fn sync_gowa(&self) -> bool {
+        // One GOWA serves every account; the first account's link runs it.
+        if !self.account.is_empty() {
+            return false;
+        }
         let s = self.settings();
         if !self.desktop || !s.auto_start || s.gateway != super::GatewayKind::Gowa {
             self.stop_gowa();
@@ -1611,6 +1792,38 @@ impl Connector for WhatsAppLink {
     }
 }
 
+
+/// The text with each "@Name" of a group member (the longest name first) as "@<number>", which WhatsApp tags, and the
+/// JIDs it tags.
+pub fn tag_members(text: &str, members: &[(String, String)]) -> (String, Vec<String>) {
+    let mut people: Vec<&(String, String)> = members.iter().filter(|(_, n)| !n.is_empty()).collect();
+    people.sort_by_key(|(_, n)| std::cmp::Reverse(n.len()));
+    let mut out = String::with_capacity(text.len());
+    let mut tagged: Vec<String> = vec![];
+    let mut rest = text;
+    while let Some(at) = rest.find('@') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        match people.iter().find(|(_, name)| after.starts_with(name.as_str())) {
+            Some((id, name)) => {
+                let number = id.split('@').next().unwrap_or(id).split(':').next().unwrap_or(id);
+                out.push('@');
+                out.push_str(number);
+                if !tagged.contains(id) {
+                    tagged.push(id.clone());
+                }
+                rest = &after[name.len()..];
+            }
+            None => {
+                out.push('@');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    (out, tagged)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1697,5 +1910,13 @@ mod tests {
 
         link.stop(true);
         assert!(!files_dir.exists(), "fetched files go when WhatsApp stops");
+    }
+
+    #[test]
+    fn a_member_named_with_at_goes_as_their_number() {
+        let members = vec![("31611111111@s.whatsapp.net".to_string(), "Anna".to_string()), ("31622222222@s.whatsapp.net".to_string(), "Anna Bakker".to_string())];
+        let (text, tagged) = super::tag_members("Hi @Anna Bakker and @Anna, mail me@home", &members);
+        assert_eq!(text, "Hi @31622222222 and @31611111111, mail me@home");
+        assert_eq!(tagged, vec!["31622222222@s.whatsapp.net".to_string(), "31611111111@s.whatsapp.net".to_string()]);
     }
 }

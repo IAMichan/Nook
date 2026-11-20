@@ -12,12 +12,12 @@ describe("Settings pages", () => {
   });
 
   it("follows the Mac's groups and pages", () => {
-    // `SettingsSection.Group.sections` on the Mac; Projects waits for UI-29, Gamer Mode is Tauri-first.
+    // `SettingsSection.Group.sections` on the Mac; Gamer Mode is Tauri-first.
     expect(settingsGroups).toEqual(["nook", "intelligence", "agents", "connect", "system"]);
     const pages = (g: (typeof settingsGroups)[number]) => settingsPages[g].map((p) => p.page);
     expect(pages("nook")).toEqual(["start", "general", "appearance", "notifications", "shortcuts", "games"]);
     expect(pages("intelligence")).toEqual(["brain", "assistant", "autocomplete"]);
-    expect(pages("agents")).toEqual(["agents", "sessions", "automation"]);
+    expect(pages("agents")).toEqual(["agents", "sessions", "automation", "projects"]);
     expect(pages("connect")).toEqual(["chats", "connections", "iphone", "privacy"]);
     expect(pages("system")).toEqual(["maintenance"]);
   });

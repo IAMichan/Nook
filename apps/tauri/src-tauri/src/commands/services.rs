@@ -324,6 +324,13 @@ pub fn screen_status(app: AppHandle, services: State<'_, Services>) -> ScreenSta
     }
 }
 
+/// Settings › Privacy › Screen text: forgets every window's text Nook read, so nothing it saw goes along with a
+/// question until it reads the screen again (`forgetScreenText` on the Mac).
+#[tauri::command]
+pub fn screen_forget(services: State<'_, Services>) {
+    *services.live.lock().unwrap_or_else(|e| e.into_inner()) = nook_core::services::screen::LiveScreen::default();
+}
+
 // Energy, meetings and screen sharing
 
 /// The energy plan and the status line for Settings › General › Energy.
@@ -461,12 +468,33 @@ pub fn recap_view(services: State<'_, Services>) -> RecapView {
 
 // Geluiden
 
-/// Het eigen geluid als data-URL, of niets (dan speelt de interface het ingebouwde).
+/// The sound to play as a data URL, or nothing (then the interface plays its built-in tone). `choice` is the moment's
+/// stored choice: "" or "file" is your own file in the Sounds folder, anything else a system sound by name.
 #[tauri::command]
-pub fn sound_file(name: String) -> Option<String> {
-    let path = NookSound::parse(&name)?.custom_file()?;
+pub fn sound_file(name: String, choice: Option<String>) -> Option<String> {
+    let sound = NookSound::parse(&name)?;
+    let path = match choice.as_deref().unwrap_or("") {
+        "" | "file" => sound.custom_file()?,
+        "none" => return None,
+        system => sounds::system_file_in(&sounds::system_folder()?, system)?,
+    };
     let bytes = std::fs::read(&path).ok().filter(|b| b.len() < 3_000_000)?;
     Some(format!("data:{};base64,{}", sounds::mime(&path), base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// The system's sounds a moment can play (Windows' Media folder), and which moments have a file of your own.
+#[tauri::command]
+pub fn system_sounds() -> SoundChoicesView {
+    SoundChoicesView {
+        system: sounds::system_sounds(),
+        custom: ["attention", "done", "error"].into_iter().filter(|n| NookSound::parse(n).and_then(|s| s.custom_file()).is_some()).map(String::from).collect(),
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct SoundChoicesView {
+    system: Vec<String>,
+    custom: Vec<String>,
 }
 
 #[tauri::command]

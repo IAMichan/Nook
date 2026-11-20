@@ -25,8 +25,10 @@
 </div>
 
 <style>
-  .segmented { display: inline-flex; flex: none; gap: var(--space-2); padding: var(--space-2); border-radius: var(--radius-pill); background: var(--settings-control); }
-  button { border: none; background: none; color: var(--text2); height: 24px; padding: 0 var(--space-12); border-radius: var(--radius-pill); font: var(--text-control); white-space: nowrap; }
+  /* The Mac's segmented picker at the large control size of a Settings row: one capsule 28 px high, every segment the
+     same width, the text in body type, the chosen one raised. */
+  .segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; flex: none; gap: var(--space-2); padding: var(--space-2); border-radius: var(--radius-pill); background: var(--settings-fill); }
+  button { border: none; background: none; color: var(--text-strong); height: 24px; padding: 0 var(--space-12); border-radius: var(--radius-pill); font: var(--text-body); line-height: 24px; white-space: nowrap; }
   button:hover:not(:disabled) { background: none; color: var(--paper); }
-  button.on, button.on:hover:not(:disabled) { background: var(--settings-control-on); color: var(--paper); }
+  button.on, button.on:hover:not(:disabled) { background: var(--settings-fill-on); color: var(--paper); }
 </style>

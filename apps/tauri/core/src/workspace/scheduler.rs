@@ -41,11 +41,14 @@ pub struct AutomationSettings {
     pub webhook_port: u16,
     /// A new session gets a short title from its first message, written by the chosen brain.
     pub auto_titles: bool,
+    /// Your own rules for titles (Settings › Sessions › Behavior, `titleInstructions` on the Mac), given to the brain
+    /// with every title it writes ("Start with the ticket number").
+    pub title_instructions: String,
 }
 
 impl Default for AutomationSettings {
     fn default() -> Self {
-        Self { scheduled_tasks: false, webhook_port: 0, auto_titles: true }
+        Self { scheduled_tasks: false, webhook_port: 0, auto_titles: true, title_instructions: String::new() }
     }
 }
 

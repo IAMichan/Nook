@@ -3,6 +3,7 @@
 import { untrack } from "svelte";
 import { nook } from "./state.svelte";
 import { toast } from "./toast.svelte";
+import { appLanguage } from "./i18n.svelte";
 import { pruneDismissed, rank, type InboxItem, type Prioritizer, type Ranked, type Target } from "./inbox";
 import {
   catchUp, parseFocus, pruneSnoozed, remember, snoozeUntil, splitByFocus, splitSnoozed,
@@ -47,6 +48,8 @@ class InboxService {
   /// Items a feature pushed itself (`addItem`), for events that have no list to load.
   private pushed = $state<InboxItem[]>([]);
   private providers = new Map<string, InboxProvider>();
+  /// The newest load started per provider.
+  private loads: Record<string, number> = {};
   private stops: (() => void)[] = [];
   private pendingLoads = $state(0);
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -90,6 +93,16 @@ class InboxService {
       for (const p of this.providers.values()) this.attach(p);
     });
     this.timer = setInterval(() => this.refresh(), REFRESH);
+    // Providers write their titles in the language of the moment, and the first load can come before the settings
+    // say which one: another language loads everything again.
+    let language = untrack(appLanguage);
+    this.stops.push($effect.root(() => {
+      $effect(() => {
+        const now = appLanguage();
+        if (now !== language) untrack(() => this.refresh());
+        language = now;
+      });
+    }));
   }
 
   stop() {
@@ -175,7 +188,11 @@ class InboxService {
     if (!p) return;
     this.pendingLoads++;
     try {
-      this.byProvider = { ...this.byProvider, [p.id]: await p.load() };
+      // A slower, older load (in the language of before, say) must not overwrite a newer one that already landed.
+      const seq = (this.loads[p.id] = (this.loads[p.id] ?? 0) + 1);
+      const items = await p.load();
+      if (seq !== this.loads[p.id]) return;
+      this.byProvider = { ...this.byProvider, [p.id]: items };
       this.history = remember(this.history, this.items);
       this.save();
     } catch {

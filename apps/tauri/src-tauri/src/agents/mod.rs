@@ -149,11 +149,21 @@ fn on_hub_event(app: &AppHandle, event: HubEvent) {
 /// Decides a permission request, wherever it came from: a hook (`hook-`), a session Nook runs (`run-`) or the MCP
 /// bridge (`bridge-`).
 pub fn decide(app: &AppHandle, id: &str, decision: nook_core::agents::models::ApprovalDecision) -> Result<(), String> {
+    decide_with_reason(app, id, decision, None)
+}
+
+/// As `decide`; a Deny with a reason tells the agent why ("Deny with reason", as in the companion).
+pub fn decide_with_reason(
+    app: &AppHandle,
+    id: &str,
+    decision: nook_core::agents::models::ApprovalDecision,
+    reason: Option<&str>,
+) -> Result<(), String> {
     if let Some(request) = id.strip_prefix("hook-") {
-        app.state::<AgentsState>().hub.decide(request, decision);
+        app.state::<AgentsState>().hub.decide_with_reason(request, decision, reason);
         return Ok(());
     }
-    crate::workspace::decide_approval(app, id, decision)
+    crate::workspace::decide_approval_with_reason(app, id, decision, reason)
 }
 
 /// A permission request reaches you (`presentApprovalCard` on the Mac): in the bar, or as a system notification with
@@ -162,7 +172,7 @@ pub fn decide(app: &AppHandle, id: &str, decision: nook_core::agents::models::Ap
 pub fn present_approval(app: &AppHandle, approval: &nook_core::agents::models::AgentApproval) {
     use nook_core::agents::models::ApprovalOrigin;
     use nook_core::services::toast::{NoticeTarget, Toast};
-    if !system_notices(app) {
+    if !system_notices_for(app, &approval.agent_name, true) {
         return open_bar(app);
     }
     let target = match &approval.origin {
@@ -186,18 +196,35 @@ pub fn present_approval(app: &AppHandle, approval: &nook_core::agents::models::A
     crate::notices::post(app, toast, handlers, move || open_bar(&fallback_app));
 }
 
-fn system_notices(app: &AppHandle) -> bool {
-    app.try_state::<crate::state::AppState>().is_some_and(|s| s.settings().agent_notice == "system")
+/// Whether an agent's notice goes out as a system notification (Settings › Notifications › Agents), by the one rule
+/// set in `notices::decide`; `urgent`: an approval or question, which always reaches you.
+fn system_notices_for(app: &AppHandle, agent: &str, urgent: bool) -> bool {
+    use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
+    app.try_state::<crate::state::AppState>().is_some()
+        && crate::notices::decide(app, NoticeSource::Agents, agent, urgent) == NoticeDecision::Show(NoticeStyle::System)
 }
 
 /// An agent that is done, failed or waits on you: as a system notification when you chose that for agents; otherwise
 /// the bar shows its card (`agent-attention`). A click opens the session.
 pub fn present_attention(app: &AppHandle, session: &nook_core::agents::models::AgentSession) {
-    if !system_notices(app) {
+    if !system_notices_for(app, &session.name, false) {
         return;
     }
     if let Some(toast) = nook_core::services::toast::Toast::agent_status(session) {
-        crate::notices::post(app, toast, crate::notices::Handlers::default(), || {});
+        // A reply from the toast goes to the session as your next message, or into its queue while it works.
+        let reply = match toast.target {
+            nook_core::services::toast::NoticeTarget::Run(run) => {
+                let reply_app = app.clone();
+                Some(Box::new(move |text: String| {
+                    let Some(ws) = reply_app.try_state::<crate::workspace::WorkspaceState>() else { return };
+                    if ws.manager.send(run, &text).is_err() {
+                        ws.manager.enqueue(run, &text);
+                    }
+                }) as Box<dyn Fn(String) + Send + Sync>)
+            }
+            _ => None,
+        };
+        crate::notices::post(app, toast, crate::notices::Handlers { reply, ..Default::default() }, || {});
     }
 }
 

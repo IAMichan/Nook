@@ -138,3 +138,32 @@ pub fn respond(app: &AppHandle, link: ToastLink, text: Option<String>) {
         ToastAction::Open | ToastAction::Show => run(&handler.show),
     }
 }
+
+/// The one place that decides what a notice does (Settings › Notifications): its source's style (the agents' from
+/// `agent_notice`), the app's switch, quiet hours, and quiet while you share your screen or sit in a meeting. Every
+/// notice asks here first; the bar and the chats ask through `notice_decide`.
+pub fn decide(app: &AppHandle, source: nook_core::services::notice_rules::NoticeSource, app_name: &str, urgent: bool) -> nook_core::services::notice_rules::NoticeDecision {
+    use chrono::Timelike;
+    use nook_core::services::notice_rules::{NoticeRules, NoticeSource};
+    let settings = app.state::<crate::state::AppState>().settings();
+    let mut rules = settings.notice_rules.clone();
+    rules.styles.insert(NoticeSource::Agents.id().into(), NoticeRules::agent_style(&settings.agent_notice));
+    #[cfg(desktop)]
+    let quiet = crate::services::quiet::silent(app);
+    #[cfg(not(desktop))]
+    let quiet = false;
+    rules.decide(source, app_name, urgent, quiet, false, chrono::Local::now().hour())
+}
+
+/// What a notice from `source` (agents, chats, nook, suggestions) does now: "card", "strip", "system" or "history".
+#[tauri::command]
+pub fn notice_decide(app: AppHandle, source: String, app_name: Option<String>, urgent: Option<bool>) -> String {
+    use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
+    let Some(source) = NoticeSource::from_id(&source) else { return "card".into() };
+    match decide(&app, source, app_name.as_deref().unwrap_or(""), urgent.unwrap_or(false)) {
+        NoticeDecision::Show(NoticeStyle::Card) | NoticeDecision::Show(NoticeStyle::Off) => "card".into(),
+        NoticeDecision::Show(NoticeStyle::Strip) => "strip".into(),
+        NoticeDecision::Show(NoticeStyle::System) => "system".into(),
+        NoticeDecision::HistoryOnly => "history".into(),
+    }
+}

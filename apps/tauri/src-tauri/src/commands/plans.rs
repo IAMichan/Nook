@@ -23,6 +23,8 @@ pub struct PlanStep {
     pub fields: Vec<ActionField>,
     /// "vervangt", "vergeet": een woordje bij de stap als hij iets weghaalt of vervangt.
     pub tag: String,
+    /// The source the step acts on ("calendar", "whatsapp"), for its icon and name above the step (`StepSourceIcon`).
+    pub source: Option<String>,
 }
 
 fn scope_of(app: &AppHandle, nook_id: &str) -> SourceScope {
@@ -55,12 +57,14 @@ pub fn plan_steps(app: &AppHandle, nook_id: &str, message_id: &str) -> Vec<PlanS
     actions
         .iter()
         .map(|a| {
-            let schema = all.iter().find(|t| t.name == a.tool).map(|t| t.schema.clone()).unwrap_or(Value::Null);
+            let spec = all.iter().find(|t| t.name == a.tool);
+            let schema = spec.map(|t| t.schema.clone()).unwrap_or(Value::Null);
             PlanStep {
                 tool: a.tool.clone(),
                 summary: tools::summarize(&a.tool, &a.input),
                 fields: action_gate::fields(&a.input, &schema),
                 tag: step_tag(&a.tool, &a.input),
+                source: spec.and_then(|t| t.source.clone()).or_else(|| nook_core::brain::sources::source_for_tool(&a.tool)),
             }
         })
         .collect()

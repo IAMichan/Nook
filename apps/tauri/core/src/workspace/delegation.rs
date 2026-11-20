@@ -516,7 +516,7 @@ pub fn delegate(
     }
     let child = manager.start(config, place == Placement::Shared)?;
     links.insert(child, Link { parent, depth: depth + 1, key: request.key.trim().to_string(), wake: request.wake });
-    manager.note(child, &crate::i18n::trf("Gedelegeerd door ‘{parent}’", "Delegated by “{parent}”", &[("parent", &run.title)]));
+    manager.note_origin(child, &crate::i18n::trf("Gedelegeerd door ‘{parent}’", "Delegated by “{parent}”", &[("parent", &run.title)]));
     Ok(child)
 }
 

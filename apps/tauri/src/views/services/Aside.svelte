@@ -98,10 +98,10 @@
   .card { width: 100%; }
   .pill { display: flex; align-items: center; gap: 8px; background: var(--notch); border-radius: 999px; padding: 8px 10px 8px 12px; height: 38px; border: 1px solid var(--line2); }
   .line { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .x { padding: 2px 6px; font-size: 11px; }
-  .card.open .pill { border-radius: 18px 18px 0 0; border-bottom-color: transparent; }
-  .detail { background: var(--notch); border: 1px solid var(--line2); border-top: none; border-radius: 0 0 18px 18px; padding: 4px 14px 14px; max-height: 250px; overflow-y: auto; }
-  .context { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .x { padding: 2px 6px; font: var(--text-label); }
+  .card.open .pill { border-radius: var(--radius-conversation-card) var(--radius-conversation-card) 0 0; border-bottom-color: transparent; }
+  .detail { background: var(--notch); border: 1px solid var(--line2); border-top: none; border-radius: 0 0 var(--radius-conversation-card) var(--radius-conversation-card); padding: 4px 14px 14px; max-height: 250px; overflow-y: auto; }
+  .context { font: var(--text-label); text-transform: uppercase; letter-spacing: 0.04em; }
   .detail p { margin: 6px 0; line-height: 1.45; }
   .detail ul { margin: 0 0 8px; padding-left: 18px; color: var(--text2); }
   .buttons { display: flex; gap: 6px; flex-wrap: wrap; }

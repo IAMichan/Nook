@@ -12,6 +12,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 
+use super::inbox::Reaction;
 use super::{BridgedChat, ChatBridge, ChatKind, ChatMedia, InboxMessage, Receipt};
 
 /// The port the helper listens on, on 127.0.0.1 only (the same as on the Mac).
@@ -260,6 +261,8 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
                 item.receipt = Some(receipt(message));
             }
             item.edited = message.get("isEdited").and_then(Value::as_bool) == Some(true);
+            item.reply_to = message.get("linkedMessageID").and_then(Value::as_str).filter(|l| !l.is_empty()).map(|l| message_id(l, &chat.id));
+            item.reactions = message.get("reactions").and_then(Value::as_array).map(|list| reactions(list, chat));
             if !mine && chat.is_group {
                 let mentions: Vec<&str> = message
                     .get("mentions")
@@ -273,6 +276,42 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
         .collect();
     list.sort_by_key(|m| m.date);
     list
+}
+
+/// The people of a chat a text tags as "@Name", by their id in the helper (`ChatTags`): the longest name wins.
+pub fn tagged(text: &str, chat: &ServiceChat) -> Vec<(String, String)> {
+    let mut people: Vec<(&String, &String)> = chat.people.iter().filter(|(id, name)| !name.is_empty() && Some(id.as_str()) != chat.me.as_deref()).collect();
+    people.sort_by_key(|(_, name)| std::cmp::Reverse(name.len()));
+    let mut out: Vec<(String, String)> = vec![];
+    for (at, _) in text.match_indices('@') {
+        let rest = &text[at + 1..];
+        if let Some((id, name)) = people.iter().find(|(_, name)| rest.starts_with(name.as_str())) {
+            if !out.iter().any(|(i, _)| i == *id) {
+                out.push(((*id).clone(), (*name).clone()));
+            }
+        }
+    }
+    out
+}
+
+/// A message's reactions as the helper lists them (`reactionKey`, `participantID`), one per emoji in the order they
+/// first came, with who put each there by name ("" for you).
+pub fn reactions(list: &[Value], chat: &ServiceChat) -> Vec<Reaction> {
+    let mut out: Vec<Reaction> = vec![];
+    for r in list {
+        let Some(emoji) = r.get("reactionKey").and_then(Value::as_str).filter(|k| !k.is_empty()) else { continue };
+        let who = r.get("participantID").and_then(Value::as_str).unwrap_or_default();
+        let mine = chat.me.as_deref() == Some(who) || who.starts_with("@me:");
+        let name = if mine { String::new() } else { chat.people.get(who).cloned().unwrap_or_else(|| who.to_string()) };
+        match out.iter_mut().find(|x| x.emoji == emoji) {
+            Some(x) => {
+                x.mine |= mine;
+                x.from.push(name);
+            }
+            None => out.push(Reaction { emoji: emoji.to_string(), from: vec![name], mine }),
+        }
+    }
+    out
 }
 
 /// The messages of a `/messages` answer that were deleted, by their id in Nook.
@@ -418,12 +457,41 @@ impl ChatdClient {
 
     /// Sends text; the helper's id of the message on its way.
     pub async fn send(&self, chat: &str, text: &str, reply_to: Option<&str>) -> Result<Option<String>, String> {
+        self.send_tagging(chat, text, reply_to, &[]).await
+    }
+
+    /// Sends text that tags people as "@Name" (`ChatMentions`): each `(id, name)` in `mentions` becomes its app's own tag.
+    pub async fn send_tagging(&self, chat: &str, text: &str, reply_to: Option<&str>, mentions: &[(String, String)]) -> Result<Option<String>, String> {
         let mut body = json!({"text": text});
         if let Some(reply) = reply_to {
             body["replyToMessageID"] = json!(reply);
         }
+        if !mentions.is_empty() {
+            body["mentions"] = json!(mentions.iter().map(|(id, name)| json!({"id": id, "name": name})).collect::<Vec<_>>());
+        }
         let answer = self.call(reqwest::Method::POST, &format!("{}/messages", Self::path(chat)), &[], Some(body)).await?;
         Ok(answer.get("pendingMessageID").and_then(Value::as_str).map(str::to_string))
+    }
+
+    /// Sends a file (a photo, a video, a sound or any file) with an optional caption: uploaded to the helper first, then
+    /// sent as the chat's app sends that kind.
+    pub async fn send_file(&self, chat: &str, name: &str, mime: &str, bytes: &[u8], caption: &str, voice: bool) -> Result<(), String> {
+        use base64::Engine;
+        let content = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let uploaded = self
+            .call(reqwest::Method::POST, "/v1/assets/upload/base64", &[], Some(json!({"content": content, "fileName": name, "mimeType": mime})))
+            .await?;
+        let upload = uploaded.get("uploadID").and_then(Value::as_str).ok_or("the helper took no file")?;
+        let kind = match mime.split('/').next().unwrap_or_default() {
+            _ if voice => "voice-note",
+            "image" if mime == "image/gif" => "gif",
+            "image" => "image",
+            "video" => "video",
+            "audio" => "audio",
+            _ => "file",
+        };
+        let body = json!({"text": caption, "attachment": {"uploadID": upload, "type": kind, "fileName": name, "mimeType": mime}});
+        self.call(reqwest::Method::POST, &format!("{}/messages", Self::path(chat)), &[], Some(body)).await.map(|_| ())
     }
 
     /// Read in the app too.
@@ -434,6 +502,54 @@ impl ChatdClient {
     /// Unread in the app too.
     pub async fn mark_unread(&self, chat: &str) -> Result<(), String> {
         self.call(reqwest::Method::POST, &format!("{}/unread", Self::path(chat)), &[], Some(json!({}))).await.map(|_| ())
+    }
+
+    fn message_path(chat: &str, message: &str) -> String {
+        format!("{}/messages/{}", Self::path(chat), percent_encoding::utf8_percent_encode(message, percent_encoding::NON_ALPHANUMERIC))
+    }
+
+    /// Changes the words of your own message.
+    pub async fn edit(&self, chat: &str, message: &str, text: &str) -> Result<(), String> {
+        self.call(reqwest::Method::PUT, &Self::message_path(chat, message), &[], Some(json!({"text": text}))).await.map(|_| ())
+    }
+
+    /// Deletes your own message for everyone.
+    pub async fn redact(&self, chat: &str, message: &str) -> Result<(), String> {
+        self.call(reqwest::Method::DELETE, &Self::message_path(chat, message), &[], None).await.map(|_| ())
+    }
+
+    /// Puts an emoji on a message, or (`remove`) takes yours off again.
+    pub async fn react(&self, chat: &str, message: &str, emoji: &str, remove: bool) -> Result<(), String> {
+        let path = format!("{}/reactions", Self::message_path(chat, message));
+        if remove {
+            let key = percent_encoding::utf8_percent_encode(emoji, percent_encoding::NON_ALPHANUMERIC);
+            self.call(reqwest::Method::DELETE, &format!("{path}/{key}"), &[], None).await.map(|_| ())
+        } else {
+            self.call(reqwest::Method::POST, &path, &[], Some(json!({"reactionKey": emoji}))).await.map(|_| ())
+        }
+    }
+
+    /// Pins or mutes the chat in its app.
+    pub async fn set_chat(&self, chat: &str, pinned: Option<bool>, muted: Option<bool>) -> Result<(), String> {
+        let mut body = json!({});
+        if let Some(p) = pinned {
+            body["isPinned"] = json!(p);
+        }
+        if let Some(m) = muted {
+            body["isMuted"] = json!(m);
+        }
+        self.call(reqwest::Method::PATCH, &Self::path(chat), &[], Some(body)).await.map(|_| ())
+    }
+
+    /// Archives the chat in its app, or brings it back.
+    pub async fn archive(&self, chat: &str, archived: bool) -> Result<(), String> {
+        self.call(reqwest::Method::POST, &format!("{}/archive", Self::path(chat)), &[], Some(json!({"archived": archived}))).await.map(|_| ())
+    }
+
+    /// Asks the app for older messages of the chat; true while it has still more.
+    pub async fn paginate(&self, chat: &str) -> Result<bool, String> {
+        let answer = self.call(reqwest::Method::POST, &format!("{}/paginate", Self::path(chat)), &[], Some(json!({}))).await?;
+        Ok(answer.get("hasMore").and_then(Value::as_bool).unwrap_or(false))
     }
 
     /// The linked networks and their accounts (`/v1/bridges`).
@@ -556,6 +672,19 @@ impl ChatdBridge {
     /// The helper's chat behind Nook's key for it, for sending and marking read.
     pub fn chat(&self, app: &str, chat_id: &str) -> Option<ServiceChat> {
         Self::lock(&self.state).chats.get(chat_id).filter(|c| c.app == app).cloned()
+    }
+
+    /// Older messages of one chat (scrolling back, `ChatHistoryBridge`): the app is asked for them, then `limit` of the
+    /// newest are read, as history (never new). `None` when the helper does not know the chat.
+    pub async fn older(&self, app: &str, chat_id: &str, limit: usize) -> Result<Option<BridgedChat>, String> {
+        let Some(client) = self.client() else { return Err("the chat helper is not running".into()) };
+        let Some(chat) = self.chat(app, chat_id) else { return Ok(None) };
+        let more = client.paginate(chat_id).await?;
+        let json = client.messages(chat_id, limit, &[]).await?;
+        let mut bridged = Self::bridged(&chat, messages(&json, &chat), deleted(&json, &chat), false);
+        bridged.history = true;
+        bridged.has_older = Some(more);
+        Ok(Some(bridged))
     }
 
     /// The listed chats, newest first.
@@ -876,5 +1005,31 @@ mod tests {
         bridge.changed("!a:nook", Some("1"));
         assert_eq!(bridge.read().await.unwrap().len(), 1);
         assert_eq!(bridge.chat("telegram", "!a:nook").map(|c| c.title), Some("Ann".into()));
+    }
+
+    #[test]
+    fn a_text_tags_the_longest_name_it_names() {
+        let mut people = HashMap::new();
+        people.insert("@ann".to_string(), "Anna".to_string());
+        people.insert("@annb".to_string(), "Anna Bakker".to_string());
+        people.insert("@me:x".to_string(), "Me".to_string());
+        let chat = ServiceChat { id: "!c".into(), people, me: Some("@me:x".into()), ..Default::default() };
+        assert_eq!(tagged("hi @Anna Bakker and @Anna, @Me", &chat), vec![("@annb".to_string(), "Anna Bakker".to_string()), ("@ann".to_string(), "Anna".to_string())]);
+        assert!(tagged("no tags", &chat).is_empty());
+    }
+
+    #[test]
+    fn a_message_brings_its_reactions_and_what_it_answers() {
+        let mut people = HashMap::new();
+        people.insert("@eva".to_string(), "Eva".to_string());
+        let chat = ServiceChat { id: "!c".into(), is_group: true, people, me: Some("@me:x".into()), ..Default::default() };
+        let json = json!({"items": [{"id": "$2", "timestamp": "2026-11-20T10:00:00Z", "text": "yes", "senderID": "@eva", "senderName": "Eva",
+            "linkedMessageID": "$1", "reactions": [{"reactionKey": "👍", "participantID": "@eva"}, {"reactionKey": "👍", "participantID": "@me:x"},
+            {"reactionKey": "😂", "participantID": "@eva"}]}]});
+        let list = messages(&json, &chat);
+        assert_eq!(list[0].reply_to.as_deref(), Some(message_id("$1", "!c").as_str()));
+        let r = list[0].reactions.clone().unwrap();
+        assert_eq!((r[0].emoji.as_str(), r[0].from.clone(), r[0].mine), ("👍", vec!["Eva".to_string(), String::new()], true));
+        assert_eq!((r[1].emoji.as_str(), r[1].mine), ("😂", false));
     }
 }

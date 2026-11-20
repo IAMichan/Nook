@@ -6,6 +6,12 @@ pub mod secrets;
 pub mod desktop;
 #[cfg(desktop)]
 pub mod local_brain;
+#[cfg(desktop)]
+pub mod file_preview;
+#[cfg(desktop)]
+pub mod tab_windows;
+#[cfg(desktop)]
+pub mod tray_live;
 
 #[cfg(desktop)]
 pub mod audio;

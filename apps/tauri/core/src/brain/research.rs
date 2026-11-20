@@ -242,8 +242,9 @@ pub fn reader_of(tool: &str) -> Option<Option<&'static str>> {
         "notion_search" => Some("notion_read_page"),
         "github_search" => Some("github_issue_details"),
         "search_web" => Some("read_webpage"),
-        "search_messages" | "messages_open_chats" => Some("read_messages"),
         "search_whatsapp" | "whatsapp_open_chats" => Some("read_whatsapp"),
+        // The shared inbox answers a search with the messages themselves: nothing to open after it.
+        "chat_inbox" => None,
         "search_bear" => Some("read_bear"),
         "search_things" | "search_reminders" | "search_contacts" => None,
         _ => return None,
@@ -269,7 +270,7 @@ pub fn search(source: &str, terms: &Terms, question: &str, available: &[prefetch
         "search_web" => question.trim().chars().take(160).collect(),
         "search_contacts" => terms.names.first()?.clone(),
         "search_reminders" | "notion_search" => terms.query(1),
-        "search_notes" | "search_mail" | "search_messages" | "search_whatsapp" | "search_bear" | "search_things" => terms.query(6),
+        "search_notes" | "search_mail" | "chat_inbox" | "search_whatsapp" | "search_bear" | "search_things" => terms.query(6),
         _ => terms.query(3),
     };
     if text.is_empty() {
@@ -446,12 +447,11 @@ pub fn hits(output: &str, tool: &str) -> Vec<Hit> {
                 Some(hit)
             })
             .collect(),
-        "search_messages" | "search_whatsapp" | "messages_open_chats" | "whatsapp_open_chats" => headed(output)
+        "search_whatsapp" | "whatsapp_open_chats" => headed(output)
             .into_iter()
             .filter_map(|(heading, body)| {
                 let chat = bracket("chat", &heading)?;
-                let read = if tool.contains("whatsapp") { "read_whatsapp" } else { "read_messages" };
-                Some(Hit::new(tool, plain_title(&heading), body, Some(read), json!({"chat": chat})))
+                Some(Hit::new(tool, plain_title(&heading), body, Some("read_whatsapp"), json!({"chat": chat})))
             })
             .collect(),
         "list_notes" => output
@@ -580,7 +580,7 @@ pub fn to_open(
             }
         }
         for mut hit in found {
-            if matches!(hit.read.as_deref(), Some("read_messages") | Some("read_whatsapp")) && !terms.is_empty() {
+            if hit.read.as_deref() == Some("read_whatsapp") && !terms.is_empty() {
                 hit.input["query"] = Value::String(terms.query(6));
             }
             let Some(read) = &hit.read else { continue };
@@ -747,7 +747,7 @@ const ITEMIZED: [&str; 10] = [
     "search_notes",
     "search_mail",
     "search_bear",
-    "search_messages",
+    "chat_inbox",
     "search_whatsapp",
     "search_files",
     "github_search",
@@ -761,7 +761,7 @@ pub fn relevant_only(output: &str, tool: &str, terms: &Terms) -> String {
     if terms.is_empty() || !ITEMIZED.contains(&tool) {
         return output.to_string();
     }
-    let headed_tools = ["search_notes", "search_mail", "search_bear", "search_messages", "search_whatsapp"];
+    let headed_tools = ["search_notes", "search_mail", "search_bear", "search_whatsapp"];
     let starts = |line: &str| {
         if headed_tools.contains(&tool) {
             line.starts_with("### ")
@@ -1000,6 +1000,23 @@ mod tests {
     }
 
     #[test]
+    fn the_browser_tab_and_every_chat_app_are_read_when_named() {
+        let mut tools = available();
+        tools.push(Available::new("read_browser_tab", "browser", &[], None));
+        tools.push(Available::new("chat_inbox", "chats", &[], Some("query")));
+        let tab = "Vat het artikel in mijn browser samen";
+        let calls = lookups(tab, &terms(tab, &[]), &set(&["browser"]), &tools, 6);
+        assert_eq!(calls.iter().map(|c| c.tool.as_str()).collect::<Vec<_>>(), vec!["read_browser_tab"]);
+        let chat = "Wat zei Lisa over de offerte in Telegram?";
+        let calls = lookups(chat, &terms(chat, &[]), &set(&["chats"]), &tools, 6);
+        assert_eq!(calls[0].tool, "chat_inbox");
+        assert_eq!(calls[0].input["query"], "lisa offerte");
+        let pending = "Welke chats wachten nog op antwoord?";
+        let calls = lookups(pending, &terms(pending, &[]), &set(&["chats"]), &tools, 6);
+        assert!(calls.iter().any(|c| c.tool == "chat_inbox" && c.input.get("query").is_none()), "an open chat is listed: {calls:?}");
+    }
+
+    #[test]
     fn only_tools_with_a_search_field_count_as_search() {
         assert!(is_search(&Available::new("mcp_search", "linear", &["query"], Some("query"))));
         assert!(!is_search(&Available::new("list_notes", "notes", &[], None)));
@@ -1104,10 +1121,10 @@ mod tests {
         let from_text = generic_hits(lines, "mcp_linear_search_issues", &opener);
         assert_eq!(from_text.iter().map(|h| h.input["id"].clone()).collect::<Vec<_>>(), vec![json!("ENG-12"), json!("ENG-13")]);
         let chats = vec![(
-            "search_messages".to_string(),
+            "search_whatsapp".to_string(),
             "### Jan | 2026-10-01 [chat: 7]\n- 2026-10-01 10:00 · Jan: de offerte komt morgen".to_string(),
         )];
-        let open = to_open(&chats, &Terms::words(&["offerte"]), false, &set(&["read_messages"]), 2, 2, &HashMap::new());
+        let open = to_open(&chats, &Terms::words(&["offerte"]), false, &set(&["read_whatsapp"]), 2, 2, &HashMap::new());
         assert_eq!(open[0].input["chat"], "7");
         assert_eq!(open[0].input["query"], "offerte");
     }

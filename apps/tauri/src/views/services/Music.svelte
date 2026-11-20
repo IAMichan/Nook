@@ -2,6 +2,7 @@
   import { tr } from "../../lib/i18n.svelte";
   // De Muziek-tab: wat er nu speelt, met hoes, doorspoelen, shuffle, herhalen en volume (MusicTab op de Mac).
   import { services, clock, estimatedPosition, type NowPlaying } from "../../lib/services";
+  import MusicLyrics from "./MusicLyrics.svelte";
 
   let { info, since }: { info: NowPlaying | null; since: number } = $props();
   let now = $state(Date.now());
@@ -71,6 +72,7 @@
 </script>
 
 {#if info}
+  <div class="stage">
   <div class="music">
     {#if info.artwork}<div class="glow" style="background-image:url({info.artwork})"></div>{/if}
     <div class="art" class:empty={!info.artwork} class:playing={info.playing}>
@@ -121,6 +123,8 @@
       {#if error}<div class="err">{error}</div>{/if}
     </div>
   </div>
+  <MusicLyrics {info} {position} />
+  </div>
 {:else}
   <div class="idle">
     <div class="idle-note">♪</div>
@@ -130,30 +134,31 @@
 {/if}
 
 <style>
-  .music { --accent: #ff8a5b; display: flex; gap: 24px; align-items: center; padding: 24px 28px; height: 100%; position: relative; overflow: hidden; }
+  .stage { --accent: var(--music); height: 100%; display: flex; flex-direction: column; min-height: 0; }
+  .music { --accent: var(--music); display: flex; gap: 24px; align-items: center; padding: 24px 28px; flex: none; position: relative; overflow: hidden; }
   .glow { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(48px) saturate(1.4); opacity: 0.28; pointer-events: none; }
   .music > :not(.glow) { position: relative; }
-  .art { width: 148px; height: 148px; border-radius: 16px; background: var(--accent); overflow: hidden; flex: none; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); transition: transform 240ms ease; }
+  .art { width: 148px; height: 148px; border-radius: var(--radius-composer); background: var(--accent); overflow: hidden; flex: none; border: 1px solid var(--line); box-shadow: var(--shadow-popover); transition: transform 240ms ease; }
   .art.playing { transform: scale(1.02); }
   .note { position: absolute; inset: 0; display: grid; place-items: center; font-size: 56px; color: var(--ink); opacity: 0.75; }
   .art img { width: 100%; height: 100%; object-fit: cover; }
-  .eq { position: absolute; left: 12px; bottom: 12px; padding: 5px 6px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(6px); display: flex; gap: 3px; align-items: flex-end; height: 16px; }
-  .eq span { width: 3px; height: 5px; background: #fff; border-radius: 2px; }
+  .eq { position: absolute; left: 12px; bottom: 12px; padding: 5px 6px; border-radius: var(--radius-control); background: color-mix(in srgb, var(--notch) 35%, transparent); backdrop-filter: blur(6px); display: flex; gap: 3px; align-items: flex-end; height: 16px; }
+  .eq span { width: 3px; height: 5px; background: var(--paper); border-radius: 999px; }
   .art.empty .eq span { background: var(--ink); }
   .eq.playing span { animation: eq 0.9s ease-in-out infinite; }
   .eq.playing span:nth-child(2) { animation-delay: 0.2s; }
   .eq.playing span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes eq { 50% { height: 16px; } }
   .side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-  .title { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
+  .title { font: var(--text-display); font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
   .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; margin-bottom: 4px; }
-  .scrub { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .scrub { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font: var(--text-label); color: var(--text3); }
   .time { width: 40px; }
   .time.right { text-align: right; width: 44px; }
   .bar { flex: 1; height: 20px; outline: none; display: flex; align-items: center; position: relative; touch-action: none; }
-  .bar::before { content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 3px; background: var(--line2); }
-  .fill { position: relative; height: 3px; border-radius: 3px; background: var(--paper); }
-  .knob { position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); opacity: 0; transform: scale(0.6); transition: opacity 120ms ease, transform 120ms ease; }
+  .bar::before { content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 999px; background: var(--line2); }
+  .fill { position: relative; height: 3px; border-radius: 999px; background: var(--paper); }
+  .knob { position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--paper); box-shadow: var(--shadow-control); opacity: 0; transform: scale(0.6); transition: opacity 120ms ease, transform 120ms ease; }
   .bar.seekable:hover .knob, .bar.seekable:focus-visible .knob { opacity: 1; transform: scale(1); }
   .bar:focus-visible::before { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent); }
   .bar.seekable { cursor: pointer; }
@@ -161,20 +166,20 @@
   .bar.seekable:hover .fill, .bar.seekable:focus-visible .fill { background: var(--accent); }
   .controls { display: flex; align-items: center; gap: 6px; }
   .spacer { flex: 1; }
-  .round { width: 32px; height: 32px; padding: 0; border-radius: 50%; background: transparent; border: none; font-size: 14px; }
+  .round { width: 32px; height: 32px; padding: 0; border-radius: 50%; background: transparent; border: none; font: var(--text-body); }
   .round { transition: transform 120ms ease, background 120ms ease; }
   .round:hover:not(.big) { background: var(--smoke); }
   .round:active { transform: scale(0.92); }
-  .round.big { width: 42px; height: 42px; background: var(--paper); color: var(--ink); font-size: 16px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
-  .round.big:hover { background: #fff; }
-  .toggle { width: 30px; height: 30px; padding: 0; border-radius: 50%; background: transparent; border: none; color: var(--text3); font-size: 14px; position: relative; }
+  .round.big { width: 42px; height: 42px; background: var(--paper); color: var(--ink); font: var(--text-title); box-shadow: var(--shadow-popover); }
+  .round.big:hover { background: var(--text-strong); }
+  .toggle { width: 30px; height: 30px; padding: 0; border-radius: 50%; background: transparent; border: none; color: var(--text3); font: var(--text-body); position: relative; }
   .toggle:hover { color: var(--paper); background: var(--smoke); }
   .toggle.on { color: var(--accent); }
   .toggle.on::after { content: ""; position: absolute; bottom: 3px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
   .volume { width: 96px; padding: 0; accent-color: var(--accent); background: transparent; border: none; cursor: pointer; }
   .idle { padding: 32px 28px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; user-select: text; }
-  .idle-note { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 16px; background: var(--smoke); border: 1px solid var(--line2); font-size: 26px; color: var(--accent, #ff8a5b); margin-bottom: 10px; user-select: none; }
-  .idle h3 { margin: 0; font-size: 18px; }
+  .idle-note { width: 56px; height: 56px; display: grid; place-items: center; border-radius: var(--radius-composer); background: var(--smoke); border: 1px solid var(--line2); font-size: 26px; color: var(--accent, #ff8a5b); margin-bottom: 10px; user-select: none; }
+  .idle h3 { margin: 0; font: var(--text-heading); }
   .idle p { margin: 0; max-width: 46ch; line-height: 1.45; }
-  .err { color: var(--coral); font-size: 12px; }
+  .err { color: var(--coral); font: var(--text-detail); }
 </style>

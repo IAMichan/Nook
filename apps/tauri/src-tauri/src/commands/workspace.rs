@@ -96,10 +96,46 @@ pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, Workspace
     settings.favorite_projects = current.favorite_projects.clone();
     settings.recent_projects = current.recent_projects.clone();
     settings.last_project = current.last_project.clone();
+    // Per-project values have their own commands; a save from elsewhere never drops them.
+    settings.project_overrides = current.project_overrides.clone();
     settings.save_to(&WorkspaceSettings::file());
     *current = settings;
     drop(current);
     let _ = app.emit("workspace-changed", ());
+}
+
+/// What one project sets for itself and the values a new session there starts with (Settings › Projects; the
+/// new-session screen reads `defaults` to fill in its choices).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSettingsView {
+    pub path: String,
+    #[serde(rename = "override")]
+    pub own: nook_core::workspace::settings::ProjectOverride,
+    pub defaults: nook_core::workspace::settings::ProjectDefaults,
+}
+
+#[tauri::command]
+pub fn workspace_project_settings(state: State<'_, WorkspaceState>, path: String) -> ProjectSettingsView {
+    let s = lock(&state.settings);
+    ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for(&path), path }
+}
+
+/// Saves what one project sets for itself; every field left empty follows the setting for all projects.
+#[tauri::command]
+pub fn workspace_set_project_settings(
+    app: tauri::AppHandle,
+    state: State<'_, WorkspaceState>,
+    path: String,
+    value: nook_core::workspace::settings::ProjectOverride,
+) -> ProjectSettingsView {
+    let mut s = lock(&state.settings);
+    s.set_project(&path, value);
+    s.save_to(&WorkspaceSettings::file());
+    let view = ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for(&path), path };
+    drop(s);
+    let _ = app.emit("workspace-changed", ());
+    view
 }
 
 #[tauri::command]
@@ -143,9 +179,25 @@ pub async fn workspace_start(
     mut config: NewRunConfig,
     allow_shared: bool,
 ) -> Res<String> {
+    // "Or start without a project": an empty folder of its own under ~/.nook/scratch, named after the task.
+    let scratch = config.project_path.trim().is_empty();
+    if scratch {
+        config.project_path = nook_core::workspace::scratch::create(&config.task)
+            .map_err(|e| trf("Nook kon er geen map voor maken: {error}", "Nook could not make a folder for it: {error}", &[("error", &e.to_string())]))?;
+        config.isolation = IsolationMode::Folder;
+        config.base_branch.clear();
+    }
+    // What the project sets for itself (Settings › Projects): its branch prefix, and the instructions for every agent,
+    // which go before the session's own (`agentInstructions` on the Mac).
+    let project = lock(&state.settings).defaults_for(&config.project_path);
+    let every = project.agent_instructions.trim();
+    if !every.is_empty() {
+        let own = config.instructions.trim();
+        config.instructions = if own.is_empty() { every.to_string() } else { format!("{every}\n\n{own}") };
+    }
     // De branchnaam komt uit de opdracht, pas op het moment van starten.
     if config.isolation == IsolationMode::Worktree && config.branch_name.trim().is_empty() {
-        config.branch_name = nook_core::workspace::models::branch_name(&config.task, Uuid::new_v4());
+        config.branch_name = nook_core::workspace::models::branch_name_with(&project.branch_prefix, &config.task, Uuid::new_v4());
     }
     let picked_permission = config.permission;
     // In Plan-modus leest de agent alleen; de veiligste rechten gaan mee voor als je later verdergaat.
@@ -157,7 +209,10 @@ pub async fn workspace_start(
     let id = blocking(move || m.start(config, allow_shared)).await??;
     crate::workspace::automation::title_new_session(&app, id, !chosen.title.trim().is_empty());
     let mut s = lock(&state.settings);
-    s.remember_project(&chosen.project_path);
+    // A folder without a project stays out of Recent until you turn it into a project.
+    if !scratch {
+        s.remember_project(&chosen.project_path);
+    }
     s.default_provider = chosen.provider;
     s.default_models.insert(chosen.provider.id().into(), chosen.model.clone());
     s.default_profiles.insert(chosen.provider.id().into(), chosen.profile_id.clone());
@@ -166,11 +221,250 @@ pub async fn workspace_start(
         None => s.default_efforts.remove(chosen.provider.id()),
     };
     s.default_mode = chosen.mode;
-    s.default_isolation = chosen.isolation;
+    if !scratch {
+        s.default_isolation = chosen.isolation;
+    }
     s.default_permission = chosen.permission;
-    s.remember_folder_choices(&chosen, picked_permission);
+    if !scratch {
+        s.remember_folder_choices(&chosen, picked_permission);
+    }
     s.save_to(&WorkspaceSettings::file());
     Ok(id.to_string())
+}
+
+/// Sessions whose title or conversation holds `query`, archived ones too (search across sessions, #1498).
+#[tauri::command]
+pub async fn workspace_search(state: State<'_, WorkspaceState>, query: String) -> Res<Vec<nook_core::workspace::manager::SearchHit>> {
+    let m = state.manager.clone();
+    blocking(move || m.search(&query, 60)).await
+}
+
+/// The models Nook offers each agent (`ModelManifest`), by agent id.
+#[tauri::command]
+pub fn workspace_models() -> std::collections::BTreeMap<String, Vec<nook_core::workspace::model_manifest::CatalogModel>> {
+    nook_core::workspace::model_manifest::all(chrono::Utc::now())
+}
+
+/// The `@` list's files (`FileMentions`): the best matches of `query` in the project at `root`. The walk is kept a
+/// minute per folder, so typing does not walk again.
+#[tauri::command]
+pub async fn workspace_files(root: String, query: String) -> Res<Vec<String>> {
+    type Cache = std::collections::HashMap<String, (std::time::Instant, std::sync::Arc<Vec<String>>)>;
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> = std::sync::LazyLock::new(Default::default);
+    let cached = lock(&CACHE).get(&root).filter(|(at, _)| at.elapsed().as_secs() < 60).map(|(_, f)| f.clone());
+    let files = match cached {
+        Some(f) => f,
+        None => {
+            let dir = root.clone();
+            let f = std::sync::Arc::new(blocking(move || nook_core::workspace::project_files::list(std::path::Path::new(&dir))).await?);
+            lock(&CACHE).insert(root, (std::time::Instant::now(), f.clone()));
+            f
+        }
+    };
+    Ok(nook_core::workspace::project_files::search(&files, &query, 30))
+}
+
+/// A picture pasted or dropped into a composer, kept as a file the agent reads (`ImageAttachment` on the Mac).
+#[tauri::command]
+pub async fn workspace_save_picture(data: String, extension: String) -> Res<String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.split(',').next_back().unwrap_or("")).map_err(|e| e.to_string())?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err(tr("Deze afbeelding is te groot.", "This picture is too large.").into());
+    }
+    blocking(move || nook_core::workspace::project_files::save_picture(&bytes, &extension).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string()))
+        .await?
+}
+
+/// A project's own icon (`ProjectFavicons`) as a picture the window can draw, or `None`; read once per folder.
+#[tauri::command]
+pub async fn workspace_favicon(path: String) -> Res<Option<String>> {
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Option<String>>>> =
+        std::sync::LazyLock::new(Default::default);
+    if let Some(hit) = lock(&CACHE).get(&path) {
+        return Ok(hit.clone());
+    }
+    let key = path.clone();
+    let found = blocking(move || nook_core::workspace::favicon::find(&path).and_then(|p| nook_core::workspace::favicon::data_url(&p))).await?;
+    lock(&CACHE).insert(key, found.clone());
+    Ok(found)
+}
+
+/// The skills a session's agent reads (`SkillIndex`), for the composer's `$` list; for the new-session composer, the
+/// skills of `folder` for `provider`.
+#[tauri::command]
+pub async fn workspace_skills(
+    state: State<'_, WorkspaceState>,
+    run: Option<String>,
+    folder: Option<String>,
+    provider: Option<RunProvider>,
+) -> Res<Vec<nook_core::workspace::skills::Skill>> {
+    use nook_core::workspace::skills;
+    let (working, project, provider) = match run {
+        Some(run) => {
+            let r = state.manager.run(id(&run)?).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+            (r.working_directory, r.project_path, r.provider)
+        }
+        None => (folder.clone().unwrap_or_default(), folder.unwrap_or_default(), provider.unwrap_or(RunProvider::Claude)),
+    };
+    blocking(move || {
+        let home = dirs::home_dir().unwrap_or_default();
+        let project = skills::project_folder(&working, &project);
+        skills::scan(&skills::roots(provider, &home, project.as_deref()))
+    })
+    .await
+}
+
+/// A new session that starts from this one (`fork`); `keep`: how many timeline entries stay, for a fork from an earlier
+/// point. Returns the new session's id.
+#[tauri::command]
+pub fn workspace_fork(state: State<'_, WorkspaceState>, run: String, keep: Option<usize>) -> Res<String> {
+    Ok(state.manager.fork(id(&run)?, keep)?.to_string())
+}
+
+/// The `/` commands a session's agent announced itself, for the composer's `/` list.
+#[tauri::command]
+pub fn workspace_agent_commands(state: State<'_, WorkspaceState>, run: String) -> Res<Vec<nook_core::workspace::driver::SlashCommand>> {
+    Ok(state.manager.agent_commands(id(&run)?))
+}
+
+/// The CPU and memory of a working session's agent and everything it started (`ResourceUsageBadge`); `None` while
+/// it has no process, and on the first reading.
+#[tauri::command]
+pub async fn workspace_resources(state: State<'_, WorkspaceState>, run: String) -> Res<Option<nook_core::workspace::resources::ResourceUsage>> {
+    static METERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<Uuid, nook_core::workspace::resources::Meter>>> =
+        std::sync::LazyLock::new(Default::default);
+    let id = id(&run)?;
+    let Some(pid) = state.manager.agent_pid(id) else {
+        lock(&METERS).remove(&id);
+        return Ok(None);
+    };
+    blocking(move || lock(&METERS).entry(id).or_default().measure(&[pid])).await
+}
+
+/// Antigravity's ACP server (`AntigravitySetupRow`): whether this computer has a release, whether it is installed,
+/// its version and the download's size.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravitySetup {
+    supported: bool,
+    installed: bool,
+    busy: bool,
+    version: &'static str,
+    download_bytes: u64,
+}
+
+static ANTIGRAVITY_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+pub fn antigravity_setup() -> AntigravitySetup {
+    use nook_core::workspace::{antigravity::Paths, antigravity_install as install};
+    let asset = install::current();
+    AntigravitySetup {
+        supported: asset.is_some(),
+        installed: install::installed(&Paths::current()).is_some(),
+        busy: ANTIGRAVITY_BUSY.load(std::sync::atomic::Ordering::SeqCst),
+        version: install::VERSION,
+        download_bytes: asset.map_or(0, |a| a.archive_bytes),
+    }
+}
+
+/// Installs the pinned release in the background; `antigravity-install` events carry the phase (`downloading` with
+/// `fraction`, `verifying`, `unpacking`, `checking`, then `done` or `failed` with `error`).
+#[tauri::command]
+pub fn antigravity_install(app: AppHandle) {
+    use std::sync::atomic::Ordering;
+    if ANTIGRAVITY_BUSY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        use nook_core::workspace::{antigravity::Paths, antigravity_install as install};
+        let emit = |phase: &str, fraction: f64, error: Option<&str>| {
+            let _ = app.emit("antigravity-install", serde_json::json!({"phase": phase, "fraction": fraction, "error": error}));
+        };
+        let progress_app = app.clone();
+        let result = install::install(&Paths::current(), move |p| {
+            let (phase, fraction) = match p {
+                install::Phase::Downloading(f) => ("downloading", f),
+                install::Phase::Verifying => ("verifying", 1.0),
+                install::Phase::Unpacking => ("unpacking", 1.0),
+                install::Phase::Checking => ("checking", 1.0),
+            };
+            let _ = progress_app.emit("antigravity-install", serde_json::json!({"phase": phase, "fraction": fraction}));
+        })
+        .await;
+        ANTIGRAVITY_BUSY.store(false, Ordering::SeqCst);
+        match result {
+            Ok(()) => emit("done", 1.0, None),
+            Err(e) => emit("failed", 0.0, Some(&e)),
+        }
+        // The agent's executable is found again for the new-session screen.
+        let _ = app.emit("workspace-changed", ());
+    });
+}
+
+#[tauri::command]
+pub fn antigravity_uninstall(app: AppHandle) -> Res<()> {
+    if ANTIGRAVITY_BUSY.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(tr("Antigravity wordt nog geïnstalleerd.", "Antigravity is still being installed.").into());
+    }
+    nook_core::workspace::antigravity_install::uninstall(&nook_core::workspace::antigravity::Paths::current())?;
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
+/// "Export…" (`SessionExport`): writes a session's Markdown where you chose in the save dialog. Only `.md` files.
+#[tauri::command]
+pub async fn workspace_save_markdown(path: String, text: String) -> Res<()> {
+    let lower = path.to_lowercase();
+    if !lower.ends_with(".md") && !lower.ends_with(".markdown") {
+        return Err(tr("Alleen een Markdown-bestand (.md).", "Only a Markdown file (.md).").into());
+    }
+    blocking(move || std::fs::write(&path, text).map_err(|e| e.to_string())).await?
+}
+
+/// `/clear`: the session's next message starts a new conversation with the agent; the timeline keeps everything.
+#[tauri::command]
+pub fn workspace_clear(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<bool> {
+    let id = id(&run)?;
+    let cleared = state.manager.clear_conversation(id);
+    if cleared {
+        if let Some(auto) = app.try_state::<crate::workspace::automation::AutomationState>() {
+            auto.handoffs.forget(id);
+        }
+    }
+    Ok(cleared)
+}
+
+/// "Turn into project" for a session without a project (`ScratchProjects`): its folder becomes a favorite project.
+#[tauri::command]
+pub fn workspace_keep_scratch(app: AppHandle, state: State<'_, WorkspaceState>, path: String) -> Res<()> {
+    if !nook_core::workspace::scratch::is_scratch(&path) {
+        return Err(tr("Deze map is geen map zonder project.", "This folder isn't a folder without a project.").into());
+    }
+    {
+        let mut s = lock(&state.settings);
+        if !s.favorite_projects.iter().any(|p| p == &path) {
+            s.favorite_projects.push(path.clone());
+        }
+        s.remember_project(&path);
+        s.save_to(&WorkspaceSettings::file());
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
+/// "Make it a git repository": `git init` in a session's folder, then git is read again for the sessions there.
+#[tauri::command]
+pub async fn workspace_init_git(state: State<'_, WorkspaceState>, path: String) -> Res<()> {
+    let m = state.manager.clone();
+    blocking(move || -> Result<(), String> {
+        let git = m.git().ok_or_else(|| tr("Git is niet gevonden.", "Git was not found.").to_string())?;
+        git.init_repository(&path).map_err(|e| e.0)?;
+        m.adopt_repository(&path);
+        Ok(())
+    })
+    .await?
 }
 
 /// Neemt een gesprek over dat buiten Nook begon. `fork`: de eerste beurt wordt een kopie (Claude Code).
@@ -347,16 +641,35 @@ pub async fn workspace_push(state: State<'_, WorkspaceState>, run: String) -> Re
 }
 
 #[tauri::command]
-pub fn workspace_can_revert(state: State<'_, WorkspaceState>, run: String, before: DateTime<Utc>) -> Res<bool> {
-    Ok(state.manager.can_revert(id(&run)?, before))
+pub fn workspace_can_revert(
+    state: State<'_, WorkspaceState>,
+    run: String,
+    before: DateTime<Utc>,
+    conversation_only: Option<bool>,
+) -> Res<bool> {
+    let run = id(&run)?;
+    if conversation_only.unwrap_or(false) {
+        Ok(state.manager.can_edit_from_here(run, before))
+    } else {
+        Ok(state.manager.can_revert(run, before))
+    }
 }
 
-/// Zet de bestanden terug naar hoe ze waren voor dit bericht (na jouw bevestiging in de interface).
+/// Zet de bestanden (en het gesprek) terug naar hoe ze waren voor dit bericht, of alleen het gesprek (`keep_files`).
 #[tauri::command]
-pub async fn workspace_revert(state: State<'_, WorkspaceState>, run: String, before: DateTime<Utc>) -> Res<()> {
+pub async fn workspace_revert(
+    state: State<'_, WorkspaceState>,
+    run: String,
+    before: DateTime<Utc>,
+    keep_files: Option<bool>,
+) -> Res<()> {
     let run = id(&run)?;
     let m = state.manager.clone();
-    blocking(move || m.revert_files(run, before)).await?
+    if keep_files.unwrap_or(false) {
+        blocking(move || m.edit_from_here(run, before, false)).await?
+    } else {
+        blocking(move || m.revert_files(run, before)).await?
+    }
 }
 
 #[tauri::command]
@@ -378,7 +691,7 @@ pub async fn workspace_remove_worktree(state: State<'_, WorkspaceState>, repo: S
 
 /// Kloont een repository naast het gekozen project (of in `~/Developer`). Pas na jouw klik op Kloon.
 #[tauri::command]
-pub async fn workspace_clone(state: State<'_, WorkspaceState>, url: String, near: Option<String>) -> Res<String> {
+pub async fn workspace_clone(app: AppHandle, state: State<'_, WorkspaceState>, url: String, near: Option<String>) -> Res<String> {
     if !git::is_clone_url(&url) {
         return Err(tr("Dat is geen adres van een repository.", "That is not the address of a repository.").into());
     }
@@ -388,8 +701,8 @@ pub async fn workspace_clone(state: State<'_, WorkspaceState>, url: String, near
         let parent = near
             .and_then(|p| std::path::Path::new(&p).parent().map(|p| p.to_string_lossy().into_owned()))
             .unwrap_or_else(|| nook_core::agents::home_dir().join("Developer").to_string_lossy().into_owned());
-        std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
-        git.clone(&url, &parent).map_err(|e| e.0)
+        // With its progress in the main window's clone notices, Hide and Cancel (`CloneCenter` on the Mac).
+        crate::workspace::clones::clone(&app, &git, &url, &parent)
     })
     .await?
 }

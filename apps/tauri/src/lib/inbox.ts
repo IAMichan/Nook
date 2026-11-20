@@ -14,6 +14,8 @@ export type Target =
   | { kind: "agents"; select: string }
   | { kind: "nook"; id: string }
   | { kind: "newNook"; ask?: string }
+  /// One chat in Chats (a reply you owe).
+  | { kind: "chat"; key: string }
   /// Text to read right on Home (a conversation note).
   | { kind: "markdown"; title: string; markdown: string };
 

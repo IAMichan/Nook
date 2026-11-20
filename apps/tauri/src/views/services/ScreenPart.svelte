@@ -74,10 +74,10 @@
 </div>
 
 <style>
-  .part { position: fixed; inset: 0; cursor: crosshair; background-size: 100% 100%; background-color: #000; user-select: none; }
-  .shade { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); pointer-events: none; }
-  .frame { position: absolute; border: 2px solid var(--paper); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); background-size: 100vw 100vh; pointer-events: none; }
-  .tools { position: absolute; display: flex; gap: 6px; background: var(--notch); padding: 6px; border-radius: 12px; border: 1px solid var(--line2); cursor: default; }
+  .part { position: fixed; inset: 0; cursor: crosshair; background-size: 100% 100%; background-color: var(--notch); user-select: none; }
+  .shade { position: absolute; inset: 0; background: color-mix(in srgb, var(--notch) 35%, transparent); pointer-events: none; }
+  .frame { position: absolute; border: 2px solid var(--paper); box-shadow: 0 0 0 1px color-mix(in srgb, var(--notch) 50%, transparent); background-size: 100vw 100vh; pointer-events: none; }
+  .tools { position: absolute; display: flex; gap: 6px; background: var(--notch); padding: 6px; border-radius: var(--radius-panel); border: 1px solid var(--line2); cursor: default; }
   .hint { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: var(--notch); padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line2); pointer-events: none; }
   .hint.err { top: 64px; color: var(--coral); }
 </style>

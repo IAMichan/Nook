@@ -20,11 +20,14 @@
   import CategoryChips from "../connectors/CategoryChips.svelte";
   import GitLabRow from "../connectors/GitLabRow.svelte";
   import GitLabSheet from "../connectors/GitLabSheet.svelte";
-  import WatchedPulls from "../connectors/WatchedPulls.svelte";
+  import { services, type ServicePrefs } from "../../lib/services";
+  import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
 
   let { part = "services" }: { part?: "chats" | "services" } = $props();
   let overview = $state<Overview | null>(null);
+  let prefs = $state<ServicePrefs | null>(null);
   let sheet = $state<ServiceView | null>(null);
   let query = $state("");
   let category = $state<string | null>(null);
@@ -39,11 +42,20 @@
 
   $effect(() => {
     load();
+    if (part === "services" && nook.info?.capabilities.desktop) {
+      services.prefs().then((p) => (prefs = p)).catch(() => {});
+    }
     const un = connectorEvents.onChanged(load);
     return () => {
       un.then((f) => f());
     };
   });
+
+  async function setOnlineLyrics(on: boolean) {
+    if (!prefs) return;
+    prefs = { ...prefs, onlineLyrics: on };
+    prefs = await services.savePrefs($state.snapshot(prefs)).catch(() => prefs);
+  }
 
   const byId = $derived(new Map((overview?.connectors ?? []).map((c) => [c.id, c])));
   const remoteInfo = (r: RemoteView): ConnectorInfo | undefined => (r.server ? byId.get(`mcp.${r.server}`) : undefined);
@@ -80,6 +92,7 @@
 
   // On this device: WhatsApp live, and what the Mac can that this platform cannot.
   const local = $derived((overview?.local ?? []).filter((l) => shows("local", `${l.title} ${l.reason}`)));
+  const showMusic = $derived(!!prefs && shows("local", `${tr("Muziek", "Music")} ${tr("Songteksten online opzoeken", "Look up lyrics online")} lrclib.net`));
 
   async function toggle(id: string, on: boolean) {
     await connectorsApi.toggle(id, on);
@@ -150,12 +163,18 @@
   }
 </script>
 
-<p class="muted">{tr("Verbind een dienst en Nook kan er meteen mee werken. Inloggen gebeurt op de site van de dienst zelf; sleutels en tokens blijven in de kluis van je systeem. Elke koppeling laat zien wat Nook ermee kan lezen en doen; schrijven gebeurt altijd pas na jouw Uitvoeren.", "Connect a service and Nook can work with it right away. Signing in happens on the service's own site; keys and tokens stay in your system's keychain. Each connection shows what Nook can read and do with it; writing only ever happens after you press Run.")}</p>
 
 {#if part === "chats"}
+  <h3>{tr("Chat-apps", "Chat apps")}</h3>
   <WhatsApp />
 {:else if overview}
-  <input class="search" placeholder={tr("Zoek een koppeling of wat hij kan", "Search for a connection or what it can do")} bind:value={query} />
+  <label class="search-card conn-search">
+    <Ico name="search" size={13} />
+    <input placeholder={tr("Zoek in je koppelingen", "Search your connections")} aria-label={tr("Zoek een koppeling of wat hij kan", "Search for a connection or what it can do")} bind:value={query} />
+    {#if query}
+      <button type="button" class="clear" onclick={() => (query = "")} aria-label={tr("Wissen", "Clear")}><Ico name="circle-x" size={14} /></button>
+    {/if}
+  </label>
   <CategoryChips bind:selected={category} />
 
   {#if needsYou}
@@ -174,27 +193,30 @@
       {#each gitlabHosts as host (host)}<GitLabRow {host} onchange={load} />{/each}
       <McpServers servers={ownServers} connectors={overview.connectors} onchange={load} />
     </div>
-  {:else if !hasYours && !query.trim() && category === null}
-    <p class="faint empty">{tr("Nog niets gekoppeld. Koppel GitHub, je agenda via een ICS-adres, Stripe of een andere dienst hieronder. Dan kan Nook vragen beantwoorden met alles wat jij weet.", "Nothing connected yet. Connect GitHub, your calendar through an ICS address, Stripe or another service below. Then Nook can answer questions with everything you know.")}</p>
   {/if}
 
-  <!-- Right below your connected services, once a GitHub account is connected (as on the Mac). -->
-  {#if byId.get("github")?.configured}<WatchedPulls />{/if}
 
   {#if local.length}
     <h3>{tr("Op dit apparaat", "On this device")}</h3>
-    {#if local.length}
-      <div class="group">
-        {#each local as l (l.id)}
-          <div class="row local"><span><strong>{l.title}</strong> <span class="mark">—</span><br /><span class="faint small">{l.reason}</span></span></div>
-        {/each}
-      </div>
-      <p class="faint small">{tr("Bestanden en het klembord leest Nook met de onderdelen van dit platform zelf; die staan bij hun eigen instellingen.", "Nook reads files and the clipboard with this platform's own parts; they have their own settings.")}</p>
-    {/if}
+    <div class="group">
+      {#each local as l (l.id)}
+        <div class="row local"><span><strong>{l.title}</strong> <span class="mark">—</span><br /><span class="faint small">{l.reason}</span></span></div>
+      {/each}
+    </div>
+    <p class="note">{tr("Bestanden en het klembord leest Nook met de onderdelen van dit platform zelf; die staan bij hun eigen instellingen.", "Nook reads files and the clipboard with this platform's own parts; they have their own settings.")}</p>
   {/if}
 
   {#if hasCatalogue}
-    <h3>{tr("Dienst toevoegen", "Add a service")}</h3>
+    {@const nothingYet = !hasYours && !query.trim() && category === null}
+    <!-- With nothing linked, the Mac's Services card: what to do first, and the services to pick from in the same card. -->
+    <h3>{nothingYet ? tr("Diensten", "Services") : tr("Dienst toevoegen", "Add a service")}</h3>
+    <div class="group catalogue">
+    {#if nothingYet}
+      <div class="nothing">
+        <strong>{tr("Nog niets gekoppeld", "Nothing linked yet")}</strong>
+        <span>{tr("Koppel de diensten die je gebruikt, dan kan Nook meelezen en helpen. Kies er hieronder een. Chat-apps koppel je onder Chat-apps.", "Link the services you use, and Nook can read along and help. Pick one below. Chat apps are linked under Chat apps.")}</span>
+      </div>
+    {/if}
     <div class="cards">
       {#if github}
         {@const gh = github}
@@ -253,9 +275,20 @@
         />
       {/if}
     </div>
-    <p class="faint small">{tr("Eén kaart, één klik. Inloggen gebeurt op de site van de dienst zelf; bij een sleutel laat Nook stap voor stap zien waar je die vindt; MCP koppelt elk ander programma. Tools van een MCP-server die alleen lezen gebruikt Nook bij een antwoord; al het andere wordt een actie die pas na jouw Uitvoeren gebeurt.", "One card, one click. Signing in happens on the service's own site; for a key Nook shows step by step where to find it; MCP connects any other program. Read-only tools from an MCP server are used in an answer; everything else becomes an action that only happens after you press Run.")}</p>
-  {:else if !hasYours && !local.length}
+    </div>
+    <p class="note">{tr("Eén kaart, één klik. Inloggen gebeurt op de site van de dienst zelf; bij een sleutel laat Nook stap voor stap zien waar je die vindt; MCP koppelt elk ander programma. Tools van een MCP-server die alleen lezen gebruikt Nook bij een antwoord; al het andere wordt een actie die pas na jouw Uitvoeren gebeurt.", "One card, one click. Signing in happens on the service's own site; for a key Nook shows step by step where to find it; MCP connects any other program. Read-only tools from an MCP server are used in an answer; everything else becomes an action that only happens after you press Run.")}</p>
+  {:else if !hasYours && !local.length && !showMusic}
     <p class="faint empty">{tr("Niets gevonden voor “{query}”. Probeer een andere naam, of voeg het als MCP-server toe.", "Nothing found for “{query}”. Try another name, or add it as an MCP server.", { query: query.trim() })}</p>
+  {/if}
+
+  {#if showMusic && prefs}
+    <h3>{tr("Muziek", "Music")}</h3>
+    <div class="group">
+      <label class="row">
+        <span>{tr("Songteksten online opzoeken", "Look up lyrics online")}<br /><small>{tr("De muziek-tab zoekt songteksten op lrclib.net. Alleen de titel, artiest, het album en de lengte van het spelende nummer worden verstuurd.", "The Music tab finds lyrics on lrclib.net. Only the title, artist, album and length of the playing track are sent.")}</small></span>
+        <input type="checkbox" role="switch" checked={!!prefs.onlineLyrics} onchange={(e) => setOnlineLyrics(e.currentTarget.checked)} />
+      </label>
+    </div>
   {/if}
 {/if}
 
@@ -312,15 +345,21 @@
   .plain:hover { background: none; }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .text span:last-child { overflow: hidden; text-overflow: ellipsis; }
-  .small { font-size: 11px; }
+  .small { font: var(--text-detail); line-height: 1.3; }
   .bad { color: var(--coral); }
-  .fix { background: var(--amber); color: var(--ink); border: none; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 999px; }
+  .fix { background: var(--amber); color: var(--ink); border: none; font: var(--text-label); font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill); }
   .fix.broken { background: var(--coral); color: var(--paper); }
   .spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--text2); border-top-color: transparent; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .search { width: 100%; }
-  .empty { margin-top: 16px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-top: 12px; }
+  /* Spacing below the search card before CategoryChips. */
+  .conn-search + :global(*) { margin-top: var(--space-12); }
+  .empty { margin-top: var(--space-16); }
+  /* The catalogue card: "Nothing linked yet" over a line, then the tiles three to a row, 8 px apart. */
+  .catalogue { padding: 0; }
+  .nothing { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-16); border-bottom: 1px solid var(--separator); }
+  .nothing strong { font: var(--text-emphasis); color: var(--paper); }
+  .nothing span { font: var(--text-body); line-height: 1.4; color: var(--text2); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--space-8); padding: var(--space-16); }
   .mark { color: var(--text3); }
   .local { justify-content: flex-start; }
 </style>

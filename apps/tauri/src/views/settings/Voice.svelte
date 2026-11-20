@@ -7,10 +7,42 @@
   import { nook } from "../../lib/state.svelte";
   import { services, type FlowView, type ServicePrefs, type VoiceInfo, type SpeechEngine, type FlowSettings, type QuietView } from "../../lib/services";
   import type { QuietBehavior } from "../../lib/types";
-  import { play, forgetCustomSounds } from "../../lib/sounds";
+  import { playChoice, forgetCustomSounds, type SoundName } from "../../lib/sounds";
+  import IconButton from "../../components/ui/IconButton.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
   import { tr } from "../../lib/i18n.svelte";
 
   const s = $derived(nook.settings!);
+
+  // Settings › Notifications: the agents' style is `agentNotice` (detailed = card, compact = one line); the other
+  // sources and the quiet hours are in `noticeRules` (`nook_core::services::notice_rules`).
+  type NoticeStyle = "card" | "strip" | "system" | "off";
+  type Rules = NonNullable<typeof s.noticeRules>;
+  const HOURS = Array.from({ length: 24 }, (_, i) => i);
+  const rules = $derived<Rules>(s.noticeRules ?? { styles: {}, apps: {}, quietHours: null, quietWhileWatching: false });
+  const sources = $derived([
+    { id: "agents", title: tr("Agents", "Agents"), detail: tr("Een coding agent in een terminal of in Nook is klaar, loopt vast of wacht op je.", "A coding agent in a terminal or in Nook is done, failed or waits on you.") },
+    { id: "chats", title: tr("Chatberichten", "Chat messages"), detail: tr("Een nieuw bericht in WhatsApp of een andere chat-app.", "A new message in WhatsApp or another chat app.") },
+    { id: "nook", title: "Nook", detail: tr("Een antwoord dat klaar is terwijl je ergens anders keek, gespreksnotities die klaarstaan.", "An answer that finished while you looked elsewhere, call notes that are ready.") },
+    { id: "suggestions", title: tr("Meedenken", "Think Along"), detail: tr("Een voorstel over wat er op je scherm staat.", "An offer about what is on your screen.") },
+  ]);
+  const styleChoices = $derived<{ id: NoticeStyle; title: string }[]>([
+    { id: "card", title: tr("Kaart", "Card") }, { id: "strip", title: tr("Eén regel", "One line") },
+    { id: "system", title: tr("Systeemmelding", "System notification") }, { id: "off", title: tr("Niet tonen", "Don't show") },
+  ]);
+  const AGENT_STYLE: Record<string, NoticeStyle> = { detailed: "card", compact: "strip", system: "system", off: "off" };
+  const AGENT_NOTICE: Record<NoticeStyle, "detailed" | "compact" | "system" | "off"> = { card: "detailed", strip: "compact", system: "system", off: "off" };
+  function styleOf(id: string): NoticeStyle {
+    if (id === "agents") return AGENT_STYLE[s.agentNotice ?? "detailed"] ?? "card";
+    return rules.styles[id] ?? (id === "suggestions" ? "strip" : "card");
+  }
+  function setStyle(id: string, style: NoticeStyle) {
+    if (id === "agents") nook.saveSettings({ agentNotice: AGENT_NOTICE[style] });
+    else setRules({ styles: { ...rules.styles, [id]: style } });
+  }
+  function setRules(patch: Partial<Rules>) {
+    nook.saveSettings({ noticeRules: { ...rules, ...patch } });
+  }
   const caps = $derived(nook.info?.capabilities);
   let prefs = $state<ServicePrefs | null>(null);
   let info = $state<VoiceInfo | null>(null);
@@ -36,9 +68,9 @@
   // Meetings and screen sharing. While this page is open Nook reads the situation, also with "change nothing" for both.
   const behaviors: { id: QuietBehavior; title: string }[] = $derived([
     { id: "normal", title: tr("Niets veranderen", "Change nothing") },
-    { id: "quiet", title: tr("Stil: geen meldingen of geluiden", "Quiet: no notices or sounds") },
+    { id: "quiet", title: tr("Stil: geen meldingen of geluiden", "Quiet: no notifications or sounds") },
     { id: "hideFromShare", title: tr("Verbergen voor kijkers (jij ziet Nook nog)", "Hide from viewers (you still see Nook)") },
-    { id: "hide", title: tr("Helemaal verbergen, ook voor jou", "Hide completely, from you too") },
+    { id: "hide", title: tr("Helemaal verbergen, ook voor jou", "Hide completely, also for you") },
   ]);
   const meetingBehaviors = $derived(behaviors.filter((b) => b.id !== "hideFromShare"));
   let quietNow = $state<QuietView | null>(null);
@@ -76,19 +108,29 @@
     await save({ speechEngine: id });
   }
 
-  async function test() {
-    message = null;
-    try {
-      await services.speak(tr("Hallo, ik ben Nook. Zo klink ik als ik een antwoord voorlees.", "Hi, I'm Nook. This is how I sound when I read an answer aloud."));
-    } catch (e) {
-      message = String(e);
-    }
+  // Each moment's sound (`NookSound` on the Mac; Windows plays one sound for a question and a permission request).
+  const moments = $derived<{ id: SoundName; title: string }[]>([
+    { id: "done", title: tr("Agent is klaar", "Agent is done") },
+    { id: "attention", title: tr("Agent stelt een vraag of wacht op je", "Agent asks a question or waits on you") },
+    { id: "error", title: tr("Agent stopt met een fout", "Agent stops with an error") },
+  ]);
+  let soundList = $state<{ system: string[]; custom: string[] }>({ system: [], custom: [] });
+  $effect(() => {
+    if (part === "sound") services.systemSounds().then((v) => (soundList = v ?? soundList)).catch(() => {});
+  });
+  // Picking a sound plays it, as the Mac's picker does.
+  function chooseSound(id: SoundName, choice: string) {
+    const next = { ...(s.soundChoices ?? {}) };
+    if (choice) next[id] = choice; else delete next[id];
+    nook.saveSettings({ soundChoices: next });
+    playChoice(id, choice);
   }
 
   async function openFolder() {
     try {
       folder = await services.openSoundsFolder();
       forgetCustomSounds();
+      soundList = await services.systemSounds().catch(() => soundList);
     } catch (e) {
       message = String(e);
     }
@@ -97,57 +139,11 @@
 
 
 
-{#if part === "sound" && (caps?.microphone || caps?.speechOutput)}
-  <h3>{tr("Praten", "Talk")}</h3>
-  <div class="group">
-    <label class="row">
-      <span>{tr("Lees antwoorden voor als ik iets zeg", "Read answers aloud when I say something")}</span>
-      <input type="checkbox" role="switch" checked={s.speakAnswers} disabled={!caps?.speechOutput} onchange={(e) => nook.saveSettings({ speakAnswers: e.currentTarget.checked })} />
-    </label>
-    {#if caps?.speechOutput}
-      <div class="row"><span>{tr("Hoe Nook klinkt", "How Nook sounds")}</span><button onclick={test}>{tr("Laat horen", "Play")}</button></div>
-    {:else}
-      <p class="faint note">{caps?.notes?.speechOutput}</p>
-    {/if}
-    <label class="row">
-      <span>{tr("Luister naar “Hé Nook”", "Listen for “Hey Nook”")}</span>
-      <input type="checkbox" role="switch" checked={s.wakeWord} disabled={!caps?.wakeWord} onchange={(e) => nook.saveSettings({ wakeWord: e.currentTarget.checked })} />
-    </label>
-    {#if !caps?.wakeWord}<p class="faint note">{caps?.notes?.wakeWord}</p>{/if}
-    {#if s.shortcuts.talk}<p class="faint note">{tr("Praten: druk {keys} of de microfoon naast het invoerveld. Na een stilte stopt Nook vanzelf.", "Talk: press {keys} or the microphone next to the input field. After a silence Nook stops by itself.", { keys: s.shortcuts.talk })}</p>{/if}
-  </div>
-{/if}
-
-{#if part === "dictation" && prefs && caps?.microphone}
-  <h3>{tr("Spraakherkenning", "Speech recognition")}</h3>
-  <div class="group">
-    {#each engines.filter((e) => !e.when || e.when()) as engine (engine.id)}
-      <label class="row">
-        <span>{engine.title}<br /><small class="faint">{engine.detail}</small></span>
-        <input type="radio" name="engine" checked={prefs.speechEngine === engine.id} onchange={() => choose(engine.id)} />
-      </label>
-      {#if pending === engine.id}
-        <div class="row confirm">
-          <span>{tr("Je opnames gaan dan naar {service}.", "Your recordings then go to {service}.", { service: engine.title })}</span>
-          <span class="inline"><button class="primary" onclick={() => choose(engine.id)}>{tr("Ja, gebruik {service}", "Yes, use {service}", { service: engine.title })}</button><button onclick={() => (pending = null)}>{tr("Nee", "No")}</button></span>
-        </div>
-      {/if}
-    {/each}
-    {#if prefs.speechEngine === "local"}
-      <label class="row">
-        <span>{tr("Model van whisper.cpp", "whisper.cpp model")}<br /><small class="faint">{info?.whisper ? tr("Gevonden: {path}.", "Found: {path}.", { path: info.whisper }) : tr("whisper-cli staat niet op deze computer.", "whisper-cli isn't on this computer.")} {tr("Het pad naar een ggml-….bin-bestand.", "The path to a ggml-….bin file.")}</small></span>
-        <input placeholder={tr("/pad/naar/ggml-base.bin", "/path/to/ggml-base.bin")} value={prefs.whisperModel} onchange={(e) => save({ whisperModel: e.currentTarget.value.trim() })} />
-      </label>
-    {/if}
-    {#if info?.speechEngineReady}<p class="err note">{info.speechEngineReady}</p>{:else}<p class="faint note">{tr("Klaar om te luisteren.", "Ready to listen.")}</p>{/if}
-  </div>
-{/if}
-
 {#if part === "dictation" && flow && caps?.flow}
   <h3>{tr("Overal dicteren", "Dictate anywhere")}</h3>
   <div class="group">
     <label class="row">
-      <span>{tr("Overal dicteren", "Dictate anywhere")}<br /><small class="faint">{tr("Houd {key} vast, praat en laat los: je woorden staan waar je typt, in elke app. Twee keer tikken is handsfree.", "Hold {key}, talk and let go: your words appear where you type, in any app. Tap twice for hands-free.", { key: flow.settings.key })}</small></span>
+      <span>{tr("Dicteren aanzetten", "Turn on dictation")}<br /><small class="faint">{tr("Houd {key} vast, praat en laat los: je woorden staan waar je typt, in elke app. Twee keer tikken is handsfree.", "Hold {key}, talk and let go: your words appear where you type, in any app. Tap twice for hands-free.", { key: flow.settings.key })}</small></span>
       <input type="checkbox" role="switch" checked={flow.settings.enabled} onchange={(e) => saveFlow({ enabled: e.currentTarget.checked })} />
     </label>
     {#if flow.settings.enabled}
@@ -192,51 +188,109 @@
   </div>
 {/if}
 
-{#if part === "sound" && prefs && caps?.microphone}
-  <h3>{tr("Notetaker", "Notetaker")}</h3>
+{#if part === "dictation" && prefs && caps?.microphone}
+  <h3>{tr("Spraakherkenning", "Speech recognition")}</h3>
   <div class="group">
-    <label class="row">
-      <span>{tr("Sneltoets", "Shortcut")}<br /><small class="faint">{caps.systemAudio ? tr("Een gesprek opnemen: je microfoon en wat de computer afspeelt. Er komt geen bot in het gesprek: vertel de anderen dat je notities maakt.", "Record a call: your microphone and what the computer plays. No bot joins the call: tell the others you're taking notes.") : tr("Een gesprek opnemen: je microfoon. Er komt geen bot in het gesprek: vertel de anderen dat je notities maakt.", "Record a call: your microphone. No bot joins the call: tell the others you're taking notes.")}</small></span>
-      <input value={prefs.notesShortcut} onchange={(e) => save({ notesShortcut: e.currentTarget.value })} />
-    </label>
-    {#if !caps.systemAudio}<p class="faint note">{caps.notes?.systemAudio}</p>{/if}
+    {#each engines.filter((e) => !e.when || e.when()) as engine (engine.id)}
+      <label class="row">
+        <span>{engine.title}<br /><small class="faint">{engine.detail}</small></span>
+        <input type="radio" name="engine" checked={prefs.speechEngine === engine.id} onchange={() => choose(engine.id)} />
+      </label>
+      {#if pending === engine.id}
+        <div class="row confirm">
+          <span>{tr("Je opnames gaan dan naar {service}.", "Your recordings then go to {service}.", { service: engine.title })}</span>
+          <span class="inline"><button class="primary" onclick={() => choose(engine.id)}>{tr("Ja, gebruik {service}", "Yes, use {service}", { service: engine.title })}</button><button onclick={() => (pending = null)}>{tr("Nee", "No")}</button></span>
+        </div>
+      {/if}
+    {/each}
+    {#if prefs.speechEngine === "local"}
+      <label class="row">
+        <span>{tr("Model van whisper.cpp", "whisper.cpp model")}<br /><small class="faint">{info?.whisper ? tr("Gevonden: {path}.", "Found: {path}.", { path: info.whisper }) : tr("whisper-cli staat niet op deze computer.", "whisper-cli isn't on this computer.")} {tr("Het pad naar een ggml-….bin-bestand.", "The path to a ggml-….bin file.")}</small></span>
+        <input placeholder={tr("/pad/naar/ggml-base.bin", "/path/to/ggml-base.bin")} value={prefs.whisperModel} onchange={(e) => save({ whisperModel: e.currentTarget.value.trim() })} />
+      </label>
+    {/if}
+    {#if info?.speechEngineReady}<p class="err note">{info.speechEngineReady}</p>{:else}<p class="faint note">{tr("Klaar om te luisteren.", "Ready to listen.")}</p>{/if}
   </div>
 {/if}
 
+
 {#if part === "notices" && caps?.desktop}
-  <h3>{tr("Meldingen", "Notices")}</h3>
+  <!-- The Mac's "How notifications show" (`NoticeRulesSettings`, part how): one way of showing per source, then quiet
+       hours for all of them. Every notice asks `notice_decide` in Rust, so these rules are the only ones. -->
+  <h3>{tr("Hoe meldingen verschijnen", "How notifications show")}</h3>
+  <p class="section-info">{tr("Bij “Niet tonen” springt er niets op en klinkt er niets. Een vraag of toestemmingsverzoek van een agent bereikt je altijd.", "With “Don't show” nothing pops up or sounds. An agent's question or permission request always reaches you.")}</p>
   <div class="group">
+    {#each sources as source (source.id)}
+      <label class="row">
+        <span>{source.title}<br /><small class="faint">{source.detail}</small></span>
+        <select value={styleOf(source.id)} onchange={(e) => setStyle(source.id, e.currentTarget.value as NoticeStyle)}>
+          {#each styleChoices as c (c.id)}<option value={c.id}>{c.title}</option>{/each}
+        </select>
+      </label>
+    {/each}
     <label class="row">
-      <span>{tr("Grootte van meldingen", "Notice size")}<br /><small class="faint">{tr("Voor elke agent die klaar is, vastloopt of op je wacht, in de terminal of in de werkruimte. Uitgebreid toont een kaart met de samenvatting en wat er veranderd is; compact één smalle regel in de balk; systeemmelding een melding van het systeem, met Toestaan en Weigeren bij een vraag.", "For every agent that is done, gets stuck or waits for you, in the terminal or in the workspace. Detailed shows a card with the summary and what changed; compact one narrow line in the bar; system notification a notification of the system, with Allow and Deny on a request.")}</small></span>
-      <select value={s.agentNotice ?? "detailed"} onchange={(e) => nook.saveSettings({ agentNotice: e.currentTarget.value as "detailed" | "compact" | "system" })}>
-        <option value="detailed">{tr("Uitgebreid", "Detailed")}</option>
-        <option value="compact">{tr("Compact", "Compact")}</option>
-        <option value="system">{tr("Systeemmelding", "System notification")}</option>
-      </select>
+      <span>{tr("Stille uren", "Quiet hours")}<br /><small class="faint">{tr("Tussen deze uren geen pop-ups, geluiden of meldingen op je telefoon. Alles komt wel in de lijst.", "No pop-ups, sounds or phone notifications between these hours. Everything still goes into the list.")}</small></span>
+      <input type="checkbox" role="switch" checked={!!rules.quietHours} onchange={(e) => setRules({ quietHours: e.currentTarget.checked ? (rules.quietHours ?? { from: 22, to: 7, allowsUrgent: true }) : null })} />
     </label>
+    {#if rules.quietHours}
+      {@const hours = rules.quietHours}
+      <div class="row">
+        <span class="inline">
+          <label class="hour">{tr("Van", "From")} <select value={hours.from} onchange={(e) => setRules({ quietHours: { ...hours, from: Number(e.currentTarget.value) } })}>{#each HOURS as h (h)}<option value={h}>{h}:00</option>{/each}</select></label>
+          <label class="hour">{tr("Tot", "Until")} <select value={hours.to} onchange={(e) => setRules({ quietHours: { ...hours, to: Number(e.currentTarget.value) } })}>{#each HOURS as h (h)}<option value={h}>{h}:00</option>{/each}</select></label>
+        </span>
+      </div>
+      <label class="row"><span>{tr("Toestemming en vragen komen toch door", "Approvals and questions still come through")}</span><input type="checkbox" role="switch" checked={hours.allowsUrgent} onchange={(e) => setRules({ quietHours: { ...hours, allowsUrgent: e.currentTarget.checked } })} /></label>
+    {/if}
     <p class="faint note">{tr("Met Oké verdwijnt een melding meteen. Anders gaat hij na een paar seconden vanzelf weg, behalve zolang je pointer op de balk staat.", "With OK a notice disappears right away. Otherwise it goes away by itself after a few seconds, except while your pointer is on the bar.")}</p>
   </div>
 {/if}
 
 {#if part === "sound"}
-<h3>{tr("Geluiden", "Sounds")}</h3>
-<div class="group">
-  <label class="row"><span>{tr("Geluid als Nook of een agent op je wacht of klaar is", "Sound when Nook or an agent waits for you or is done")}</span><input type="checkbox" role="switch" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
-  <div class="row">
-    <span>{tr("Laat horen", "Play")}</span>
-    <span class="inline">
-      <button onclick={() => play("attention")}>{tr("Aandacht", "Attention")}</button>
-      <button onclick={() => play("done")}>{tr("Klaar", "Done")}</button>
-      <button onclick={() => play("error")}>{tr("Fout", "Error")}</button>
-    </span>
+  <!-- The Mac's `soundSection`: the sounds first, one picker per moment with a button to hear it, then speaking. -->
+  <h3>{tr("Geluiden", "Sounds")}</h3>
+  {#if caps?.desktop}<p class="section-info">{tr("Zet attention, done of error (.wav, .mp3, .ogg, .m4a) in de map om een eigen geluid te gebruiken.", "Place attention, done or error (.wav, .mp3, .ogg, .m4a) files in the folder to use custom sounds.")}{folder ? ` ${folder}` : ""}</p>{/if}
+  <div class="group">
+    <label class="row"><span>{tr("Geluid als een agent op je wacht of klaar is", "Sound when an agent is waiting or finished")}</span><input type="checkbox" role="switch" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
+    {#each moments as moment (moment.id)}
+      {@const choice = s.soundChoices?.[moment.id] ?? ""}
+      {@const hasFile = soundList.custom.includes(moment.id)}
+      <div class="row">
+        <span>{moment.title}</span>
+        <span class="sound-choice">
+          <select value={choice} disabled={!s.sounds} onchange={(e) => chooseSound(moment.id, e.currentTarget.value)}>
+            <option value="">{hasFile ? tr("Standaard (eigen bestand)", "Default (own file)") : tr("Standaard ({name})", "Default ({name})", { name: "Nook" })}</option>
+            {#if soundList.system.length}<hr />{#each soundList.system as name (name)}<option value={name}>{name}</option>{/each}<hr />{/if}
+            {#if hasFile || choice === "file"}<option value="file">{tr("Eigen bestand", "Own file")}</option>{/if}
+            <option value="none">{tr("Geen geluid", "No sound")}</option>
+          </select>
+          <IconButton class="ghost" title={tr("Laat horen", "Play")} size={22} disabled={!s.sounds || choice === "none"} onclick={() => playChoice(moment.id, choice)}><Ico name="volume-2" size={13} /></IconButton>
+        </span>
+      </div>
+    {/each}
+    {#if caps?.desktop}
+      <div class="row">
+        <span>{tr("Eigen geluiden", "Custom sounds")}</span>
+        <button class="capsule" disabled={!s.sounds} onclick={openFolder}>{tr("Open map", "Open folder")}</button>
+      </div>
+    {/if}
   </div>
-  {#if caps?.desktop}
-    <div class="row">
-      <span>{tr("Eigen geluiden", "Your own sounds")}<br /><small class="faint">{tr("Zet attention, done of error (.wav, .mp3, .ogg, .m4a) in de map om een eigen geluid te gebruiken.", "Put attention, done or error (.wav, .mp3, .ogg, .m4a) in the folder to use your own sound.")}{folder ? ` ${folder}` : ""}</small></span>
-      <button onclick={openFolder}>{tr("Open map", "Open folder")}</button>
+  {#if caps?.microphone || caps?.speechOutput}
+    <h3>{tr("Praten", "Speaking")}</h3>
+    <p class="section-info">{tr("Met het wekwoord aan luistert Nook op deze computer. Geluid wordt nooit bewaard of verstuurd, en het microfoonpictogram in de taakbalk blijft zichtbaar.", "With the wake word on, Nook listens on this computer. Audio is never stored or sent, and the microphone icon in the taskbar stays visible.")}</p>
+    <div class="group">
+      <label class="row">
+        <span>{tr("Lees antwoorden voor als ik iets zeg", "Read answers aloud when I speak")}</span>
+        <input type="checkbox" role="switch" checked={s.speakAnswers} disabled={!caps?.speechOutput} onchange={(e) => nook.saveSettings({ speakAnswers: e.currentTarget.checked })} />
+      </label>
+      <label class="row">
+        <span>{tr("Luister naar “Hé Nook”", "Listen for “Hey Nook”")}</span>
+        <input type="checkbox" role="switch" checked={s.wakeWord} disabled={!caps?.wakeWord} onchange={(e) => nook.saveSettings({ wakeWord: e.currentTarget.checked })} />
+      </label>
     </div>
+    {#if !caps?.speechOutput && caps?.notes?.speechOutput}<p class="faint note">{caps.notes.speechOutput}</p>{/if}
+    {#if !caps?.wakeWord && caps?.notes?.wakeWord}<p class="faint note">{caps.notes.wakeWord}</p>{/if}
   {/if}
-</div>
 {/if}
 {#if part === "quiet" && caps?.desktop}
   <h3>{tr("Meetings en scherm delen", "Meetings and screen sharing")}</h3>
@@ -249,13 +303,13 @@
     </label>
     {#if s.quietWhileSharing === "hideFromShare" && !caps.captureExclusion}<p class="faint note">{caps.notes?.captureExclusion}</p>{/if}
     <label class="row">
-      <span>{tr("Tijdens een meeting", "During a meeting")}<br /><small class="faint">{tr("Een gesprek in Zoom, Teams of in je browser, of een afspraak die nu bezig is.", "A call in Zoom, Teams or your browser, or an appointment happening now.")}</small></span>
+      <span>{tr("Tijdens een meeting", "During a meeting")}<br /><small class="faint">{tr("Een gesprek in Zoom, Teams of in je browser, of een afspraak die nu bezig is.", "A call in Zoom, Teams or your browser, or an event that is going on now.")}</small></span>
       <select value={s.quietInMeetings === "hideFromShare" ? "quiet" : s.quietInMeetings} onchange={(e) => nook.saveSettings({ quietInMeetings: e.currentTarget.value as QuietBehavior })}>
         {#each meetingBehaviors as b (b.id)}<option value={b.id}>{b.title}</option>{/each}
       </select>
     </label>
     <label class="row">
-      <span>{tr("Afspraken in je agenda tellen mee", "Calendar events count too")}<br /><small class="faint">{tr("Een afspraak die nu bezig is geldt ook als meeting, niet alleen een gesprek. Afspraken van een hele dag tellen niet.", "An event happening now also counts as a meeting, not just a call. All-day events don't count.")}</small></span>
+      <span>{tr("Afspraken in je agenda tellen mee", "Count events in your calendar")}<br /><small class="faint">{tr("Een afspraak die nu bezig is geldt ook als meeting, niet alleen een gesprek. Afspraken van een hele dag tellen niet.", "An event going on now also counts as a meeting, not only a call. All-day events do not count.")}</small></span>
       <input type="checkbox" role="switch" checked={s.quietUseCalendar} onchange={(e) => nook.saveSettings({ quietUseCalendar: e.currentTarget.checked })} />
     </label>
     {#if caps.captureExclusion}
@@ -265,7 +319,7 @@
       </label>
       <label class="row">
         <span>{tr("Nook tonen in je schermafbeeldingen", "Show Nook in your screenshots")}<br /><small class="faint">{tr("Het Knipprogramma van Windows telt niet als scherm delen, dus Nook staat op je schermafbeeldingen en op opnames die je daarmee maakt. Werkt niet als Nook altijd buiten schermdelen blijft.", "Windows' Snipping Tool doesn't count as screen sharing, so Nook shows up in your screenshots and recordings made with it. Doesn't work if Nook always stays out of screen sharing.")}</small></span>
-        <input type="checkbox" role="switch" checked={s.showInScreenshots} onchange={(e) => nook.saveSettings({ showInScreenshots: e.currentTarget.checked })} />
+        <input type="checkbox" role="switch" disabled={s.hideFromCaptures} checked={s.showInScreenshots} onchange={(e) => nook.saveSettings({ showInScreenshots: e.currentTarget.checked })} />
       </label>
     {/if}
     <div class="row">
@@ -273,17 +327,18 @@
       <span class="faint">{quietNow?.status ?? "…"}</span>
     </div>
     {#if !caps.shareDetection}<p class="faint note">{caps.notes?.shareDetection}</p>{/if}
-    <p class="faint note">{caps.os === "windows" ? tr("Nook ziet dat je je scherm deelt aan de deelbalk van Zoom, Teams, Webex, Slack of je browser, en aan het Knipprogramma van Windows. Een meeting herkent hij aan een gespreks-app of meetingsite die je microfoon gebruikt, aan een gesprek dat de Notetaker opneemt en, als je dat wilt, aan je agenda. Helemaal verbergen haalt ook het hoofdvenster en de balk weg tot het voorbij is; toestemmingsvragen van agents wachten dan ook.", "Nook sees that you share your screen by the sharing bar of Zoom, Teams, Webex, Slack or your browser, and by Windows' Snipping Tool. It recognizes a meeting by a call app or meeting site that uses your microphone, by a call the Notetaker is recording and, if you want, by your calendar. Hiding completely also removes the main window and the bar until it's over; permission requests from agents wait too.") : tr("Nook ziet dat je je scherm deelt aan de deelbalk van Zoom, Teams, Webex, Slack of je browser. Een meeting herkent hij aan een gespreks-app of meetingsite die je microfoon gebruikt, aan een gesprek dat de Notetaker opneemt en, als je dat wilt, aan je agenda. Helemaal verbergen haalt ook het hoofdvenster en de balk weg tot het voorbij is; toestemmingsvragen van agents wachten dan ook.", "Nook sees that you share your screen by the sharing bar of Zoom, Teams, Webex, Slack or your browser. It recognizes a meeting by a call app or meeting site that uses your microphone, by a call the Notetaker is recording and, if you want, by your calendar. Hiding completely also removes the main window and the bar until it's over; permission requests from agents wait too.")}</p>
   </div>
 {/if}
 {#if message}<p class="err">{message}</p>{/if}
 
 <style>
-  small { font-size: 11px; line-height: 1.35; display: inline-block; max-width: 460px; }
+  small { font: var(--text-detail); line-height: 1.3; display: inline-block; }
   .col { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-  .col textarea { font-family: var(--mono); font-size: 12px; }
-  .entry { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+  .col textarea { font: var(--text-code); }
+  .entry { display: flex; gap: 8px; align-items: center; font: var(--text-detail); }
   .entry span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .inline { display: flex; gap: 6px; }
   .confirm span:first-child { color: var(--amber); }
+  .sound-choice { display: inline-flex; align-items: center; gap: var(--space-4); }
+  .hour { display: inline-flex; align-items: center; gap: var(--space-6); color: var(--text2); }
 </style>

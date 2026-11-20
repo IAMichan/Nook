@@ -12,7 +12,8 @@
   import { workspace } from "../../lib/workspace/store.svelte";
   import { workspaceApi, type WorkspaceRun } from "../../lib/workspace/api";
   import type { ConversationSummary } from "../../lib/types";
-  import Icon from "../../components/Icon.svelte";
+  import Ico from "../../components/ui/Ico.svelte";
+  import AgentMark from "../companion/ui/AgentMark.svelte";
 
   const agentsHere = $derived(!!nook.info?.capabilities.terminals);
   let conversations = $state<ConversationSummary[]>([]);
@@ -57,7 +58,7 @@
   const deleteAllChats = () => attempt(async () => { for (const c of deletableChats) await api.deleteNook(c.id); await loadConversations(); }, tr("Kon het gesprek niet verwijderen", "Could not delete the conversation"));
 </script>
 
-{#snippet item(key: string, title: string, detail: string, when: string, busy: boolean, restore: () => void, remove: () => void)}
+{#snippet item(key: string, title: string, detail: string, when: string, busy: boolean, restore: () => void, remove: () => void, agent?: string)}
   <div class="row item">
     {#if confirming === key}
       <span>{tr("{title} definitief verwijderen?", "Delete {title} for good?", { title })}</span>
@@ -66,13 +67,16 @@
         <button class="danger" onclick={remove}>{tr("Verwijderen", "Delete")}</button>
       </span>
     {:else}
-      <span class="text">
-        <span class="title">{title}</span>
-        <span class="faint detail">{detail ? detail + " · " : ""}{relativeTime(when)}</span>
+      <span class="lead-item">
+        {#if agent}<AgentMark {agent} size={14} />{/if}
+        <span class="text">
+          <span class="title">{title}</span>
+          <span class="faint detail">{detail ? detail + " · " : ""}{relativeTime(when)}</span>
+        </span>
       </span>
       <span class="inline">
-        <button disabled={busy} onclick={restore}>{tr("Terugzetten", "Restore")}</button>
-        <button class="ghost danger" disabled={busy} title={tr("Verwijderen", "Delete")} aria-label={tr("Verwijderen", "Delete")} onclick={() => (confirming = key)}><Icon name="x" size={14} /></button>
+        <button class="small" disabled={busy} onclick={restore}>{tr("Terugzetten", "Restore")}</button>
+        <button class="ghost danger icon-btn" disabled={busy} title={tr("Verwijderen", "Delete")} aria-label={tr("Verwijderen", "Delete")} onclick={() => (confirming = key)}><Ico name="trash-2" size={14} /></button>
       </span>
     {/if}
   </div>
@@ -89,21 +93,29 @@
         </span>
       </div>
     {:else}
-      <button class="ghost danger all" onclick={() => (confirming = key)}>
-        {searching ? tr("{n} gevonden verwijderen…", "Delete {n} found…", { n: count }) : tr("Alle gearchiveerde verwijderen…", "Delete all archived…")}
-      </button>
+      <div class="row delete-all-row">
+        <button class="ghost danger small" onclick={() => (confirming = key)}>
+          {searching ? tr("{n} gevonden verwijderen…", "Delete {n} found…", { n: count }) : tr("Alle gearchiveerde verwijderen…", "Delete all archived…")}
+        </button>
+      </div>
     {/if}
   {/if}
 {/snippet}
 
-<input class="search" bind:value={query} placeholder={tr("Zoek in het archief", "Search the archive")} aria-label={tr("Zoek in het archief", "Search the archive")} />
+<label class="search-card">
+  <Ico name="search" size={13} />
+  <input bind:value={query} placeholder={tr("Zoek in het archief", "Search the archive")} aria-label={tr("Zoek in het archief", "Search the archive")} />
+  {#if query}
+    <button type="button" class="clear" onclick={() => (query = "")} aria-label={tr("Wissen", "Clear")}><Ico name="circle-x" size={14} /></button>
+  {/if}
+</label>
 
 {#if agentsHere}
   <h3>{tr("Sessies", "Sessions")}</h3>
   <div class="group">
-    {#if sessions.length === 0}<p class="faint empty">{tr("Geen gearchiveerde sessies", "No archived sessions")}</p>{/if}
+    {#if sessions.length === 0}<p class="empty-note">{tr("Geen gearchiveerde sessies", "No archived sessions")}</p>{/if}
     {#each sessions as r (r.id)}
-      {@render item("run:" + r.id, r.title || tr("Sessie", "Session"), [workspace.provider(r.provider)?.name ?? r.provider, folderName(r.projectPath)].join(" · "), r.updatedAt, sessionBusy(r), () => restoreSession(r), () => deleteSession(r))}
+      {@render item("run:" + r.id, r.title || tr("Sessie", "Session"), [workspace.provider(r.provider)?.name ?? r.provider, folderName(r.projectPath)].join(" · "), r.updatedAt, sessionBusy(r), () => restoreSession(r), () => deleteSession(r), workspace.provider(r.provider)?.name ?? r.provider)}
     {/each}
     {@render deleteAll("all:runs", deletableSessions.length,
       tr("{n} gearchiveerde sessies verwijderen?", "Delete {n} archived sessions?", { n: deletableSessions.length }),
@@ -114,7 +126,7 @@
 
 <h3>{tr("Nook-gesprekken", "Nook conversations")}</h3>
 <div class="group">
-  {#if chats.length === 0}<p class="faint empty">{tr("Geen gearchiveerde gesprekken", "No archived conversations")}</p>{/if}
+  {#if chats.length === 0}<p class="empty-note">{tr("Geen gearchiveerde gesprekken", "No archived conversations")}</p>{/if}
   {#each chats as c (c.id)}
     {@render item("nook:" + c.id, c.title, c.preview, c.updated, c.status === "working", () => restoreChat(c), () => deleteChat(c))}
   {/each}
@@ -125,14 +137,14 @@
 </div>
 
 <style>
-  .search { width: 100%; max-width: 360px; }
-  .item { flex-wrap: nowrap; padding: var(--space-12) 0; }
+  .item { flex-wrap: nowrap; }
+  .lead-item { display: flex; align-items: center; gap: var(--space-8); min-width: 0; flex: 1; }
   .text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .detail { font: var(--text-detail); color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .inline { flex: none; }
-  .empty { margin: 0; padding: var(--space-16) 0; font: var(--text-detail); }
-  .all { margin: var(--space-8) 0; }
+  .icon-btn { display: grid; place-items: center; padding: var(--space-4); }
+  .delete-all-row { justify-content: flex-end; }
   .confirm { display: flex; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--space-12) 0; }
   small { font: var(--text-detail); }
 </style>

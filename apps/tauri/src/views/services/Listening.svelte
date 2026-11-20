@@ -72,10 +72,10 @@
 <style>
   .listening { display: flex; gap: 16px; align-items: center; padding: 16px 18px; background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius); margin: 12px; }
   .body { flex: 1; min-width: 0; }
-  .context { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .title { font-size: 15px; margin: 4px 0 8px; }
-  .error .title { color: var(--coral); font-size: 13px; }
+  .context { font: var(--text-label); text-transform: uppercase; letter-spacing: 0.04em; }
+  .title { font: var(--text-title); margin: 4px 0 8px; }
+  .error .title { color: var(--coral); font: var(--text-control); }
   .wave { display: flex; gap: 3px; align-items: center; height: 30px; }
-  .wave span { width: 3px; border-radius: 2px; background: var(--mint); transition: height 0.1s; }
+  .wave span { width: 3px; border-radius: 999px; background: var(--mint); transition: height 0.1s; }
   .buttons { display: flex; flex-direction: column; gap: 6px; }
 </style>

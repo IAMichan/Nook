@@ -261,12 +261,12 @@ export const attentionTint = attentionColor;
 /** One word for a row's corner, where the row's title says the rest (`Theme.shortWord`). */
 export function shortAttentionWord(attention: string): string {
   switch (attention) {
-    case "approval": return tr("Toestemming", "Approval");
+    case "approval": return tr("Goedkeuring", "Approval");
     case "input": return tr("Vraag", "Question");
     case "failed": return tr("Mislukt", "Failed");
     case "limited": return tr("Limiet", "Limit");
-    case "working": return tr("Aan het werk", "Working");
-    case "ready": return tr("Klaar", "Done");
+    case "working": return tr("Bezig", "Working");
+    case "ready": return tr("Klaar", "Ready");
     default: return attentionWord(attention);
   }
 }

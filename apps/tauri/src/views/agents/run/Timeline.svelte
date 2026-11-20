@@ -7,6 +7,7 @@
   import * as T from "../../../lib/workspace/timeline";
   import { tr, locale } from "../../../lib/i18n.svelte";
   import Icon from "../../../components/Icon.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
   import EventRow from "./EventRow.svelte";
   import PlanCard from "./PlanCard.svelte";
 
@@ -15,6 +16,9 @@
     events,
     asking = false,
     onrevert,
+    onedit,
+    canEdit,
+    onfork,
     onretry,
     onimplement,
     openFile,
@@ -24,6 +28,11 @@
     events: RunEvent[];
     asking?: boolean;
     onrevert?: (e: RunEvent) => void;
+    /** Rewind the conversation to before a user message and load it into the composer (AG-62). */
+    onedit?: (e: RunEvent) => void;
+    canEdit?: (e: RunEvent) => boolean;
+    /** A fork before a message of yours (`through` false) or through an answer (`through` true). */
+    onfork?: (e: RunEvent, through: boolean) => void;
     onretry: () => void;
     onimplement: (plan: string) => void;
     openFile?: (path: string) => void;
@@ -165,6 +174,15 @@
     }
   }
 
+  /// How long a turn worked, as the Mac's fold says it (`AgentPathFormat.duration`): "4s", "1m 3s", "2h 5m".
+  function workTime(seconds: number): string {
+    const total = Math.round(seconds);
+    if (total < 60) return `${total}s`;
+    const minutes = Math.floor(total / 60);
+    if (minutes < 60) return `${minutes}m ${total % 60}s`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
   const failure = $derived(T.firstFailure(shown));
   const answered = (e: RunEvent) => shown.some((x) => x.kind === "user" && x.date > e.date);
 </script>
@@ -192,7 +210,10 @@
           <PlanCard text={e.text} canAct={!active && latestPlan === e.id && !answered(e)} onimplement={() => onimplement(e.text)} baseFolder={run.workingDirectory} {onrun} />
         {:else}
           <EventRow event={e} expanded={expanded.has(e.id)} toggle={() => toggleEvent(e.id)} highlighted={current === e.id}
-            {openFile} baseFolder={run.workingDirectory} {onrun} onrevert={e.kind === "user" && onrevert ? () => onrevert?.(e) : undefined} />
+            {openFile} baseFolder={run.workingDirectory} {onrun}
+            onrevert={e.kind === "user" && !active && !e.rolledBack && onrevert ? () => onrevert?.(e) : undefined}
+            onedit={e.kind === "user" && !active && !e.rolledBack && onedit && (!canEdit || canEdit(e)) ? () => onedit?.(e) : undefined}
+            onfork={onfork && !active && !e.rolledBack && (e.kind === "user" || e.kind === "assistant") ? () => onfork?.(e, e.kind === "assistant") : undefined} />
         {/if}
       </div>
     {/snippet}
@@ -212,9 +233,10 @@
         </div>
       {:else}
         <div class="group">
-          <button class="summary" onclick={() => toggleBlock("fold:" + b.id)}>
-            <span class="sym"><Icon name="circle-check" size={13} /></span><span class="stext">{tr("{time} gewerkt", "Worked for {time}", { time: T.duration(b.seconds) })}</span>
-            <span class="chev" class:open={open.has("fold:" + b.id)}><Icon name="chevron-right" size={13} /></span>
+          <!-- A finished turn's work, folded (`TranscriptFoldLine`): "Worked for 4s ›" over a hairline. -->
+          <button class="fold-line" onclick={() => toggleBlock("fold:" + b.id)} aria-expanded={open.has("fold:" + b.id)}>
+            <span>{tr("{time} gewerkt", "Worked for {time}", { time: workTime(b.seconds) })}</span>
+            <span class="fold-chev" class:open={open.has("fold:" + b.id)}><Ico name="chevron-right" size={13} stroke={2.4} /></span>
           </button>
           {#if open.has("fold:" + b.id)}
             <div class="inner fold">{#each b.blocks as inner (inner.id)}{@render blockView(inner)}{/each}</div>
@@ -281,7 +303,7 @@
 <style>
   .wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; }
-  .rows { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; padding-bottom: 16px; }
+  .rows { display: flex; flex-direction: column; gap: var(--space-16); padding-top: var(--space-4); padding-bottom: var(--space-16); }
   .find { display: flex; gap: 6px; align-items: center; padding: 4px; width: min(420px, calc(100% - 32px)); margin: 0 auto 6px; background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-panel); }
   .find input { flex: 1; padding: 4px 8px; }
   .count { font-size: 11.5px; min-width: 70px; text-align: right; }
@@ -297,7 +319,13 @@
   .summary:hover .chev, .chev.open { opacity: 1; }
   .chev.open { transform: rotate(90deg); }
   .inner { display: flex; flex-direction: column; gap: 4px; padding: 0 0 8px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line2) 60%, transparent); }
-  .inner.fold { gap: 12px; }
+  /* The answer follows its fold closely, as on the Mac (the fold's own padding is the gap). */
+  .group:has(> .fold-line) { margin: calc(-1 * var(--space-6)) 0 calc(-1 * var(--space-12)); }
+  .inner.fold { gap: var(--space-8); border-bottom: 0; padding-bottom: var(--space-4); }
+  .fold-line { display: flex; align-items: center; gap: var(--space-4); width: 100%; margin: 0; padding: var(--space-2) 0 var(--space-8); border: 0; border-bottom: 1px solid var(--separator); border-radius: 0; background: none; font: var(--text-body); color: var(--text3); text-align: left; }
+  .fold-line:hover { background: none; color: color-mix(in srgb, var(--paper) 85%, transparent); }
+  .fold-chev { display: inline-flex; transition: transform var(--motion-quick); }
+  .fold-chev.open { transform: rotate(90deg); }
   /* The live line: a status line, quiet text with a spinner. */
   .live { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 0 4px; color: var(--text2); }
   .spin { display: inline-flex; margin-top: 1px; color: var(--text3); animation: spin 1s linear infinite; }

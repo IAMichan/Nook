@@ -653,7 +653,8 @@ impl CompanionServer {
                 if allow && !item.can_allow {
                     return fail(CompanionError::NotAllowedFromPhone);
                 }
-                if backend.decide(&session.digest.id, &item.id, allow).await.is_err() {
+                let reason = request.text.as_deref().filter(|_| !allow);
+                if backend.decide_with_reason(&session.digest.id, &item.id, allow, reason).await.is_err() {
                     return fail(CompanionError::Failed);
                 }
                 self.audit(if allow { "allow" } else { "deny" }, &format!("{} · {}", session.digest.title, item.detail));
