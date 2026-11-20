@@ -58,11 +58,13 @@ export interface AgentApproval {
   canTerminal: boolean;
   sessionKey: string;
   created: string;
+  /** What "Always" would allow and how far it reaches ("Always allows Bash(npm test:*) · this project"). */
+  alwaysScope?: string | null;
 }
 
 export type ApprovalDecision = "allow" | "always" | "deny" | "terminal";
 
-export interface QuestionOption { label: string; description: string }
+export interface QuestionOption { label: string; description: string; /** What the option would look like, in the code font. */ preview?: string }
 export interface QuestionItem { question: string; header: string; options: QuestionOption[]; multiSelect: boolean }
 export interface QuestionRequest { id: string; sessionKey: string; agentName: string; project: string; items: QuestionItem[] }
 
@@ -179,7 +181,7 @@ export const agentApi = {
   activateTerminal: (host: string) => invoke<void>("agents_activate_terminal", { host }),
   runInTerminal: (command: string, folder?: string) => invoke<void>("agents_run_in_terminal", { command, folder }),
   terminalName: (host: string) => invoke<string>("agents_terminal_name", { host }),
-  sound: (kind: "attention" | "done" | "error") => invoke<string | null>("agents_sound", { kind }),
+  sound: (kind: "attention" | "permission" | "done" | "error") => invoke<string | null>("agents_sound", { kind }),
 };
 
 export interface Gone { id: string; message: string | null }

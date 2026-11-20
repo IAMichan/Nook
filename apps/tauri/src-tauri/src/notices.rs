@@ -52,9 +52,19 @@ pub fn setup(app: &AppHandle) {
 /// Shows `toast`; `fallback` runs when this computer cannot (notifications off, or buttons this platform can't show),
 /// so a request is never lost.
 pub fn post(app: &AppHandle, toast: Toast, handlers: Handlers, fallback: impl FnOnce()) {
+    let approval = toast.kind.is_approval();
+    // Every notice is kept for the history (the bell in the main window), also one this computer cannot show.
+    crate::notice_history::record(
+        app,
+        &toast.target.thread(),
+        if approval { nook_core::services::notice_log::NoticeKind::Waiting } else { nook_core::services::notice_log::NoticeKind::Info },
+        &toast.title,
+        &toast.body,
+        &toast.subtitle,
+        &crate::notice_history::route(&toast.target),
+    );
     let Some(state) = app.try_state::<Toasts>() else { return fallback() };
     let id = toast.id.clone();
-    let approval = toast.kind.is_approval();
     lock(&state.handlers).insert(id.clone(), handlers);
     lock(&state.live).insert(id.clone(), toast.group());
     if !approval {

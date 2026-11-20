@@ -20,6 +20,7 @@ fn approval(tool: &str, command: &str) -> AgentApproval {
         can_terminal: true,
         session_key: "s".into(),
         created: chrono::Utc::now(),
+        always_scope: None,
     }
 }
 

@@ -11,8 +11,10 @@ mod connectors;
 mod diagnostics;
 mod games;
 mod keybindings;
+mod notice_history;
 mod notices;
 mod permissions;
+mod person_notes;
 mod platform;
 mod services;
 mod state;
@@ -126,6 +128,14 @@ pub fn run() {
             storage::storage_incidents,
             storage::storage_incident_dismiss,
             storage::storage_reveal,
+            notice_history::notice_history,
+            notice_history::notice_history_unseen,
+            notice_history::notice_history_seen,
+            notice_history::notice_history_remove,
+            notice_history::notice_history_record,
+            person_notes::person_note,
+            person_notes::person_note_set,
+            person_notes::birthdays_today,
             services::lyrics::music_lyrics,
             #[cfg(desktop)]
             platform::file_preview::file_preview,
@@ -293,6 +303,9 @@ pub fn run() {
             chats::inbox::chat_inbox_in_app,
             chats::inbox::chat_inbox_send_file,
             chats::inbox::chat_inbox_people,
+            chats::inbox::chat_link_preview,
+            chats::inbox::chat_draft,
+            chats::inbox::chat_suggest_reply,
             chats::follow_up::chat_owed,
             chats::follow_up::chat_follow_up_wait,
             chats::follow_up::chat_snooze,
@@ -465,6 +478,9 @@ pub fn run() {
             commands::workspace::workspace_resources,
             commands::workspace::workspace_search,
             commands::workspace::workspace_models,
+            commands::workspace::workspace_prompts,
+            commands::workspace::workspace_save_prompt,
+            commands::workspace::workspace_delete_prompt,
             commands::workspace::workspace_files,
             commands::workspace::workspace_skills,
             commands::workspace::workspace_fork,

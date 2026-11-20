@@ -487,7 +487,7 @@ pub fn sound_file(name: String, choice: Option<String>) -> Option<String> {
 pub fn system_sounds() -> SoundChoicesView {
     SoundChoicesView {
         system: sounds::system_sounds(),
-        custom: ["attention", "done", "error"].into_iter().filter(|n| NookSound::parse(n).and_then(|s| s.custom_file()).is_some()).map(String::from).collect(),
+        custom: ["attention", "permission", "done", "error"].into_iter().filter(|n| NookSound::parse(n).and_then(|s| s.custom_file()).is_some()).map(String::from).collect(),
     }
 }
 

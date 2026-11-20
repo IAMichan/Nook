@@ -6,6 +6,8 @@
   import AgentModelPicker from "./AgentModelPicker.svelte";
   import AntigravitySetup from "./AntigravitySetup.svelte";
   import ComposerContext from "./ComposerContext.svelte";
+  import PromptTools from "./PromptTools.svelte";
+  import { prompts } from "../../../lib/workspace/prompts.svelte";
   import { compose, project as project_, type ContextRef } from "../../../lib/workspace/context-refs";
   // Een sessie starten (`NewSessionComposer` op de Mac): één vraag, één veld en een paar rustige keuzes eronder.
   // "Wat zullen we bouwen in nook?" — typ de opdracht, druk op Enter. Agent en account, model, modus, rechten, denkniveau, waar hij
@@ -38,6 +40,7 @@
   let pictures = $state<string[]>([]);
   let mentions = $state<ContextRef[]>([]);
   let context = $state<ReturnType<typeof ComposerContext>>();
+  let promptTools = $state<ReturnType<typeof PromptTools>>();
   /** Starting without a project (`ScratchProjects`): the folder is made when the session starts. */
   let noProject = $state(false);
   let showClone = $state(false);
@@ -274,8 +277,9 @@
         // The project's own values win over what you last chose there (`ProjectSettings.composerDefaults`).
         const own = await workspaceApi.projectSettings(info.path).catch(() => null);
         if (request !== selectionRequest) return "stale";
-        if (own) {
-          const d = own.defaults;
+        // A backend that answers without defaults (an older one, or a failure) leaves your last choices as they are.
+        const d = own?.defaults;
+        if (d && Array.isArray(d.own)) {
           if (d.own.includes("provider") && connected.some((p) => p.provider === d.provider)) choose(d.provider, null);
           if (d.own.includes("mode")) config.mode = d.mode;
           if (d.own.includes("permission")) config.permission = d.permission;
@@ -490,6 +494,7 @@
 
   <!-- The Mac's composer (`SessionComposer`): the task on top; under it "+", the one agent pill (its mode, access and
        effort live in the picker's footer, as `ModelPickerOptions`), the microphone and the round send button. -->
+  <PromptTools bind:this={promptTools} bind:draft={config.task} {textarea} />
   <div class="box">
     <ComposerContext bind:this={context} {textarea} bind:draft={config.task} root={noProject ? null : (project?.path ?? null)} provider={config.provider} bind:attached bind:pictures bind:mentions />
     <textarea bind:this={textarea} bind:value={config.task} rows="2" placeholder={tr("Beschrijf wat de agent moet doen. Enter start de sessie.", "Describe what the agent should do. Return starts the session.")} onkeydown={keydown}></textarea>
@@ -500,6 +505,14 @@
         {/snippet}
         {#snippet children({ close })}
           <DropdownRow symbol="paperclip" title={tr("Bestand of map toevoegen", "Add a file or folder")} onclick={() => { close(); attachFile(); }} />
+          <!-- The prompt library (`PromptLibrary`): keep what you typed, or use a saved prompt. -->
+          <DropdownRow symbol="bookmark" title={tr("Bewaar als prompt…", "Save as prompt…")} disabledReason={config.task.trim() ? undefined : tr("Typ eerst wat je wilt bewaren.", "Type what you want to keep first.")} onclick={() => { close(); promptTools?.openSave(); }} />
+          {#if prompts.list.length}
+            <div class="dd-header">{tr("Prompts", "Prompts")}</div>
+            {#each prompts.list.slice(0, 8) as p (p.id)}
+              <DropdownRow symbol="message-square-text" title={p.title} trailing={p.trigger ? `/${p.trigger}` : undefined} onclick={() => { close(); promptTools?.use(p); }} />
+            {/each}
+          {/if}
         {/snippet}
       </Dropdown>
       {#if !connected.length}

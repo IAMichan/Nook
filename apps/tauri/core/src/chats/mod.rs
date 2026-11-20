@@ -7,10 +7,13 @@
 pub mod bridge;
 pub mod call;
 pub mod chatd;
+pub mod draft;
 pub mod follow_up;
+pub mod person_notes;
 pub mod voice;
 pub mod inbox;
 pub mod link;
+pub mod link_preview;
 pub mod store;
 pub mod tools;
 

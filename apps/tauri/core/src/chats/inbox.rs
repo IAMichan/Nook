@@ -43,6 +43,17 @@ pub struct InboxMessage {
     /// The reactions on it, when its app says them; `None` leaves what Nook knows as it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reactions: Option<Vec<Reaction>>,
+    /// What it said before it was edited or deleted for everyone, oldest first (`ChatVersion`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<MessageVersion>,
+}
+
+/// An earlier text of a message and until when it said that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageVersion {
+    pub text: String,
+    pub replaced: DateTime<Utc>,
 }
 
 /// One emoji on a message and who put it there (`ChatReactions` on the Mac).
@@ -74,6 +85,7 @@ impl InboxMessage {
             deleted: false,
             reply_to: None,
             reactions: None,
+            versions: vec![],
         }
     }
 
@@ -85,6 +97,10 @@ impl InboxMessage {
     /// The message as it shows once deleted for everyone: no words, no file.
     pub fn withdrawn(&self) -> Self {
         let mut copy = self.clone();
+        // What it said stays readable under "Before it was deleted".
+        if !copy.text.is_empty() && !copy.deleted {
+            copy.versions.push(MessageVersion { text: copy.text.clone(), replaced: Utc::now() });
+        }
         copy.text = String::new();
         copy.media = ChatMedia::None;
         copy.deleted = true;
@@ -414,6 +430,9 @@ impl ChatInbox {
                 kept.edited = true;
             }
             if !message.text.is_empty() && kept.text != message.text {
+                if !kept.text.is_empty() {
+                    kept.versions.push(MessageVersion { text: kept.text.clone(), replaced: now });
+                }
                 kept.text = message.text.clone();
             }
             // A better name for who wrote it (the app learned it since).
@@ -657,7 +676,12 @@ impl ChatInbox {
     /// Your own message got new words (after its app took them).
     pub fn edit_message(&mut self, key: &str, id: &str, text: &str) {
         if let Some(m) = self.message_mut(key, id) {
-            m.text = text.to_string();
+            if m.text != text {
+                if !m.text.is_empty() {
+                    m.versions.push(MessageVersion { text: m.text.clone(), replaced: Utc::now() });
+                }
+                m.text = text.to_string();
+            }
             m.edited = true;
         }
     }
@@ -849,6 +873,22 @@ mod tests {
 
     fn at(min: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 11, 17, 12, 0, 0).unwrap() + Duration::minutes(min)
+    }
+
+    #[test]
+    fn edits_and_deletions_keep_what_it_said_before() {
+        let mut inbox = ChatInbox::default();
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, false)]), at(1));
+        let key = ChatInbox::key("telegram", "1");
+        let mut edited = msg("a", 0, false);
+        edited.text = "second".into();
+        edited.edited = true;
+        inbox.merge(chat("telegram", "1", vec![edited]), at(2));
+        inbox.edit_message(&key, "a", "third");
+        inbox.withdraw_message(&key, "a");
+        let m = &inbox.threads[&key].messages[0];
+        assert!(m.deleted && m.text.is_empty());
+        assert_eq!(m.versions.iter().map(|v| v.text.as_str()).collect::<Vec<_>>(), vec!["text a", "second", "third"]);
     }
 
     #[test]

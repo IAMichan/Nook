@@ -4,6 +4,8 @@
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import Segmented from "./Segmented.svelte";
+  import LinkRow from "./LinkRow.svelte";
+  import { readableShortcut } from "../../lib/accelerator";
   import { services, screenLine, type EnergyView, type ServicePrefs, type ScreenStatus } from "../../lib/services";
 
   const s = $derived(nook.settings!);
@@ -85,6 +87,7 @@
       <input type="checkbox" role="switch" checked={prefs.callNotes} onchange={(e) => save({ callNotes: e.currentTarget.checked })} />
     </label>
   {/if}
+  <LinkRow icon="hand" title={tr("Beheer machtigingen bij Privacy en toegang", "Manage permissions under Privacy & access")} to="privacy" />
 </div>
 
 <h3>{tr("Meedenken", "Proactive suggestions")}</h3>
@@ -101,7 +104,7 @@
   {/if}
   {#if caps?.screenReading}
     <label class="row">
-      <span>{tr("Denk mee terwijl ik werk", "Suggest ideas while I work")}<br /><small>{tr("Kan Nook iets overnemen of weet hij een slimmere aanpak, dan stelt hij het voor naast de balk. Zeg je vaker nee, dan houdt hij zich in. Stuurt af en toe de tekst van je voorste vensters naar je brein.", "If Nook can take something over or knows a smarter approach, it suggests it next to the bar. Say no more often and it holds back. Now and then it sends the text of your front windows to your brain.")}</small></span>
+      <span>{tr("Denk mee terwijl ik werk", "Suggest ideas while I work")}<br /><small>{tr("Nook stelt naast de balk voor wat het kan overnemen of slimmer kan, en houdt zich in als je vaak nee zegt. Leest af en toe het voorste venster.", "Nook proposes next to the bar what it can take over or do smarter, and holds back if you often say no. Reads the front window now and then.")}</small></span>
       <input type="checkbox" role="switch" checked={s.autoWatch} onchange={(e) => nook.saveSettings({ autoWatch: e.currentTarget.checked })} />
     </label>
     {#if prefs && Object.keys(prefs.thinkAlongMuted).length}
@@ -115,7 +118,7 @@
       </div>
     {/if}
     {#if s.shortcuts.lookAlong}
-      <p class="note">{tr("Meekijken: druk {keys} en Nook leest het voorste venster en stelt iets voor als er een afspraak, belofte of taak in staat.", "Look along: press {keys} and Nook reads the front window and suggests something if it holds an appointment, promise or task.", { keys: s.shortcuts.lookAlong })}</p>
+      <p class="note">{tr("Meekijken: druk {keys} en Nook leest het voorste venster en stelt iets voor als er een afspraak, belofte of taak in staat.", "Look along: press {keys} and Nook reads the front window and suggests something if it holds an appointment, promise or task.", { keys: readableShortcut(s.shortcuts.lookAlong) })}</p>
     {/if}
   {/if}
 </div>

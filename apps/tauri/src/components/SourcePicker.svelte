@@ -3,7 +3,7 @@
   // sources" (a tick on each source turns the Nook into only those) and "Never use" (the screen, the web and the
   // clipboard left out). The question can say it too ("only my calendar and mail", "not my screen").
   import { brainApi, type SourceChoice, type SourceScope } from "../lib/brain";
-  import { sourceDomain } from "../lib/sources";
+  import { sourceSymbol, sourceDomain } from "../lib/sources";
   import { nook } from "../lib/state.svelte";
   import { tr } from "../lib/i18n.svelte";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
@@ -21,48 +21,7 @@
   const only = $derived(choices.filter((c) => c.id !== "screen" && c.id !== "clipboard"));
   const never = $derived(NEVER.map((id) => choices.find((c) => c.id === id) ?? { id, title: id === "screen" ? tr("Scherm", "Screen") : id === "web" ? tr("Web", "Web") : tr("Klembord", "Clipboard"), private: false }));
 
-  function sourceSymbol(id: string): string {
-    switch (id) {
-      case "calendar":
-      case "icalfeeds":
-        return "calendar";
-      case "mail":
-        return "mail";
-      case "web":
-      case "browser":
-      case "browser_extension":
-        return "globe";
-      case "screen":
-        return "monitor";
-      case "clipboard":
-        return "clipboard-list";
-      case "notes":
-      case "bear":
-        return "notebook-pen";
-      case "reminders":
-      case "things":
-      case "loops":
-        return "list-checks";
-      case "contacts":
-        return "users";
-      case "files":
-        return "folder";
-      case "memory":
-        return "brain";
-      case "messages":
-        return "message-circle";
-      case "callnotes":
-        return "audio-waveform";
-      case "terminal":
-        return "terminal";
-      case "agents":
-        return "bot";
-      case "system":
-        return "laptop";
-      default:
-        return "layers";
-    }
-  }
+
 
   async function opened() {
     choices = await brainApi.sourceChoices();

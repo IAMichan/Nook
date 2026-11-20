@@ -111,6 +111,7 @@
   // Each moment's sound (`NookSound` on the Mac; Windows plays one sound for a question and a permission request).
   const moments = $derived<{ id: SoundName; title: string }[]>([
     { id: "done", title: tr("Agent is klaar", "Agent is done") },
+    { id: "permission", title: tr("Agent vraagt toestemming", "Agent asks for permission") },
     { id: "attention", title: tr("Agent stelt een vraag of wacht op je", "Agent asks a question or waits on you") },
     { id: "error", title: tr("Agent stopt met een fout", "Agent stops with an error") },
   ]);
@@ -141,6 +142,7 @@
 
 {#if part === "dictation" && flow && caps?.flow}
   <h3>{tr("Overal dicteren", "Dictate anywhere")}</h3>
+  <p class="section-info">{tr("Spraakherkenning in je talen tegelijk. Je klembord krijgt na het plakken terug wat erop stond.", "Speech recognition in your languages at once. Your clipboard gets back what it held after pasting.")}</p>
   <div class="group">
     <label class="row">
       <span>{tr("Dicteren aanzetten", "Turn on dictation")}<br /><small class="faint">{tr("Houd {key} vast, praat en laat los: je woorden staan waar je typt, in elke app. Twee keer tikken is handsfree.", "Hold {key}, talk and let go: your words appear where you type, in any app. Tap twice for hands-free.", { key: flow.settings.key })}</small></span>
@@ -249,7 +251,7 @@
 {#if part === "sound"}
   <!-- The Mac's `soundSection`: the sounds first, one picker per moment with a button to hear it, then speaking. -->
   <h3>{tr("Geluiden", "Sounds")}</h3>
-  {#if caps?.desktop}<p class="section-info">{tr("Zet attention, done of error (.wav, .mp3, .ogg, .m4a) in de map om een eigen geluid te gebruiken.", "Place attention, done or error (.wav, .mp3, .ogg, .m4a) files in the folder to use custom sounds.")}{folder ? ` ${folder}` : ""}</p>{/if}
+  {#if caps?.desktop}<p class="section-info">{tr("Zet attention, permission, done of error (.wav, .mp3, .ogg, .m4a) in de map om een eigen geluid te gebruiken.", "Place attention, permission, done or error (.wav, .mp3, .ogg, .m4a) files in the folder to use custom sounds.")}{folder ? ` ${folder}` : ""}</p>{/if}
   <div class="group">
     <label class="row"><span>{tr("Geluid als een agent op je wacht of klaar is", "Sound when an agent is waiting or finished")}</span><input type="checkbox" role="switch" checked={s.sounds} onchange={(e) => nook.saveSettings({ sounds: e.currentTarget.checked })} /></label>
     {#each moments as moment (moment.id)}

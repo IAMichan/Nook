@@ -67,9 +67,13 @@
     {#if canReason && !writingReason}<button class="ghost" disabled={busy} onclick={() => (writingReason = true)}>{tr("Weigeren met reden", "Deny with reason")}</button>{/if}
     <span class="spacer"></span>
     {#if approval.canTerminal}<button disabled={busy} onclick={() => decide("terminal")}>{tr("In terminal", "In terminal")}</button>{/if}
-    {#if approval.canAlways}<button disabled={busy} onclick={() => decide("always")}>{tr("Altijd", "Always")}</button>{/if}
+    {#if approval.canAlways}<button disabled={busy} title={tr("Toestaan en Claude Code de regel laten onthouden voor dit project", "Allow and let Claude Code remember the rule for this project")} onclick={() => decide("always")}>{tr("Altijd", "Always")}</button>{/if}
     <button class="primary" disabled={busy} onclick={() => decide("allow")}>{tr("Toestaan", "Allow")}</button>
   </div>
+  {#if approval.canAlways && approval.alwaysScope}
+    <!-- What "Always" would allow and how far it reaches, before it is pressed (`PermissionScope.preview`). -->
+    <div class="scope"><Ico name="shield-check" size={13} />{approval.alwaysScope}</div>
+  {/if}
 </div>
 
 <style>
@@ -98,6 +102,7 @@
   .reason { display: flex; align-items: flex-start; gap: var(--space-8); color: var(--text3); }
   .reason > :global(svg) { margin-top: var(--space-8); }
   .reason textarea { flex: 1; min-height: 30px; padding: var(--space-6) calc(var(--space-8) + var(--space-2)); resize: none; field-sizing: content; max-height: 96px; border: 1px solid var(--field-stroke); border-radius: var(--radius-control); background: var(--field); font: var(--text-body); color: var(--paper); }
+  .scope { display: flex; align-items: center; gap: var(--space-6); font: var(--text-detail); color: var(--text3); }
   .buttons { display: flex; gap: 6px; align-items: center; }
   .spacer { flex: 1; }
 </style>

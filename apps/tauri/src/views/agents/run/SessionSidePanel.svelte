@@ -380,7 +380,7 @@
         </div>
       {:else if panel.active === "pullRequest"}
         <div class="pane-fill">
-          <PullRequests />
+          <PullRequests session={run.id} />
         </div>
       {:else if panel.active === "outputs"}
         <div class="pane-scroll">

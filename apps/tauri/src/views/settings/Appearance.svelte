@@ -202,7 +202,7 @@
 </div>
 {#if !LOOK_PRESETS.some((p) => sameLook(p.look, look_))}<p class="note">{tr("Je eigen mix: pas hieronder alles aan, of kies een stijl om opnieuw te beginnen.", "Your own mix: change anything below, or pick a style to start again.")}</p>{/if}
 
-<Fold title={tr("Gezicht en afwerking", "Face and finish")} summary={tr("Ogen, mond, glans, gloed en wangen", "Eyes, mouth, gloss, glow and cheeks")}>
+<Fold keys={[tr("Ogen", "Eyes"), tr("Mond", "Mouth"), tr("Glans", "Gloss"), tr("Gloed", "Glow"), tr("Blosjes", "Blush")]} title={tr("Gezicht en afwerking", "Face and finish")} summary={tr("Ogen, mond, glans, gloed en wangen", "Eyes, mouth, gloss, glow and cheeks")}>
   <div class="row">
     <span>{tr("Ogen", "Eyes")}</span>
     <Segmented label={tr("Ogen", "Eyes")} value={look_.eyes} onchange={(v) => setLook({ eyes: v as NookLook["eyes"] })}
@@ -270,7 +270,7 @@
 </div>
 <p class="note">{tr("Klik op de donkere of lichte voorvertoning van een thema om het in die weergave te gebruiken. De balk blijft in elk thema donker, net als de notch van een Mac.", "Click a theme's dark or light preview to use it in that appearance. The bar stays dark in every theme, as the notch of a Mac does.")}</p>
 
-<Fold title={tr("Tekst en indeling", "Text and layout")} summary={tr("Dichtheid, diffkleuren, wiskunde en Markdown", "Density, diff colors, math and Markdown")}>
+<Fold keys={[tr("Dichtheid", "Density"), tr("Diffkleuren", "Diff colors"), tr("Wiskunde weergeven", "Render math"), tr("Markdown opmaken tijdens het typen", "Style Markdown as you type")]} title={tr("Tekst en indeling", "Text and layout")} summary={tr("Dichtheid, diffkleuren, wiskunde en Markdown", "Density, diff colors, math and Markdown")}>
   <div class="row">
     <span>{tr("Dichtheid", "Density")}</span>
     <Segmented label={tr("Dichtheid", "Density")} value={s.density} options={DENSITIES.map((d) => ({ value: d, label: densityNames[d] }))} onchange={(d) => nook.saveSettings({ density: d as Density })} />

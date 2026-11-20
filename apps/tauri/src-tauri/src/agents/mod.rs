@@ -207,6 +207,18 @@ fn system_notices_for(app: &AppHandle, agent: &str, urgent: bool) -> bool {
 /// An agent that is done, failed or waits on you: as a system notification when you chose that for agents; otherwise
 /// the bar shows its card (`agent-attention`). A click opens the session.
 pub fn present_attention(app: &AppHandle, session: &nook_core::agents::models::AgentSession) {
+    {
+        use nook_core::agents::models::AgentStatus;
+        use nook_core::services::notice_log::NoticeKind;
+        let kind = match session.status {
+            AgentStatus::Done => NoticeKind::Done,
+            AgentStatus::Failed => NoticeKind::Failed,
+            AgentStatus::Waiting => NoticeKind::Waiting,
+            _ => NoticeKind::Info,
+        };
+        let context = [session.host.as_str(), session.project.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+        crate::notice_history::record(app, &format!("agent:{}", session.id), kind, &session.name, &session.summary, &context, &format!("agent:{}", session.id));
+    }
     if !system_notices_for(app, &session.name, false) {
         return;
     }

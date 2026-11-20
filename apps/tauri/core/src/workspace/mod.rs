@@ -31,6 +31,7 @@ pub mod open_in;
 pub mod parsers;
 pub mod paths;
 pub mod project_files;
+pub mod prompts;
 pub mod queue;
 pub mod resources;
 pub mod rollback;

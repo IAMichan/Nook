@@ -9,6 +9,7 @@
   import CallIcon from "./CallIcon.svelte";
   import ChatFace from "./ChatFace.svelte";
   import { chatMenu } from "./chat-actions.svelte";
+  import { invoke } from "@tauri-apps/api/core";
 
   let { entry, people, anchor, onclose, onclosechat }: {
     entry: ChatEntry;
@@ -22,6 +23,19 @@
   const subtitle = $derived(entry.account ? `${app} \u00b7 ${entry.account}` : app);
   const canCall = $derived(canCallChat(entry.app, entry.isGroup));
   const rows = $derived(chatMenu(entry, onclosechat).flat());
+
+  // What you keep about this person (`ChatPersonNotes`): a note and a birthday, which Today shows on the day.
+  let note = $state("");
+  let birthday = $state("");
+  $effect(() => {
+    if (entry.isGroup) return;
+    invoke<{ note: string; birthday: string | null }>("person_note", { key: entry.key })
+      .then((n) => { note = n.note; birthday = n.birthday ? `2024-${n.birthday}` : ""; })
+      .catch(() => {});
+  });
+  function savePerson() {
+    invoke("person_note_set", { key: entry.key, note, birthday: birthday ? birthday.slice(5) : null }).catch(() => {});
+  }
 
   function startCall(kind: CallKind) {
     onclose();
@@ -68,6 +82,15 @@
         </div>
       </div>
     {/if}
+    {#if !entry.isGroup}
+      <div class="section">
+        <span class="label">{tr("Over {name}", "About {name}", { name: entry.name })}</span>
+        <div class="card person">
+          <label class="field"><span>{tr("Verjaardag", "Birthday")}</span><input type="date" bind:value={birthday} onchange={savePerson} aria-label={tr("Verjaardag", "Birthday")} /></label>
+          <textarea rows="2" bind:value={note} onblur={savePerson} placeholder={tr("Een notitie voor jezelf", "A note for yourself")} aria-label={tr("Notitie", "Note")}></textarea>
+        </div>
+      </div>
+    {/if}
     <div class="card">
       {#each rows as r (r.label)}
         <button class="row" class:danger={r.destructive} onclick={() => { r.onselect?.(); onclose(); }}>
@@ -96,4 +119,8 @@
   .row + .row { border-top: 1px solid var(--separator); }
   .row:hover:not(:disabled) { background: var(--row-hover); border-color: var(--separator); }
   .row.danger { color: var(--coral); }
+  .person { padding: var(--space-8) var(--space-12); gap: var(--space-8); }
+  .field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); font: var(--text-control); font-weight: 400; color: var(--paper); }
+  .field input { width: auto; }
+  .person textarea { resize: vertical; min-height: 40px; font: var(--text-detail); }
 </style>

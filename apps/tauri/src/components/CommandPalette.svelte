@@ -27,6 +27,7 @@
     type BackendHit, type SearchDoc, type SearchHit, type SearchKind,
   } from "../lib/search-everything";
   import { searchApi, type AISource } from "../lib/search-api";
+  import { sessionFind } from "../lib/session-find.svelte";
   import { chatFocus } from "../lib/chat-focus.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
   import Ico from "./ui/Ico.svelte";
@@ -290,7 +291,16 @@
         await nook.select(value);
         onnavigate("chat");
         break;
-      case "session": agents.select(id.startsWith("run:") || id.startsWith("past:") ? id : value); onnavigate("agents"); break;
+      case "session":
+        // A run that matched in its transcript opens with its find bar on the first words that matched.
+        if (id.startsWith("run:") && doc.anchor && doc.snippet) {
+          const first = highlightRanges(doc.snippet, query)[0];
+          const words = first ? doc.snippet.slice(first[0], first[1]).trim() : "";
+          if (words) sessionFind.open(value, words);
+        }
+        agents.select(id.startsWith("run:") || id.startsWith("past:") ? id : value);
+        onnavigate("agents");
+        break;
       case "chat": {
         // "chat:<app>:<id>": the Chats tab opens the chat it opened last (`chats.lastOpened`, by the inbox's key) when it
         // comes up; a WhatsApp chat shows at once too. A window event tells a Chats tab already on screen.

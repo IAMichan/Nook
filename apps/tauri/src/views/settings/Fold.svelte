@@ -3,7 +3,13 @@
   // is inside in short; open, its rows follow in the same card.
   import type { Snippet } from "svelte";
   import DisclosureChevron from "../../components/ui/DisclosureChevron.svelte";
-  let { title, summary = "", open = $bindable(false), children }: { title: string; summary?: string; open?: boolean; children: Snippet } = $props();
+  import { settingsHighlight } from "../../lib/settings-search.svelte";
+  // `keys`: the names of the settings inside, so a search for one of them opens the fold before the page scrolls there.
+  let { title, summary = "", keys = [], open = $bindable(false), children }: { title: string; summary?: string; keys?: string[]; open?: boolean; children: Snippet } = $props();
+  $effect(() => {
+    const wanted = settingsHighlight.title;
+    if (wanted && (wanted === title || keys.includes(wanted))) open = true;
+  });
 </script>
 
 <div class="group fold">

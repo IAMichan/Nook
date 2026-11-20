@@ -429,6 +429,8 @@ export interface InboxMessage {
   /** The message this one answers (Nook's id of it). */
   replyTo?: string;
   reactions?: ChatReaction[];
+  /** What it said before it was edited or deleted, oldest first. */
+  versions?: { text: string; replaced: string }[];
 }
 
 /** One emoji on a message and who put it there by name ("" for you). */
@@ -476,6 +478,12 @@ export const chatsApi = {
     invoke<void>("chat_inbox_send_file", { key, name, mime, base64, caption, replyTo, voice }),
   /** A group's people by name, for "@" in the field. */
   people: (key: string) => invoke<string[]>("chat_inbox_people", { key }),
+  /** "@nook …": the message Nook writes for the field (never sent). */
+  draft: (key: string, instruction: string) => invoke<string>("chat_draft", { key, instruction }),
+  /** The answer you will likely send, for the empty field; null when there is nothing to answer. */
+  suggestReply: (key: string) => invoke<string | null>("chat_suggest_reply", { key }),
+  /** A link's picture and title for its bubble; null when it cannot be fetched. */
+  linkPreview: (url: string) => invoke<{ title: string | null; image: string | null; video: boolean } | null>("chat_link_preview", { url }),
   /** The chats you owe a reply, every app at once, questions first (`chats::follow_up::chat_owed`). */
   owed: (limit = 3) => invoke<OwedTurn[]>("chat_owed", { limit }),
 };

@@ -567,12 +567,12 @@ mod tests {
 
     #[test]
     fn the_tray_says_what_waits() {
-        nook_core::i18n::set_language("nl");
-        assert_eq!(tray_tooltip(0, 0), "Nook");
-        assert_eq!(tray_tooltip(0, 2), "Nook · bezig met 2");
-        assert_eq!(tray_tooltip(1, 3), "Nook · 1 Nook wacht op je");
-        assert_eq!(tray_tooltip(4, 0), "Nook · 4 Nooks wachten op je");
+        // English, as the other tests that set the shared interface language.
         nook_core::i18n::set_language("en");
+        assert_eq!(tray_tooltip(0, 0), "Nook");
+        assert_eq!(tray_tooltip(0, 2), "Nook · working on 2");
+        assert_eq!(tray_tooltip(1, 3), "Nook · 1 Nook is waiting for you");
+        assert_eq!(tray_tooltip(4, 0), "Nook · 4 Nooks are waiting for you");
     }
 
     #[test]

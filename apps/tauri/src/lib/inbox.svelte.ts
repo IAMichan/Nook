@@ -136,6 +136,14 @@ class InboxService {
     await nook.saveSettings((s) => ({ inboxSnoozed: { ...pruneSnoozed(s.inboxSnoozed ?? {}, now.getTime()), [id]: until } }));
   }
 
+  /// Hides an item until `until` (one of your snooze options, `lib/snooze-options.ts`).
+  async snoozeTo(id: string, until: Date) {
+    this.pushed = this.pushed.filter((i) => i.id !== id);
+    if (!nook.settings) return;
+    const now = Date.now();
+    await nook.saveSettings((s) => ({ inboxSnoozed: { ...pruneSnoozed(s.inboxSnoozed ?? {}, now), [id]: until.toISOString() } }));
+  }
+
   /// Brings a snoozed item back right away.
   async wake(id: string) {
     await nook.saveSettings((s) => {

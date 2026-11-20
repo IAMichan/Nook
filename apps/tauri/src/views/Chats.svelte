@@ -427,8 +427,9 @@
   .undocked .sidebar-column { flex: none; height: 100%; width: 184px; padding: var(--space-8) var(--space-6); border-right: 1px solid var(--border); box-sizing: border-box; }
 
   /* The list (`PanelLayout.chatsList`): 320 wide beside the chat, with a line between them. */
-  .list { flex: none; width: 320px; min-height: 0; display: flex; flex-direction: column; gap: var(--space-8); padding: 0 var(--space-4) 0 var(--space-8); border-right: 1px solid var(--border); box-sizing: border-box; }
-  .list-head { display: flex; align-items: center; gap: var(--space-6); min-height: 52px; padding: 0 var(--space-4) 0 var(--space-12); flex: none; }
+  .list { flex: none; width: 334px; min-height: 0; display: flex; flex-direction: column; gap: var(--space-8); padding: 0 var(--space-4) 0 var(--space-8); border-right: 1px solid var(--border); box-sizing: border-box; }
+  /* `PanelListHeader`: 30 high, its title on the window's top row. */
+  .list-head { display: flex; align-items: center; gap: var(--space-6); height: 30px; padding: 11px var(--space-4) 0 var(--space-12); flex: none; }
   .list-title { font: var(--text-title); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { flex: 1; }
   .kinds { display: flex; gap: var(--space-2); padding: var(--space-2); margin: 0 var(--space-4); background: var(--surface); border-radius: var(--radius-control); flex: none; }

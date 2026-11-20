@@ -194,8 +194,8 @@ mod tests {
             question: "Welke database?".into(),
             header: "Opslag".into(),
             options: vec![
-                QuestionOption { label: "SQLite".into(), description: String::new() },
-                QuestionOption { label: "Postgres".into(), description: String::new() },
+                QuestionOption { label: "SQLite".into(), description: String::new(), preview: String::new() },
+                QuestionOption { label: "Postgres".into(), description: String::new(), preview: String::new() },
             ],
             multi_select: false,
         };

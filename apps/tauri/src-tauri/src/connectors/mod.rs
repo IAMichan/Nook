@@ -149,6 +149,15 @@ fn wire_whatsapp(app: &AppHandle, link: &Arc<whatsapp::WhatsAppLink>, accounts: 
         // As Settings › Notifications says (`notices::decide`): a system notification with Reply and Mark as read, the
         // bar's card or strip, or nothing popping up at all.
         let key = arrived.key.clone();
+        crate::notice_history::record(
+            &handle,
+            &format!("chat:{key}"),
+            nook_core::services::notice_log::NoticeKind::Info,
+            &arrived.name,
+            &arrived.preview,
+            "WhatsApp",
+            &format!("chat:{key}"),
+        );
         match crate::chats::notify::style(&handle, "whatsapp", false) {
             Some(nook_core::services::notice_rules::NoticeStyle::System) => {
                 crate::chats::notify::toast(&handle, &key, "whatsapp", &arrived.name, &arrived.preview, true)

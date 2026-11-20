@@ -635,6 +635,12 @@ impl AgentHub {
             assessment,
             can_always,
             created: Utc::now(),
+            always_scope: match &kind {
+                PendingKind::Permission { suggestions, can_always: true } => {
+                    super::permission_scope::preview(&super::permission_scope::rules(suggestions.as_ref()))
+                }
+                _ => None,
+            },
         };
         s.pending_approvals.insert(id.clone(), PendingApproval { request: request.clone(), responder, kind });
         s.approvals.push(request.clone());

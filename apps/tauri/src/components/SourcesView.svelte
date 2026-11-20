@@ -5,7 +5,7 @@
   // opnieuw op één regel. Na elk antwoord dicht, zoals op de Mac.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { citationsUsed, isOpenableUrl } from "../lib/citations";
-  import { sourceDomain, sourceGroups, sourcesSummary, sourceTitle, statusText, type SourceGroup } from "../lib/sources";
+  import { sourceSymbol, sourceDomain, sourceGroups, sourcesSummary, sourceTitle, statusText, type SourceGroup } from "../lib/sources";
   import type { ChatMessage, SourceReference } from "../lib/types";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
   import { tr } from "../lib/i18n.svelte";
@@ -22,7 +22,7 @@
   let expanded = $state(false);
   // Closed after every answer (`SourcesDisclosure`): opened while Nook searched, it folds away once the answer is done;
   // a source that could not be read shows as the badge on the line.
-  let wasLive = live;
+  let wasLive = false;
   $effect(() => {
     if (wasLive && !live) expanded = false;
     wasLive = live;
@@ -100,7 +100,7 @@
     >
       <span class="stack" aria-hidden="true">
         {#each groups.slice(0, 4) as g (g.title)}
-          <span class="mini"><ServiceIcon domain={sourceDomain(g.sourceId)} title={g.title} size={14} /></span>
+          <span class="mini"><ServiceIcon domain={sourceDomain(g.sourceId)} glyph={sourceSymbol(g.sourceId ?? "")} title={g.title} size={14} /></span>
         {/each}
       </span>
       <span>{summary}</span>
@@ -112,7 +112,7 @@
         {#each groups as g (g.title)}
           <div class="group" class:failed={g.status === "failed"}>
             <div class="head" title={help(g)}>
-              <ServiceIcon domain={sourceDomain(g.sourceId)} title={g.title} size={16} />
+              <ServiceIcon domain={sourceDomain(g.sourceId)} glyph={sourceSymbol(g.sourceId ?? "")} title={g.title} size={16} />
               <span class="name">{g.title}</span>
               <span class="chip {g.status}">
                 {#if g.status === "running"}<span class="spin"></span>{/if}

@@ -22,6 +22,7 @@
     else apps[key(name)] = false;
     nook.saveSettings({ noticeRules: { ...rules, apps } });
   }
+  import SnoozeOptions from "./SnoozeOptions.svelte";
 </script>
 
 <div class="group">
@@ -40,6 +41,9 @@
     <p class="note">{tr("Niets gevonden.", "Nothing found.")}</p>
   {/each}
 </div>
+
+
+<SnoozeOptions />
 
 <style>
   .search { flex-wrap: nowrap; justify-content: flex-start; gap: var(--space-6); color: var(--text3); }

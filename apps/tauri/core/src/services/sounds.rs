@@ -11,6 +11,8 @@ use crate::paths;
 #[serde(rename_all = "lowercase")]
 pub enum NookSound {
     Attention,
+    /// An agent asks for permission (an approval is waiting), as the Mac's `NookSound.permission`.
+    Permission,
     Done,
     Error,
 }
@@ -21,6 +23,7 @@ impl NookSound {
     pub fn file_name(self) -> &'static str {
         match self {
             Self::Attention => "attention",
+            Self::Permission => "permission",
             Self::Done => "done",
             Self::Error => "error",
         }
@@ -29,6 +32,7 @@ impl NookSound {
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "attention" => Some(Self::Attention),
+            "permission" => Some(Self::Permission),
             "done" => Some(Self::Done),
             "error" => Some(Self::Error),
             _ => None,

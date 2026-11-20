@@ -29,6 +29,7 @@
   import BesideHost from "../components/shell/BesideHost.svelte";
   import CloneNotices from "../components/shell/CloneNotices.svelte";
   import StorageNotices from "../components/shell/StorageNotices.svelte";
+  import NoticeBell from "../components/shell/NoticeBell.svelte";
   import { showChat } from "../lib/chat-arrived.svelte";
   import { tip } from "../components/ui/tip";
   import { keys as keyRules } from "../lib/keybindings.svelte";
@@ -380,6 +381,21 @@
   }));
 
   // "nook:<id>" (from the bar's Open in window) opens that same conversation, so you continue where you were.
+  /// Where a notice in the history leads (`notice_history`): a session, a chat by its inbox key, a Nook, or a page.
+  function openNoticeRoute(r: string) {
+    if (r.startsWith("agent:")) {
+      agents.select(r.slice(6));
+      return navigate(land("agents"));
+    }
+    if (r.startsWith("chat:")) {
+      const key = r.slice(5);
+      navigate(land("chats"));
+      tick().then(() => window.dispatchEvent(new CustomEvent("nook-open-chat", { detail: key })));
+      return;
+    }
+    applyRoute(r);
+  }
+
   function applyRoute(r: string) {
     // "settings:<subject>": Settings at that subject (`open_settings` from the chat).
     if (r.startsWith("settings:")) {
@@ -702,7 +718,7 @@
       <span class="spacer" data-tauri-drag-region></span>
       <button class="ghost icon-button" onclick={() => (paletteOpen = true)} use:tip={tr("Zoek overal (Ctrl+K)", "Search everything (Ctrl+K)")} aria-label={tr("Zoek overal", "Search everything")}><Icon name="search" size={15} /></button>
       <span class="talk"><MicButton size={15} /></span>
-      {#if fullLayout}<SplitButton current={route} {titleOf} />{/if}
+      {#if fullLayout}<NoticeBell onopen={openNoticeRoute} /><SplitButton current={route} {titleOf} />{/if}
       <!-- A narrow window floats the conversation list over the page: its toggle sits here (Ctrl+B everywhere). -->
       {#if route === "chat" && narrow}<button class="ghost icon-button" onclick={() => (showList = !showList)} use:tip={showList ? tr("Verberg gesprekken", "Hide conversations") : tr("Toon gesprekken", "Show conversations")} aria-label={tr("Gesprekken tonen of verbergen", "Toggle conversations")} aria-expanded={showList}><Icon name="sidebar" size={16} /></button>{/if}
     </div>

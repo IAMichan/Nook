@@ -12,12 +12,13 @@
   // brings older messages without moving what you read. Everything from a message is shown as text, never as HTML.
   import { tick } from "svelte";
   import { chatsApi, connectorEvents, connectorsApi, type ChatThread } from "../../lib/connectors";
-  import { appName, bubbleOfInbox, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, personTint, QUICK_REACTIONS, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
+  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, personTint, QUICK_REACTIONS, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
   import Dialog from "../../components/ui/Dialog.svelte";
   import TimelineEarlierRow from "../../components/ui/TimelineEarlierRow.svelte";
   import ChatQuote from "./ChatQuote.svelte";
   import ForwardSheet from "./ForwardSheet.svelte";
   import ChatInfo from "./ChatInfo.svelte";
+  import LinkCard from "./LinkCard.svelte";
   import ActionSuggestionBar from "../../components/ActionSuggestionBar.svelte";
   import type { Line as SuggestionLine, Turn as SuggestionTurn } from "../../lib/action-suggestions.svelte";
   import ReactionChips from "./ReactionChips.svelte";
@@ -91,6 +92,13 @@
   // The messages in runs: a run is one writer's messages in a row on one day. The first carries the tail (and the
   // writer's name in a group), the last the time.
   type Line = { kind: "day"; id: string; label: string } | { kind: "bubble"; m: Bubble; first: boolean; last: boolean };
+  // Where what is new begins: the first of the newest `unread` messages from someone else, as the chat opened.
+  const unreadAtOpen = (() => entry.unread)();
+  const newFrom = $derived.by(() => {
+    if (!unreadAtOpen) return null;
+    const theirs = bubbles.filter((b) => !b.fromMe);
+    return theirs[Math.max(0, theirs.length - unreadAtOpen)]?.id ?? null;
+  });
   const lines = $derived.by(() => {
     const now = new Date();
     const out: Line[] = [];
@@ -101,7 +109,10 @@
       const key = Number.isNaN(d.getTime()) ? day : d.toDateString();
       if (key !== day) {
         day = key;
-        if (!Number.isNaN(d.getTime())) out.push({ kind: "day", id: `day:${key}`, label: dayLabel(d, now) });
+        // No line above the first message when the whole chat is from today: the header says when (`ChatTimeline`).
+        const today = new Date().toDateString();
+        const allToday = !out.length && bubbles.every((b) => new Date(b.date).toDateString() === today);
+        if (!Number.isNaN(d.getTime()) && !allToday) out.push({ kind: "day", id: `day:${key}`, label: dayLabel(d, now) });
       }
       const prev = bubbles[i - 1];
       const next = bubbles[i + 1];
@@ -183,9 +194,44 @@
   /** Return or the arrow: the text goes to this chat as typed, as an answer to the quoted message when there is one;
    *  the chat stays open and shows it. When it fails the chat says why and the text and the quote are back. A chat Nook
    *  cannot write in copies the text for its app instead. */
+  // "@nook …" (`ChatDraft`): Nook writes the message into the field, for you to read and send yourself.
+  let writing = $state(false);
+  function nookInstruction(text: string): string | null {
+    const t = text.trim();
+    if (!/^@nook(?![\p{L}\p{N}])/iu.test(t)) return null;
+    return t.slice(5).replace(/^[\s,:;\-–—]+/, "").trim();
+  }
+  async function writeWithNook(instruction: string) {
+    writing = true;
+    notice = "";
+    try {
+      draft = await chatsApi.draft(entry.key, instruction);
+      tick().then(() => field?.focus());
+    } catch (e) {
+      notice = String(e);
+    } finally {
+      writing = false;
+    }
+  }
+
+  // The answer you will likely send (`ChatReplySuggestion`): grey in the empty field when the newest message is
+  // someone else's; Tab puts it in the field, typing hides it. One try per message.
+  let suggestion = $state<{ turn: string; text: string } | null>(null);
+  let askedTurn = "";
+  $effect(() => {
+    const last = bubbles[bubbles.length - 1];
+    if (!last || last.fromMe || !entry.sends || askedTurn === last.id) return;
+    askedTurn = last.id;
+    const turn = last.id;
+    chatsApi.suggestReply(entry.key).then((text) => { if (text && askedTurn === turn) suggestion = { turn, text }; }).catch(() => {});
+  });
+  const ghost = $derived(suggestion && !draft && suggestion.turn === bubbles[bubbles.length - 1]?.id ? suggestion.text : null);
+
   async function send() {
     const text = draft.trim();
     if (editing) return saveEdit();
+    const asked = nookInstruction(text);
+    if (asked !== null && entry.sends) return writeWithNook(asked);
     if (files.length) return sendFiles();
     if (!text || sending) return;
     if (!entry.sends) {
@@ -340,8 +386,10 @@
 
   // "@" in a group lists its people (`ChatTags`): a click puts "@Name " in the field and its app tags them.
   let caret = $state(0);
-  const tagging = $derived(isGroup && entry.sends ? typingTag(draft.slice(0, caret)) : null);
-  const tagMatches = $derived(tagging === null ? [] : people.filter((p) => p.toLowerCase().startsWith(tagging.toLowerCase())).slice(0, 6));
+  const tagging = $derived(entry.sends ? typingTag(draft.slice(0, caret)) : null);
+  const tagMatches = $derived(tagging === null || !isGroup ? [] : people.filter((p) => p.toLowerCase().startsWith(tagging.toLowerCase())).slice(0, 6));
+  /// "@" offers "@nook" first, at the start of the field (`ChatDraft.choices`).
+  const offersNook = $derived(tagging !== null && "nook".startsWith(tagging.toLowerCase()) && draft.slice(0, caret).trim().startsWith("@"));
   function tagPerson(name: string) {
     const before = insertTag(draft.slice(0, caret), name);
     draft = before + draft.slice(caret);
@@ -350,6 +398,16 @@
   }
 
   let infoAt = $state<DOMRect | null>(null);
+  // An edited (or deleted) message's earlier words (`MessageVersionsView`): what it said until when, and now.
+  let versionsOf = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
+  const versionRows = $derived.by<MenuItem[][]>(() => {
+    if (!versionsOf) return [];
+    const m = versionsOf.m;
+    const rows: MenuItem[] = m.versions.map((v) => ({ label: v.text, detail: tr("Tot {time}", "Until {time}", { time: dayLabel(new Date(v.replaced), new Date()) + " " + time(v.replaced) }) }));
+    if (!rows.length) rows.push({ label: tr("Nook heeft geen eerdere tekst van dit bericht: het veranderde voordat Nook het had.", "Nook has no earlier text of this message: it changed before Nook had it.") });
+    if (!m.deleted) rows.push({ label: m.text, detail: tr("Nu", "Now") });
+    return [rows];
+  });
   // What Nook could do for what was just said (`ChatActionSuggestion`): the chat's newest message, yours as well, and
   // its newest thirty lines, you as "You" and everyone else by name.
   const suggestionTurn = $derived.by<SuggestionTurn | null>(() => {
@@ -378,6 +436,16 @@
   }
 
   function keydown(e: KeyboardEvent) {
+    if (e.key === "Tab" && !e.shiftKey && ghost) {
+      e.preventDefault();
+      draft = ghost;
+      return;
+    }
+    if (e.key === "Escape" && ghost) {
+      e.preventDefault();
+      suggestion = null;
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       send();
@@ -483,7 +551,7 @@
         <span>{app}</span>
         {#if isGroup}
           <span class="dot" aria-hidden="true">·</span>
-          <span title={people.join(", ")}>{people.length ? tr("{n} mensen", "{n} people", { n: people.length + 1 }) : tr("Groep", "Group")}</span>
+          <span title={people.join(", ")}>{people.length ? tr("{n} leden", "{n} members", { n: people.length }) : tr("Groep", "Group")}</span>
         {/if}
         {#if entry.read !== "unread" && !entry.lastIsMine && bubbles.length}
           <span class="dot" aria-hidden="true">·</span>
@@ -501,6 +569,8 @@
   </header>
 
   <div class="transcript" bind:this={scroller} onscroll={scrolled}>
+    <!-- The messages sit at the bottom, as a chat app's do; the room above them stays empty. -->
+    <div class="fill" aria-hidden="true"></div>
     {#if hasOlder && bubbles.length}<TimelineEarlierRow loading={loadingOlder} onshow={older} />{/if}
     {#if !bubbles.length}
       <div class="empty">
@@ -516,10 +586,20 @@
         {@const m = line.m}
         {@const file = m.deleted ? null : fileLabel(m.media)}
         {@const image = photo(m)}
-        {@const text = m.deleted ? "" : file ? m.text : textOf(m)}
+        {@const call = !m.deleted && !file ? callOf(m.text) : null}
+        {@const text = m.deleted || call ? "" : file ? m.text : textOf(m)}
+        {@const link = text ? firstLink(text) : null}
         {@const answered = m.replyTo ? byId.get(m.replyTo) : undefined}
+        {#if m.id === newFrom && m.id !== bubbles[0]?.id}
+          <!-- Where what came in since you last looked begins (`ChatNewDivider`). -->
+          <div class="new-divider"><span>{tr("Nieuwe berichten", "New messages")}</span></div>
+        {/if}
         <!-- The message's id and its chat's key, so a selection in the chat can carry where it came from (BR-62). -->
         <div class="line" class:mine={m.fromMe} class:first={line.first} class:reacted={m.reactions.length > 0} data-chat-key={entry.key} data-message-id={m.id} data-sender={m.fromMe ? "" : m.sender || entry.name}>
+          {#if isGroup && !m.fromMe && m.sender}
+            <!-- In a group, who wrote it shows beside the first message of their run (`ChatSenderFace`); the rest keeps the room. -->
+            <span class="sender-face">{#if line.first}<ChatFace id={m.sender} app={entry.app} name={m.sender} size={28} badge={false} />{/if}</span>
+          {/if}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="bubble" class:mine={m.fromMe} class:tailed={line.first} class:joins={!line.last} class:bare={!!image && !text}
             oncontextmenu={(e) => openMessageMenu(e, m)}>
@@ -549,10 +629,25 @@
                 {/if}
               </div>
             {/if}
+            {#if call}
+              <!-- A call its app noted (`ChatCallRow`): what kind, who rang and how long, with the time beside it. -->
+              {@const mine = call.outgoing ?? m.fromMe}
+              {@const missedHere = call.missed && !mine}
+              <span class="call">
+                <span class="call-mark" class:missed={missedHere} class:quiet={call.missed && !missedHere}><Ico name={missedHere ? (call.video ? "video-off" : "phone-off") : call.video ? "video" : mine ? "phone-outgoing" : "phone-incoming"} size={16} stroke={2.4} /></span>
+                <span class="call-words"><span class="call-title" class:missed={missedHere}>{callTitle(call, m.fromMe)}</span><span class="call-detail">{callDetail(call, m.fromMe)}</span></span>
+              </span>
+            {/if}
+            {#if link}<LinkCard url={link} />{/if}
             <span class="body">
               {#if text}<span class="text">{text}</span>{/if}
-              {#if line.last}
-                <span class="stamp">{#if m.edited}<span>{tr("Bewerkt", "Edited")}</span>{/if}{time(m.date)}{#if m.fromMe}<Ticks receipt={m.receipt} size={12} />{/if}</span>
+              {#if line.last || call}
+                <span class="stamp">
+                  {#if m.edited || (m.deleted && m.versions.length)}
+                    <button class="edited" title={tr("Wat er eerder stond", "What it said before")} onclick={(e) => (versionsOf = { m, anchor: (e.currentTarget as HTMLElement).getBoundingClientRect() })}>{m.edited ? tr("Bewerkt", "Edited") : ""}{#if m.deleted}<Ico name="history" size={11} />{/if}</button>
+                  {/if}
+                  {time(m.date)}{#if m.fromMe}<Ticks receipt={m.receipt} size={12} />{/if}
+                </span>
               {/if}
             </span>
             {#if !m.deleted && (entry.sends || m.text)}
@@ -573,7 +668,7 @@
     {#if entry.read === "unread"}
       <!-- Something new sits in the tray above the box (`ChatReadLine`): how much, and reading it. Once read in Nook,
            where it stands moves to the header and the tray holds what Nook cannot do here, if anything. -->
-      <div class="tray">
+      <div class="tray ctray">
         <CountBadge count={entry.unread} />
         <span class="tray-line">{tr("{n} nieuw", "{n} new", { n: entry.unread })}</span>
         <span class="spacer"></span>
@@ -582,7 +677,7 @@
       </div>
     {:else if !entry.sends && !limitsHidden.includes(entry.app)}
       <!-- What Nook cannot do in this chat, and the one step that brings it (`ChatLimitsLine`). -->
-      <div class="tray">
+      <div class="tray ctray">
         <span class="amber"><Ico name="eye" size={13} stroke={2.4} /></span>
         <span class="tray-line wrap">{tr("Nook leest {app} hier alleen mee: versturen, emoji, bewerken en je vinkjes werken pas als je {app} koppelt.", "Nook only reads {app} here: sending, emoji, editing and your ticks work once you link {app}.", { app })}</span>
         <button class="small-ghost" onclick={openChatSettings}>{tr("Koppel {app}", "Link {app}", { app })}</button>
@@ -590,13 +685,13 @@
       </div>
     {/if}
     {#if editing}
-      <ChatQuote sender={tr("Bericht bewerken", "Editing message")} text={editing.text} mine={true}>
+      <div class="ctray full"><ChatQuote sender={tr("Bericht bewerken", "Editing message")} text={editing.text} mine={true}>
         {#snippet trailing()}<IconButton title={tr("Annuleer", "Cancel")} size={20} onclick={() => { editing = null; draft = ""; }}><Ico name="x" size={11} stroke={2.4} /></IconButton>{/snippet}
-      </ChatQuote>
+      </ChatQuote></div>
     {:else if replying}
-      <ChatQuote sender={tr("Antwoord aan {name}", "Replying to {name}", { name: quoteSender(replying) })} text={replying.text || fileLabel(replying.media) || ""} mine={replying.fromMe}>
+      <div class="ctray full"><ChatQuote sender={tr("Antwoord aan {name}", "Replying to {name}", { name: quoteSender(replying) })} text={replying.text || fileLabel(replying.media) || ""} mine={replying.fromMe}>
         {#snippet trailing()}<IconButton title={tr("Annuleer", "Cancel")} size={20} onclick={() => (replying = null)}><Ico name="x" size={11} stroke={2.4} /></IconButton>{/snippet}
-      </ChatQuote>
+      </ChatQuote></div>
     {/if}
     {#if files.length}
       <!-- What waits to go with the next send (`ChatAttachmentReview`). -->
@@ -607,9 +702,15 @@
         {/each}
       </div>
     {/if}
-    {#if tagMatches.length}
-      <!-- The group's people whose name fits what follows the "@" (`ChatTags`). -->
+    {#if tagMatches.length || offersNook}
+      <!-- "@nook" and the group's people whose name fits what follows the "@" (`ChatTags`). -->
       <div class="tags" role="listbox">
+        {#if offersNook}
+          <button role="option" aria-selected="false" class="tag nook" onmousedown={(e) => { e.preventDefault(); draft = "@nook " + draft.slice(caret).trimStart(); caret = 6; tick().then(() => { field?.focus(); field?.setSelectionRange(6, 6); }); }}>
+            <span class="nook-mark"><Ico name="sparkles" size={12} stroke={2.4} /></span>
+            <span class="tag-words"><span>@nook</span><span class="tag-detail">{tr("Schrijft je bericht en zoekt zo nodig in je mail, agenda en chats", "Writes your message, looking in your mail, calendar and chats if needed")}</span></span>
+          </button>
+        {/if}
         {#each tagMatches as p (p)}
           <button role="option" aria-selected="false" class="tag" onmousedown={(e) => { e.preventDefault(); tagPerson(p); }}><ChatFace id={p} app={entry.app} name={p} size={20} badge={false} />{p}</button>
         {/each}
@@ -634,7 +735,8 @@
       {/if}
       <textarea class:hidden={!!recording} bind:this={field} rows="1" bind:value={draft} onkeydown={keydown} onpaste={paste}
         onkeyup={() => (caret = field?.selectionStart ?? draft.length)} onclick={() => (caret = field?.selectionStart ?? draft.length)} oninput={() => (caret = field?.selectionStart ?? draft.length)} aria-label={tr("Bericht aan {name}", "Message {name}", { name: entry.name })}
-        placeholder={tr("Bericht aan {name}", "Message {name}", { name: entry.name })}></textarea>
+        placeholder={writing ? tr("Nook schrijft je bericht…", "Nook is writing your message…") : ghost ?? tr("Bericht aan {name} · @nook schrijft mee", "Message {name} · @nook helps you write", { name: entry.name })}
+        disabled={writing} title={ghost ? tr("Tab zet dit antwoord in het veld", "Tab puts this answer in the field") : undefined}></textarea>
       {#if recording}
         <span class="recording" aria-label={tr("Spraakbericht wordt opgenomen", "Recording a voice message")}><span class="rec-dot"></span>{clock(elapsed)}</span>
         <IconButton title={tr("Opname weggooien", "Discard recording")} size={28} onclick={() => stopRecording()}><Ico name="trash-2" size={14} /></IconButton>
@@ -650,6 +752,7 @@
 
 {#if menuAnchor}<Menu sections={menu} anchor={menuAnchor} onclose={() => (menuAnchor = null)} />{/if}
 {#if messageMenu && (messageItems.length || messageReactions)}<Menu sections={messageItems} reactions={messageReactions} anchor={messageMenu.anchor} onclose={() => (messageMenu = null)} />{/if}
+{#if versionsOf}<Menu title={versionsOf.m.deleted ? tr("Voordat het werd verwijderd", "Before it was deleted") : tr("Eerdere versies", "Earlier versions")} sections={versionRows} anchor={versionsOf.anchor} onclose={() => (versionsOf = null)} />{/if}
 {#if infoAt}<ChatInfo {entry} {people} anchor={infoAt} onclose={() => (infoAt = null)} onclosechat={onclose} />{/if}
 <ChatCallCard />
 {#if forwarding}<ForwardSheet targets={targets.filter((t) => t.key !== entry.key)} sender={forwarding.fromMe ? tr("Jij", "You") : forwarding.sender || entry.name} text={forwarding.text} onclose={() => (forwarding = null)} />{/if}
@@ -683,6 +786,11 @@
   .empty strong { font: var(--text-title); color: var(--paper); }
   .empty p { margin: 0; font: var(--text-detail); color: var(--text3); max-width: 320px; }
   /* A day's line between the messages (`ChatDayDivider`). */
+  .fill { flex: 1 0 auto; }
+  /* `ChatNewDivider`: an amber line with "New messages" in it. */
+  .new-divider { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-4) 0; font: var(--text-caption); color: var(--amber); }
+  .new-divider::before, .new-divider::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--amber) 35%, transparent); }
+  .sender-face { width: 28px; flex: none; margin-right: var(--space-8); align-self: flex-start; }
   .day { display: flex; justify-content: center; padding: var(--space-16) 0 var(--space-8); }
   .day span { padding: var(--space-4) var(--space-12); border-radius: var(--radius-control); background: var(--chat-theirs); font: var(--text-caption); font-weight: 600; color: var(--text-strong); }
 
@@ -725,6 +833,11 @@
   .foot { flex: none; display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-6) 0 var(--space-12); }
   .notice { margin: 0; padding: 0 var(--space-4); font: var(--text-detail); color: var(--text3); }
   .tray { display: flex; align-items: center; gap: var(--space-8); padding: 3px var(--space-8); }
+  /* `ComposerTray`: comes out from behind the box's top, narrower than the box by a little more than its corner (the
+     quote of an answer runs as wide as the box), on the composer's tray color with its line. */
+  .ctray { position: relative; z-index: 0; margin: 0 var(--space-24) -22px; padding: var(--space-4) 10px 20px; background: var(--composer-tray); border: 1px solid var(--field-stroke); border-bottom: 0; border-radius: var(--radius-composer) var(--radius-composer) 0 0; }
+  .ctray.full { margin-left: 0; margin-right: 0; }
+  .ctray + .ctray { margin-top: 0; }
   .tray-line { font: var(--text-label); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tray-line.wrap { flex: 1; white-space: normal; }
   /* `ChatMarkButton`: an outlined capsule with the mark the chat gets and its word. */
@@ -745,18 +858,31 @@
   .tags { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--field-stroke); border-radius: var(--radius-sheet); background: var(--composer-tray); }
   .tag { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-4) var(--space-8); border: 0; border-radius: var(--radius-control); background: transparent; text-align: left; font: var(--text-control); color: var(--paper); }
   .tag:hover:not(:disabled) { background: var(--row-hover); border: 0; }
+  .nook-mark { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--iris); background: color-mix(in srgb, var(--iris) 14%, transparent); }
+  .tag-words { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .tag-detail { font: var(--text-caption); color: var(--text3); }
   .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: var(--space-2); max-height: 160px; overflow-y: auto; padding: var(--space-6); border: 1px solid var(--field-stroke); border-radius: var(--radius-sheet); background: var(--composer-tray); }
   .emoji { height: 32px; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; font: var(--text-heading); font-weight: 400; }
   .emoji:hover:not(:disabled) { background: var(--row-hover); border: 0; }
   .leading { display: flex; align-items: center; gap: var(--space-2); align-self: flex-end; min-height: 32px; }
   .hidden { display: none; }
   .box.dragging { border-color: var(--iris); }
+  .call { display: flex; align-items: center; gap: var(--space-8); }
+  .call-mark { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--mint); background: color-mix(in srgb, var(--mint) 16%, transparent); }
+  .call-mark.quiet { color: var(--text2); background: color-mix(in srgb, var(--text2) 16%, transparent); }
+  .call-mark.missed { color: var(--coral); background: color-mix(in srgb, var(--coral) 16%, transparent); }
+  .call-words { display: flex; flex-direction: column; gap: var(--space-2); }
+  .call-title { font: var(--text-emphasis); line-height: 1.3; color: var(--paper); white-space: nowrap; }
+  .call-title.missed { color: var(--coral); }
+  .call-detail { font: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--text3); white-space: nowrap; }
+  .edited { display: inline-flex; align-items: center; gap: var(--space-2); padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+  .edited:hover:not(:disabled) { background: none; border: 0; text-decoration: underline; }
   .recording { flex: 1; align-self: center; display: inline-flex; align-items: center; gap: var(--space-8); font: var(--text-label); font-variant-numeric: tabular-nums; color: var(--paper); }
   .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--coral); animation: blink 1s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
   /* The answer field (`ChatReplyField`): the composer's box with the round send button inside it. */
-  .box { display: flex; align-items: flex-end; gap: var(--space-8); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); background: var(--composer-tray); border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); transition: background 120ms ease, border-color 120ms ease; }
+  .box { position: relative; z-index: 1; display: flex; align-items: flex-end; gap: var(--space-8); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); background: var(--composer-tray); border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); transition: background 120ms ease, border-color 120ms ease; }
   .box:focus-within { background: var(--composer); border-color: var(--separator); }
   textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 160px; field-sizing: content; resize: none; padding: var(--space-6) 0; border: 0 !important; background: transparent; box-shadow: none !important; font: var(--text-body); color: var(--paper); }
   textarea::placeholder { color: var(--text3); }

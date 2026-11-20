@@ -1,8 +1,7 @@
 <script lang="ts">
   // Who a chat is with (`ChatsAvatar`): their picture from the chat's app, else their initials in their own color on a
   // soft circle of it, with the app the chat is in as a small badge on the corner. The same for every chat app.
-  import { appName, chatApps, personTint } from "../../lib/chats-list";
-  import { initials } from "../../lib/whatsapp";
+  import { appName, chatApps, faceInitials, personTint } from "../../lib/chats-list";
   import { avatars } from "../../lib/whatsapp.svelte";
   import ServiceIcon from "../connectors/ServiceIcon.svelte";
 
@@ -13,7 +12,7 @@
     if (app === "whatsapp") avatars.want(id);
   });
   const photo = $derived(app === "whatsapp" ? avatars.photos[id] : undefined);
-  const tint = $derived(personTint(name));
+  const tint = $derived(personTint(name ?? ""));
   const mark = $derived(Math.round(size * 0.42));
 </script>
 
@@ -21,7 +20,7 @@
   {#if photo}
     <img src={photo} alt="" />
   {:else}
-    <span class="initials" style:color={tint} style:background="color-mix(in srgb, {tint} 16%, transparent)" style:font-size="{Math.round(size * 0.36)}px">{initials(name)}</span>
+    <span class="initials" style:color={tint} style:background="color-mix(in srgb, {tint} 16%, transparent)" style:font-size="{Math.round(size * 0.36)}px">{faceInitials(name)}</span>
   {/if}
   {#if badge}
     <span class="badge"><ServiceIcon domain={chatApps[app]?.domain} title={appName(app)} size={mark} /></span>

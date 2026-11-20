@@ -398,6 +398,11 @@ impl Manager {
             can_terminal: false,
             session_key: format!("run:{}", run.id),
             created: p.created,
+            always_scope: if p.can_always() {
+                crate::agents::permission_scope::preview(&crate::agents::permission_scope::rules(p.suggestions.as_ref()))
+            } else {
+                None
+            },
         }
     }
 
@@ -3102,6 +3107,7 @@ fn question_items(input: &Value) -> Option<Vec<QuestionItem>> {
                             Some(QuestionOption {
                                 label: o.get("label")?.as_str()?.into(),
                                 description: o.get("description").and_then(Value::as_str).unwrap_or("").into(),
+                                preview: crate::agents::models::read_preview(o),
                             })
                         })
                         .collect()

@@ -89,6 +89,7 @@ impl Bridge {
             can_terminal: false,
             session_key: r.caller.run.as_ref().map(|id| format!("run:{id}")).unwrap_or_else(|| "bridge".into()),
             created: r.created,
+            always_scope: None,
         }
     }
 

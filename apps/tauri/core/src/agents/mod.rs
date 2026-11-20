@@ -11,6 +11,7 @@ pub mod line_diff;
 pub mod liveness;
 pub mod mcp_name;
 pub mod models;
+pub mod permission_scope;
 pub mod plugins;
 pub mod profiles;
 pub mod registry;

@@ -116,6 +116,8 @@ pub struct WorkspaceSettings {
     pub editor: String,
     /// What each project sets for itself, by cleaned-up path.
     pub project_overrides: BTreeMap<String, ProjectOverride>,
+    /// "Check for new models online" (`ws.onlineModelList`): the model list comes fresh from Nook's repository.
+    pub online_model_list: bool,
 }
 
 impl Default for WorkspaceSettings {
@@ -143,6 +145,7 @@ impl Default for WorkspaceSettings {
             agent_instructions: String::new(),
             editor: String::new(),
             project_overrides: BTreeMap::new(),
+            online_model_list: true,
         }
     }
 }
@@ -169,12 +172,14 @@ impl WorkspaceSettings {
         let settings: Self = std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         super::models::set_branch_prefix(&settings.branch_prefix);
         super::traffic::set_enabled(settings.keep_traffic);
+        super::model_manifest::set_online(settings.online_model_list);
         settings
     }
 
     pub fn save_to(&self, file: &std::path::Path) {
         super::models::set_branch_prefix(&self.branch_prefix);
         super::traffic::set_enabled(self.keep_traffic);
+        super::model_manifest::set_online(self.online_model_list);
         if let Ok(bytes) = serde_json::to_vec_pretty(self) {
             let _ = crate::paths::write_atomic(file, &bytes);
         }

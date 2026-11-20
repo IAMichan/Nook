@@ -32,7 +32,11 @@ class AgentsStore {
     agentEvents.onApproval((a) => {
       this.selectedId = a.sessionKey;
       this.refresh();
-      this.play("attention");
+      // The approval sound unless Settings › Notifications keeps agents to the history; approvals still come through in quiet
+      // hours (`notice_decide` with urgent).
+      invoke<string>("notice_decide", { source: "agents", appName: a.agentName ?? "", urgent: true })
+        .catch(() => "card")
+        .then((d) => d !== "history" && this.play("permission"));
     });
     agentEvents.onApprovalGone((g) => {
       this.refresh();
@@ -61,7 +65,7 @@ class AgentsStore {
     agentEvents.onHistory((h) => (this.history = h));
   }
 
-  play(kind: "attention" | "done" | "error") {
+  play(kind: "attention" | "permission" | "done" | "error") {
     if (this.sounds && nook.settings?.sounds) playSound(kind);
   }
 

@@ -150,7 +150,7 @@
     </p>
 
     {#if info.away}
-      <Fold title={tr("Buiten de deur", "Away from home")} summary={awaySummary}>
+      <Fold keys={[tr("Bereik deze computer buiten de deur", "Reach this computer away from home"), tr("Relay", "Relay"), tr("Houd deze computer wakker", "Keep this computer awake")]} title={tr("Buiten de deur", "Away from home")} summary={awaySummary}>
         <CompanionAway {info} onchange={(i) => (info = i)} />
       </Fold>
     {/if}

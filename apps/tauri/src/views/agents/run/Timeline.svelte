@@ -10,6 +10,7 @@
   import Ico from "../../../components/ui/Ico.svelte";
   import EventRow from "./EventRow.svelte";
   import PlanCard from "./PlanCard.svelte";
+  import { sessionFind } from "../../../lib/session-find.svelte";
 
   let {
     run,
@@ -166,6 +167,16 @@
       reveal(fresh.matches[first].eventId);
     }
   }
+
+  // Opened from search everything on a matched passage: the find bar opens on its words (`sessionFind` on the Mac).
+  $effect(() => {
+    if (!shown.length || sessionFind.pending?.run !== run.id) return;
+    const words = sessionFind.take(run.id);
+    if (!words) return;
+    query = words;
+    openFind();
+    onquery();
+  });
 
   function keydown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {

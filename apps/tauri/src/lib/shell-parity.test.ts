@@ -204,3 +204,34 @@ describe("the orb's mood per tab", async () => {
     expect(orbMood(null, { nookWaiting: 0, nookWorking: 0, agentsWaiting: 0, agentsRunning: 0, playing: true })).toBe("idle");
   });
 });
+
+describe("birthdays from the calendar", async () => {
+  const { calendarBirthdays } = await import("./birthdays");
+  it("finds today's all-day birthday events and the person's name", () => {
+    const today = new Date(2026, 10, 20, 9);
+    const at = new Date(2026, 10, 20).toISOString();
+    const list = calendarBirthdays([
+      { title: "Anna's birthday", start: at, allDay: true },
+      { title: "Verjaardag van Peter 🎂", start: at, allDay: true },
+      { title: "Birthday party planning", start: at, allDay: false },
+      { title: "Team offsite", start: at, allDay: true },
+    ], today);
+    expect(list.map((b) => b.name)).toEqual(["Anna", "Peter"]);
+  });
+});
+
+describe("snooze options", async () => {
+  const { snoozeEnd, snoozeMenu, cleaned, DEFAULT_OPTIONS } = await import("./snooze-options");
+  it("ends at the right time and hides what has passed", () => {
+    const now = new Date(2026, 10, 20, 19, 30); // a Friday evening
+    expect(snoozeEnd({ kind: "time", day: "today", hour: 18, minute: 0 }, now)).toBeNull();
+    expect(snoozeEnd({ kind: "time", day: "monday", hour: 9, minute: 0 }, now)?.getDate()).toBe(23);
+    expect(snoozeEnd({ kind: "time", day: "friday", hour: 9, minute: 0 }, now)?.getDate()).toBe(27);
+    expect(snoozeEnd({ kind: "duration", minutes: 60 }, now)?.getHours()).toBe(20);
+    expect(snoozeMenu(DEFAULT_OPTIONS, now).map((x) => x.option.kind)).toEqual(["duration", "time"]);
+  });
+  it("keeps only valid options, once each", () => {
+    expect(cleaned([{ kind: "duration", minutes: 30 }, { kind: "duration", minutes: 30 }, { kind: "time", day: "mars", hour: 9, minute: 0 }])).toEqual([{ kind: "duration", minutes: 30 }]);
+    expect(cleaned("nonsense")).toEqual(DEFAULT_OPTIONS);
+  });
+});

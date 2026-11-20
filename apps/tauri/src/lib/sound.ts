@@ -3,7 +3,8 @@
 import { agentApi } from "./agents";
 import { quiet } from "./quiet.svelte";
 
-export type SoundKind = "attention" | "done" | "error";
+/** `permission`: an agent asks for permission (`NookSound.permission`), apart from a question or a notice. */
+export type SoundKind = "attention" | "permission" | "done" | "error";
 
 const custom = new Map<SoundKind, string | null>();
 let context: AudioContext | null = null;
@@ -35,6 +36,9 @@ export async function playSound(kind: SoundKind) {
     if (context.state === "suspended") await context.resume();
     if (kind === "attention") {
       tone(context, 880, 0, 0.25);
+    } else if (kind === "permission") {
+      tone(context, 880, 0, 0.14);
+      tone(context, 880, 0.18, 0.2);
     } else if (kind === "done") {
       tone(context, 660, 0, 0.18);
       tone(context, 990, 0.12, 0.3);

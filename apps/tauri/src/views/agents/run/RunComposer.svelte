@@ -15,6 +15,10 @@
   import MicButton from "../../../components/MicButton.svelte";
   import AgentModelPicker from "./AgentModelPicker.svelte";
   import ComposerContext from "./ComposerContext.svelte";
+  import PromptTools from "./PromptTools.svelte";
+  import { composerInbox } from "../../../lib/workspace/composer-inbox.svelte";
+  import { merging } from "../../../lib/workspace/session-prompts";
+  import { prompts } from "../../../lib/workspace/prompts.svelte";
   import { compose, fileRef, isPicture, project, timeline, type ContextRef } from "../../../lib/workspace/context-refs";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { tr } from "../../../lib/i18n.svelte";
@@ -75,6 +79,15 @@
   let pictures = $state<string[]>([]);
   let mentions = $state<ContextRef[]>([]);
   let context = $state<ReturnType<typeof ComposerContext>>();
+  let promptTools = $state<ReturnType<typeof PromptTools>>();
+
+  // What the side panel handed this session (Explain, Ask, Fix): above what you wrote, for you to read and send.
+  $effect(() => {
+    const waiting = composerInbox.waiting[runId];
+    if (!waiting?.length) return;
+    for (const block of composerInbox.take(runId)) draft = merging(block, draft);
+    requestAnimationFrame(() => textarea?.focus());
+  });
   let listOpen = $state(false);
   const hasAttachments = $derived(attached.length + pictures.length > 0);
 
@@ -159,6 +172,10 @@
     }
     for (const c of offered) {
       if (!list.some((x) => x.name === c.name)) list.push({ name: c.name, detail: c.detail, insertion: `/${c.name}${c.takesInput ? " " : ""}` });
+    }
+    // Your saved prompts with a trigger (`/summarize`), after the agent's own.
+    for (const p of prompts.list) {
+      if (p.trigger && !list.some((x) => x.name === p.trigger)) list.push({ name: p.trigger, detail: p.title, insertion: null, run: () => promptTools?.use(p) });
     }
     return list;
   });
@@ -305,6 +322,7 @@
   <!-- The session's composer (`SessionComposer`): the message on top; under it "+", the agent pill (model, mode, access
        and effort in its picker, as on the Mac), the microphone, and send or stop. The session's own actions are in the
        menu beside its name in the header. -->
+  <PromptTools bind:this={promptTools} bind:draft {textarea} />
   {#if fresh}
     <!-- The strip above the composer while /clear waits for your next message (`ws.fresh.title`). -->
     <div class="fresh">
@@ -334,6 +352,14 @@
         {/snippet}
         {#snippet children({ close })}
           <DropdownRow symbol="paperclip" title={tr("Bestand of map toevoegen", "Add a file or folder")} onclick={() => { close(); attachFile(); }} />
+          <!-- The prompt library (`PromptLibrary`): keep what you typed, or use a saved prompt. -->
+          <DropdownRow symbol="bookmark" title={tr("Bewaar als prompt…", "Save as prompt…")} disabledReason={draft.trim() ? undefined : tr("Typ eerst wat je wilt bewaren.", "Type what you want to keep first.")} onclick={() => { close(); promptTools?.openSave(); }} />
+          {#if prompts.list.length}
+            <div class="dd-header">{tr("Prompts", "Prompts")}</div>
+            {#each prompts.list.slice(0, 8) as p (p.id)}
+              <DropdownRow symbol="message-square-text" title={p.title} trailing={p.trigger ? `/${p.trigger}` : undefined} onclick={() => { close(); promptTools?.use(p); }} />
+            {/each}
+          {/if}
         {/snippet}
       </Dropdown>
       <AgentModelPicker providers={pickable} {profiles} provider={run.provider} profileId={run.profileId} model={run.model}

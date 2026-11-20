@@ -9,7 +9,8 @@
   import type { InboxItem, InboxSource, Target } from "../../lib/inbox";
   import { relativeTime } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
-  import { digestFor, FOCUS_MODES, type FocusMode, type SnoozeChoice } from "../../lib/attention";
+  import { digestFor, FOCUS_MODES, type FocusMode } from "../../lib/attention";
+  import { loadOptions, optionId, optionLabel, snoozeMenu } from "../../lib/snooze-options";
 
   let { onopen, compact = false }: { onopen: (target: Target | void) => void; compact?: boolean } = $props();
 
@@ -27,11 +28,8 @@
       case "off_hours": return tr("Buiten werktijd", "Off hours");
     }
   }
-  const snoozeChoices = $derived<[SnoozeChoice, string][]>([
-    ["hour", tr("Over een uur", "In 1 hour")],
-    ["tomorrow", tr("Morgenochtend", "Tomorrow morning")],
-    ["week", tr("Volgende week", "Next week")],
-  ]);
+  // Your snooze options (Settings › Notifications), the ones still ahead now.
+  const snoozeChoices = $derived(snoozing ? snoozeMenu(loadOptions(), new Date()) : []);
   const digest = $derived(digestFor(new Date().getHours()));
   const catchTitle = $derived(
     digest === "morning" ? tr("Ochtendoverzicht", "Morning brief") : digest === "evening" ? tr("Avondoverzicht", "Evening wrap-up") : tr("Even bijpraten", "Catch me up"),
@@ -41,9 +39,9 @@
     await inbox.markSeen();
     view = "inbox";
   }
-  async function snooze(item: InboxItem, choice: SnoozeChoice) {
+  async function snooze(item: InboxItem, until: Date) {
     snoozing = null;
-    await inbox.snooze(item.id, choice);
+    await inbox.snoozeTo(item.id, until);
   }
 
   const sources = $derived<Record<InboxSource, { icon: "agents" | "chat" | "tasks" | "calendar" | "message" | "code" | "gamepad" | "note" | "sparkle" | "home"; label: string }>>({
@@ -148,7 +146,7 @@
               <button class="small" aria-haspopup="menu" aria-expanded={snoozing === item.id} onclick={() => (snoozing = snoozing === item.id ? null : item.id)}>{tr("Later", "Snooze")}</button>
               {#if snoozing === item.id}
                 <span class="menu" role="menu" transition:fade={{ duration: 120 }}>
-                  {#each snoozeChoices as [choice, label] (choice)}<button role="menuitem" class="small" onclick={() => snooze(item, choice)}>{label}</button>{/each}
+                  {#each snoozeChoices as c (optionId(c.option))}<button role="menuitem" class="small" onclick={() => snooze(item, c.end)}>{optionLabel(c.option)}</button>{/each}
                 </span>
               {/if}
             </span>

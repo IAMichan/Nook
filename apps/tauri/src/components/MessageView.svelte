@@ -338,6 +338,12 @@
     {/each}
     {#if message.attachment}<div class="file">📄 {message.attachment}</div>{/if}
     <div class="bubble">{message.text}</div>
+    <!-- `TranscriptMessageFooter` under your message: the time and copy on hover, at the trailing edge, where its room
+         is kept so the conversation does not move. -->
+    <div class="footer trailing">
+      <span class="time">{replyTime(message.date)}</span>
+      <CopyIconButton oncopy={() => navigator.clipboard.writeText(message.text)} />
+    </div>
   {:else}
     {#if message.isError && !message.streaming}
       <div class="error-card">
@@ -437,7 +443,8 @@
 {/if}
 
 <style>
-  .msg { padding: 14px 0; max-width: 100%; line-height: 1.7; overflow-wrap: anywhere; border-radius: var(--radius-card); transition: background var(--motion-slow); }
+  /* The Mac's rows are 24 pt apart (`ConversationRows` spacing xxl), each with its hover footer's room under it. */
+  .msg { padding: calc(var(--space-12) - var(--space-2)) 0; max-width: 100%; line-height: 1.7; overflow-wrap: anywhere; border-radius: var(--radius-card); transition: background var(--motion-slow); }
   /* What search everything opened: marked for a moment, as the Mac lights the passage it scrolled to. */
   .msg.found { background: color-mix(in srgb, var(--iris) 8%, transparent); }
   .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
@@ -466,6 +473,10 @@
   /* `TranscriptMessageFooter`: kept in place while hidden so nothing jumps, shown on hover. */
   .footer { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-6) 0 0 calc(var(--space-2) - var(--space-4)); opacity: 0; transition: opacity var(--motion-hover); }
   .msg:hover .footer, .footer:focus-within { opacity: 1; }
+  /* The footer's buttons are the Mac's 22 pt (`ToolbarIconButton(height: 22)`). */
+  .footer :global(.icon-button) { width: 22px !important; height: 22px !important; }
+  .footer.trailing { margin: var(--space-4) calc(var(--space-2) - var(--space-4)) 0 0; }
+  .footer.trailing .time { margin: 0 var(--space-4) 0 0; }
   .time { font: var(--text-caption); color: var(--text3); font-variant-numeric: tabular-nums; margin-left: var(--space-4); }
   .offers { display: flex; flex-wrap: wrap; gap: 6px; }
   .offers button { font-size: 12px; padding: 4px 10px; border-radius: 999px; }

@@ -144,15 +144,16 @@ export interface Bubble {
   deleted: boolean;
   replyTo: string | null;
   reactions: ChatReaction[];
+  versions: { text: string; replaced: string }[];
 }
 
 export const bubbleOfWhatsApp = (m: WhatsAppMessage): Bubble => ({
-  id: m.id, sender: m.senderName, text: m.text, date: m.date, fromMe: m.fromMe, media: m.media, receipt: m.receipt ?? null, edited: false, deleted: false, replyTo: null, reactions: [],
+  id: m.id, sender: m.senderName, text: m.text, date: m.date, fromMe: m.fromMe, media: m.media, receipt: m.receipt ?? null, edited: false, deleted: false, replyTo: null, reactions: [], versions: [],
 });
 
 export const bubbleOfInbox = (m: InboxMessage): Bubble => ({
   id: m.id, sender: m.sender, text: m.text, date: m.date, fromMe: m.fromMe, media: m.media ?? { kind: "none" }, receipt: m.receipt ?? null,
-  edited: !!m.edited, deleted: !!m.deleted, replyTo: m.replyTo ?? null, reactions: m.reactions ?? [],
+  edited: !!m.edited, deleted: !!m.deleted, replyTo: m.replyTo ?? null, reactions: m.reactions ?? [], versions: m.versions ?? [],
 });
 
 /** The quick reactions over a message's menu, as the phone's chat apps offer them. */
@@ -313,4 +314,83 @@ export function personTint(name: string): string {
     hash = Math.imul(hash, 16_777_619) >>> 0;
   }
   return `var(${tints[hash % tints.length]})`;
+}
+
+/** A call an app noted as a message (`ChatCall`): whether it was video, missed, which way, and how long. */
+export interface ChatCall { video: boolean; missed: boolean; outgoing: boolean | null; seconds: number | null }
+
+const CALL_WORDS = new Set(["call", "anruf", "sprachanruf", "videoanruf", "gruppenanruf", "oproep", "spraakoproep", "videooproep",
+  "groepsoproep", "gesprek", "videogesprek", "spraakgesprek", "appel", "llamada", "videollamada", "facetime"]);
+const MISSED = new Set(["missed", "declined", "gemiste", "gemist", "geweigerde", "geweigerd", "verpasster", "verpasst", "abgelehnter",
+  "abgelehnt", "manqué", "refusé", "perdida", "rechazada"]);
+const INCOMING = new Set(["incoming", "inkomende", "inkomend", "eingehender", "eingehend", "entrant", "entrante"]);
+const OUTGOING = new Set(["outgoing", "uitgaande", "uitgaand", "ausgehender", "ausgehend", "sortant", "saliente"]);
+const CALL_MODIFIERS = new Set([...MISSED, ...INCOMING, ...OUTGOING, "voice", "audio", "video", "group", "spraak", "groeps", "vocal",
+  "vidéo", "de", "voz", "grupal", "sprachanruf", "videoanruf", "spraakoproep", "videooproep", "videogesprek", "spraakgesprek", "videollamada"]);
+const CALL_UNITS = new Set(["min", "mins", "minute", "minutes", "minuut", "minuten", "minuto", "minutos", "sec", "secs", "s", "second",
+  "seconds", "seconde", "seconden", "sekunde", "sekunden", "secondes", "segundo", "segundos", "h", "hr", "uur", "std"]);
+
+/** A call line an app wrote as text ("Missed voice call", "Videoanruf · 2:13"), the same words as the Mac's
+ *  `ChatFormat.call`; null for any other message. */
+export function callOf(text: string): ChatCall | null {
+  if (!text || text.length > 60 || text.includes("?") || text.includes("\n")) return null;
+  const lower = text.toLowerCase();
+  const words = lower.split(/[^\p{L}]+/u).filter((w) => w && !CALL_UNITS.has(w));
+  if (!words.length || !words.some((w) => CALL_WORDS.has(w)) || !words.every((w) => CALL_WORDS.has(w) || CALL_MODIFIERS.has(w))) return null;
+  let seconds: number | null = null;
+  const clock = /\d{1,2}:\d{2}(:\d{2})?/.exec(lower);
+  if (clock) seconds = clock[0].split(":").map(Number).reduce((a, b) => a * 60 + b, 0);
+  else {
+    const minutes = /(\d+)\s*min/.exec(lower);
+    if (minutes) seconds = Number(minutes[1]) * 60;
+  }
+  if (!words.some((w) => CALL_MODIFIERS.has(w)) && seconds === null) return null;
+  return {
+    video: words.some((w) => w.startsWith("video") || w.startsWith("vidéo")),
+    missed: words.some((w) => MISSED.has(w)),
+    outgoing: words.some((w) => OUTGOING.has(w)) ? true : words.some((w) => INCOMING.has(w)) ? false : null,
+    seconds,
+  };
+}
+
+/** "0:42", "1:02:05". */
+export function callClock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const [h, m, s] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** What the chat calls it: "Video call", or "Missed voice call" for one you did not answer. */
+export function callTitle(call: ChatCall, mine: boolean): string {
+  if (call.missed && !(call.outgoing ?? mine)) return call.video ? tr("Gemiste video-oproep", "Missed video call") : tr("Gemiste spraakoproep", "Missed voice call");
+  return call.video ? tr("Video-oproep", "Video call") : tr("Spraakoproep", "Voice call");
+}
+
+/** The line under it: who rang, and how long it lasted or that nobody answered ("Incoming · 2:13"). */
+export function callDetail(call: ChatCall, mine: boolean): string {
+  const way = (call.outgoing ?? mine) ? tr("Uitgaand", "Outgoing") : tr("Inkomend", "Incoming");
+  if (call.seconds && call.seconds > 0 && !call.missed) return `${way} · ${callClock(call.seconds)}`;
+  if (call.missed && (call.outgoing ?? mine)) return `${way} · ${tr("Niet opgenomen", "No answer")}`;
+  return way;
+}
+
+/** The first web address in a message's text, for its preview. */
+export function firstLink(text: string): string | null {
+  for (const word of text.split(/[\s<>"]+/)) {
+    if (!/^https?:\/\//.test(word)) continue;
+    const link = word.replace(/[.,)!?;:']+$/, "");
+    try {
+      if (new URL(link).hostname.includes(".")) return link;
+    } catch {
+      // Not an address after all.
+    }
+  }
+  return null;
+}
+
+/** A face's letters (`WAJID.initials`): the first letter of the first two words that start with one, "#" when none. */
+export function faceInitials(name: string | null | undefined): string {
+  const words = (name ?? "").split(/[ -]+/).filter((w) => /^\p{L}/u.test(w));
+  const letters = words.slice(0, 2).map((w) => [...w][0].toUpperCase());
+  return letters.length ? letters.join("") : "#";
 }

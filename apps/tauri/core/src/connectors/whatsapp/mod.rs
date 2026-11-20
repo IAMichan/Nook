@@ -574,6 +574,7 @@ impl Inbox {
             deleted: false,
             reply_to: message.reply_to,
             reactions: None,
+            versions: vec![],
         };
         // WhatsApp's gateway gives no unread count of its own: a new message from someone else is one more, your own
         // (answered from the phone) reads the chat there, and history is never new.

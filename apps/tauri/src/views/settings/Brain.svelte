@@ -183,7 +183,7 @@
     {@render connection()}
   </div>
   {#if current}
-    <Fold title={tr("Alle modellen en runtimes", "All models and runtimes")} summary={current.title.split(" (")[0]} bind:open={foldOpen}>
+    <Fold keys={[tr("Draait met", "Runs with"), tr("Lokaal brein zelf starten", "Start the local brain myself")]} title={tr("Alle modellen en runtimes", "All models and runtimes")} summary={current.title.split(" (")[0]} bind:open={foldOpen}>
       {#if localProviders.length > 1}
         <div class="row">
           <span>{tr("Draait met", "Runs with")}</span>

@@ -131,6 +131,9 @@ pub struct ApprovalRequest {
     pub assessment: CommandAssessment,
     pub can_always: bool,
     pub created: DateTime<Utc>,
+    /// What "Always" would allow and how far it reaches (`PermissionScope.preview`), when it is offered.
+    #[serde(default)]
+    pub always_scope: Option<String>,
 }
 
 impl ApprovalRequest {
@@ -189,6 +192,9 @@ pub struct AgentApproval {
     pub can_terminal: bool,
     pub session_key: String,
     pub created: DateTime<Utc>,
+    /// What "Always" would allow and how far it reaches, as a line under the buttons; `None` when not offered.
+    #[serde(default)]
+    pub always_scope: Option<String>,
 }
 
 impl AgentApproval {
@@ -208,6 +214,7 @@ impl AgentApproval {
             can_terminal: true,
             session_key: r.session_key.clone(),
             created: r.created,
+            always_scope: r.always_scope.clone(),
         }
     }
 }
@@ -216,6 +223,23 @@ impl AgentApproval {
 pub struct QuestionOption {
     pub label: String,
     pub description: String,
+    /// What the option would look like (a mock-up, a code snippet, an ASCII layout), shown in the code font under it;
+    /// empty when the agent sent none (`QuestionPreview`).
+    #[serde(default)]
+    pub preview: String,
+}
+
+/// The most of a preview that is kept: enough for a screen-sized mock-up, not a whole file.
+pub const PREVIEW_LIMIT: usize = 4_000;
+
+/// An option's preview as it came, trimmed and cut at `PREVIEW_LIMIT`; empty when there is none.
+pub fn read_preview(option: &Value) -> String {
+    let raw = option.get("preview").and_then(Value::as_str).unwrap_or("").trim();
+    if raw.chars().count() > PREVIEW_LIMIT {
+        format!("{}…", raw.chars().take(PREVIEW_LIMIT).collect::<String>())
+    } else {
+        raw.to_string()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,7 +280,7 @@ impl QuestionRequest {
             for option in options {
                 let label = option.get("label")?.as_str().filter(|l| !l.is_empty())?;
                 let description = option.get("description").and_then(Value::as_str).unwrap_or("");
-                parsed.push(QuestionOption { label: label.into(), description: description.into() });
+                parsed.push(QuestionOption { label: label.into(), description: description.into(), preview: read_preview(option) });
             }
             let header: String = entry.get("header").and_then(Value::as_str).unwrap_or("").chars().take(16).collect();
             items.push(QuestionItem {

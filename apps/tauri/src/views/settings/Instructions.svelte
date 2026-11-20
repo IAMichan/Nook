@@ -93,7 +93,7 @@
       {#each styles as st (st.id)}<option value={st.id}>{st.name}</option>{/each}
     </select>
   </label>
-  <p class="faint note">{tr("Alleen de toon en de lengte veranderen, nooit de feiten.", "Only the voice and the length change, never the facts.")}</p>
+  <p class="faint note">{tr("Alleen de toon en de lengte veranderen, nooit de feiten. Elk gesprek kan een eigen stijl kiezen met het opdrachtenpalet (Ctrl+K).", "Only the voice and the length change, never the facts. Each conversation can pick its own style with the command palette (Ctrl+K).")}</p>
 </div>
 <h3>{tr("Jouw instructies", "Your instructions")}</h3>
 <div class="group">
@@ -205,7 +205,10 @@
   .head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .head-text h3 { margin-bottom: var(--space-2); }
   .sub { font: var(--text-detail); color: var(--text2); }
-  .add { display: inline-flex; align-items: center; gap: var(--space-6); font: var(--text-control); color: var(--text-strong); white-space: nowrap; }
+  /* The Mac's header action: plain text with a plus, flush with the card's right edge, the card 8 px under the header. */
+  .add { display: inline-flex; align-items: center; gap: var(--space-6); padding: 0; height: auto; margin-bottom: var(--space-4); background: none; font: var(--text-control); color: var(--text-strong); white-space: nowrap; }
+  .add:hover:not(:disabled) { background: none; color: var(--paper); }
+  .head + :global(.group) { margin-top: var(--space-8); }
   .divided { border-top: 1px solid var(--separator); padding-top: 12px; }
   .item { display: flex; align-items: center; gap: var(--space-8); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }

@@ -374,7 +374,7 @@
         <span class="top">
           {#if picked.size}<span class="check" aria-hidden="true"><Ico name={picked.has(item.id) ? "circle-check" : "circle"} size={14} /></span>{/if}
           <span class="title" class:receded class:archived={item.archived}>{item.title}</span>
-          {#if item.pinned}<span class="mark" aria-hidden="true"><Ico name="pin" size={10} /></span>{/if}
+          {#if item.pinned}<span class="mark" aria-hidden="true"><Ico name="pin" size={10} fill="currentColor" /></span>{/if}
           {#if item.scheduledTask}<span class="mark" title={tr("Geplande taak", "Scheduled task")}><Ico name="clock" size={10} /></span>{/if}
           <span class="grow"></span>
           <span class="slot">

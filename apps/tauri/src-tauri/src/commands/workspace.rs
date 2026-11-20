@@ -239,6 +239,34 @@ pub async fn workspace_search(state: State<'_, WorkspaceState>, query: String) -
     blocking(move || m.search(&query, 60)).await
 }
 
+/// Your saved prompts (`PromptLibrary`), newest edit first.
+#[tauri::command]
+pub fn workspace_prompts() -> Vec<nook_core::workspace::prompts::SavedPrompt> {
+    nook_core::workspace::prompts::PromptLibrary::load(&nook_core::workspace::prompts::PromptLibrary::file()).prompts
+}
+
+/// Saves a prompt (new or edited); false when it has no title or words.
+#[tauri::command]
+pub fn workspace_save_prompt(prompt: nook_core::workspace::prompts::SavedPrompt) -> Res<bool> {
+    use nook_core::workspace::prompts::PromptLibrary;
+    let file = PromptLibrary::file();
+    let mut lib = PromptLibrary::load(&file);
+    let kept = lib.save(prompt);
+    if kept {
+        lib.save_to(&file).map_err(|e| e.to_string())?;
+    }
+    Ok(kept)
+}
+
+#[tauri::command]
+pub fn workspace_delete_prompt(id: Uuid) -> Res<()> {
+    use nook_core::workspace::prompts::PromptLibrary;
+    let file = PromptLibrary::file();
+    let mut lib = PromptLibrary::load(&file);
+    lib.remove(id);
+    lib.save_to(&file).map_err(|e| e.to_string())
+}
+
 /// The models Nook offers each agent (`ModelManifest`), by agent id.
 #[tauri::command]
 pub fn workspace_models() -> std::collections::BTreeMap<String, Vec<nook_core::workspace::model_manifest::CatalogModel>> {

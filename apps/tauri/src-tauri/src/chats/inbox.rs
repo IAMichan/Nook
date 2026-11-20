@@ -8,7 +8,7 @@ use nook_core::chats::chatd::{network_id, ID_PREFIX};
 use nook_core::chats::{ChatInbox, ChatKind, ChatReadState, InboxMessage, InboxThread};
 use nook_core::connectors::whatsapp;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::connectors::Connectors;
 
@@ -341,6 +341,73 @@ pub async fn chat_inbox_in_app(app: AppHandle, c: State<'_, Connectors>, key: St
     c.chat_helper.bridge.changed(&chat, None);
     changed(&app);
     Ok(())
+}
+
+/// A link's preview for its bubble (`ChatLinkPreviews`): fetched once, kept in memory only (at most 200).
+#[tauri::command]
+pub async fn chat_link_preview(url: String) -> Option<nook_core::chats::link_preview::Preview> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<nook_core::chats::link_preview::Preview>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Mutex::default);
+    if let Some(known) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(&url) {
+        return known.clone();
+    }
+    let preview = nook_core::chats::link_preview::fetch(&url).await;
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= 200 {
+        cache.clear();
+    }
+    cache.insert(url, preview.clone());
+    preview
+}
+
+/// The chat's newest thirty messages as the brain reads them: you as "You", everyone else by name.
+fn transcript(c: &Connectors, key: &str) -> Option<(String, String, String, bool)> {
+    c.env.chats.read(|inbox| {
+        let t = inbox.threads.get(key)?;
+        let kept: Vec<&nook_core::chats::InboxMessage> = t.messages.iter().filter(|m| !m.deleted).collect();
+        let lines: Vec<String> = kept[kept.len().saturating_sub(30)..]
+            .iter()
+            .map(|m| format!("{}: {}", if m.from_me { "You" } else if m.sender.is_empty() { t.name.as_str() } else { m.sender.as_str() }, if m.text.is_empty() { "(a file)" } else { m.text.as_str() }))
+            .collect();
+        let last_is_theirs = t.messages.last().is_some_and(|m| !m.from_me);
+        Some((super::notify::app_name(&t.app).to_string(), t.name.clone(), lines.join("\n"), last_is_theirs))
+    })
+}
+
+async fn write_message(app: &AppHandle, c: &Connectors, key: &str, instruction: &str, timeout: u64) -> Res<Option<String>> {
+    use nook_core::brain::service;
+    use nook_core::chats::draft;
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings();
+    if !service::brain_ready(&settings, state.key_for(settings.provider).is_some_and(|k| !k.is_empty())) {
+        return Err("Nook has no brain ready to write with. Choose one in Settings › Brain.".into());
+    }
+    let (app_name, name, lines, _) = transcript(c, key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    let env = crate::commands::chat::brain_env(app, &settings);
+    let prompt = draft::prompt(&app_name, &name, &lines, instruction);
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout), service::complete(&settings, &env, draft::SYSTEM, &prompt)).await {
+        Ok(Ok(answer)) => Ok(draft::clean(&answer)),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err("Nook took too long to write it.".into()),
+    }
+}
+
+/// "@nook …" in a chat's field: the message Nook writes from the chat and what you asked, for the field. Never sent.
+#[tauri::command]
+pub async fn chat_draft(app: AppHandle, c: State<'_, Connectors>, key: String, instruction: String) -> Res<String> {
+    write_message(&app, &c, &key, instruction.trim(), 90).await?.ok_or_else(|| "Nook could not write a message for this chat.".into())
+}
+
+/// The answer you will likely send, as grey text in the empty field of a chat whose newest message is someone else's
+/// (`ChatReplySuggestion`); `None` when there is nothing to answer or no brain.
+#[tauri::command]
+pub async fn chat_suggest_reply(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<Option<String>> {
+    if !transcript(&c, &key).is_some_and(|(_, _, _, theirs)| theirs) {
+        return Ok(None);
+    }
+    Ok(write_message(&app, &c, &key, "", 60).await.ok().flatten())
 }
 
 fn helper_off() -> String {

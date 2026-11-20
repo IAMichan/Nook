@@ -6,7 +6,7 @@
   import { api } from "../lib/api";
   import { brainApi } from "../lib/brain";
   import type { ChatMessage, PlanStep, StepState } from "../lib/types";
-  import { sourceDomain, sourceTitle } from "../lib/sources";
+  import { sourceDomain, sourceSymbol, sourceTitle } from "../lib/sources";
   import { tr } from "../lib/i18n.svelte";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
   import BusyLine from "./ui/BusyLine.svelte";
@@ -152,13 +152,13 @@
       <span class="marker ok"><Ico name="circle-check" size={14} stroke={2.2} /></span>
       {#if count === 1}
         {@const p = parts(0)}
-        {#if steps[0]?.source}<ServiceIcon domain={sourceDomain(steps[0].source)} title={p.lead ?? ""} size={13} />{/if}
+        {#if steps[0]?.source}<ServiceIcon domain={sourceDomain(steps[0].source)} glyph={sourceSymbol(steps[0].source)} title={p.lead ?? ""} size={13} />{/if}
         <span class="settled-text">{#if p.lead}<span class="lead-inline">{p.lead} · </span>{/if}{p.body}</span>
       {:else}
         <span class="settled-text">{settledSummary}</span>
         {#if leftOutCount}<span class="settled-skipped">{tr("{n} overgeslagen", "{n} skipped", { n: leftOutCount })}</span>{/if}
         <span class="stack" aria-hidden="true">
-          {#each sources as source (source)}<span class="mini"><ServiceIcon domain={sourceDomain(source)} title={sourceTitle(source)} size={12} /></span>{/each}
+          {#each sources as source (source)}<span class="mini"><ServiceIcon domain={sourceDomain(source)} glyph={sourceSymbol(source)} title={sourceTitle(source)} size={12} /></span>{/each}
         </span>
       {/if}
       <span class="grow"></span>
@@ -203,7 +203,7 @@
               {#if p.lead || warns}
                 <div class="lead" class:quiet>
                   {#if p.lead}
-                    {#if step?.source}<ServiceIcon domain={sourceDomain(step.source)} title={p.lead} size={13} />{/if}
+                    {#if step?.source}<ServiceIcon domain={sourceDomain(step.source)} glyph={sourceSymbol(step.source)} title={p.lead} size={13} />{/if}
                     <span class="lead-text">{p.lead}</span>
                   {/if}
                   {#if warns}<Tag text={step?.tag ?? ""} tint={tagTint(step?.tag ?? "")} />{/if}

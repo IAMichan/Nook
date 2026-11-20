@@ -46,7 +46,8 @@ export function conversationGroups(items: ConversationSummary[], activeId: strin
 export function conversationSections(items: ConversationSummary[], options: { searching: boolean; activeId: string | null }) {
   const recentFirst = (a: ConversationSummary, b: ConversationSummary) => b.updated.localeCompare(a.updated);
   const shown = items.filter((i) => !i.archived && (i.preview || i.pinned || i.status !== "idle" || i.id === options.activeId)).sort(recentFirst);
-  const attention = shown.filter((i) => i.status !== "idle");
+  // Pinned first, then the newest, as the Mac's `ConversationList.visible` orders every part.
+  const attention = shown.filter((i) => i.status !== "idle").sort((a, b) => Number(b.pinned) - Number(a.pinned));
   const settled = shown.filter((i) => i.status === "idle" && (i.pinned || options.searching || !i.scheduledTask));
   return { attention, pinned: settled.filter((i) => i.pinned), rest: settled.filter((i) => !i.pinned) };
 }

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { composerInbox } from "../../../lib/workspace/composer-inbox.svelte";
+  import { ask, explain, fixChecks } from "../../../lib/workspace/session-prompts";
   // One pull request, read in full inside Nook (`PullRequestDetailView` on the Mac): the description, checks and
   // timeline, the commits, and every changed file with its diff. The bar at the bottom merges it with the account it
   // was listed under, only after you confirmed it in that same bar; the merge is written to the action log. A page read
@@ -17,12 +19,20 @@
   import CheckLog from "./CheckLog.svelte";
   import PullGlyph from "./PullGlyph.svelte";
 
-  let { accountId, item, onback }: { accountId: string; item: PullRequestItem; onback: () => void } = $props();
-
+  let { accountId, item, onback, session }: { accountId: string; item: PullRequestItem; onback: () => void; session?: string } = $props();
   type Tab = "conversation" | "commits" | "files";
   const METHOD_KEY = "agents.pr.mergeMethod";
 
   let detail = $state<PullRequestDetail | null>(null);
+
+  // Beside a session (`PullRequestActionPanel`'s session rows): Explain, Ask and Fix put a prompt in its composer.
+  const sessionRef = $derived(detail ? { number: detail.number, title: detail.title, url: detail.url ?? "", headBranch: detail.headBranch, baseBranch: detail.baseBranch } : null);
+  const failingChecks = $derived(detail?.checks.filter((c) => c.outcome === "failing").map((c) => c.name) ?? []);
+  function toSession(text: string) {
+    if (!session) return;
+    composerInbox.add(text, session);
+  }
+
   let loading = $state(false);
   let error = $state<string | null>(null);
   let tab = $state<Tab>("conversation");
@@ -197,6 +207,11 @@
     <span class="spacer"></span>
     {#if loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
     <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={loading} onclick={load}>{tr("Vernieuwen", "Refresh")}</button>
+    {#if session && sessionRef}
+      <button class="ghost" onclick={() => toSession(explain(sessionRef!))}>{tr("Laten uitleggen in deze sessie", "Explain in this session")}</button>
+      <button class="ghost" onclick={() => toSession(ask(sessionRef!))}>{tr("Hierover vragen in deze sessie", "Ask about this in this session")}</button>
+      {#if failingChecks.length}<button class="ghost" onclick={() => toSession(fixChecks(sessionRef!, failingChecks))}>{tr("Mislukte checks oplossen in deze sessie", "Fix failing checks in this session")}</button>{/if}
+    {/if}
     {#if detail?.url ?? item.url}<button class="ghost" title={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(detail?.url ?? item.url)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
   </div>
 

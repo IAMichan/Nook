@@ -142,7 +142,7 @@
   <!-- The Mac's first tab (`enableSection`): "Type less, in any app" with its line, the switch, how it stands; the model,
        suggestions and keys follow once it is on. -->
   <h3>{tr("Typ minder, in elke app", "Type less, in any app")}</h3>
-  <p class="section-info">{tr("Terwijl je typt stelt een model op deze computer voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen woordlimiet, geen abonnement, niets gaat je computer uit.", "As you type, a model on this computer suggests how your sentence goes on, as gray text at your cursor. No word limit, no subscription, nothing leaves your computer.")}</p>
+  <p class="section-info">{tr("Een model op je computer stelt voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen abonnement, niets verlaat je computer.", "A model on your computer suggests how your sentence goes on, as gray text at your cursor. No subscription, nothing leaves your computer.")}</p>
   <div class="group">
     <label class="row">
       <span>

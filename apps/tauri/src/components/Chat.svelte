@@ -209,7 +209,7 @@
   {/if}
   {#if !compact && nook.active?.messages.length}
     <!-- What Nook could do for what was just said (`ActionSuggestionBar`), above the field. -->
-    <div class="suggestion"><ActionSuggestionBar turn={turn} busy={busy} place={{ kind: "nook" }} lines={nookLines} nookId={nook.active?.id ?? null} enabled={nook.settings?.suggestChatActions !== false} /></div>
+    <div class="suggestion"><ActionSuggestionBar turn={turn} busy={busy} place={{ kind: "nook" }} lines={nookLines} nookId={nook.active?.id ?? null} enabled={nook.settings?.suggestChatActions !== false} onadjust={() => onopen?.({ kind: "route", route: "agents" })} /></div>
   {/if}
   <Composer {compact} {autofocus} />
   {#if onboarding}<Onboarding onclose={() => (onboarding = false)} />{/if}

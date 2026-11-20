@@ -77,17 +77,17 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [x] **UI-02** One shared tab bar for a page's subjects (`SettingsPartTabs`) · S
 
-- [ ] **UI-03** Search over about 170 settings by their on-screen name, with the page path, scrolling to and lighting the row (`SettingsSearch`, `SettingsHighlight`) · M
+- [x] **UI-03** Search over about 170 settings by their on-screen name, with the page path, scrolling to and lighting the row (`SettingsSearch`, `SettingsHighlight`) · M Done (2026-11-20): the sidebar search finds the pages first, then about 200 settings by the name their page shows (`lib/settings-search.svelte.ts`, the page's own `tr` pairs, so every language reads as on screen), each with its page path. Opening one opens the subject, opens the fold it sits in (`Fold keys`), scrolls the row to the middle and lights it for 1.6 s (`lightSetting`); `settings-search.test.ts` fails when a name no longer appears on a page.
 
-- [ ] **UI-04** Attention counts on sidebar rows · S
+- [x] **UI-04** Attention counts on sidebar rows · S Done (2026-11-20): the counts the Mac shows (`SettingsSidebar(badges:)`): Overview its attention list, Chat apps a chat app that is on but lost its link, Services the linked services whose last refresh failed or need a new sign-in, Typing one while completing is on without a model (`views/settings/attention.svelte.ts`, `attention.badge`).
 
-- [ ] **UI-05** Restore defaults per page with a confirmation (`SettingsRestore`) · S
+- [x] **UI-05** Restore defaults per page with a confirmation (`SettingsRestore`) · S Done (2026-11-20): "Restore defaults" in the bar over General (session list, ask before quitting) and Appearance (look, accent, theme, density, diff colors, custom colors), the pages the Mac has it on, with a confirmation, dimmed once nothing differs. Hold to quit is not a Windows setting (SV-80).
 
-- [ ] **UI-06** Page intro and a line per subject (`SettingsPageIntro`) · S
+- [x] **UI-06** Page intro and a line per subject (`SettingsPageIntro`) · S Done (2026-11-20): every page opens with its name, one line on what it holds, the tab bar of its subjects with a line on the one shown, and the data note of a few subjects (`views/settings/intro.ts`).
 
 - [ ] **UI-07** Overview with a row per page, the setup checklist, outdated agents, words typed today, automation next/failed, phone last seen, update status (#1653) · M
 
-- [ ] **UI-08** Folding sections (`SettingsFold`, #1651) · S
+- [x] **UI-08** Folding sections (`SettingsFold`, #1651) · S Done (2026-11-20): `views/settings/Fold.svelte` (chevron, name, summary while closed), used for Face and finish, Text and layout, Custom colors, All models and runtimes, Model per agent and Away from home; a search for a setting inside opens it.
 
 - [ ] **UI-09** Setup sheets as numbered steps ending in a check (`SetupSheet`, `SetupCheckStep`) · M
 
@@ -107,7 +107,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-17** Notifications page: per kind (agents, chats, Nook, suggestions) card / strip / system / off, quiet hours, warning when system notifications are blocked, per-app rules with search (with SV-10, CH-66) · M Still open: notices for chats and Nook are posted from the Chats views and the bar, which another helper owns right now, and quiet hours need one notice path in Rust first; Windows has the agent notice size only. Update 2026-11-20: done as a model and one Rust path. `nook_core::services::notice_rules` (the Mac's `NoticeRules`: style per source, apps on or off, quiet hours with "approvals and questions still come through") decides every notice through `notices::decide` and the `notice_decide` command; agents follow it now (the bar's card or line, system notifications, approvals), and the page shows a style per source and quiet hours. Open: chats, Nook and Think Along do not ask `notice_decide` yet (their views belong to other helpers), there are no per-app lists, and "quiet for the session you are watching" has no signal on Windows. Update 2026-11-20 (later): Notifications per app has a switch per agent (`noticeRules.apps`, "agents:<name>"), read by `notice_decide` for every agent notice; chat apps join once the chats ask `notice_decide`.
 
-- [ ] **UI-18** Sound: a file picker per event with preview (with SV-53) · S
+- [ ] **UI-18** Sound: a file picker per event with preview (with SV-53) · S Mostly done (2026-11-20): one picker per moment (Nook's sound, a Windows sound, your own file, or none) with a button to hear it, and "Custom sounds" opens the folder, as on the Mac. Open: the Mac's fourth moment, "permission" (an approval is waiting), which Windows plays as "attention".
 
 - [ ] **UI-19** Shortcuts: rebind in-app keys (`KeybindingsSettingsSection`, a keys file), window-capture target, point-to-bar and open-panel global keys · M
   - Part done (in-app keys): the main window's keys are rules (`lib/keybindings.ts`, the Mac's `Keybindings`: key, command, when; the last match wins, `-command` takes a key away), with your own in `keybindings.json` in Nook's data folder (`src-tauri/src/keybindings.rs`). Settings › Shortcuts › Panel keys lists every command with its keys from the live rules, Change records the next chord, Reset puts the default back, and two commands on one key are flagged; the cheat sheet reads the same rules. Open: the window-capture target (no window capture on Windows yet, SV-70) and the global point-to-bar and open-panel keys.
@@ -371,13 +371,15 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-66** Search with AI (the "Search with AI: …" row, first for a question, Ctrl+Return, `SearchAI`): `search_ai_plan` has the brain turn the question into up to four searches, the panel runs them with the question's own words (`keywordQuery`) through the same search, takes the hits in turns (`gather`, ten at most, no actions or settings, no memory kept local when the brain is not), and `search_ai_answer` answers from them citing [1], [2]…; the answer card shows working, reading, the answer with its citations in the accent, "Continue in chat", or "Choose brain" without a brain, and the list becomes the sources, cited ones first, numbered · M
 
-- [ ] **BR-67** Recently opened and recent searches on the search's start page (`SearchCenter.recentlyOpened`, `recent`), and the session find bar opening on the matched words · S Partly done (2026-11-20): start page recently opened (with live refresh, unread dot and status badge), recent searches, filter chips and AI answer Markdown/citations match Mac; opening the session find bar on the matched words still open.
+- [x] **BR-67** Recently opened and recent searches on the search's start page (`SearchCenter.recentlyOpened`, `recent`), and the session find bar opening on the matched words · S Partly done (2026-11-20): start page recently opened (with live refresh, unread dot and status badge), recent searches, filter chips and AI answer Markdown/citations match Mac; opening the session find bar on the matched words still open.
   - Done: recently opened (five, newest first; what you open often ranks higher, fading over a month) and recent searches (eight, with Clear), kept in localStorage as the Mac keeps them in UserDefaults. Left: a session opening with its find bar on the matched words, which needs the Agents tab's session find bar (`views/agents`, AG-06's `TimelineSearch`); the hit already carries the passage's anchor for it.
+  - Done 2026-11-21: a run that matched in its transcript opens with its find bar on the first words that matched (`lib/session-find.svelte.ts`, set by `CommandPalette` and taken once by `views/agents/run/Timeline.svelte`, which opens the bar, fills it and jumps to the first match). As on the Mac only Nook's own runs have a find bar; earlier and followed sessions open on their page.
 
 ### 3.7 Suggestions and selection
 
-- [ ] **BR-60** Suggested steps from chats, agent sessions and Nook Chat with a "Do it" bar, own setting and model (`AppModel+ActionSuggestions`, bd2f11059; shared with CH-62 and AG-71) · M
+- [x] **BR-60** Suggested steps from chats, agent sessions and Nook Chat with a "Do it" bar, own setting and model (`AppModel+ActionSuggestions`, bd2f11059; shared with CH-62 and AG-71) · M
   - Done for Nook Chat: `service::propose` (action tools become steps, never run), the rules and prompt of `ChatActionSuggestion` (`core/src/brain/action_suggestion.rs`: new lines only, worth a look, complete steps, never re-offered, pace and an hourly cap, 30 s), `suggest_actions` / `run_suggested_actions` (`commands/suggestions.rs`), the bar above Nook Chat's field (`ActionSuggestionBar.svelte`, `lib/action-suggestions.svelte.ts`: dashed line, Do it, the cross, how it went), and Settings › Autocomplete › "Suggest actions from conversations" with "Model for suggestions" (a model name of the brain's service; empty is the brain's own). Open: the same bar in a chat of the Chats tab (`views/chats`, the chats helper's) and an agent session (`views/agents`), which only need to pass their place and lines; "Adjust first" for a suggested session (opens the new-session composer, `views/agents`); choosing a model of another service than the brain's.
+  - 2026-11-21: the bar is now the Mac's `WhisperSuggestion` and `DraftActions` 1:1: the line on a dashed outline that turns solid on hover with the sparkles tinting, the ghost buttons ("Adjust first" for a single new session, Do it with its check), the card after Do it with the sparkles badge, title and why, each step's badge by kind (bell, calendar, mail, note, send) and the run's state ("Running…", the result in mint, a failure in coral). "Adjust first" opens the new-session composer on the step's project with the task in its box (through the composer's own draft per folder). The bar is in Nook Chat, a chat of the Chats tab (`ChatDetail.svelte`) and an agent session (`RunPanel.svelte`); from a chat, "Adjust first" reaches the Agents tab through the navigate event. Left: the model for suggestions is a model name of the brain's own service; the Mac's `TextGeneratorRow` can pick a model of another service (an API or a local model) too.
 
 - [ ] **BR-61** One-click suggestions under the quick field (`DoubleTapSuggest`) · S
   - Done: the chips and the line above the field (`core/src/services/double_tap_suggest.rs`, with the Mac's words in five languages). Left: showing them, which needs the quick field itself (SV-45); tick this item with it.
@@ -469,14 +471,16 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-42** Audit log for hook approvals (`ApprovalAudit`) · S
 
-- [ ] **AG-43** Why the agent asks, and the "Always allow X · this project" scope in `ApprovalCard.svelte` · S
+- [x] **AG-43** Why the agent asks, and the "Always allow X · this project" scope in `ApprovalCard.svelte` · S
+  - Done: the approval card shows why it asks (the risk note) and, under its buttons, what "Always" would allow and how far it reaches, "Always allows Bash(git status:*) · this project" (`core/src/agents/permission_scope.rs`, from Claude Code's `permission_suggestions`; Codex and the ACP agents say only "session" or "always"), for hook and Nook-run requests alike; Always explains itself on hover.
 
 - [x] **AG-44** Deny with a reason on desktop (exists only in the companion) · S
   - Done: Deny with reason on the approval card (`ApprovalCard.svelte`, Return denies, Escape closes) and from the phone (`CompanionBackend::decide_with_reason`). Claude Code gets the reason as the denial message (hooks and stream-json); agents on a driver (Codex, ACP) have no field for it, so it reaches them as a steer, or first in the queue (`Manager::decide_with_reason`). A bridge request has no agent behind it and takes a plain Deny.
 
 - [ ] **AG-45** Granted rules per project with revoke (`GrantedRules`) · M
 
-- [ ] **AG-46** Option previews and your own answer with files in `QuestionCard.svelte` · S
+- [x] **AG-46** Option previews and your own answer with files in `QuestionCard.svelte` · S
+  - Done: each option shows its preview in the code font under it (Claude Code's `preview`, fences and trailing spaces taken off, cut at 4,000 characters; `read_preview`), and "Or type your own answer…" sends your words with files and pictures attached, pasted or dropped (the same tiles and envelope as the composer).
 
 - [ ] **AG-47** Active usage polling and reset credits (`ClaudeUsage`, `CodexUsage`, `CodexRateLimits`, `QuotaService`) in `core/src/agents/usage.rs` · M
 
@@ -558,7 +562,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-92** A new-session draft per folder (`ComposerDraftStore`) · S
   - Done: the new-session task is kept per folder (and for "no project") and comes back when you return to that folder, also after closing the window; starting the session clears it.
 
-- [ ] **AG-93** Prompt library, skill index, Explain/Fix from the side panel (`PromptLibrary`, `SkillIndex`, `SessionPrompts`, `ComposerInbox`) · M
+- [x] **AG-93** Prompt library, skill index, Explain/Fix from the side panel (`PromptLibrary`, `SkillIndex`, `SessionPrompts`, `ComposerInbox`) · M
+  - Done: the prompt library (`core/src/workspace/prompts.rs`, `prompts.json`, the Mac's `SavedPrompt` rules: `{{variables}}` with defaults asked in a strip, one trigger per prompt): "+" in both composers saves what you typed as a prompt and lists your prompts, and a prompt's `/trigger` is in the `/` list; beside a session, the side panel's pull request offers Explain, Ask and Fix failing checks, which land above what you wrote in that session's composer (`session-prompts.ts`, `composer-inbox.svelte.ts`). Skills come with the `$` list (AG-90).
   - Part done: saved prompts live in Settings › Instructions (`core/src/prompt_library.rs`, as on the Mac, which uses them nowhere else). The skill index: `$` in a session composer lists the skills on disk that the session's agent reads, project before user, each agent's own folders (`core/src/workspace/skills.rs`, `workspace_skills`, front matter only, 64 KB at most). Open: Explain/Fix from the side panel (`SessionPrompts`, `ComposerInbox`), which needs the side panel (AG-100).
 
 - [ ] **AG-94** Worktree setup checklist and progress, blocking setup scripts, 5 s base-fetch cap (`WorktreeSetupChecklist`, `WorktreeSetupProgress`, #1518) · M
@@ -708,6 +713,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
   - Done: a private chat whose newest message looks like phishing or a scam (`message_trust::assess`, BR-08) is owed nothing (`Turn.suspicious`). Open: reply suggestions, which do not exist on Windows yet (CH-61); they should skip the same chats.
 
 - [ ] **CH-40** Snooze a chat · S
+  - Done in part: snoozing a chat out of what you owe, with its wake-up when the time is up, is in Rust (`FollowUps::snooze`, `chat_snooze`; the follow-up tick lets it go). Open: the Mac offers it only in `ChatFollowUpView` (with the Settings › Sessions snooze presets), which no Mac screen places yet; Windows adds the menu when the Mac shows it.
 
 - [x] **CH-41** Scheduled send (`ChatScheduledSend`) · M
   - Done: scheduled messages as on the Mac (`ChatScheduledSend`, `ChatFollowUpTick`): kept in `chat-follow-ups.json`, sent by the follow-up tick when due through the same send as one by hand, and one that comes more than two hours late (Nook was off) or whose chat is gone is not sent by itself but comes up for your OK (`chat-scheduled-confirm`); commands `chat_schedule`, `chat_scheduled`, `chat_schedule_cancel`. The Mac has no place in its UI to schedule one yet (its strings exist, no view uses them), so Windows has none either until it does.
@@ -746,8 +752,8 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **CH-56** Video stills, document first pages, media cache across restarts, video playing in the card (`ChatFileThumbnails`, `ChatPictureDisk`, `ChatMediaWarmup`) · M
 
-- [ ] **CH-57** Link previews, call rows, "Edited"/"Deleted" marks with earlier versions · S
-  - Done: "Edited" in the time of an edited message and "This message was deleted" (with the row kept) for every app the inbox hears it from. Open: link previews, call rows and the earlier versions of an edited message.
+- [x] **CH-57** Link previews, call rows, "Edited"/"Deleted" marks with earlier versions · S
+  - Done: a message's first link shows under its words (`ChatLinkPreview`): a picture link as the picture, a page as the Mac's card (16:9 picture with a play mark for a video page, the site with its icon, the title in two lines), fetched in Rust from public addresses only, redirects checked one by one, a page cut at 512 kB and a picture at 3 MB, kept in memory only (`chats::link_preview`, `chat_link_preview`). A call an app wrote as a line ("Missed voice call", "Videoanruf 2:13") shows as the Mac's call row (`ChatFormat.call`, `ChatCallRow`: the round mark, missed in coral, who rang and how long). An edited message keeps what it said (`InboxMessage.versions`, from a read that brings new words, an edit through Nook or a deletion), and its "Edited" opens "Earlier versions" (until when, and now); a deleted one opens "Before it was deleted".
 
 - [ ] **CH-58** Mark unread; pin, mute, archive and delete in the app itself (`ChatAbilities`) · M
   - Done: Mark as unread and read in Nook or in the app for every app (the helper's apps are told; WhatsApp's gateway has no unread call, so there it stays in Nook); Mute / Unmute and Archive in the app itself for the helper's apps (`chat_inbox_in_app`, the helper's `PATCH` and `/archive`); removing a chat from Nook after a yes. Open: Pin in the app (the helper's chat list does not say yet whether a chat is pinned there), and anything in WhatsApp itself, which its gateway does not offer.
@@ -760,11 +766,13 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CH-60** Browser extension: native-messaging host for Chrome, Edge and Brave, the `chrome_*` tools, Settings page (`BrowserExtensionService/Host/Hub/Tools/Look`, `BrowserExtensionSection`, #1573, #1627), and live side panel tasks that ask per step in the panel (`BrowserTask`, `ToolRunner.performs`) in `src-tauri/src/browser_ext/` · L
 
 - [ ] **CH-61** Suggested reply as ghost text in the empty field (#1654), ghost completion while typing · S
+  - Done: the suggested reply (`ChatReplySuggestion`) for every app: when you open a chat whose newest message is someone else's, Nook writes the answer you would likely send (`chat_suggest_reply`, the Mac's `ChatDraft` prompt with no request, `core/src/chats/draft.rs`) and it shows grey in the empty field; Tab puts it in, typing hides it, Escape lets it go, one try per message. Open: the ghost completion while typing (the composer autocomplete, SV-60) and its switch under Typing › Complete (UI-81, another area).
 
 - [x] **CH-62** Suggested steps above the field (`ChatActionSuggestion`, #1683) · M
   - Done: the Chats tab's open chat puts BR-60's `ActionSuggestionBar` above its field, as the Mac's `ChatReplyField.suggestsActions` does: the chat's newest message (yours too) as the turn, the chat's place (app and name), and its newest thirty lines with you as "You"; for every app.
 
 - [ ] **CH-63** `@nook` in a chat field to draft, change or look things up · M
+  - Done: "@" at the start of the field offers "@nook" first; "@nook …" (or "@nook" alone for a fitting answer) and Return has Nook write the message into the field from the chat and what you asked (`chat_draft`, the Mac's `ChatDraft.system`/`prompt`/`clean`), "Nook is writing your message…" meanwhile; it is never sent by itself. Open: the lookups (`ChatDraft.lookupSystem` with Nook Chat's read tools and proposed actions) and the ready-made requests in the "@" list.
 
 - [ ] **CH-64** Notice priority for questions and mentions (`ChatNoticePriority`) · S
   - Open: on the Mac priority (a question in a private chat, a mention in a quiet group) only lets a message past the notice pacer's burst limit and never bypasses a rule; Windows has no notice pacer yet, so there is nothing for priority to change. Port it with the pacer.
@@ -858,7 +866,8 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-11** Shared pacing and a daily interruption budget (`NoticePacer`, `InterruptionBudget`) · M
 
-- [ ] **SV-12** History of missed notices, searchable, opens its source (`NoticeLog`, `NoticeHistory`) · M
+- [x] **SV-12** History of missed notices, searchable, opens its source (`NoticeLog`, `NoticeHistory`) · M
+  - Done: every notice is kept in memory since Nook started (`core/src/services/notice_log.rs`, the Mac's `NoticeLog`: newest first, one per chat or session, at most 100 and a week): each system notification (`notices::post`), each agent done/failed/waiting card and each chat message that arrived, also the ones Settings › Notifications keeps out of sight. The bell in the sidebar's head (`components/shell/NoticeBell.svelte`) shows how many you have not seen, a search, the entries with their state color, who and when, and opens the session, the chat, the Nook or the page they came from; remove one or clear all (`src-tauri/src/notice_history.rs`). Open: the same entries in Search everything (Ctrl+K) as the Mac lists them, which is the palette's.
 
 - [ ] **SV-13** Shared ranking with learned weights for Today, menu and phone (`AttentionItem`, `AttentionScorer`, `AttentionFeedback`) · M
 
@@ -867,12 +876,14 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **SV-15** Rich Windows toasts: Allow/Deny buttons, groups, priority, clicks that survive a restart, short gist for long approvals (`SystemNotifier`, 5b67dce9f, 730ba42b9; base for AG-51 and CH-67) · M
 
-- [ ] **SV-16** Configurable snooze durations and times of day (`SnoozeOptionsSection`) · S
+- [x] **SV-16** Configurable snooze durations and times of day (`SnoozeOptionsSection`) · S
+  - Done: the snooze options are the Mac's `SnoozeOption` (durations, and times of day on today, tomorrow or a weekday; defaults an hour, this evening 18:00, tomorrow 09:00; at most eight, the ones already past hidden, soonest first), set in Settings › Notifications › Snooze options (`views/settings/SnoozeOptions.svelte`, `lib/snooze-options.ts`) and used by Home's and the Agents list's snooze menus. Kept per computer in the interface's storage.
 
 - [x] **SV-17** Think Along backoff up to 2 h and kept across restarts; the full nudge filter (`NudgeFilter`, `ThinkAlongBackoff`) · S
   - Done: the wait after an offer is the Mac's (15 minutes, doubled after each no, an unanswered offer counting as one, at most two hours, reset by a yes) and kept in `think-along.json` across restarts (`think_along::Backoff`); the full `NudgeFilter` drops an offer that asks without an action, is not about what is on screen, is about dates more than two weeks away, or repeats an earlier one in other words (`services/nudge_filter.rs`).
 
-- [ ] **SV-18** Today complete: agents waiting or failed, replies you owe, birthdays, next event within 3 h, connector failures, autocomplete "saved you", ranking (`AppModel+Today`) · M
+- [x] **SV-18** Today complete: agents waiting or failed, replies you owe, birthdays, next event within 3 h, connector failures, autocomplete "saved you", ranking (`AppModel+Today`) · M
+  - Done: Home's inbox now also has failed agent sessions, the linked services that broke or need you to sign in again (to Settings › Connections), today's birthdays (the people you gave one in a chat's info, kept in `person-notes.json` with a note, `core/src/chats/person_notes.rs`; and all-day birthday events in your calendars, `lib/birthdays.ts`) and what autocomplete saved you today, beside the agents waiting, the replies you owe (`chat_owed`, CH-38) and the next events (`lib/inbox-sources.ts`). The order is the inbox's own ranking; learned weights are SV-13.
 
 - [ ] **SV-19** Buddy moments: good morning, welcome back, break, milestones, while you were away (`BuddyMoments`, `BuddyService`, `AppModel+Buddy`) · M
 
@@ -943,7 +954,8 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-72** Nook clicks and types in apps (`UIDriver`, `AppModel+Control`; the base for BR-29 and AG-13) · L
 
-- [ ] **SV-73** Record-call global shortcut on Windows defaults · S
+- [x] **SV-73** Record-call global shortcut on Windows defaults · S
+  - Done: "Record a call" is a global shortcut (Alt+Ctrl+R by default, `notes_shortcut` in the service prefs), registered with the others and set in Settings › Shortcuts; it starts and stops the Notetaker. Needs a run on a real Windows PC (FD-01).
 
 - [ ] **SV-74** Screen region: annotate (arrows, boxes, pen), paste where you were, Ask (`ScreenPart`) · M
 

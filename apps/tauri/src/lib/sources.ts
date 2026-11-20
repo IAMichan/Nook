@@ -127,6 +127,52 @@ export function sourceDomain(id: string | null): string | null {
   return (id && domains[id]) || null;
 }
 
+/** The line icon for a source without a website of its own (the Mac shows its app's icon): a calendar, mail, files… */
+export function sourceSymbol(id: string): string {
+  switch (id) {
+    case "calendar":
+    case "icalfeeds":
+      return "calendar";
+    case "mail":
+      return "mail";
+    case "web":
+    case "browser":
+    case "browser_extension":
+      return "globe";
+    case "screen":
+      return "monitor";
+    case "clipboard":
+      return "clipboard-list";
+    case "notes":
+    case "bear":
+      return "notebook-pen";
+    case "reminders":
+    case "things":
+    case "loops":
+      return "list-checks";
+    case "contacts":
+      return "users";
+    case "files":
+      return "folder";
+    case "memory":
+      return "brain";
+    case "messages":
+    case "whatsapp":
+      return "message-circle";
+    case "chats":
+      return "messages-square";
+    case "callnotes":
+      return "audio-waveform";
+    case "terminal":
+      return "terminal";
+    case "agents":
+      return "bot";
+    case "system":
+      return "laptop";
+    default:
+      return "layers";
+  }
+}
 /** Localized display title for a source id (`SourceCatalog.title` on macOS). */
 export function sourceTitle(id: string | null | undefined): string {
   if (!id) return "";

@@ -26,7 +26,7 @@ describe("conversation list", () => {
       item("runpin", { scheduledTask: "t1", pinned: true }), item("empty", { preview: "" }), item("gone", { archived: true }),
     ];
     const open = conversationSections(rows, { searching: false, activeId: null });
-    expect(open.attention.map((r) => r.id)).toEqual(["new", "plan"]);
+    expect(open.attention.map((r) => r.id)).toEqual(["plan", "new"]);
     expect(open.pinned.map((r) => r.id)).toEqual(["pin", "runpin"]);
     expect(open.rest.map((r) => r.id)).toEqual(["old"]);
     expect(conversationSections(rows, { searching: true, activeId: "empty" }).rest.map((r) => r.id).sort()).toEqual(["empty", "old", "run"]);

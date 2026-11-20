@@ -115,6 +115,15 @@ pub fn arrived(handle: &AppHandle, before: &ChatInbox, now: &ChatInbox) {
         }
         let Some(newest) = thread.messages.iter().rev().find(|m| m.is_incoming()) else { continue };
         let preview = preview(thread, newest);
+        crate::notice_history::record(
+            handle,
+            &format!("chat:{key}"),
+            nook_core::services::notice_log::NoticeKind::Info,
+            &thread.name,
+            &preview,
+            &thread.app,
+            &format!("chat:{key}"),
+        );
         messages.push(nook_core::workspace::arrivals::ArrivedMessage {
             chat_id: key.clone(),
             app: thread.app.clone(),

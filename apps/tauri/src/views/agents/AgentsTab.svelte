@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { loadOptions, optionId, optionLabel, snoozeMenu } from "../../lib/snooze-options";
   import { loadAgentsView, onAgentsView, saveAgentsView, type AgentsView } from "../../lib/agents-view";
   // De tab Agents (`AgentsTab` en `AgentInboxList` op de Mac): links elke sessie, van welke agent ook, hier of in een
   // terminal gestart; rechts de gekozen sessie, of na de knop "Nieuwe sessie" de plek om er een te starten. Wat op jou
@@ -498,8 +499,10 @@
             </span>
             {#if menuFor === i.id}
               <div class="menu" role="menu">
-                <button role="menuitem" onclick={() => update(inbox.snooze(inboxState, i.id, now + 3_600_000))}>{tr("Snooze 1 uur", "Snooze 1 hour")}</button>
-                <button role="menuitem" onclick={() => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); update(inbox.snooze(inboxState, i.id, d.getTime())); }}>{tr("Snooze tot morgen", "Snooze until tomorrow")}</button>
+                <!-- Your snooze options (Settings › Notifications), the ones still ahead now. -->
+                {#each snoozeMenu(loadOptions(), new Date(now)) as c (optionId(c.option))}
+                  <button role="menuitem" onclick={() => update(inbox.snooze(inboxState, i.id, c.end.getTime()))}>{optionLabel(c.option)}</button>
+                {/each}
                 <!-- "Custom…" (`SnoozeMenuItems`): a moment of your own choosing. -->
                 <form class="custom" onsubmit={(e) => { e.preventDefault(); const at = Date.parse(customSnooze); if (at > now) update(inbox.snooze(inboxState, i.id, at)); }}>
                   <input type="datetime-local" bind:value={customSnooze} min={localMoment(now)} aria-label={tr("Snooze tot", "Snooze until")} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockOrDay, groupOf, inboxEntry, insertTag, typingTag, personTint, sections, shown, whatsAppEntry, type ChatEntry, type ReadMark } from "./chats-list";
+import { callDetail, callOf, callTitle, clockOrDay, firstLink, groupOf, inboxEntry, insertTag, typingTag, personTint, sections, shown, whatsAppEntry, type ChatEntry, type ReadMark } from "./chats-list";
 import type { ChatSummary, WhatsAppConversation } from "./connectors";
 
 const now = new Date(2026, 10, 19, 15, 0);
@@ -93,5 +93,18 @@ describe("the Chats list", () => {
     expect(typingTag("mail me@home")).toBeNull();
     expect(typingTag("hi @Anna done")).toBeNull();
     expect(insertTag("hi @An", "Anna Bakker")).toBe("hi @Anna Bakker ");
+  });
+  it("reads an app's call line as a call, as the Mac does", () => {
+    const missed = callOf("Missed voice call")!;
+    expect(missed).toEqual({ video: false, missed: true, outgoing: null, seconds: null });
+    expect(callTitle(missed, false)).toBe("Missed voice call");
+    expect(callDetail(missed, true)).toBe("Outgoing · No answer");
+    const video = callOf("Videoanruf 2:13")!;
+    expect([video.video, video.seconds]).toEqual([true, 133]);
+    expect(callDetail(video, false)).toBe("Incoming · 2:13");
+    expect(callOf("Can you call me?")).toBeNull();
+    expect(callOf("call")).toBeNull();
+    expect(firstLink("see https://example.com/a, ok")).toBe("https://example.com/a");
+    expect(firstLink("http://localhost")).toBeNull();
   });
 });

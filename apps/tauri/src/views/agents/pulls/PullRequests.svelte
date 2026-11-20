@@ -18,6 +18,8 @@
   import PullRequestView from "./PullRequestView.svelte";
 
   /// The pull request shown in full, with the account it is listed under.
+  /** Shown beside a session (its side panel): a pull request offers to explain or fix it there. */
+  let { session }: { session?: string } = $props();
   let opened = $state<{ account: string; item: PullRequestItem } | null>(null);
   /// Search and filters; kept while a pull request is open, so going back shows the same list.
   let filter = $state(defaultFilter());
@@ -79,7 +81,7 @@
 
 {#if opened}
   {#key `${opened.account} ${itemId(opened.item)}`}
-    <PullRequestView accountId={opened.account} item={opened.item} onback={() => (opened = null)} />
+    <PullRequestView accountId={opened.account} item={opened.item} {session} onback={() => (opened = null)} />
   {/key}
 {:else}
   <div class="pulls">

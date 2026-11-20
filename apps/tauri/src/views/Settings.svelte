@@ -21,6 +21,7 @@
   import { LOOK_PRESETS } from "../lib/types";
   import { loadAgentsView, onAgentsView, saveAgentsView } from "../lib/agents-view";
   import { attention } from "./settings/attention.svelte";
+  import { lightSetting, settingHits, settingsHighlight } from "../lib/settings-search.svelte";
   import { pageSubtitle, sectionSubtitle, sectionInfo } from "./settings/intro";
   import "./settings/settings.css";
   import SettingsPartTabs from "./settings/SettingsPartTabs.svelte";
@@ -128,14 +129,20 @@
   const parts = $derived(visibleParts(current));
   const Current = $derived(subjects[current].component);
 
-  // Search: the subjects whose name, page or group has every word typed; ↑ and ↓ move, Return opens.
+  // Search (`SettingsSearch`): first the subjects whose name, page or group has every word typed, then every setting
+  // whose on-screen name has them; ↑ and ↓ move, Return opens. A setting opens its subject and is scrolled to and lit.
   let query = $state("");
   let active = $state(0);
   let searchField = $state<HTMLInputElement | null>(null);
   let pane = $state<HTMLDivElement | null>(null);
   const searching = $derived(query.trim().length > 0);
-  const hits = $derived(settingsSections.filter((id) => shown(id) &&
-    matchesSearch(query, sectionTitle(id), pageTitle(settingsHost(id)), groupTitle(settingsGroup(id)) ?? "")));
+  type Hit = { key: string; section: SettingsSectionId; title: string; setting: boolean };
+  const hits = $derived<Hit[]>(searching ? [
+    ...settingsSections.filter((id) => shown(id) &&
+      matchesSearch(query, sectionTitle(id), pageTitle(settingsHost(id)), groupTitle(settingsGroup(id)) ?? ""))
+      .map((id) => ({ key: id, section: id, title: sectionTitle(id), setting: false })),
+    ...settingHits(query, shown).map((h) => ({ key: `${h.section}:${h.title}`, section: h.section, title: h.title, setting: true })),
+  ] : []);
   $effect(() => {
     void query;
     active = 0;
@@ -150,10 +157,23 @@
     pane?.scrollTo({ top: 0 });
   }
 
+  /** Opens a search hit; a setting is lit once its page has drawn it (pages load their data first, so look a few times). */
+  async function openHit(hit: Hit) {
+    if (!hit.setting) return open(hit.section);
+    settingsHighlight.title = hit.title;
+    await open(hit.section);
+    const title = hit.title;
+    for (let tries = 0; tries < 10 && settingsHighlight.title === title; tries++) {
+      await new Promise((r) => setTimeout(r, 150));
+      if (pane && lightSetting(pane, title)) break;
+    }
+    if (settingsHighlight.title === title) settingsHighlight.title = null;
+  }
+
   function searchKeys(e: KeyboardEvent) {
     if (e.key === "ArrowDown" && hits.length) { e.preventDefault(); active = (active + 1) % hits.length; }
     else if (e.key === "ArrowUp" && hits.length) { e.preventDefault(); active = (active - 1 + hits.length) % hits.length; }
-    else if (e.key === "Enter" && hits[active]) { e.preventDefault(); open(hits[active]); searchField?.blur(); }
+    else if (e.key === "Enter" && hits[active]) { e.preventDefault(); openHit(hits[active]); searchField?.blur(); }
     else if (e.key === "Escape") { e.stopPropagation(); if (query) query = ""; else searchField?.blur(); }
   }
 
@@ -167,9 +187,9 @@
     searchField?.focus();
   }
 
-  // "Restore defaults" in the bar (`SettingsRestore`): for Appearance, its look back to how Nook ships. General has
-  // nothing of its own to restore here (the languages are yours, not a default), so only Appearance shows it.
-  // Imported themes stay: they are yours, not a default (as on the Mac).
+  // "Restore defaults" in the bar (`SettingsRestore`), after a confirmation, on the pages whose own settings have a
+  // default to go back to, as on the Mac: General and Appearance. It dims once nothing on the page differs any more.
+  // Appearance: its look back to how Nook ships; imported themes stay, they are yours, not a default (as on the Mac).
   const appearanceChanged = $derived(!!nook.settings && (nook.settings.theme !== "dark" || nook.settings.accentHex !== ACCENTS[0] || nook.settings.density !== "comfortable"
     || (nook.settings.darkTheme ?? "nook") !== "nook" || (nook.settings.lightTheme ?? "nook") !== "nook" || (nook.settings.diffColors ?? "redGreen") !== "redGreen"
     || Object.keys(nook.settings.colorOverrides?.dark ?? {}).length > 0 || Object.keys(nook.settings.colorOverrides?.light ?? {}).length > 0
@@ -220,10 +240,10 @@
           {#if hits.length === 0}
             <p class="none">{tr("Niets gevonden. Probeer een ander woord, zoals ‘brein’, ‘taal’ of ‘privacy’.", "Nothing found. Try another word, like “brain”, “language” or “privacy”.")}</p>
           {/if}
-          {#each hits as id, i (id)}
-            <button class="navrow" class:on={i === active} aria-current={i === active ? "true" : undefined} onclick={() => open(id)}>
-              <span class="mark"><Ico name={icons[id]} size={15} /></span>
-              <span class="label"><span>{sectionTitle(id)}</span><span class="detail">{sectionTrail(id)}</span></span>
+          {#each hits as hit, i (hit.key)}
+            <button class="navrow" class:on={i === active} aria-current={i === active ? "true" : undefined} onclick={() => openHit(hit)}>
+              <span class="mark"><Ico name={icons[hit.section]} size={15} /></span>
+              <span class="label"><span>{hit.title}</span><span class="detail">{sectionTrail(hit.section)}</span></span>
             </button>
           {/each}
         {:else}
@@ -233,7 +253,7 @@
               <div class="group-rows">
                 {#if groupTitle(g)}<div class="heading">{groupTitle(g)}</div>{/if}
                 {#each rows as p (p.page)}
-                  {@const badge = p.page === "start" ? attention.items.length : 0}
+                  {@const badge = attention.badge(p.page)}
                   <button class="navrow" class:on={host === p.page} aria-current={host === p.page ? "page" : undefined} onclick={() => open(visibleParts(p.page)[0])}>
                     <span class="mark"><Ico name={icons[p.page]} size={15} /></span>
                     <span class="label"><span>{pageTitle(p.page)}</span></span>

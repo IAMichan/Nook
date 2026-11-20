@@ -61,4 +61,10 @@ pub const ROWS: &[Row] = &[
         "Antigravity aún se está instalando.",
     ),
     ("This picture is too large.", "Dieses Bild ist zu groß.", "Cette image est trop grande.", "Esta imagen es demasiado grande."),
+    ("this project", "dieses Projekt", "ce projet", "este proyecto"),
+    ("everyone on this project", "alle in diesem Projekt", "toute l'équipe du projet", "todos en este proyecto"),
+    ("all your projects", "alle deine Projekte", "tous vos projets", "todos tus proyectos"),
+    ("this session", "diese Sitzung", "cette session", "esta sesión"),
+    ("as the agent remembers it", "so, wie der Agent es sich merkt", "comme l'agent s'en souvient", "como lo recuerda el agente"),
+    ("Always allows {what}", "Erlaubt immer: {what}", "Autorise toujours : {what}", "Permite siempre: {what}"),
 ];
