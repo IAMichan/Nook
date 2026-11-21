@@ -9,9 +9,11 @@
   import { ask } from "../../lib/confirm.svelte";
   import { tr, locale } from "../../lib/i18n.svelte";
   import { isActive, isScratch, projectName, workspaceApi, type WorkspaceRun } from "../../lib/workspace/api";
+  import { composerInbox } from "../../lib/workspace/composer-inbox.svelte";
   import { workspace } from "../../lib/workspace/store.svelte";
   import Browser from "../workspace/Browser.svelte";
   import Terminals from "../workspace/Terminals.svelte";
+  import GrantedRulesSheet from "./GrantedRulesSheet.svelte";
   import UsageModal from "./UsageModal.svelte";
   import EmptyState from "./EmptyState.svelte";
   import Worktrees from "../workspace/Worktrees.svelte";
@@ -28,6 +30,7 @@
   import DropdownRow from "../../components/ui/DropdownRow.svelte";
   import ProjectIconView from "../../components/ui/ProjectIconView.svelte";
   import AgentMark from "../companion/ui/AgentMark.svelte";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { api } from "../../lib/api";
@@ -59,13 +62,57 @@
   }));
   let settledLimit = $state(inbox.settledPage);
   let menuFor = $state<string | null>(null);
-  let customSnooze = $state("");
+  let permissionsSheet = $state<{ project: string | null; tab?: "rules" | "audit" } | null>(null);
+
+  // Custom snooze sheet (`CustomSnoozeSheet` on the Mac, AG-112): pick an exact date & time or a custom duration.
+  type SnoozeUnit = "minutes" | "hours" | "days";
+  let customSnoozeFor = $state<string | null>(null);
+  let customSnoozeMode = $state<"datetime" | "duration">("duration");
+  let customSnoozeAt = $state("");
+  let customSnoozeAmount = $state(30);
+  let customSnoozeUnit = $state<SnoozeUnit>("minutes");
+
   /// "2026-11-20T09:00" in local time, for the custom snooze field.
   function localMoment(ms: number): string {
     const d = new Date(ms);
     const p = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   }
+
+  function openCustomSnooze(id: string) {
+    menuFor = null;
+    customSnoozeFor = id;
+    customSnoozeAt = localMoment(Date.now() + 60 * 60 * 1000);
+    customSnoozeAmount = 30;
+    customSnoozeUnit = "minutes";
+  }
+
+  const customSnoozeTarget = $derived.by(() => {
+    if (customSnoozeMode === "datetime") {
+      const parsed = Date.parse(customSnoozeAt);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    const n = Math.max(1, Math.min(999, Math.floor(Number(customSnoozeAmount) || 0)));
+    const mult = customSnoozeUnit === "days" ? 86_400_000 : customSnoozeUnit === "hours" ? 3_600_000 : 60_000;
+    return now + n * mult;
+  });
+
+  function applyCustomSnooze() {
+    if (!customSnoozeFor || customSnoozeTarget <= now) return;
+    update(inbox.snooze(inboxState, customSnoozeFor, customSnoozeTarget));
+    customSnoozeFor = null;
+  }
+
+  function formatSnoozePreview(ms: number): string {
+    if (ms <= now) return "";
+    const d = new Date(ms);
+    const today = new Date(now);
+    const sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+    return sameDay
+      ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleString(locale(), { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
   function update(next: InboxState) {
     inboxState = next;
     menuFor = null;
@@ -102,6 +149,7 @@
     branch: string | null;
     agent: string;
     status: Status;
+    compacting: boolean;
     started: string | null;
     path: string;
     unseen: boolean;
@@ -161,6 +209,7 @@
       branch: r.branch,
       agent: workspace.provider(r.provider)?.name ?? r.provider,
       status,
+      compacting: false,
       started: isActive(r.status) ? (r.turnStartedAt ?? r.createdAt) : r.updatedAt,
       path: r.workingDirectory,
       unseen: r.status === "completed" && unseen(key, r.updatedAt),
@@ -185,6 +234,7 @@
       branch: known?.branch || null,
       agent: s.name,
       status,
+      compacting: Boolean(s.compacting),
       started: status === "idle" ? (s.updated ?? s.started) : s.started,
       path: s.cwd,
       unseen: s.status === "done" && unseen(s.id, s.updated),
@@ -315,6 +365,7 @@
   /// a row that asks nothing shows how long ago instead.
   type Badge = { word: string; icon: string | null; tone: "amber" | "coral" | "blue" | "mint" | "muted"; detail?: string };
   function badgeOf(i: Item): Badge | null {
+    if (i.compacting) return { word: tr("Samenvatten…", "Compacting…"), icon: null, tone: "blue" };
     switch (i.status) {
       case "waiting": return { word: tr("Goedkeuring", "Approval"), icon: "shield-half", tone: "amber" };
       case "input": return { word: tr("Antwoord", "Answer"), icon: "message-circle-question", tone: "amber" };
@@ -343,6 +394,12 @@
   /// settles it, Ctrl+Shift+P pins it, F2 renames it, Ctrl+Shift+C copies where it works, and Ctrl+Shift+M / E / A open
   /// the composer's model picker (effort and access are in its footer).
   function keys(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      if (customSnoozeFor) { e.preventDefault(); customSnoozeFor = null; return; }
+      if (menuFor) { e.preventDefault(); menuFor = null; return; }
+      if (projectMenu) { e.preventDefault(); projectMenu = null; return; }
+      if (picked.size || selecting) { e.preventDefault(); picked = new Set(); selecting = false; return; }
+    }
     const typing = (e.target as HTMLElement | null)?.closest("input, textarea, [contenteditable]") !== null;
     const id = currentId;
     const row = byId.get(id);
@@ -378,6 +435,15 @@
   let projectMenu = $state<{ id: string; x: number; y: number } | null>(null);
   const shownIds = $derived([...list.flatMap((sec) => sec.rows.map((r) => r.row.id))]);
 
+  // Keep `picked` pruned when sessions disappear from the visible list.
+  $effect(() => {
+    if (!picked.size) return;
+    const visible = new Set(shownIds);
+    let dropped = false;
+    for (const id of picked) if (!visible.has(id)) { dropped = true; break; }
+    if (dropped) picked = new Set([...picked].filter((id) => visible.has(id)));
+  });
+
   function clickRow(e: MouseEvent, id: string) {
     if (e.ctrlKey || e.metaKey || (selecting && !e.shiftKey)) {
       const next = new Set(picked);
@@ -398,22 +464,118 @@
     agents.select(id);
   }
 
-  // Archive and delete are for sessions Nook runs that are not working; deleting asks first, as the Mac does.
+  // Archive and delete are for sessions Nook runs that are not working; deleting asks first, as the Mac does (AG-112).
   const pickedRuns = $derived([...picked].filter((id) => id.startsWith("run:")).map((id) => workspace.run(id)).filter((r): r is WorkspaceRun => !!r && !isActive(r.status)));
   const archivable = $derived(pickedRuns.filter((r) => !r.archived));
-  const deletable = $derived(pickedRuns.filter((r) => r.archived || inboxState.settled.includes(`run:${r.id}`)));
+  const deletable = $derived(pickedRuns);
 
   async function archivePicked() {
     for (const r of archivable) await workspace.act(() => workspaceApi.archive(r.id, true));
     picked = new Set();
+    selecting = false;
   }
 
   async function deletePicked() {
-    const list = deletable;
-    if (!(await ask({ question: tr("{n} afgehandelde of gearchiveerde sessies verwijderen?", "Delete {n} settled or archived sessions?", { n: list.length }), confirmTitle: tr("Verwijderen", "Delete") }))) return;
-    for (const r of list) await workspace.act(() => workspaceApi.remove(r.id));
+    const targets = deletable;
+    if (!targets.length) return;
+    const ok = await ask({
+      question: targets.length === 1
+        ? tr("1 sessie verwijderen?", "Delete 1 session?")
+        : tr("{n} sessies verwijderen?", "Delete {n} sessions?", { n: targets.length }),
+      detail: tr("De geselecteerde sessies worden definitief uit Nook verwijderd.", "The selected sessions will be permanently removed from Nook."),
+      confirmTitle: tr("Verwijderen", "Delete"),
+    });
+    if (!ok) return;
+    const removedIds = new Set(targets.map((r) => `run:${r.id}`));
+    for (const r of targets) await workspace.act(() => workspaceApi.remove(r.id));
+    let st = inboxState;
+    for (const id of removedIds) {
+      st = inbox.unpin(inbox.unsettle(inbox.wake(st, id), id), id);
+    }
+    update(st);
+    if (removedIds.has(currentId)) agents.select(null);
     picked = new Set();
+    selecting = false;
   }
+
+  // Dropping files onto any session row (`AgentInboxList` on the Mac, AG-112): highlight the target row, open the
+  // session, and pass the dropped paths into its composer.
+  let dropTarget = $state<string | null>(null);
+
+  function rowAtPoint(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y);
+    return el?.closest<HTMLElement>("[data-session-row]")?.dataset.sessionRow ?? null;
+  }
+
+  function formatDroppedPaths(paths: string[]): string {
+    return paths.map((p) => (/\s/.test(p) ? `"${p}"` : p)).join(" ");
+  }
+
+  function handleDropOnRow(id: string, rawPaths: string[]) {
+    const paths = [...new Set(rawPaths.map((p) => p.trim()).filter(Boolean))];
+    if (!paths.length) return;
+    agents.select(id);
+    if (id.startsWith("run:")) {
+      composerInbox.add(formatDroppedPaths(paths), id);
+    } else {
+      agents.queueDroppedFiles(id, paths);
+    }
+    window.dispatchEvent(new CustomEvent("nook-agents-drop-files", { detail: { id, paths } }));
+  }
+
+  function pathsFromDataTransfer(dt: DataTransfer | null): string[] {
+    if (!dt) return [];
+    const found: string[] = [];
+    for (const f of Array.from(dt.files ?? [])) {
+      const path = (f as File & { path?: string }).path || f.name;
+      if (path) found.push(path);
+    }
+    if (!found.length) {
+      const uriList = dt.getData("text/uri-list");
+      if (uriList) {
+        for (const line of uriList.split(/\r?\n/)) {
+          const t = line.trim();
+          if (!t || t.startsWith("#")) continue;
+          found.push(t.startsWith("file://") ? decodeURIComponent(t.replace(/^file:\/\//, "")) : t);
+        }
+      }
+    }
+    return found;
+  }
+
+  $effect(() => {
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    try {
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          if (!active) return;
+          const payload = event.payload;
+          const dpr = window.devicePixelRatio || 1;
+          if (payload.type === "enter" || payload.type === "over") {
+            dropTarget = rowAtPoint(payload.position.x / dpr, payload.position.y / dpr);
+          } else if (payload.type === "drop") {
+            const target = rowAtPoint(payload.position.x / dpr, payload.position.y / dpr) ?? dropTarget;
+            dropTarget = null;
+            if (target && payload.paths?.length) handleDropOnRow(target, payload.paths);
+          } else {
+            dropTarget = null;
+          }
+        })
+        .then((fn) => {
+          if (active) unlisten = fn;
+          else fn();
+        })
+        .catch(() => {});
+    } catch {
+      // Running outside Tauri webview (e.g. unit tests) — HTML5 drag handlers remain active.
+    }
+    return () => {
+      active = false;
+      dropTarget = null;
+      unlisten?.();
+    };
+  });
 
   /// Settings › Coding agents, from the empty list.
   function setUpAgents() {
@@ -427,8 +589,8 @@
 <div class="tab" class:compact class:docked>
   <aside use:dock class:docked>
     <div class="head">
-      <!-- The Mac's head of the session list: a quiet search (`NookSearchField`, ghost), then the view menu, add project
-           and new session as header icons (`PanelHeaderIcon`), lit only while what they stand for is on. -->
+      <!-- The Mac's head of the session list: a quiet search (`NookSearchField`, ghost), then the view menu, permissions,
+           add project and new session as header icons (`PanelHeaderIcon`), lit only while what they stand for is on. -->
       <label class="search"><Ico name="search" size={15} /><input placeholder={tr("Zoek in sessies", "Search sessions")} aria-label={tr("Zoek in sessies", "Search sessions")} bind:value={query} /></label>
       <Dropdown width={240} below align="right" label={tr("Filteren en groeperen", "Filter and group")}>
         {#snippet trigger({ toggle, open })}
@@ -441,8 +603,16 @@
             onclick={() => setView({ ...view, projectFolders: !view.projectFolders })} />
           <DropdownRow symbol="zap" title={tr("Aan het werk apart tonen", "Show working separately")} trailing={view.showWorking ? "✓" : undefined} chosen={view.showWorking}
             onclick={() => setView({ ...view, showWorking: !view.showWorking })} />
+          <div class="dd-sep"></div>
+          <DropdownRow symbol="square-check" title={tr("Selecteer…", "Select…")} chosen={selecting}
+            onclick={() => { selecting = !selecting; if (!selecting) picked = new Set(); }} />
+          <DropdownRow symbol="shield-check" title={tr("Opgeslagen regels…", "Granted rules…")}
+            onclick={() => (permissionsSheet = { project: null, tab: "rules" })} />
+          <DropdownRow symbol="history" title={tr("Geschiedenis van goedkeuringen…", "Approval log…")}
+            onclick={() => (permissionsSheet = { project: null, tab: "audit" })} />
         {/snippet}
       </Dropdown>
+      <button class="head-icon" class:on={!!permissionsSheet} title={tr("Toestemmingen", "Permissions")} aria-label={tr("Toestemmingen", "Permissions")} onclick={() => (permissionsSheet = { project: null, tab: "rules" })}><Ico name="shield-check" size={16} /></button>
       <button class="head-icon" title={tr("Project toevoegen", "Add project")} aria-label={tr("Project toevoegen", "Add project")} onclick={addProject}><Ico name="folder-plus" size={16} /></button>
       <button class="head-icon" class:on={selected.kind === "new"} title={tr("Nieuwe sessie", "New session")} aria-label={tr("Nieuwe sessie", "New session")} onclick={() => agents.select("new")}><Ico name="square-pen" size={16} /></button>
     </div>
@@ -452,12 +622,24 @@
         {#if i}
           {@const badge = kind === "snoozed" || entry.woke ? null : badgeOf(i)}
           {@const meta = !!i.branch || i.added + i.removed > 0}
-          <div class="rowwrap">
+          <div
+            class="rowwrap"
+            data-session-row={i.id}
+            role="presentation"
+            ondragover={(e) => { if (e.dataTransfer?.types?.length) { e.preventDefault(); dropTarget = i.id; } }}
+            ondragleave={(e) => { if (dropTarget === i.id && !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) dropTarget = null; }}
+            ondrop={(e) => { e.preventDefault(); dropTarget = null; const paths = pathsFromDataTransfer(e.dataTransfer); if (paths.length) handleDropOnRow(i.id, paths); }}
+          >
             <!-- A session row (`AgentListRow` in `AgentRowLayout`): the project's badge and name with the status or how long
                  ago; the session's name; its branch with the agent's logo at the end (beside the name when there is no branch). -->
-            <button class="row" class:on={currentId === i.id} class:receded={entry.receded} class:picked={picked.has(i.id)}
+            <button class="row" class:on={currentId === i.id} class:receded={entry.receded} class:picked={picked.has(i.id)} class:drop-target={dropTarget === i.id}
               onclick={(e) => clickRow(e, i.id)} oncontextmenu={(e) => { if (!i.scratch && i.root) { e.preventDefault(); projectMenu = { id: i.id, x: e.clientX, y: e.clientY }; } }}>
               <span class="line0">
+                {#if selecting || picked.size > 0}
+                  <span class="sel-box" class:checked={picked.has(i.id)} aria-hidden="true">
+                    <Ico name={picked.has(i.id) ? "square-check" : "circle"} size={13} />
+                  </span>
+                {/if}
                 {#if i.scratch}
                   <span class="badge-mark dashed"><Ico name="square-dashed" size={12} stroke={2.4} /></span>
                   <span class="folder" title={i.path}>{tr("Geen project", "No project")}</span>
@@ -467,13 +649,17 @@
                 {/if}
                 <span class="spacer"></span>
                 <span class="slot">
-                  {#if kind === "snoozed"}<span class="status muted"><Ico name="bell-off" size={11} stroke={2.5} />{tr("tot {time}", "until {time}", { time: new Date(inboxState.snoozed[i.id]).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })}</span>
+                  {#if dropTarget === i.id}<span class="status blue"><Ico name="file" size={11} stroke={2.5} />{tr("Zet neer", "Drop here")}</span>
+                  {:else if kind === "snoozed"}<span class="status muted"><Ico name="bell-off" size={11} stroke={2.5} />{tr("tot {time}", "until {time}", { time: new Date(inboxState.snoozed[i.id]).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) })}</span>
                   {:else if entry.woke}<span class="status amber"><Ico name="alarm-clock" size={11} stroke={2.5} />{tr("Wakker", "Awake")}</span>
                   {:else if badge}<span class="status {badge.tone}">{#if badge.icon}<Ico name={badge.icon} size={11} stroke={2.5} />{:else}<span class="pulse"></span>{/if}{badge.word}{#if badge.detail}<span class="num">{badge.detail}</span>{/if}</span>
                   {:else}<span class="ago">{ago(i.started, now)}</span>{/if}
                 </span>
               </span>
               <span class="line1"><span class="title">{i.title}</span>{#if !meta}<span class="spacer"></span><span class="logo"><AgentMark agent={i.agent} size={14} /></span>{/if}</span>
+              {#if i.compacting}
+                <span class="compacting-line">{tr("Het gesprek wordt samengevat…", "Compacting the conversation…")}</span>
+              {/if}
               {#if meta}
                 <!-- The branch, then what the session changed ("+120 −8", `changeCount`), then the agent's logo. -->
                 <span class="line2">{#if i.branch}<span class="branch">{i.branch}</span>{/if}<span class="spacer"></span>{#if i.added + i.removed > 0}<span class="lines" class:dim={i.status === "finished"}><span class="plus">+{i.added}</span><span class="minus">−{i.removed}</span></span>{/if}<span class="logo"><AgentMark agent={i.agent} size={14} /></span></span>
@@ -503,11 +689,12 @@
                 {#each snoozeMenu(loadOptions(), new Date(now)) as c (optionId(c.option))}
                   <button role="menuitem" onclick={() => update(inbox.snooze(inboxState, i.id, c.end.getTime()))}>{optionLabel(c.option)}</button>
                 {/each}
-                <!-- "Custom…" (`SnoozeMenuItems`): a moment of your own choosing. -->
-                <form class="custom" onsubmit={(e) => { e.preventDefault(); const at = Date.parse(customSnooze); if (at > now) update(inbox.snooze(inboxState, i.id, at)); }}>
-                  <input type="datetime-local" bind:value={customSnooze} min={localMoment(now)} aria-label={tr("Snooze tot", "Snooze until")} />
-                  <button type="submit" disabled={!customSnooze || Date.parse(customSnooze) <= now}>{tr("Snooze", "Snooze")}</button>
-                </form>
+                <hr />
+                <!-- "Pick a time…" (`SnoozeMenuItems` / `CustomSnoozeSheet`): custom duration or exact date & time. -->
+                <button role="menuitem" class="pick-time" onclick={() => openCustomSnooze(i.id)}>
+                  <Ico name="clock" size={13} />
+                  {tr("Kies een tijdstip…", "Pick a time…")}
+                </button>
               </div>
             {/if}
           </div>
@@ -604,6 +791,7 @@
         <button role="menuitem" onclick={() => { projectMenu = null; workspaceApi.toggleFavoriteProject(it.root).then(() => workspace.refresh()); }}>{(workspace.settings?.favoriteProjects ?? []).includes(it.root) ? tr("Verwijder uit favorieten", "Remove from favorites") : tr("Voeg toe aan favorieten", "Add to favorites")}</button>
         <button role="menuitem" onclick={() => { projectMenu = null; revealItemInDir(it.root).catch(() => {}); }}>{tr("Toon in Verkenner", "Show in Explorer")}</button>
         <button role="menuitem" onclick={() => { projectMenu = null; navigator.clipboard.writeText(it.root).catch(() => {}); }}>{tr("Kopieer pad", "Copy path")}</button>
+        <button role="menuitem" onclick={() => { projectMenu = null; permissionsSheet = { project: it.root, tab: "rules" }; }}>{tr("Opgeslagen regels…", "Granted rules…")}</button>
         <hr />
         <button role="menuitem" onclick={() => { projectMenu = null; selecting = true; picked = new Set([it.id]); }}>{tr("Selecteer…", "Select…")}</button>
       </div>
@@ -628,6 +816,50 @@
     {/if}
   </section>
   {#if agents.selectedId === "usage"}<UsageModal onclose={() => agents.select(behindUsage)} />{/if}
+  {#if permissionsSheet}
+    <GrantedRulesSheet project={permissionsSheet.project} initialTab={permissionsSheet.tab ?? "rules"} onclose={() => (permissionsSheet = null)} />
+  {/if}
+  {#if customSnoozeFor}
+    <div class="snooze-backdrop" role="presentation" onclick={() => (customSnoozeFor = null)}>
+      <div class="snooze-sheet" role="dialog" aria-modal="true" aria-label={tr("Snooze tot", "Snooze until")} tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+        <form class="snooze-form" onsubmit={(e) => { e.preventDefault(); applyCustomSnooze(); }}>
+          <div class="snooze-head">
+            <h3>{tr("Snooze tot", "Snooze until")}</h3>
+            <span class="spacer"></span>
+            <button type="button" class="head-icon" onclick={() => (customSnoozeFor = null)} aria-label={tr("Sluit", "Close")}><Ico name="x" size={15} /></button>
+          </div>
+          <div class="snooze-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={customSnoozeMode === "duration"} class:on={customSnoozeMode === "duration"} onclick={() => (customSnoozeMode = "duration")}>{tr("Duur", "Duration")}</button>
+            <button type="button" role="tab" aria-selected={customSnoozeMode === "datetime"} class:on={customSnoozeMode === "datetime"} onclick={() => (customSnoozeMode = "datetime")}>{tr("Datum en tijd", "Date & time")}</button>
+          </div>
+          {#if customSnoozeMode === "duration"}
+            <div class="snooze-row">
+              <input type="number" min="1" max="999" bind:value={customSnoozeAmount} aria-label={tr("Aantal", "Amount")} />
+              <select bind:value={customSnoozeUnit} aria-label={tr("Eenheid", "Unit")}>
+                <option value="minutes">{tr("minuten", "minutes")}</option>
+                <option value="hours">{tr("uur", "hours")}</option>
+                <option value="days">{tr("dagen", "days")}</option>
+              </select>
+            </div>
+          {:else}
+            <div class="snooze-row">
+              <input type="datetime-local" bind:value={customSnoozeAt} min={localMoment(now)} aria-label={tr("Snooze tot", "Snooze until")} />
+            </div>
+          {/if}
+          {#if customSnoozeTarget > now}
+            <p class="snooze-preview">{tr("Gesnoozed tot {time}", "Snoozed until {time}", { time: formatSnoozePreview(customSnoozeTarget) })}</p>
+          {:else}
+            <p class="snooze-preview invalid">{tr("Kies een tijdstip in de toekomst.", "Choose a time in the future.")}</p>
+          {/if}
+          <div class="snooze-foot">
+            <span class="spacer"></span>
+            <button type="button" class="ghost" onclick={() => (customSnoozeFor = null)}>{tr("Annuleer", "Cancel")}</button>
+            <button type="submit" class="primary" disabled={customSnoozeTarget <= now}>{tr("Snooze", "Snooze")}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -656,9 +888,8 @@
   .menu { position: absolute; right: var(--space-8); top: var(--space-32); z-index: 20; min-width: 180px; display: flex; flex-direction: column; padding: var(--space-4); background: var(--menu); border: 1px solid var(--line2); border-radius: var(--radius-card); box-shadow: var(--shadow-popover); }
   .menu button { text-align: left; background: transparent; border: 0; border-radius: var(--radius-chip); padding: var(--space-6) var(--space-8); font: var(--text-body); }
   .menu button:hover { background: var(--smoke); }
-  .custom { display: flex; gap: var(--space-4); padding: var(--space-4); border-top: 1px solid var(--line2); margin-top: var(--space-4); }
-  .custom input { flex: 1; min-width: 0; font: var(--text-detail); padding: var(--space-4) var(--space-6); }
-  .custom button { flex: none; text-align: center; }
+  .menu button.pick-time { display: inline-flex; align-items: center; gap: var(--space-6); color: var(--paper); }
+  .dd-sep { height: 1px; background: var(--line2); margin: var(--space-4) var(--space-6); }
   .project { display: flex; align-items: center; gap: var(--space-6); width: 100%; background: transparent; border: 0; border-radius: var(--radius-chip); height: 32px; padding: 0 var(--space-12); font: var(--text-emphasis); color: var(--text-strong); text-align: left; margin-top: var(--space-8); }
   .project:hover { background: var(--row-hover); color: var(--paper); }
   .project.ask .pname { color: var(--paper); }
@@ -669,8 +900,11 @@
   .row { display: flex; flex-direction: column; text-align: left; background: transparent; border: 0; border-radius: var(--radius-chip); padding: var(--space-8) calc(var(--space-8) + var(--space-2)); margin: 0; min-width: 0; }
   .row:hover { background: var(--row-hover); }
   .row.on { background: var(--row-selected); }
+  .row.drop-target { background: color-mix(in srgb, var(--blue) 16%, transparent); outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
   .row.slim { padding: var(--space-6) calc(var(--space-8) + var(--space-2)); }
   .line0 { display: flex; align-items: center; gap: var(--space-4); height: 20px; font: var(--text-detail); color: var(--text3); min-width: 0; }
+  .sel-box { display: inline-flex; align-items: center; color: var(--text3); margin-right: var(--space-2); flex: none; }
+  .sel-box.checked { color: var(--paper); }
   .badge-mark { display: inline-flex; padding-right: var(--space-2); }
   .folder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .slot { display: inline-flex; align-items: center; flex: none; }
@@ -685,12 +919,13 @@
   .status.muted { color: var(--text3); }
   .pulse { width: 6px; height: 6px; margin: 0 var(--space-2); border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent); }
   .line1 { display: flex; align-items: center; gap: var(--space-6); height: 20px; margin-top: var(--space-4); min-width: 0; }
+  .compacting-line { margin-top: var(--space-2); font: var(--text-detail); color: var(--blue); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .title { font: var(--text-emphasis); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row.receded .title { font: var(--text-body); color: var(--text2); }
   .line2 { display: flex; align-items: center; gap: var(--space-6); height: 16px; margin-top: var(--space-2); font: var(--text-detail); color: var(--text3); min-width: 0; }
   .branch { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row.picked { background: color-mix(in srgb, var(--iris) 14%, transparent); }
-  .selection { display: flex; flex-direction: column; gap: var(--space-8); padding: calc(var(--space-8) + var(--space-2)); border: 1px solid var(--line2); border-radius: var(--radius-panel); background: var(--graphite); }
+  .selection { display: flex; flex-direction: column; gap: var(--space-8); padding: calc(var(--space-8) + var(--space-2)); border: 1px solid var(--line2); border-radius: var(--radius-panel); background: var(--graphite); box-shadow: var(--shadow-popover); }
   .sel-head, .sel-actions { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
   .sel-head strong { font: var(--text-emphasis); color: var(--paper); }
   .sel-actions button { display: inline-flex; align-items: center; gap: var(--space-4); font: var(--text-control); }
@@ -699,6 +934,19 @@
   .menu.ctx { position: fixed; right: auto; z-index: 50; min-width: 220px; }
   .ctx-head { padding: var(--space-4) var(--space-8); font: var(--text-label); color: var(--text3); }
   .menu hr { border: 0; border-top: 1px solid var(--line2); margin: var(--space-4) 0; width: 100%; }
+  .snooze-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: var(--space-24); background: color-mix(in srgb, var(--canvas) 55%, transparent); }
+  .snooze-sheet { width: min(360px, 100%); padding: var(--space-16); background: var(--surface); border: 1px solid var(--line2); border-radius: var(--radius-sheet); box-shadow: var(--shadow-popover); }
+  .snooze-form { display: flex; flex-direction: column; gap: var(--space-12); }
+  .snooze-head { display: flex; align-items: center; gap: var(--space-8); }
+  .snooze-head h3 { margin: 0; font: var(--text-title); color: var(--paper); }
+  .snooze-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--line2); border-radius: var(--radius-control); background: var(--graphite); }
+  .snooze-tabs button { height: 28px; border: 0; border-radius: var(--radius-chip); background: transparent; font: var(--text-control); color: var(--text2); }
+  .snooze-tabs button.on { background: var(--smoke); color: var(--paper); }
+  .snooze-row { display: flex; gap: var(--space-8); align-items: center; }
+  .snooze-row input, .snooze-row select { flex: 1; min-width: 0; height: 34px; padding: 0 var(--space-12); border: 1px solid var(--line2); border-radius: var(--radius-control); background: var(--graphite); color: var(--paper); font: var(--text-body); }
+  .snooze-preview { margin: 0; font: var(--text-detail); color: var(--text2); }
+  .snooze-preview.invalid { color: var(--coral); }
+  .snooze-foot { display: flex; align-items: center; gap: var(--space-8); }
   .favicon { width: 18px; height: 18px; object-fit: contain; border-radius: calc(var(--radius-chip) * 0.75); }
   .badge-mark.dashed { width: 18px; justify-content: center; color: var(--text3); }
   .lines { display: inline-flex; gap: var(--space-4); font: var(--text-caption); font-family: var(--mono); font-weight: 400; white-space: nowrap; }

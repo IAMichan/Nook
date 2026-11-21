@@ -9,7 +9,53 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
+
+/// What a hook event means for an ongoing conversation compaction (`HookCompaction.Change` on macOS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactionChange {
+    /// The agent started compacting (`PreCompact` / `PreCompress` / `preCompact`).
+    Start,
+    /// Compaction finished (`PostCompact` / `postCompact`), or the agent moved on to another event.
+    End,
+}
+
+/// After this duration a compaction with no explicit end hook is no longer shown (`HookCompaction.timeout` on macOS).
+pub const COMPACTION_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Hook event names Nook installs for compaction per agent (`HookCompaction.*Events` on macOS).
+pub const CLAUDE_COMPACT_EVENTS: &[&str] = &["PreCompact", "PostCompact"];
+pub const CODEX_COMPACT_EVENTS: &[&str] = &["PreCompact", "PostCompact"];
+pub const GEMINI_COMPACT_EVENTS: &[&str] = &["PreCompress"];
+pub const CURSOR_COMPACT_EVENTS: &[&str] = &["preCompact"];
+pub const COPILOT_COMPACT_EVENTS: &[&str] = &["preCompact"];
+
+/// Maps other agents' compaction hook names to Claude Code's canonical names (`HookCompaction.canonical` on macOS).
+pub fn canonical_compaction_event(name: &str) -> Option<&'static str> {
+    match name {
+        "PreCompact" | "PreCompress" | "preCompact" => Some("PreCompact"),
+        "PostCompact" | "postCompact" => Some("PostCompact"),
+        _ => None,
+    }
+}
+
+/// Whether a normalized hook event starts or ends a compaction (`HookCompaction.change(kind:)` on macOS).
+pub fn compaction_change(kind: &str) -> CompactionChange {
+    if kind == "PreCompact" { CompactionChange::Start } else { CompactionChange::End }
+}
+
+/// Whether a compaction that started at `since` is still live at `now` (`HookCompaction.isLive` on macOS).
+pub fn is_compaction_live(since: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
+    let Some(since) = since else { return false };
+    let elapsed_ms = (now - since).num_milliseconds();
+    elapsed_ms >= 0 && (elapsed_ms as u64) < (COMPACTION_TIMEOUT.as_millis() as u64)
+}
+
+/// Whether a hooks JSON object is missing Nook's hook for any of `events` (`HookCompaction.lacks` on macOS).
+pub fn lacks_compaction_hooks(events: &[&str], hooks: &Map<String, Value>, ours: impl Fn(&Value) -> bool) -> bool {
+    events.iter().any(|event| hooks.get(*event).map(|v| !ours(v)).unwrap_or(true))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -238,6 +284,8 @@ pub fn fill_fields(e: &mut Value, agent: &str, env: &dyn Fn(&str) -> Option<Stri
     let stop = first_text(&[e.get("hook_event_name")]);
     if matches!(stop, Some("stop") | Some("Stop")) && first_text(&[e.get("status")]) == Some("error") {
         e["hook_event_name"] = json!("StopFailure");
+    } else if let Some(canonical) = stop.and_then(canonical_compaction_event) {
+        e["hook_event_name"] = json!(canonical);
     }
 }
 
@@ -360,5 +408,31 @@ mod tests {
             fallback_statusline(r#"{"model":{"display_name":"Opus"},"rate_limits":{"five_hour":{"used_percentage":34.6}}}"#),
             "Opus · 5u 34%"
         );
+    }
+
+    #[test]
+    fn compaction_events_start_end_and_timeout() {
+        for name in ["PreCompact", "PreCompress", "preCompact"] {
+            assert_eq!(canonical_compaction_event(name), Some("PreCompact"));
+            assert_eq!(compaction_change(canonical_compaction_event(name).unwrap()), CompactionChange::Start);
+        }
+        assert_eq!(canonical_compaction_event("postCompact"), Some("PostCompact"));
+        for kind in ["PostCompact", "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Interrupt"] {
+            assert_eq!(compaction_change(kind), CompactionChange::End);
+        }
+        let start = chrono::DateTime::from_timestamp(1_000, 0).unwrap();
+        assert!(!is_compaction_live(None, start));
+        assert!(is_compaction_live(Some(start), start + chrono::Duration::seconds(60)));
+        assert!(!is_compaction_live(Some(start), start + chrono::Duration::seconds(300)));
+
+        let mut hooks = Map::new();
+        hooks.insert("PreCompact".into(), json!([{"hooks": [{"command": "nook-hook --agent claude-code"}]}]));
+        assert!(lacks_compaction_hooks(CLAUDE_COMPACT_EVENTS, &hooks, |v| v.to_string().contains("nook-hook")));
+        hooks.insert("PostCompact".into(), json!([{"hooks": [{"command": "nook-hook --agent claude-code"}]}]));
+        assert!(!lacks_compaction_hooks(CLAUDE_COMPACT_EVENTS, &hooks, |v| v.to_string().contains("nook-hook")));
+
+        let mut gemini = json!({"hook_event_name": "PreCompress", "session_id": "g1"});
+        fill_fields(&mut gemini, "gemini", &no_env);
+        assert_eq!(gemini["hook_event_name"], "PreCompact");
     }
 }

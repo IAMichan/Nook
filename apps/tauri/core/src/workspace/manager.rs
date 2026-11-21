@@ -581,6 +581,8 @@ impl Manager {
             pending_handoff: None,
             conversation: None,
             pending_rollback: None,
+            goal: None,
+            compacting: false,
         };
         if let (Some(path), Some(git)) = (&worktree, &self.git) {
             // De eerste momentopname, voor de agent iets doet: "terug naar hier" bij het eerste bericht.
@@ -705,6 +707,8 @@ impl Manager {
             pending_handoff: None,
             conversation: None,
             pending_rollback: None,
+            goal: None,
+            compacting: false,
         };
         let mut out = Out::default();
         {
@@ -781,6 +785,31 @@ impl Manager {
         if clean.is_empty() {
             return Err(tr("Leeg bericht.", "Empty message.").into());
         }
+        // `/goal <text>`, `/goal clear`, or empty `/goal` (AG-67): updates the session's goal strip immediately.
+        if let Some(cmd) = super::context_usage::parse_goal_command(&clean) {
+            let next = match cmd {
+                super::context_usage::GoalCommand::Set(obj) => Some(obj),
+                super::context_usage::GoalCommand::Clear => None,
+            };
+            let saved = self.set_goal(id, next)?;
+            let note = match saved {
+                Some(ref goal) => trf("Doel ingesteld: {goal}", "Goal set: {goal}", &[("goal", goal)]),
+                None => tr("Doel gewist.", "Goal cleared.").into(),
+            };
+            let mut out = Out::default();
+            {
+                let mut s = self.lock();
+                Self::load_timeline(&self.store, &mut s, id);
+                Self::append(
+                    &mut s,
+                    id,
+                    RunEvent::new(EventKind::System, note).with_tool(super::context_usage::GOAL_TOOL),
+                    &mut out,
+                );
+            }
+            self.emit(out);
+            return Ok(());
+        }
         let (run, busy) = {
             let mut s = self.lock();
             // Je gaat zelf verder: wat achter een fout of stop wachtte, gaat na deze beurt weer door.
@@ -818,7 +847,13 @@ impl Manager {
             Some(handoff) => format!("{handoff}\n\n{clean}"),
             None => clean.clone(),
         };
+        let compacting = super::context_usage::is_compact_command(&clean);
         self.launch_turn(id, prompt, executable, true);
+        if compacting {
+            let mut out = Out::default();
+            Self::compaction_started(&mut self.lock(), id, &mut out);
+            self.emit(out);
+        }
         Ok(())
     }
 
@@ -1705,19 +1740,15 @@ impl Manager {
             }
             ClaudeEvent::Notice(text) => {
                 if text == "compact" {
-                    Self::append(
-                        s,
-                        id,
-                        RunEvent::new(
-                            EventKind::System,
-                            tr(
-                                "De agent heeft het gesprek samengevat om ruimte te maken in de context.",
-                                "The agent summarized the conversation to make room in the context.",
-                            ),
-                        ),
-                        out,
-                    );
+                    Self::compaction_finished(s, id, out);
                 }
+            }
+            ClaudeEvent::CompactionStarted => Self::compaction_started(s, id, out),
+            ClaudeEvent::CompactionFailed(reason) => Self::compaction_failed(s, id, reason.as_deref(), out),
+            ClaudeEvent::Goal(goal) => {
+                let normalized = super::context_usage::normalize_goal(goal.as_deref());
+                Self::update(s, id, |r| r.goal = normalized);
+                out.push(ManagerEvent::Changed);
             }
             ClaudeEvent::RateLimits(info) => {
                 if let Some(event) = limits::claude_event(&info) {
@@ -1727,6 +1758,86 @@ impl Manager {
             ClaudeEvent::ChainEntry(uuid) => Self::note_conversation_head(s, id, &uuid),
         }
         (false, false)
+    }
+
+    /// Marks compaction as actively running on the session and appends one live compaction timeline row (`CompactionProgress.start`).
+    fn compaction_started(s: &mut Inner, id: Uuid, out: &mut Out) {
+        let already = s.events.get(&id).and_then(|e| super::context_usage::running_compaction_id(e)).is_some();
+        Self::update(s, id, |r| r.compacting = true);
+        if !already {
+            let text = tr(
+                "De agent heeft het gesprek samengevat om ruimte te maken in de context.",
+                "The agent summarized the conversation to make room in the context.",
+            );
+            Self::append(
+                s,
+                id,
+                RunEvent::new(EventKind::System, text)
+                    .with_tool(super::context_usage::COMPACTION_TOOL)
+                    .with_state(EventState::Running),
+                out,
+            );
+        }
+        out.push(ManagerEvent::Changed);
+    }
+
+    /// Completes a running compaction (or records a done compaction row without duplicating consecutive ones) and clears
+    /// stale pre-compaction context usage (`WorkspaceManager+Compaction.swift`).
+    fn compaction_finished(s: &mut Inner, id: Uuid, out: &mut Out) {
+        if let Some(t) = s.turns.get_mut(&id) {
+            t.last_context = None;
+        }
+        Self::update(s, id, |r| {
+            r.compacting = false;
+            r.usage.context_tokens = None;
+        });
+        let text = tr(
+            "De agent heeft het gesprek samengevat om ruimte te maken in de context.",
+            "The agent summarized the conversation to make room in the context.",
+        );
+        let running_id = s.events.get(&id).and_then(|e| super::context_usage::running_compaction_id(e));
+        if let Some(event_id) = running_id {
+            Self::mutate(s, id, event_id, out, |e| {
+                e.kind = EventKind::System;
+                e.text = text.into();
+                e.state = Some(EventState::Done);
+            });
+        } else {
+            let duplicate = s
+                .events
+                .get(&id)
+                .and_then(|e| e.last())
+                .is_some_and(|e| super::context_usage::is_compaction_event(e) && e.state == Some(EventState::Done));
+            if !duplicate {
+                Self::append(
+                    s,
+                    id,
+                    RunEvent::new(EventKind::System, text)
+                        .with_tool(super::context_usage::COMPACTION_TOOL)
+                        .with_state(EventState::Done),
+                    out,
+                );
+            }
+        }
+        out.push(ManagerEvent::Changed);
+    }
+
+    /// Turns any running compaction row into a failed error row and clears `compacting` (`CompactionProgress.fail`).
+    fn compaction_failed(s: &mut Inner, id: Uuid, reason: Option<&str>, out: &mut Out) {
+        Self::update(s, id, |r| r.compacting = false);
+        let running_id = s.events.get(&id).and_then(|e| super::context_usage::running_compaction_id(e));
+        if let Some(event_id) = running_id {
+            let clean = reason.map(str::trim).filter(|m| !m.is_empty());
+            let message = clean
+                .map(str::to_string)
+                .unwrap_or_else(|| tr("Samenvatten van het gesprek gestopt.", "Compacting the conversation stopped.").into());
+            Self::mutate(s, id, event_id, out, |e| {
+                e.kind = EventKind::Error;
+                e.text = message;
+                e.state = Some(EventState::Failed);
+            });
+        }
+        out.push(ManagerEvent::Changed);
     }
 
     fn handle_codex(s: &mut Inner, id: Uuid, event: CodexEvent, out: &mut Out) -> bool {
@@ -1992,6 +2103,13 @@ impl Manager {
             let mut s = self.lock();
             let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
             let stopping = run.status == RunStatus::Stopped;
+            if run.compacting {
+                if run.status == RunStatus::Completed {
+                    Self::compaction_finished(&mut s, id, &mut out);
+                } else {
+                    Self::compaction_failed(&mut s, id, run.status_detail.as_deref(), &mut out);
+                }
+            }
             Self::settle_open_work(&mut s, id, stopping, &mut out);
             if matches!(run.status, RunStatus::Failed | RunStatus::Stopped) {
                 if let Some(q) = s.queues.get_mut(&id).filter(|q| !q.is_empty()) {
@@ -2288,6 +2406,43 @@ impl Manager {
         Self::update(&mut s, id, |r| r.title = clean);
         drop(s);
         self.emit(Out(vec![ManagerEvent::Changed]));
+    }
+
+    /// Sets or clears a session's active goal (`/goal`, AG-67). Empty/whitespace clears it.
+    pub fn set_goal(&self, id: Uuid, goal: Option<String>) -> Result<Option<String>, String> {
+        let normalized = super::context_usage::normalize_goal(goal.as_deref());
+        let mut s = self.lock();
+        if !s.runs.iter().any(|r| r.id == id) {
+            return Err(tr("Deze sessie bestaat niet meer.", "This session no longer exists.").into());
+        }
+        Self::update(&mut s, id, |r| {
+            r.goal = normalized.clone();
+            r.updated_at = Utc::now();
+        });
+        drop(s);
+        self.emit(Out(vec![ManagerEvent::Changed]));
+        Ok(normalized)
+    }
+
+    /// Computes the context window breakdown and compaction pressure for a session (AG-65 & AG-66).
+    pub fn context_usage(&self, id: Uuid) -> Option<super::context_usage::ContextUsage> {
+        let (mut run, events) = {
+            let mut s = self.lock();
+            Self::load_timeline(&self.store, &mut s, id);
+            let run = s.runs.iter().find(|r| r.id == id)?.clone();
+            let live_context = s.turns.get(&id).filter(|t| !t.finished).and_then(|t| t.last_context);
+            let mut run = run;
+            if let Some(live) = live_context {
+                run.usage.context_tokens = Some(live);
+            }
+            let events = s.events.get(&id).cloned().unwrap_or_default();
+            (run, events)
+        };
+        // If context_window is not yet reported on an active compaction turn, keep computing when window is known.
+        if run.usage.context_window.is_none() && run.usage.context_tokens.is_some() {
+            run.usage.context_window = None;
+        }
+        super::context_usage::compute(&run, &events, super::context_usage::DEFAULT_AUTO_COMPACT_TOKENS)
     }
 
     pub fn set_archived(&self, id: Uuid, archived: bool) {
@@ -2670,6 +2825,8 @@ impl Manager {
             r.pending_handoff = None;
             r.conversation = None;
             r.pending_rollback = None;
+            r.goal = None;
+            r.compacting = false;
         });
         let mut out = Out::default();
         let event = if cleared {
@@ -3279,7 +3436,9 @@ impl Manager {
             copy.pending_handoff = None;
             copy.conversation = None;
             copy.pending_rollback = None;
+            copy.compacting = false;
             if !native {
+                copy.goal = None;
                 copy.provider_session_id = None;
                 copy.pending_handoff =
                     super::handoff::render(&events, 0, source.provider.display_name(), super::handoff::TOKEN_BUDGET).map(|h| h.text);
@@ -3445,6 +3604,85 @@ read rest
             result_line(&TurnUsage { duration_seconds: Some(3.0), input_tokens: Some(1200), ..Default::default() }, 1),
             "3s · 1,2k tokens · 1 geweigerd"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn goal_commands_compaction_and_context_usage() {
+        let root = std::env::temp_dir().join(format!("nook-manager-goal-{}", Uuid::new_v4()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let hooks = || Hooks {
+            executable: Box::new(|_| Some("/usr/bin/true".into())),
+            account_environment: Box::new(|_| BTreeMap::new()),
+            bridge: Box::new(|| None),
+            worktree_root: Box::new(|| "/tmp".into()),
+            auto_resume_limited: Box::new(|| false),
+        };
+        let manager = Manager::new(root.join("store"), hooks(), tokio::runtime::Handle::current(), |_| {});
+        let id = manager
+            .adopt(
+                RunProvider::Claude,
+                "sess-1",
+                "claude",
+                project.to_str().unwrap(),
+                "Goal test",
+                vec![(EventKind::User, "Hello world".into()), (EventKind::Assistant, "Hi there!".into())],
+                false,
+            )
+            .unwrap();
+
+        // `/goal <text>` sets and persists the goal.
+        manager.send(id, "/goal Ship AG-67 parity").unwrap();
+        assert_eq!(manager.run(id).unwrap().goal.as_deref(), Some("Ship AG-67 parity"));
+        assert!(manager.timeline(id).iter().any(|e| e.kind == EventKind::System && e.tool.as_deref() == Some("goal")));
+
+        // Inline edit via `set_goal` updates without requiring a turn.
+        assert_eq!(manager.set_goal(id, Some("  Polish UX  ".into())).unwrap().as_deref(), Some("Polish UX"));
+        assert_eq!(manager.run(id).unwrap().goal.as_deref(), Some("Polish UX"));
+        manager.flush();
+
+        // Reload preserves the goal.
+        let reloaded = Manager::new(root.join("store"), hooks(), tokio::runtime::Handle::current(), |_| {});
+        assert_eq!(reloaded.run(id).unwrap().goal.as_deref(), Some("Polish UX"));
+
+        // `/goal clear` and bare `/goal` clear the goal.
+        reloaded.send(id, "/goal clear").unwrap();
+        assert_eq!(reloaded.run(id).unwrap().goal, None);
+        reloaded.send(id, "/goal Temporary").unwrap();
+        assert_eq!(reloaded.run(id).unwrap().goal.as_deref(), Some("Temporary"));
+        reloaded.send(id, "/goal").unwrap();
+        assert_eq!(reloaded.run(id).unwrap().goal, None);
+
+        // Context breakdown & compaction lifecycle.
+        {
+            let mut s = reloaded.lock();
+            Manager::update(&mut s, id, |r| {
+                r.usage.context_window = Some(200_000);
+                r.usage.context_tokens = Some(135_000);
+            });
+        }
+        let usage = reloaded.context_usage(id).expect("expected context usage");
+        assert_eq!(usage.level, super::super::context_usage::ContextLevel::Warning);
+        assert_eq!(usage.auto_compact_at, Some(160_000));
+        assert!(!usage.compacting);
+
+        {
+            let mut s = reloaded.lock();
+            let mut out = Out::default();
+            Manager::compaction_started(&mut s, id, &mut out);
+        }
+        assert!(reloaded.run(id).unwrap().compacting);
+        assert!(reloaded.context_usage(id).unwrap().compacting);
+
+        {
+            let mut s = reloaded.lock();
+            let mut out = Out::default();
+            Manager::compaction_finished(&mut s, id, &mut out);
+        }
+        assert!(!reloaded.run(id).unwrap().compacting);
+        assert!(reloaded.run(id).unwrap().usage.context_tokens.is_none());
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 

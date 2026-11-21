@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use nook_core::agents::granted_rules::{ApprovalAuditEntry, GrantedRuleEntry};
 use nook_core::agents::history::HistoryResult;
 use nook_core::agents::installer::{self, State as LinkState, Target};
 use nook_core::agents::line_diff::DiffLine;
@@ -378,4 +379,59 @@ pub fn agents_sound(kind: String) -> Option<String> {
         }
     }
     None
+}
+
+/// Opgeslagen "Altijd"-toestemmingsregels (uit Nook en Claude settings-bestanden), optioneel gefilterd op projectmap.
+#[tauri::command]
+pub fn agents_granted_rules(
+    state: State<'_, AgentsState>,
+    project: Option<String>,
+    extra_projects: Option<Vec<String>>,
+) -> Vec<GrantedRuleEntry> {
+    let mut extras = extra_projects.unwrap_or_default();
+    for s in &lock(&state.last_history).sessions {
+        if !s.cwd.is_empty() {
+            extras.push(s.cwd.clone());
+        }
+    }
+    state.hub.granted_rules(project.as_deref(), &extras)
+}
+
+/// Trekt één toestemmingsregel in uit zowel Nook's opslag als het Claude settings-bestand (indien van toepassing).
+#[tauri::command]
+pub fn agents_revoke_rule(
+    app: AppHandle,
+    state: State<'_, AgentsState>,
+    project: String,
+    rule: String,
+    file: Option<String>,
+) -> Res<bool> {
+    let removed = state.hub.revoke_rule(&project, &rule, file.as_deref())?;
+    if removed {
+        changed(&app);
+    }
+    Ok(removed)
+}
+
+/// Trekt alle opgeslagen toestemmingsregels voor een project in.
+#[tauri::command]
+pub fn agents_revoke_project_rules(app: AppHandle, state: State<'_, AgentsState>, project: String) -> Res<usize> {
+    let count = state.hub.revoke_project_rules(&project)?;
+    if count > 0 {
+        changed(&app);
+    }
+    Ok(count)
+}
+
+/// Doorzoekbare geschiedenis van toestemmingsbeslissingen (nieuwste eerst).
+#[tauri::command]
+pub fn agents_approval_audit(state: State<'_, AgentsState>, limit: Option<usize>, query: Option<String>) -> Vec<ApprovalAuditEntry> {
+    state.hub.approval_audit(limit, query.as_deref())
+}
+
+/// Wist de geschiedenis van toestemmingsbeslissingen.
+#[tauri::command]
+pub fn agents_clear_approval_audit(app: AppHandle, state: State<'_, AgentsState>) {
+    state.hub.clear_approval_audit();
+    changed(&app);
 }

@@ -63,8 +63,21 @@ impl AgentStep {
     }
 }
 
+/// Localized text for a live compaction step (`ws.activity.compacting` on macOS).
+pub fn compacting_step_text() -> &'static str {
+    crate::i18n::tr("Vat het gesprek samen…", "Compacting the conversation…")
+}
+
+/// Whether `text` is the compaction step text in the active or any catalog language.
+pub fn is_compacting_text(text: &str) -> bool {
+    text == compacting_step_text()
+        || ["en", "de", "fr", "es"]
+            .into_iter()
+            .any(|lang| crate::i18n::translate(lang, "", "Compacting the conversation…") == text)
+}
+
 /// Een agentsessie zoals de interface hem toont.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSession {
     pub id: String,
@@ -101,6 +114,73 @@ pub struct AgentSession {
 impl AgentSession {
     pub fn is_detected(&self) -> bool {
         self.status == AgentStatus::Detected
+    }
+
+    /// True while the agent is summarizing/compacting its conversation (`PreCompact` hook active).
+    pub fn is_compacting(&self) -> bool {
+        self.steps.last().is_some_and(|s| s.mark == StepMark::Running && is_compacting_text(&s.text))
+    }
+}
+
+impl Serialize for AgentSession {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            id: &'a str,
+            name: &'a str,
+            project: &'a str,
+            status: AgentStatus,
+            file: &'a str,
+            placeholder: &'a str,
+            steps: &'a [AgentStep],
+            diff: &'a [DiffLine],
+            cwd: &'a str,
+            host: &'a str,
+            home: &'a str,
+            approval_id: &'a Option<String>,
+            question_id: &'a Option<String>,
+            lines_added: usize,
+            lines_removed: usize,
+            summary: &'a str,
+            is_linked: bool,
+            session_id: &'a str,
+            transcript_path: &'a str,
+            last_prompt: &'a str,
+            last_reply: &'a str,
+            started: Option<DateTime<Utc>>,
+            updated: Option<DateTime<Utc>>,
+            pid: Option<u32>,
+            compacting: bool,
+        }
+        Wire {
+            id: &self.id,
+            name: &self.name,
+            project: &self.project,
+            status: self.status,
+            file: &self.file,
+            placeholder: &self.placeholder,
+            steps: &self.steps,
+            diff: &self.diff,
+            cwd: &self.cwd,
+            host: &self.host,
+            home: &self.home,
+            approval_id: &self.approval_id,
+            question_id: &self.question_id,
+            lines_added: self.lines_added,
+            lines_removed: self.lines_removed,
+            summary: &self.summary,
+            is_linked: self.is_linked,
+            session_id: &self.session_id,
+            transcript_path: &self.transcript_path,
+            last_prompt: &self.last_prompt,
+            last_reply: &self.last_reply,
+            started: self.started,
+            updated: self.updated,
+            pid: self.pid,
+            compacting: self.is_compacting(),
+        }
+        .serialize(serializer)
     }
 }
 

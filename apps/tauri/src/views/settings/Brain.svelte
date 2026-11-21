@@ -3,9 +3,12 @@
   // service, and each section below follows from that choice: for local the advised models, the connection check and
   // every other runtime folded away; for external the service, signing in, its model and who reads your screen.
   // Local first; an external AI is a choice made on purpose.
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../../lib/api";
-  import { brainApi, type EvalResult } from "../../lib/brain";
+  import { brainApi } from "../../lib/brain";
+  import Ico from "../../components/ui/Ico.svelte";
   import ModelAdvice from "../../components/ModelAdvice.svelte";
   import { nook } from "../../lib/state.svelte";
   import type { ProviderId, ProviderInfo } from "../../lib/types";
@@ -14,6 +17,64 @@
   import InfoLabel from "./InfoLabel.svelte";
   import Segmented from "./Segmented.svelte";
   import Fold from "./Fold.svelte";
+
+  interface LocalEvalCaseResult {
+    id: string;
+    question: string;
+    answer: string;
+    passed: boolean;
+    missing: string[];
+    forbidden: string[];
+    seconds: number;
+    usedEvidence: boolean;
+    retriedGrounding: boolean;
+  }
+
+  interface LocalEvalProgress {
+    done: number;
+    total: number;
+    currentId: string;
+    latest: LocalEvalCaseResult | null;
+  }
+
+  interface LocalEvalReport {
+    modelLabel: string;
+    mode: string;
+    evidenceFirst: boolean;
+    checkAnswers: boolean;
+    passed: number;
+    total: number;
+    scorePercent: number;
+    totalSeconds: number;
+    averageSeconds: number;
+    finishedAt: string;
+    historyLine: string;
+    cancelled: boolean;
+    failure: string | null;
+    results: LocalEvalCaseResult[];
+  }
+
+  const EVAL_HISTORY_KEY = "nook.localEvalHistory";
+  const MAX_EVAL_HISTORY = 12;
+
+  function loadEvalHistory(): string[] {
+    try {
+      const raw = localStorage.getItem(EVAL_HISTORY_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string").slice(0, MAX_EVAL_HISTORY) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveEvalHistory(lines: string[]) {
+    try {
+      localStorage.setItem(EVAL_HISTORY_KEY, JSON.stringify(lines.slice(0, MAX_EVAL_HISTORY)));
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   let providers = $state<ProviderInfo[]>([]);
   let models = $state<string[]>([]);
@@ -119,13 +180,18 @@
     else nook.saveSettings({ localOnlySources: [...others, "screen"], screenBrain: value });
   }
 
-  // Testen en meten.
+  // Testen en meten (`LocalEvalRunner` on the Mac).
   let testing = $state(false);
   let testResult = $state<{ ok: boolean; text: string } | null>(null);
   let evalRunning = $state(false);
-  let evalProgress = $state<[number, number] | null>(null);
-  let evalResults = $state<EvalResult[] | null>(null);
-  const passed = $derived(evalResults?.filter((r) => r.passed).length ?? 0);
+  let evalDone = $state(0);
+  let evalTotal = $state(20);
+  let evalResults = $state<LocalEvalCaseResult[]>([]);
+  let evalTotalSeconds = $state(0);
+  let evalFailure = $state<string | null>(null);
+  let evalHistory = $state<string[]>(loadEvalHistory());
+  const passed = $derived(evalResults.filter((r) => r.passed).length);
+  const evalGood = $derived(evalResults.length > 0 && passed * 4 >= evalResults.length * 3);
 
   async function test() {
     testing = true;
@@ -140,15 +206,45 @@
   }
 
   async function evaluate() {
+    if (evalRunning) return;
     evalRunning = true;
-    evalResults = null;
-    const un = await brainApi.onEval((p) => (evalProgress = p));
+    evalDone = 0;
+    evalTotal = 20;
+    evalResults = [];
+    evalTotalSeconds = 0;
+    evalFailure = null;
+    const un = await listen<LocalEvalProgress>("brain-local-eval", (e) => {
+      evalDone = e.payload.done;
+      evalTotal = e.payload.total;
+      if (e.payload.latest) {
+        evalResults = [...evalResults, e.payload.latest];
+        evalTotalSeconds = evalResults.reduce((acc, item) => acc + item.seconds, 0);
+      }
+    });
     try {
-      evalResults = await brainApi.evaluate();
+      const report = await invoke<LocalEvalReport>("brain_local_eval_run", { caseIds: null });
+      evalResults = report.results;
+      evalDone = report.results.length;
+      evalTotal = report.total;
+      evalTotalSeconds = report.totalSeconds;
+      evalFailure = report.failure;
+      if (!report.cancelled && !report.failure && report.historyLine) {
+        evalHistory = [report.historyLine, ...evalHistory].slice(0, MAX_EVAL_HISTORY);
+        saveEvalHistory(evalHistory);
+      }
+    } catch (e) {
+      evalFailure = String(e);
     } finally {
       un();
       evalRunning = false;
-      evalProgress = null;
+    }
+  }
+
+  async function cancelEval() {
+    try {
+      await invoke<boolean>("brain_local_eval_cancel");
+    } catch {
+      /* ignore */
     }
   }
 </script>
@@ -331,29 +427,78 @@
 <div class="group">
   <label class="row"><span>{tr("Bewijs eerst", "Evidence first")}<br /><span class="faint small">{tr("Een extra stap citeert per document de zinnen die ertoe doen en antwoordt daaruit. Trager, minder verzinsels.", "An extra step quotes the sentences that matter from each document and answers from those. Slower, fewer inventions.")}</span></span><input type="checkbox" role="switch" checked={s.evidenceFirst} onchange={(e) => nook.saveSettings({ evidenceFirst: e.currentTarget.checked })} /></label>
   <label class="row"><span>{tr("Antwoorden controleren", "Check answers")}<br /><span class="faint small">{tr("Staat er een getal, tijd, adres of link in het antwoord dat in geen enkele bron voorkomt, dan schrijft het brein het antwoord opnieuw.", "If an answer contains a number, time, address or link that is in none of the sources, the brain writes the answer again.")}</span></span><input type="checkbox" role="switch" checked={s.checkAnswers} onchange={(e) => nook.saveSettings({ checkAnswers: e.currentTarget.checked })} /></label>
-  <div class="row">
-    <button class="small" onclick={evaluate} disabled={evalRunning}>{evalRunning ? (evalProgress ? tr("Bezig {done}/{total}", "Working {done}/{total}", { done: evalProgress[0], total: evalProgress[1] }) : tr("Bezig…", "Working…")) : tr("Meet dit brein", "Measure this brain")}</button>
+  <div class="row eval-bar">
+    <div class="eval-controls">
+      {#if evalRunning}
+        <div class="eval-track" role="progressbar" aria-valuenow={evalDone} aria-valuemin={0} aria-valuemax={evalTotal}>
+          <div class="eval-fill" style="width: {evalTotal ? Math.round((evalDone / evalTotal) * 100) : 0}%"></div>
+        </div>
+        <span class="mono faint small">{evalDone}/{evalTotal}</span>
+        <button class="small" onclick={cancelEval}>{tr("Annuleer", "Cancel")}</button>
+      {:else}
+        <button class="small" onclick={evaluate} disabled={!nook.info?.brainReady}>{tr("Meet dit brein", "Measure this brain")}</button>
+      {/if}
+    </div>
+    {#if evalResults.length > 0 && !evalRunning}
+      <span class="mono eval-score" class:ok={evalGood} class:warn={!evalGood}>{tr("{passed} van {total} goed · {seconds} s", "{passed} of {total} right · {seconds} s", { passed, total: evalResults.length, seconds: Math.round(evalTotalSeconds) })}</span>
+    {/if}
   </div>
+  {#if evalFailure}
+    <p class="note err">{evalFailure}</p>
+  {/if}
+  {#if evalResults.length > 0}
+    <details class="eval-details">
+      <summary class="row eval-summary">
+        <span>{tr("Alle vragen", "All questions")}</span>
+        <span class="mono faint small">{passed}/{evalResults.length}</span>
+      </summary>
+      <div class="eval-list">
+        {#each evalResults as r (r.id)}
+          <div class="eval-item">
+            <div class="eval-q">
+              <span class="eval-mark" class:ok={r.passed} class:err={!r.passed}><Ico name={r.passed ? "circle-check" : "circle-x"} size={14} stroke={1.75} /></span>
+              <span class="eval-q-text">{r.question}</span>
+              <span class="mono faint small">{r.seconds.toFixed(1)} s</span>
+            </div>
+            <p class="small faint eval-answer">{r.answer}</p>
+            {#if !r.passed && (r.missing.length || r.forbidden.length)}
+              <p class="small warn eval-missing">{tr("Ontbreekt of fout: {items}", "Missing or wrong: {items}", { items: [...r.missing, ...r.forbidden.map((f) => `✗ ${f}`)].join(", ") })}</p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </details>
+  {/if}
+  {#if evalHistory.length > 0}
+    <div class="eval-history">
+      <span class="faint small">{tr("Eerdere metingen", "Earlier measurements")}</span>
+      {#each evalHistory as entry, idx (idx)}
+        <span class="mono small">{entry}</span>
+      {/each}
+    </div>
+  {/if}
 </div>
-{#if evalResults}
-  <p class="note">{tr("{passed} van {total} goed.", "{passed} of {total} right.", { passed, total: evalResults.length })}</p>
-  <div class="group">
-    {#each evalResults as r (r.id)}
-      <details class="row eval">
-        <summary><span class:ok={r.passed} class:err={!r.passed}>{r.passed ? "✓" : "✗"}</span> {r.question}</summary>
-        <p class="small">{r.answer}</p>
-        {#if r.missing.length}<p class="small err">{tr("Mist: {items}", "Missing: {items}", { items: r.missing.join(", ") })}</p>{/if}
-        {#if r.forbidden.length}<p class="small err">{tr("Had niet mogen zeggen: {items}", "Shouldn't have said: {items}", { items: r.forbidden.join(", ") })}</p>{/if}
-      </details>
-    {/each}
-  </div>
-{/if}
 
 <style>
   .small { font: var(--text-detail); }
+  .mono { font-variant-numeric: tabular-nums; }
   .warn { color: var(--amber) !important; }
   .ok { color: var(--mint); }
-  .eval { display: block; }
-  .eval summary { cursor: pointer; }
-  .eval p { margin: 6px 0 0; white-space: pre-wrap; }
+  .err { color: var(--coral); }
+  .eval-bar { gap: var(--space-12); }
+  .eval-controls { display: flex; align-items: center; gap: var(--space-8); flex: 1; min-width: 0; }
+  .eval-track { width: 140px; height: 6px; border-radius: 999px; background: var(--smoke); overflow: hidden; flex: none; }
+  .eval-fill { height: 100%; border-radius: 999px; background: var(--paper); transition: width 160ms ease; }
+  .eval-score { font: var(--text-body); white-space: nowrap; }
+  .eval-details { border-top: 1px solid var(--separator); }
+  .eval-summary { cursor: pointer; list-style: none; }
+  .eval-list { display: flex; flex-direction: column; gap: var(--space-12); padding: 0 var(--space-16) var(--space-12); }
+  .eval-item { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-8); border-top: 1px solid var(--separator); }
+  .eval-item:first-child { border-top: none; padding-top: 0; }
+  .eval-q { display: flex; align-items: center; gap: var(--space-8); }
+  .eval-mark { display: inline-flex; flex: none; }
+  .eval-q-text { flex: 1; min-width: 0; color: var(--paper); }
+  .eval-answer { margin: 0; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; user-select: text; }
+  .eval-missing { margin: 0; }
+  .eval-history { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-12) var(--space-16); border-top: 1px solid var(--separator); }
 </style>

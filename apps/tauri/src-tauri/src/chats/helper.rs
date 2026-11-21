@@ -8,8 +8,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use nook_core::chats::chatd::{ChatdBridge, ChatdClient, LiveEvent, PORT};
-use nook_core::chats::{ChatBridge, InboxStore};
+use nook_core::chats::typing::TypingState;
+use nook_core::chats::{ChatBridge, ChatInbox, InboxStore};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
 
@@ -25,6 +28,14 @@ const START_WAIT: Duration = Duration::from_secs(30);
 const LIVE_INTERVAL: Duration = Duration::from_secs(120);
 const PING_GAP: Duration = Duration::from_secs(30);
 
+/// Payload of the `chat-typing` event sent to the window whenever someone starts or stops typing.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypingUpdate {
+    pub key: String,
+    pub typing: Vec<String>,
+}
+
 pub struct ChatHelper {
     process: Mutex<Option<Child>>,
     /// Why it did not start, in its own words; `None` while it runs or was never tried.
@@ -33,6 +44,10 @@ pub struct ChatHelper {
     live: Mutex<bool>,
     /// Wakes the reading loop: the live line said a chat changed.
     wake: Notify,
+    /// Who is currently typing in each chat (live ephemeral state, keyed by inbox thread key).
+    typing: Mutex<TypingState>,
+    /// App handle for emitting live `chat-typing` updates.
+    app: Mutex<Option<AppHandle>>,
     #[cfg(windows)]
     job: Mutex<Option<windows_job::Job>>,
 }
@@ -45,9 +60,16 @@ impl ChatHelper {
             bridge: Arc::new(ChatdBridge::new()),
             live: Mutex::new(false),
             wake: Notify::new(),
+            typing: Mutex::default(),
+            app: Mutex::default(),
             #[cfg(windows)]
             job: Mutex::default(),
         })
+    }
+
+    /// Names of people currently typing in `key` (non-expired).
+    pub fn typing_in(&self, key: &str) -> Vec<String> {
+        lock(&self.typing).names(key, Utc::now())
     }
 
     /// Where the helper is: `NOOK_CHATD` (a development build), else beside Nook's program; `None` when this build
@@ -156,6 +178,7 @@ impl ChatHelper {
     pub fn stop(&self) {
         self.bridge.set_client(None);
         *lock(&self.live) = false;
+        lock(&self.typing).clear();
         let Some(mut child) = lock(&self.process).take() else { return };
         #[cfg(unix)]
         {
@@ -173,6 +196,69 @@ impl ChatHelper {
         }
         let _ = child.kill();
         let _ = child.wait();
+    }
+
+    fn emit_typing(&self, key: &str, typing: Vec<String>) {
+        if let Some(app) = lock(&self.app).clone() {
+            let _ = app.emit("chat-typing", TypingUpdate { key: key.to_string(), typing });
+        }
+    }
+
+    fn handle_typing(self: &Arc<Self>, chat_id: &str, person: &str, name: &str, seconds: f64) {
+        let Some(sc) = self.bridge.chat_by_id(chat_id) else { return };
+        if sc.me.as_deref() == Some(person) {
+            return;
+        }
+        let key = ChatInbox::key(&sc.app, &sc.id);
+        let display = if !name.trim().is_empty() {
+            name.trim().to_string()
+        } else if let Some(known) = sc.people.get(person).filter(|n| !n.trim().is_empty()) {
+            known.trim().to_string()
+        } else if !sc.is_group {
+            sc.title.clone()
+        } else {
+            String::new()
+        };
+        let now = Utc::now();
+        let (changed, names, hold) = {
+            let mut state = lock(&self.typing);
+            let before = state.names(&key, now);
+            let hold = if seconds > 0.0 {
+                let d = TypingState::hold_duration(seconds);
+                state.typing(&key, person, &display, now + d);
+                Some(d)
+            } else {
+                state.stopped(&key, person);
+                None
+            };
+            let after = state.names(&key, now);
+            (before != after, after, hold)
+        };
+        if changed {
+            self.emit_typing(&key, names);
+        }
+        if let Some(hold) = hold {
+            let me = self.clone();
+            let wait = hold.to_std().unwrap_or(Duration::from_secs(15)) + Duration::from_millis(250);
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(wait).await;
+                let now = Utc::now();
+                let expired: Vec<(String, Vec<String>)> = {
+                    let mut state = lock(&me.typing);
+                    let touched = state.expire_keys(now);
+                    touched
+                        .into_iter()
+                        .map(|k| {
+                            let names = state.names(&k, now);
+                            (k, names)
+                        })
+                        .collect()
+                };
+                for (k, names) in expired {
+                    me.emit_typing(&k, names);
+                }
+            });
+        }
     }
 
     /// Reads the helper into the inbox at its pace, sooner when the live line says a chat changed, and keeps the line
@@ -219,11 +305,15 @@ impl ChatHelper {
             let bridge = me.bridge.clone();
             let woken = me.clone();
             let result = client
-                .live(PING_GAP, move |event| {
-                    if let LiveEvent::Changed { chat, message } = event {
+                .live(PING_GAP, move |event| match event {
+                    LiveEvent::Changed { chat, message } => {
                         bridge.changed(&chat, message.as_deref());
                         woken.wake.notify_one();
                     }
+                    LiveEvent::Typing { chat, person, name, seconds } => {
+                        woken.handle_typing(&chat, &person, &name, seconds);
+                    }
+                    _ => {}
                 })
                 .await;
             if let Err(error) = result {
@@ -243,6 +333,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// Starts the helper's reading loop. Called from `connectors::setup`.
 pub fn setup(app: &AppHandle, chats: Arc<InboxStore>) -> Arc<ChatHelper> {
     let helper = ChatHelper::new();
+    *lock(&helper.app) = Some(app.clone());
     let handle = app.clone();
     helper.run(chats, move |before, store| {
         let _ = handle.emit("chats-changed", ());

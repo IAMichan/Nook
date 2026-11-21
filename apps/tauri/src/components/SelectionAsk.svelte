@@ -73,8 +73,8 @@
 
   const modes: { mode: SelectionMode; icon: string }[] = [
     { mode: "answer", icon: "sparkles" },
-    { mode: "explain", icon: "book" },
-    { mode: "translate", icon: "globe" },
+    { mode: "explain", icon: "lightbulb" },
+    { mode: "translate", icon: "languages" },
   ];
 
   function title(mode: SelectionMode): string {
@@ -388,22 +388,23 @@
           </button>
           {#if i === 0}<span class="divider"></span>{/if}
         {/each}
-        <span class="divider"></span>
       {/if}
       {#if quoteTarget}
+        {#if enabled}<span class="divider"></span>{/if}
         <button class="bar-button" title={tr("Citeer", "Quote")} onmousedown={(e) => e.preventDefault()} onclick={quote}>
-          <Ico name="text-align-start" size={13} /><span>{tr("Citeer", "Quote")}</span>
+          <Ico name="text-quote" size={13} /><span>{tr("Citeer", "Quote")}</span>
         </button>
       {/if}
+      {#if enabled || quoteTarget}<span class="divider"></span>{/if}
       <button class="bar-button" title={tr("Kopieer", "Copy")} onmousedown={(e) => e.preventDefault()} onclick={copy}>
         <Ico name="copy" size={13} /><span>{tr("Kopieer", "Copy")}</span>
       </button>
     {:else}
       <header>
-        <span class="mark" aria-hidden="true"><Ico name="text-align-start" size={13} /></span>
+        <span class="mark" aria-hidden="true"><Ico name="text-quote" size={13} /></span>
         <p class="quote">{selection}</p>
         <div class="tools">
-          <button class="tool" title={tr("Verder in de chat", "Continue in chat")} aria-label={tr("Verder in de chat", "Continue in chat")} onclick={continueInChat}><Ico name="external-link" size={14} /></button>
+          <button class="tool" title={tr("Verder in de chat", "Continue in chat")} aria-label={tr("Verder in de chat", "Continue in chat")} onclick={continueInChat}><Ico name="square-arrow-out-up-right" size={14} /></button>
           <button class="tool" title={tr("Sluiten", "Close")} aria-label={tr("Sluiten", "Close")} onclick={dismiss}><Ico name="x" size={14} /></button>
         </div>
       </header>

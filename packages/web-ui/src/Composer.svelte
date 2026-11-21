@@ -285,7 +285,7 @@
   textarea {
     width: 100%;
     box-sizing: border-box;
-    min-height: var(--nc-field-min, 24px);
+    min-height: var(--nc-field-min, 20px);
     max-height: 160px;
     field-sizing: content;
     resize: none;
@@ -297,7 +297,7 @@
     background: transparent;
     color: var(--nc-text, #27272a);
     font: inherit;
-    line-height: 1.5;
+    line-height: var(--nc-line-height, 1.25);
   }
   textarea::placeholder { color: var(--nc-faint, #62626c); }
   /* The rich composer: the layer and the field share one box, font and wrapping, so every character sits in the same
@@ -312,7 +312,7 @@
     overflow-wrap: break-word;
     color: var(--nc-text, #27272a);
     font: inherit;
-    line-height: 1.5;
+    line-height: var(--nc-line-height, 1.25);
     pointer-events: none;
   }
   .styled textarea { color: transparent; caret-color: var(--nc-text, #27272a); position: relative; }
@@ -328,7 +328,9 @@
   .layer .quote { color: var(--nc-faint, #62626c); }
   textarea:focus-visible { box-shadow: none; outline: none; }
   textarea:disabled { cursor: default; }
-  .row { display: flex; align-items: center; gap: var(--nc-row-gap, 6px); margin: var(--nc-row-margin, 6px 0 0 -4px); min-width: 0; }
+  .row { display: flex; align-items: center; gap: var(--nc-row-gap, 6px); margin: var(--nc-row-margin, 6px 0 0 -4px); min-width: 0; min-height: 32px; }
+  /* Match macOS `ComposerDictationButton` (30pt) inside the 32pt control row so the composer stays 84pt tall. */
+  .row :global(button.mic) { width: 30px; height: 30px; }
   .grow { flex: 1; }
   .file-input { display: none; }
   button.icon, button.round {

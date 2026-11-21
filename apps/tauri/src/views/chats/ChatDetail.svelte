@@ -11,8 +11,9 @@
   // right-click reacts, replies, forwards, copies, edits or deletes it, where its app lets Nook. Scrolling to the top
   // brings older messages without moving what you read. Everything from a message is shown as text, never as HTML.
   import { tick } from "svelte";
+  import { listen as listenEvent } from "@tauri-apps/api/event";
   import { chatsApi, connectorEvents, connectorsApi, type ChatThread } from "../../lib/connectors";
-  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, personTint, QUICK_REACTIONS, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
+  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, dayAndClock, fillReceipts, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, personTint, QUICK_REACTIONS, readReceiptSummary, typingLine, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
   import Dialog from "../../components/ui/Dialog.svelte";
   import TimelineEarlierRow from "../../components/ui/TimelineEarlierRow.svelte";
   import ChatQuote from "./ChatQuote.svelte";
@@ -52,6 +53,7 @@
 
   // The chat from the shared inbox, read again whenever it changes (WhatsApp's too: its card fills it).
   let thread = $state<ChatThread | null>(null);
+  let liveTyping = $state<string[] | null>(null);
   async function loadThread() {
     try {
       thread = await chatsApi.thread(entry.key);
@@ -60,13 +62,18 @@
     }
   }
   $effect(() => {
-    void entry.key;
+    const key = entry.key;
+    liveTyping = null;
     loadThread();
     const off = connectorEvents.onChats(loadThread);
     const offWa = connectorEvents.onChanged(loadThread);
+    const offTyping = listenEvent<{ key: string; typing: string[] }>("chat-typing", (e) => {
+      if (e.payload?.key === key) liveTyping = e.payload.typing ?? [];
+    });
     return () => {
       off.then((f) => f());
       offWa.then((f) => f());
+      offTyping.then((f) => f());
     };
   });
   // WhatsApp's card brought something (older messages, ticks): the inbox has it too.
@@ -76,10 +83,21 @@
   });
 
   const conversation = $derived(whatsapp.card?.conversation.id === entry.id ? whatsapp.card.conversation : null);
-  const bubbles = $derived<Bubble[]>(
+  const rawBubbles = $derived<Bubble[]>(
     thread?.messages.length ? thread.messages.map(bubbleOfInbox) : isWhatsApp ? (conversation?.messages ?? []).map(bubbleOfWhatsApp) : [],
   );
+  const bubbles = $derived<Bubble[]>(fillReceipts(rawBubbles, !isGroup));
   const byId = $derived(new Map(bubbles.map((b) => [b.id, b])));
+  const lastMineId = $derived.by(() => {
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      if (bubbles[i].fromMe && !bubbles[i].deleted) return bubbles[i].id;
+    }
+    return null;
+  });
+  const activeTyping = $derived(
+    liveTyping ?? ((thread as (ChatThread & { typing?: string[] }) | null)?.typing ?? entry.typing ?? []),
+  );
+  const typingText = $derived(typingLine(activeTyping, isGroup, entry.name));
   // A group's people, for "@" in the field and its info: from the inbox, else asked of its app once.
   let asked = $state<string[]>([]);
   $effect(() => {
@@ -497,17 +515,24 @@
   ]);
 
   // A message's menu, from the chevron on it or a right-click (`MessageMenuItems`): the quick reactions on top, then
-  // reply, forward, copy, and for your own message edit and delete.
+  // reply, forward, copy, and for your own message info, edit and delete.
   let messageMenu = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
+  let receiptInfo = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
+  function openMessageInfo(e: MouseEvent, m: Bubble) {
+    e.stopPropagation();
+    receiptInfo = { m, anchor: (e.currentTarget as HTMLElement).getBoundingClientRect() };
+  }
   const messageItems = $derived.by<MenuItem[][]>(() => {
     if (!messageMenu) return [];
     const m = messageMenu.m;
+    const anchor = messageMenu.anchor;
     const live = entry.sends && !m.deleted;
     return [
       [
         ...(live ? [{ label: tr("Beantwoorden", "Reply"), icon: "reply", onselect: () => quote(m) }] : []),
         ...(m.text && !m.deleted && targets.length ? [{ label: tr("Doorsturen", "Forward"), icon: "forward", onselect: () => (forwarding = m) }] : []),
         ...(m.text ? [{ label: tr("Kopieer", "Copy"), icon: "copy", onselect: () => navigator.clipboard.writeText(m.text).catch(() => {}) }] : []),
+        ...(m.fromMe && !m.deleted ? [{ label: tr("Berichtinfo", "Message info"), icon: "info", onselect: () => (receiptInfo = { m, anchor }) }] : []),
       ],
       [
         ...(live && m.fromMe && m.text ? [{ label: tr("Bewerken", "Edit"), icon: "pencil", onselect: () => startEdit(m) }] : []),
@@ -539,6 +564,17 @@
     try { localStorage.setItem(LIMITS, JSON.stringify(limitsHidden)); } catch { /* until the window closes */ }
   }
   const quoteSender = (m: Bubble) => (m.fromMe ? tr("Jij", "You") : m.sender || entry.name);
+  const receiptNow = $derived.by(() => {
+    void bubbles;
+    void receiptInfo;
+    return new Date();
+  });
+  $effect(() => {
+    if (!receiptInfo) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); receiptInfo = null; } };
+    window.addEventListener("keydown", esc, true);
+    return () => window.removeEventListener("keydown", esc, true);
+  });
 </script>
 
 <div class="detail">
@@ -548,14 +584,18 @@
     <div class="who">
       <button class="name" title={entry.name} onclick={(e) => (infoAt = (e.currentTarget as HTMLElement).getBoundingClientRect())}>{entry.name}</button>
       <span class="sub">
-        <span>{app}</span>
-        {#if isGroup}
-          <span class="dot" aria-hidden="true">·</span>
-          <span title={people.join(", ")}>{people.length ? tr("{n} leden", "{n} members", { n: people.length }) : tr("Groep", "Group")}</span>
-        {/if}
-        {#if entry.read !== "unread" && !entry.lastIsMine && bubbles.length}
-          <span class="dot" aria-hidden="true">·</span>
-          <span>{entry.read === "readInNook" ? tr("Gelezen in Nook", "Read in Nook") : tr("Gelezen", "Read")}</span>
+        {#if typingText}
+          <span class="typing-head">{typingText}</span>
+        {:else}
+          <span>{app}</span>
+          {#if isGroup}
+            <span class="dot" aria-hidden="true">·</span>
+            <span title={people.join(", ")}>{people.length ? tr("{n} leden", "{n} members", { n: people.length }) : tr("Groep", "Group")}</span>
+          {/if}
+          {#if entry.read !== "unread" && !entry.lastIsMine && bubbles.length}
+            <span class="dot" aria-hidden="true">·</span>
+            <span>{entry.read === "readInNook" ? tr("Gelezen in Nook", "Read in Nook") : tr("Gelezen", "Read")}</span>
+          {/if}
         {/if}
       </span>
     </div>
@@ -590,12 +630,14 @@
         {@const text = m.deleted || call ? "" : file ? m.text : textOf(m)}
         {@const link = text ? firstLink(text) : null}
         {@const answered = m.replyTo ? byId.get(m.replyTo) : undefined}
+        {@const receiptTip = m.fromMe && !m.deleted ? readReceiptSummary(m, isGroup, receiptNow) : null}
+        {@const showReceiptFoot = m.fromMe && !m.deleted && m.id === lastMineId && !!receiptTip && ((isGroup && (m.readBy?.length ?? 0) > 0) || (!isGroup && m.receipt === "read" && !!m.readAt))}
         {#if m.id === newFrom && m.id !== bubbles[0]?.id}
           <!-- Where what came in since you last looked begins (`ChatNewDivider`). -->
           <div class="new-divider"><span>{tr("Nieuwe berichten", "New messages")}</span></div>
         {/if}
         <!-- The message's id and its chat's key, so a selection in the chat can carry where it came from (BR-62). -->
-        <div class="line" class:mine={m.fromMe} class:first={line.first} class:reacted={m.reactions.length > 0} data-chat-key={entry.key} data-message-id={m.id} data-sender={m.fromMe ? "" : m.sender || entry.name}>
+        <div class="line" class:mine={m.fromMe} class:first={line.first} class:reacted={m.reactions.length > 0 || showReceiptFoot} data-chat-key={entry.key} data-message-id={m.id} data-sender={m.fromMe ? "" : m.sender || entry.name}>
           {#if isGroup && !m.fromMe && m.sender}
             <!-- In a group, who wrote it shows beside the first message of their run (`ChatSenderFace`); the rest keeps the room. -->
             <span class="sender-face">{#if line.first}<ChatFace id={m.sender} app={entry.app} name={m.sender} size={28} badge={false} />{/if}</span>
@@ -641,12 +683,12 @@
             {#if link}<LinkCard url={link} />{/if}
             <span class="body">
               {#if text}<span class="text">{text}</span>{/if}
-              {#if line.last || call}
+              {#if line.last || call || m.fromMe}
                 <span class="stamp">
                   {#if m.edited || (m.deleted && m.versions.length)}
                     <button class="edited" title={tr("Wat er eerder stond", "What it said before")} onclick={(e) => (versionsOf = { m, anchor: (e.currentTarget as HTMLElement).getBoundingClientRect() })}>{m.edited ? tr("Bewerkt", "Edited") : ""}{#if m.deleted}<Ico name="history" size={11} />{/if}</button>
                   {/if}
-                  {time(m.date)}{#if m.fromMe}<Ticks receipt={m.receipt} size={12} />{/if}
+                  {time(m.date)}{#if m.fromMe && !m.deleted}<Ticks receipt={m.receipt} size={12} detail={receiptTip} onclick={(e) => openMessageInfo(e, m)} />{/if}
                 </span>
               {/if}
             </span>
@@ -657,9 +699,23 @@
           {#if m.reactions.length}
             <div class="reactions"><ReactionChips reactions={m.reactions} onreact={entry.sends ? (e) => step(m, "react", e) : undefined} /></div>
           {/if}
+          {#if showReceiptFoot && receiptTip}
+            <div class="receipt-foot">
+              <button type="button" class="receipt-link" onclick={(e) => openMessageInfo(e, m)}>{receiptTip}</button>
+            </div>
+          {/if}
         </div>
       {/if}
     {/each}
+    {#if typingText}
+      <!-- Someone is typing right now (`ChatTypingBubble` on the Mac). -->
+      <div class="line first typing-row" role="status" aria-live="polite">
+        <div class="bubble tailed typing-bubble">
+          <span class="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="typing-label">{typingText}</span>
+        </div>
+      </div>
+    {/if}
   </div>
 
   <footer class="foot">
@@ -768,6 +824,62 @@
     onclose={() => (deleting = null)} />
 {/if}
 {#if enlarged}<ImageModal src={enlarged} alt={tr("Foto", "Photo")} onclose={() => (whatsapp.enlarged = null)} onopen={() => whatsapp.enlarged && whatsapp.open(whatsapp.enlarged, tr("Foto", "Photo"))} />{/if}
+{#if receiptInfo}
+  {@const m = receiptInfo.m}
+  {@const readReaders = (m.readers ?? []).filter((r) => r.receipt === "read")}
+  {@const deliveredReaders = (m.readers ?? []).filter((r) => r.receipt === "delivered")}
+  {@const popTop = Math.min(Math.max(12, receiptInfo.anchor.bottom + 6), Math.max(12, window.innerHeight - 280))}
+  {@const popLeft = Math.min(Math.max(12, receiptInfo.anchor.right - 260), Math.max(12, window.innerWidth - 284))}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="info-scrim" onclick={() => (receiptInfo = null)}>
+    <div class="info-pop" role="dialog" aria-label={tr("Berichtinfo", "Message info")} tabindex="-1"
+      style:top="{popTop}px" style:left="{popLeft}px" onclick={(e) => e.stopPropagation()}>
+      <div class="info-head">
+        <strong>{tr("Berichtinfo", "Message info")}</strong>
+        <IconButton title={tr("Sluiten", "Close")} size={20} onclick={() => (receiptInfo = null)}><Ico name="x" size={12} stroke={2.4} /></IconButton>
+      </div>
+      <div class="info-row">
+        <span class="info-key">{tr("Verstuurd", "Sent")}</span>
+        <span class="info-val">{dayAndClock(m.date, receiptNow)}</span>
+      </div>
+      {#if !isGroup}
+        <div class="info-row">
+          <span class="info-key">
+            <Ticks receipt={m.receipt} size={12} />
+            {m.receipt === "read" ? tr("Gelezen", "Read") : m.receipt === "delivered" ? tr("Bezorgd", "Delivered") : m.receipt === "pending" ? tr("Versturen…", "Sending…") : m.receipt === "failed" ? tr("Niet verstuurd", "Not sent") : tr("Verstuurd", "Sent")}
+          </span>
+          <span class="info-val">{m.receipt === "read" && m.readAt ? dayAndClock(m.readAt, receiptNow) : "—"}</span>
+        </div>
+      {:else}
+        {#if readReaders.length}
+          <div class="info-group">
+            <span class="info-label"><Ticks receipt="read" size={12} />{tr("Gelezen door", "Read by")}</span>
+            {#each readReaders as r (r.name)}
+              <div class="info-person">
+                <span class="info-name">{r.name}</span>
+                {#if r.date}<span class="info-val">{dayAndClock(r.date, receiptNow)}</span>{/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+        {#if deliveredReaders.length}
+          <div class="info-group">
+            <span class="info-label"><Ticks receipt="delivered" size={12} />{tr("Bezorgd bij", "Delivered to")}</span>
+            {#each deliveredReaders as r (r.name)}
+              <div class="info-person">
+                <span class="info-name">{r.name}</span>
+                {#if r.date}<span class="info-val">{dayAndClock(r.date, receiptNow)}</span>{/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+        {#if !readReaders.length && !deliveredReaders.length}
+          <div class="info-empty">{tr("Nog geen leesbevestigingen.", "No read receipts yet.")}</div>
+        {/if}
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <style>
   .detail { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -779,6 +891,7 @@
   .name { padding: 0; border: 0; background: none; text-align: left; font: var(--text-title); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .name:hover:not(:disabled) { background: none; border: 0; text-decoration: underline; }
   .sub { display: flex; align-items: center; gap: var(--space-4); font: var(--text-detail); color: var(--text3); white-space: nowrap; overflow: hidden; }
+  .typing-head { color: var(--mint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { flex: 1; }
 
   .transcript { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: var(--space-8) var(--space-4); }
@@ -830,6 +943,32 @@
   .file audio { height: 32px; min-width: 0; flex: 1; }
   .small { font: var(--text-label); padding: var(--space-2) var(--space-8); }
 
+  .receipt-foot { flex-basis: 100%; display: flex; justify-content: flex-end; padding-top: var(--space-2); padding-right: calc(7px + var(--space-4)); }
+  .receipt-link { padding: 0; border: 0; background: none; font: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--text3); cursor: pointer; }
+  .receipt-link:hover:not(:disabled) { background: none; border: 0; color: var(--text2); text-decoration: underline; }
+
+  .typing-row { padding-top: var(--space-8); }
+  .typing-bubble { flex-direction: row; align-items: center; gap: var(--space-8); padding: var(--space-6) var(--space-12); user-select: none; }
+  .typing-dots { display: inline-flex; align-items: center; gap: var(--space-4); }
+  .typing-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--text3); animation: typing-pulse 1.2s ease-in-out infinite; }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  .typing-label { font: var(--text-caption); color: var(--text2); }
+  @keyframes typing-pulse { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+
+  .info-scrim { position: fixed; inset: 0; z-index: 55; }
+  .info-pop { position: fixed; width: 268px; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-8); padding: var(--space-12); box-sizing: border-box; background: var(--menu); border: 1px solid var(--line2); border-radius: var(--radius-panel); box-shadow: var(--shadow-popover); }
+  .info-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+  .info-head strong { font: var(--text-emphasis); color: var(--paper); }
+  .info-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); font: var(--text-detail); color: var(--text-strong); }
+  .info-key { display: inline-flex; align-items: center; gap: var(--space-6); color: var(--text2); }
+  .info-val { font: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--text3); white-space: nowrap; }
+  .info-group { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-6); border-top: 1px solid var(--separator); }
+  .info-label { display: inline-flex; align-items: center; gap: var(--space-6); font: var(--text-label); color: var(--text2); }
+  .info-person { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); padding: var(--space-2) 0; }
+  .info-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-detail); color: var(--paper); }
+  .info-empty { font: var(--text-detail); color: var(--text3); padding-top: var(--space-4); border-top: 1px solid var(--separator); }
+
   .foot { flex: none; display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-6) 0 var(--space-12); }
   .notice { margin: 0; padding: 0 var(--space-4); font: var(--text-detail); color: var(--text3); }
   .tray { display: flex; align-items: center; gap: var(--space-8); padding: 3px var(--space-8); }
@@ -880,7 +1019,7 @@
   .recording { flex: 1; align-self: center; display: inline-flex; align-items: center; gap: var(--space-8); font: var(--text-label); font-variant-numeric: tabular-nums; color: var(--paper); }
   .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--coral); animation: blink 1s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .rec-dot, .typing-dots span { animation: none; } }
   /* The answer field (`ChatReplyField`): the composer's box with the round send button inside it. */
   .box { position: relative; z-index: 1; display: flex; align-items: flex-end; gap: var(--space-8); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); background: var(--composer-tray); border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); transition: background 120ms ease, border-color 120ms ease; }
   .box:focus-within { background: var(--composer); border-color: var(--separator); }

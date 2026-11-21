@@ -1,23 +1,37 @@
 // Search everything (Ctrl+K), as the Mac's `SearchPanel` with `SearchIndex`, `SearchQuery` and `SearchAI` do it. The
 // interface reads the query language ("exact words", -word, a OR b, in:kind, is:flag, from:, key:value facets,
-// after:/before:/on: dates, /regex/) and searches what it holds itself (actions, Settings pages, the session lists);
-// the backend (`search_everything`, `nook_core::search`) searches the text only it holds (every message of every
-// conversation, agent transcripts, chats of every app, call notes, memories) and hands back the passage that matched.
-// Notices are left out: Windows keeps no notice history yet (docs/WINDOWS-PARITY.md).
+// after:/before:/on: dates, /regex/) and searches what it holds itself (actions, Settings pages, the session lists,
+// and missed/recent notices from `notice_history`); the backend (`search_everything`, `nook_core::search`) searches the
+// text only it holds (every message of every conversation, agent transcripts, chats of every app, call notes, memories)
+// and hands back the passage that matched.
 
-export type SearchKind = "conversation" | "session" | "chat" | "note" | "memory" | "setting" | "action";
+export type SearchKind = "conversation" | "session" | "chat" | "note" | "memory" | "notice" | "setting" | "action";
 
-/** The kinds in chip order, as the Mac's (`SearchPanel.kinds`), without notices. */
-export const searchKinds: SearchKind[] = ["conversation", "session", "chat", "note", "memory", "setting", "action"];
+/** The kinds in chip order, matching the Mac's `SearchPanel.kinds`. */
+export const searchKinds: SearchKind[] = ["conversation", "session", "chat", "note", "memory", "notice", "setting", "action"];
 
 /** The kinds only the backend finds by their text. */
 export const backendKinds: SearchKind[] = ["conversation", "session", "chat", "note", "memory"];
+
+/** One entry from Rust's `notice_history` (`nook_core::services::notice_log::NoticeEntry`). */
+export interface NoticeHistoryEntry {
+  id: number;
+  key: string;
+  kind: string;
+  title: string;
+  detail: string;
+  context: string;
+  /** Milliseconds since 1970. */
+  date: number;
+  route: string;
+  seen: boolean;
+}
 
 export interface SearchDoc {
   id: string;
   kind: SearchKind;
   title: string;
-  /** Where it lives: the agent, project and branch of a session, a conversation's last line. */
+  /** Where it lives: the agent, project and branch of a session, a conversation's last line, or a notice's detail. */
   subtitle?: string;
   /** More words that find it without being shown (a setting's group, a session's last prompt). */
   text?: string;
@@ -25,10 +39,12 @@ export interface SearchDoc {
   date?: number;
   /** For is: ("pinned", "archived", "running", "settled", "unread"…). */
   flags?: string[];
-  /** For key:value ("agent", "project", "branch"). */
+  /** For key:value ("agent", "project", "branch", "app"). */
   facets?: Record<string, string>;
-  /** Ranked a little higher (pinned, running) or lower. */
+  /** Ranked a little higher (pinned, running, unread) or lower. */
   boost?: number;
+  /** Target route for opening a notice's source tab/session/chat/settings. */
+  route?: string;
   /** The backend found the words in its passages: no need to find them in the title here. */
   contentHit?: boolean;
   /** What matched in its text, who wrote it, when, and where it is (the backend's best passage). */
@@ -117,7 +133,39 @@ const kindNames: Record<string, string> = {
   action: "action", actions: "action", acties: "action",
   chat: "chat", chats: "chat", note: "note", notes: "note", notities: "note", call: "note", calls: "note",
   memory: "memory", memories: "memory", geheugen: "memory",
+  notice: "notice", notices: "notice", notification: "notice", notifications: "notice",
+  melding: "notice", meldingen: "notice", mitteilung: "notice", mitteilungen: "notice", aviso: "notice", avisos: "notice",
 };
+
+/** Turns `notice_history` entries into searchable notice documents, matching macOS `NookSearch` notice indexing. */
+export function noticeDocs(entries: NoticeHistoryEntry[]): SearchDoc[] {
+  const out: SearchDoc[] = [];
+  for (const entry of entries) {
+    const title = entry.title?.trim() || entry.detail?.trim() || entry.context?.trim() || "";
+    if (!title) continue;
+    const detail = entry.title?.trim() ? entry.detail?.trim() || "" : "";
+    const context = entry.context?.trim() || "";
+    const subtitle = [detail, context].filter(Boolean).join(" · ") || undefined;
+    const flags: string[] = [];
+    if (!entry.seen) flags.push("unread");
+    if (entry.kind === "done" || entry.kind === "failed" || entry.kind === "waiting") flags.push(entry.kind);
+    const facets = context ? { app: context } : undefined;
+    const text = [entry.key, entry.route].filter(Boolean).join(" ") || undefined;
+    out.push({
+      id: `notice:${entry.id}`,
+      kind: "notice",
+      title,
+      subtitle,
+      text,
+      date: entry.date || undefined,
+      flags,
+      facets,
+      route: entry.route || undefined,
+      boost: entry.seen ? 0 : 0.15,
+    });
+  }
+  return out;
+}
 
 const DAY = 86400000;
 
@@ -547,7 +595,7 @@ export function rememberOpened(doc: SearchDoc, now = Date.now(), log = loadOpene
   if (doc.kind === "action") return log;
   const entry = log[doc.id] ?? { count: 0, last: now, doc };
   // Kept without what matched this time: the row shows its title and place.
-  const kept: SearchDoc = { id: doc.id, kind: doc.kind, title: doc.title, subtitle: doc.subtitle, date: doc.date, flags: doc.flags, facets: doc.facets };
+  const kept: SearchDoc = { id: doc.id, kind: doc.kind, title: doc.title, subtitle: doc.subtitle, date: doc.date, flags: doc.flags, facets: doc.facets, ...(doc.route ? { route: doc.route } : {}) };
   const next = { ...log, [doc.id]: { count: entry.count + 1, last: now, doc: kept } };
   const trimmed = Object.fromEntries(Object.entries(next).sort((a, b) => b[1].last - a[1].last).slice(0, openedLimit));
   write(OPENED, trimmed);

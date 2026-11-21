@@ -93,4 +93,5 @@ export const table: Table = {
   "Unit": { de: "Einheit", fr: "Unité", es: "Unidad" },
   "days": { de: "Tage", fr: "jours", es: "días" },
   "hours": { de: "Stunden", fr: "heures", es: "horas" },
+  "Stuck": { de: "Hängt fest", fr: "Bloqué", es: "Atascado" },
 };

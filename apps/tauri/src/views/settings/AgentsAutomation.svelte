@@ -129,7 +129,7 @@
   <div class="section-head">
     <h3>{tr("Geplande taken", "Scheduled tasks")}</h3>
     {#if !editing}
-      <button class="head-action" onclick={() => begin()}><Ico name="plus" size={12} />{tr("Nieuwe taak", "New task")}</button>
+      <button class="head-action" onclick={() => begin()}><Ico name="plus" size={14} />{tr("Nieuwe taak", "New task")}</button>
     {/if}
   </div>
   <p class="section-info">{tr("Een taak start een gewone sessie met de rechten die jij bij de taak koos, standaard “Vragen”. Zolang dit uit staat, loopt er niets automatisch.", "A task starts an ordinary session with the permissions you chose for the task, “Ask” by default. While this is off nothing runs by itself.")}</p>

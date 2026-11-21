@@ -5,15 +5,29 @@
   import { ticks } from "../../lib/whatsapp";
   import Ico from "../../components/ui/Ico.svelte";
 
-  let { receipt, size = 12 }: { receipt: WhatsAppReceipt | null | undefined; size?: number } = $props();
+  let { receipt, size = 12, detail = null, onclick }: {
+    receipt: WhatsAppReceipt | null | undefined;
+    size?: number;
+    detail?: string | null;
+    onclick?: (e: MouseEvent) => void;
+  } = $props();
   const mark = $derived(ticks(receipt));
+  const tip = $derived(detail || mark?.title || "");
   const icon = $derived(receipt === "pending" ? "clock" : receipt === "failed" ? "circle-alert" : receipt === "sent" ? "check" : "check-check");
 </script>
 
-{#if mark}<span class="ticks {mark.tone}" title={mark.title} aria-label={mark.title}><Ico name={icon} {size} stroke={receipt === "pending" ? 2 : 2.6} /></span>{/if}
+{#if mark}
+  {#if onclick}
+    <button type="button" class="ticks interactive {mark.tone}" title={tip} aria-label={tip} {onclick}><Ico name={icon} {size} stroke={receipt === "pending" ? 2 : 2.6} /></button>
+  {:else}
+    <span class="ticks {mark.tone}" title={tip} aria-label={tip}><Ico name={icon} {size} stroke={receipt === "pending" ? 2 : 2.6} /></span>
+  {/if}
+{/if}
 
 <style>
-  .ticks { display: inline-flex; flex: none; color: var(--chat-stamp); }
+  .ticks { display: inline-flex; align-items: center; flex: none; color: var(--chat-stamp); }
+  .ticks.interactive { padding: 0; border: 0; background: none; cursor: pointer; }
+  .ticks.interactive:hover:not(:disabled) { opacity: 0.82; background: none; border: 0; }
   .ticks.read { color: var(--blue); }
   .ticks.failed { color: var(--coral); }
 </style>

@@ -32,12 +32,14 @@
     onpiece,
     movable = false,
     look: lookOverride,
-  }: { size?: number; mood?: Mood; level?: number; ring?: RingPiece[]; onpiece?: (id: string) => void; movable?: boolean; look?: NookLook } = $props();
+    tint,
+  }: { size?: number; mood?: Mood; level?: number; ring?: RingPiece[]; onpiece?: (id: string) => void; movable?: boolean; look?: NookLook; tint?: string } = $props();
 
   // His face (Settings › Appearance, `NookLook` on the Mac): the eyes, a mouth, gloss, glow and blush; his color is the
   // accent you chose. A preview passes its own look.
   const face = $derived<NookLook>(lookOverride ?? nook.settings?.nookLook ?? LOOK_PRESETS[1].look);
-  const faceColor = $derived(accentCss(nook.settings?.accentHex ?? 0xf4f3f7));
+  // A card colors him by what it says (the Mac's `NookCard.mood`: amber for a message, mint when an agent is done).
+  const faceColor = $derived(tint ?? accentCss(nook.settings?.accentHex ?? 0xf4f3f7));
   // Nook as a buddy: the small moments (hello, waking up, a giggle, a blush) can be switched off.
   const moments = $derived(nook.settings?.buddyMoments !== false);
 

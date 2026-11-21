@@ -5,6 +5,7 @@
   // through its gateway, the others from the shared inbox Nook's chat helper fills (`chatsApi`). The other linked apps (calendar, mail,
   // GitHub, ...) sit under Apps in the sidebar and show what Nook sees in them. With no chat app on, the page says what
   // Chats is, with one click to start (`WSEmptyState`), and the window's sidebar may fold to its icons (`chatsShell`).
+  import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../lib/api";
   import { chatsShell } from "../lib/chats-shell.svelte";
@@ -21,8 +22,9 @@
   import SearchField from "../components/ui/SearchField.svelte";
   import PullRequestView from "./agents/pulls/PullRequestView.svelte";
   import ChatDetail from "./chats/ChatDetail.svelte";
+  import ChatPeople from "./chats/ChatPeople.svelte";
   import ChatRow from "./chats/ChatRow.svelte";
-  import ChatsSidebar, { type SidebarApp } from "./chats/ChatsSidebar.svelte";
+  import ChatsSidebar, { type ChatsMode, type SidebarApp } from "./chats/ChatsSidebar.svelte";
   import { pins } from "./chats/chat-actions.svelte";
   import GitHubPanel from "./connectors/GitHubPanel.svelte";
 
@@ -42,6 +44,10 @@
   let turningOn = $state(false);
   /// The pull request open beside the list while GitHub is chosen, with the account it is listed under.
   let gh = $state<{ account: string; item: PullRequestItem } | null>(null);
+  /// Live typing indicators keyed by inbox key (`chat-typing` event from Rust).
+  let typingByKey = $state<Record<string, string[]>>({});
+  /// Whether the page shows Chats or People (`ChatsMode` on the Mac).
+  let mode = $state<ChatsMode>("chats");
 
   async function load() {
     try {
@@ -67,6 +73,9 @@
     const a = connectorEvents.onChanged(load);
     const b = connectorEvents.onWhatsApp(load);
     const d = connectorEvents.onChats(load);
+    const t = listen<{ key: string; typing?: string[] }>("chat-typing", (e) => {
+      typingByKey = { ...typingByKey, [e.payload.key]: e.payload.typing ?? [] };
+    });
     const timer = setInterval(load, 30_000);
     let day = new Date().toDateString();
     // A new day: the groups ("Today", "Yesterday") and the rows' times move on with it.
@@ -77,6 +86,7 @@
       a.then((f) => f());
       b.then((f) => f());
       d.then((f) => f());
+      t.then((f) => f());
       clearInterval(timer);
       clearInterval(clock);
       chatsShell.folded = false;
@@ -109,9 +119,10 @@
   const others = $derived((overview?.connectors ?? []).filter((c) => c.configured && c.on && c.id !== WHATSAPP));
   const whatsappOn = $derived(!!wa?.settings?.enabled);
   const byKey = $derived(new Map(inbox.map((s) => [s.key, s])));
+  const withTyping = (e: ChatEntry): ChatEntry => (e.key in typingByKey ? { ...e, typing: typingByKey[e.key] } : e);
   const all = $derived<ChatEntry[]>([
-    ...chats.map((c) => whatsAppEntry(c, byKey.get(whatsAppKey(c.id)), wa?.link.kind === "connected")),
-    ...inbox.filter((s) => s.app !== WHATSAPP).map(inboxEntry),
+    ...chats.map((c) => withTyping(whatsAppEntry(c, byKey.get(whatsAppKey(c.id)), wa?.link.kind === "connected"))),
+    ...inbox.filter((s) => s.app !== WHATSAPP).map((s) => withTyping(inboxEntry(s))),
   ]);
   /// The chat apps with chats here (or switched on), busiest first after WhatsApp.
   const chatAppIds = $derived([...new Set([...(whatsappOn ? [WHATSAPP] : []), ...all.map((e) => e.app)])]);
@@ -199,12 +210,14 @@
       const key = (e as CustomEvent<string>).detail;
       const entry = all.find((x) => x.key === key);
       if (entry) {
+        mode = "chats";
         filter = null;
         view = "all";
         query = "";
         openChat(entry);
       } else {
         // Not listed yet (the list is still loading): it opens once it is.
+        mode = "chats";
         try { localStorage.setItem(LAST, key); } catch { /* not remembered */ }
         reopened = false;
         selected = null;
@@ -270,7 +283,7 @@
 
   // Escape closes the open chat when nothing else has the key.
   function keydown(e: KeyboardEvent) {
-    if (e.key !== "Escape" || e.defaultPrevented || !(selected || gh)) return;
+    if (e.key !== "Escape" || e.defaultPrevented || mode !== "chats" || !(selected || gh)) return;
     const target = e.target instanceof Element ? e.target : null;
     if (target?.closest("input, textarea, [contenteditable], dialog, [role='dialog'], [role='menu']")) return;
     if (gh) gh = null;
@@ -320,10 +333,13 @@
     </div>
   {:else}
     <div class="sidebar-column" use:dock>
-      <ChatsSidebar {view} app={filter} {counts} {apps} accounts={accounts.length > 1 ? accounts.map((a) => ({ name: a, count: newIn((e) => e.app === filter && e.account === a) })) : []} account={shownAccount}
-        onview={(v) => (view = v)} onapp={(id) => { filter = id; account = null; gh = null; }} onaccount={(a) => (account = a)} onadd={() => settings()} />
+      <ChatsSidebar {mode} {view} app={filter} {counts} {apps} accounts={accounts.length > 1 ? accounts.map((a) => ({ name: a, count: newIn((e) => e.app === filter && e.account === a) })) : []} account={shownAccount}
+        onmode={(m) => (mode = m)} onview={(v) => { mode = "chats"; view = v; }} onapp={(id) => { mode = "chats"; filter = id; account = null; gh = null; }} onaccount={(a) => { mode = "chats"; account = a; }} onadd={() => settings()} />
     </div>
 
+    {#if mode === "people"}
+      <ChatPeople entries={all} {now} onopenchat={(e) => { mode = "chats"; filter = null; view = "all"; query = ""; openChat(e); }} />
+    {:else}
     <section class="list" aria-label={listTitle}>
       <!-- The list's title (`PanelListHeader`): the view, and the app when one is chosen, with the one action that fits. -->
       <header class="list-head" data-tauri-drag-region>
@@ -417,6 +433,7 @@
         </div>
       {/if}
     </section>
+    {/if}
   {/if}
 </div>
 

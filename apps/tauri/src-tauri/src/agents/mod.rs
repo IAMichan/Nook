@@ -4,6 +4,7 @@
 //! `agent-attention` en `agent-usage`.
 
 pub mod terminal;
+pub mod usage;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -61,9 +62,11 @@ pub fn setup(app: &AppHandle) {
         changes: Mutex::new(HashMap::new()),
         scanned: Mutex::new(None),
     });
+    usage::manage(app);
     if !crate::platform::capabilities().local_agents {
         return;
     }
+    usage::start(app);
     install_helpers();
     let h = hub.clone();
     tauri::async_runtime::spawn(async move {

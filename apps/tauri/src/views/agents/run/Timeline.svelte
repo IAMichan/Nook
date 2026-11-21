@@ -260,14 +260,15 @@
 
     {#if active}
       {@const waiting = run.status === "waitingApproval" || asking}
+      {@const compacting = !!run.compacting && !waiting}
       <div class="live">
-        <span class="spin" class:waiting>{#if waiting}<Icon name="hand" size={13} />{:else}<Icon name="loader" size={13} />{/if}</span>
+        <span class="spin" class:waiting class:compacting>{#if waiting}<Icon name="hand" size={13} />{:else}<Icon name="loader" size={13} />{/if}</span>
         <div class="live-text">
           <div class="live-head">
-            <span class="label">{waiting ? (asking ? tr("Wacht op je antwoord…", "Waiting for your answer…") : tr("Wacht op je goedkeuring…", "Waiting for your approval…")) : (liveLine.tool ?? tr("De agent werkt…", "The agent is working…"))}</span>
+            <span class="label" class:compacting>{waiting ? (asking ? tr("Wacht op je antwoord…", "Waiting for your answer…") : tr("Wacht op je goedkeuring…", "Waiting for your approval…")) : compacting ? tr("Vat het gesprek samen…", "Compacting the conversation…") : (liveLine.tool ?? tr("De agent werkt…", "The agent is working…"))}</span>
             {#if run.turnStartedAt && !waiting}<span class="faint mono">{T.duration((now - Date.parse(run.turnStartedAt)) / 1000)}</span>{/if}
           </div>
-          {#if liveLine.thought && !waiting}<div class="thought">{liveLine.thought}</div>{/if}
+          {#if liveLine.thought && !waiting && !compacting}<div class="thought">{liveLine.thought}</div>{/if}
         </div>
       </div>
     {/if}
@@ -341,10 +342,12 @@
   .live { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 0 4px; color: var(--text2); }
   .spin { display: inline-flex; margin-top: 1px; color: var(--text3); animation: spin 1s linear infinite; }
   .spin.waiting { color: var(--amber); animation: none; }
+  .spin.compacting { color: var(--amber); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .live-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .live-head { display: flex; gap: 6px; align-items: center; }
   .live-head .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+  .live-head .label.compacting { color: var(--amber); }
   .mono { font-family: var(--mono); font-size: 11px; }
   .thought { color: var(--text3); font-size: 12px; background: linear-gradient(90deg, var(--text3), var(--paper), var(--text3)); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2.4s linear infinite; }
   @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }

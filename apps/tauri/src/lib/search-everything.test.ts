@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerPieces, answerTokens, backendRequest, citations, cleanAnswer, cycleKind, gather, keywordQuery, looksLikeQuestion, mergeBackend, orderedByCitation, rememberOpened, rememberSearch, recentlyOpened, type BackendHit, grouped, highlightRanges, parseDate, parseQuery, search, segments, type SearchDoc } from "./search-everything";
+import { answerPieces, answerTokens, backendRequest, citations, cleanAnswer, cycleKind, gather, keywordQuery, looksLikeQuestion, mergeBackend, noticeDocs, orderedByCitation, rememberOpened, rememberSearch, recentlyOpened, searchKinds, type BackendHit, type NoticeHistoryEntry, grouped, highlightRanges, parseDate, parseQuery, search, segments, type SearchDoc } from "./search-everything";
 
 const now = new Date(2026, 10, 19, 12).getTime();
 const day = 86400000;
@@ -50,6 +50,7 @@ describe("search everything", () => {
       alternatives: [["invoice"]], excluded: ["spam"], regex: null, from: ["anna"], kinds: ["chat"], limit: 200,
     });
     expect(backendRequest(parseQuery("in:settings appearance"))).toBeNull();
+    expect(backendRequest(parseQuery("in:notices approval"))).toBeNull();
     expect(backendRequest(parseQuery("is:unread"))).toBeNull();
     const hit = (id: string, kind: string): BackendHit => ({
       id, kind, title: "Taxes", subtitle: "", date: null, flags: [], facets: {}, boost: 0, snippet: "the invoice for March",
@@ -62,6 +63,37 @@ describe("search everything", () => {
     expect(found).toEqual(["chat:whatsapp:1", "run:1"]);
     // from: keeps only what the backend found by its author.
     expect(search(merged, parseQuery("from:me"), now).map((h) => h.doc.id).sort()).toEqual(["chat:whatsapp:1", "run:1"]);
+  });
+
+  it("indexes missed notices with unread flags, localized in: aliases, facets and routes", () => {
+    const entries: NoticeHistoryEntry[] = [
+      { id: 1, key: "agent:run-42", kind: "waiting", title: "Permission needed", detail: "Run cargo test", context: "Claude Code", date: now - 60_000, route: "agent:run-42", seen: false },
+      { id: 2, key: "chat:whatsapp#anna", kind: "info", title: "Anna", detail: "Are we still on for lunch?", context: "WhatsApp", date: now - 300_000, route: "chat:whatsapp#anna", seen: true },
+      { id: 3, key: "", kind: "info", title: "", detail: "", context: "", date: now, route: "", seen: true },
+    ];
+    const notices = noticeDocs(entries);
+    expect(notices).toHaveLength(2);
+    expect(notices[0]).toMatchObject({
+      id: "notice:1",
+      kind: "notice",
+      title: "Permission needed",
+      subtitle: "Run cargo test · Claude Code",
+      flags: ["unread", "waiting"],
+      facets: { app: "Claude Code" },
+      route: "agent:run-42",
+    });
+    expect(searchKinds.indexOf("notice")).toBeGreaterThan(searchKinds.indexOf("memory"));
+    expect(searchKinds.indexOf("notice")).toBeLessThan(searchKinds.indexOf("setting"));
+
+    const all = [...docs, ...notices];
+    expect(search(all, parseQuery("in:notices", now), now).map((h) => h.doc.id)).toEqual(["notice:1", "notice:2"]);
+    expect(search(all, parseQuery("in:meldingen is:unread", now), now).map((h) => h.doc.id)).toEqual(["notice:1"]);
+    expect(search(all, parseQuery("in:mitteilungen lunch", now), now).map((h) => h.doc.id)).toEqual(["notice:2"]);
+    expect(search(all, parseQuery("in:avisos app:whatsapp", now), now).map((h) => h.doc.id)).toEqual(["notice:2"]);
+    expect(search(all, parseQuery("cargo", now), now).map((h) => h.doc.id)).toEqual(["notice:1"]);
+
+    const log = rememberOpened(notices[0], now, {});
+    expect(recentlyOpened(log)[0].route).toBe("agent:run-42");
   });
 
   it("reads questions for Search with AI and its citations", () => {

@@ -12,7 +12,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 
-use super::inbox::Reaction;
+use super::inbox::{MessageReadDetail, MessageReader, Reaction};
 use super::{BridgedChat, ChatBridge, ChatKind, ChatMedia, InboxMessage, Receipt};
 
 /// The port the helper listens on, on 127.0.0.1 only (the same as on the Mac).
@@ -179,6 +179,64 @@ pub fn receipt(message: &Value) -> Receipt {
     }
 }
 
+/// Extracts read timestamp, group readers list, and per-person receipts from a helper message payload.
+pub fn receipt_details(message: &Value, chat: &ServiceChat) -> (Option<DateTime<Utc>>, Vec<String>, Vec<MessageReader>) {
+    let mut read_at: Option<DateTime<Utc>> = None;
+    let mut read_by: Vec<String> = vec![];
+    let mut readers: Vec<MessageReader> = vec![];
+
+    let person_name = |id: &str| -> String {
+        chat.people.get(id).cloned().filter(|n| !n.is_empty()).unwrap_or_else(|| id.to_string())
+    };
+
+    match message.get("seen") {
+        Some(Value::String(ts)) => {
+            read_at = date(&Value::String(ts.clone()));
+        }
+        Some(Value::Object(people)) => {
+            let mut entries: Vec<(&String, &Value)> = people.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (uid, val) in entries {
+                if chat.me.as_deref() == Some(uid.as_str()) {
+                    continue;
+                }
+                if !seen(Some(val)) {
+                    continue;
+                }
+                let when = match val {
+                    Value::String(_) => date(val),
+                    _ => None,
+                };
+                if let Some(w) = when {
+                    read_at = Some(read_at.map_or(w, |cur| cur.min(w)));
+                }
+                let name = person_name(uid);
+                if !name.is_empty() {
+                    if !read_by.iter().any(|existing| existing.eq_ignore_ascii_case(&name)) {
+                        read_by.push(name.clone());
+                    }
+                    readers.push(MessageReader { name, receipt: Receipt::Read, date: when });
+                }
+            }
+        }
+        _ => {}
+    }
+
+    if let Some(delivered) = message.pointer("/sendStatus/deliveredToUsers").and_then(Value::as_array) {
+        for uid in delivered.iter().filter_map(Value::as_str) {
+            if chat.me.as_deref() == Some(uid) {
+                continue;
+            }
+            let name = person_name(uid);
+            if !name.is_empty() && !readers.iter().any(|r| r.name.eq_ignore_ascii_case(&name)) {
+                readers.push(MessageReader { name, receipt: Receipt::Delivered, date: None });
+            }
+        }
+    }
+
+    (read_at, read_by, readers)
+}
+
 /// What an attachment is, by what the helper says of it.
 pub fn media(attachment: &Value) -> ChatMedia {
     let name = text(attachment.get("fileName").unwrap_or(&Value::Null));
@@ -276,6 +334,26 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
         .collect();
     list.sort_by_key(|m| m.date);
     list
+}
+
+/// Per-message read details (`read_at`, `read_by`, `readers`) for outgoing messages in a `/messages` answer, keyed by
+/// Nook's message id.
+pub fn message_read_details(json: &Value, chat: &ServiceChat) -> HashMap<String, MessageReadDetail> {
+    let mut out = HashMap::new();
+    for message in items(json) {
+        let Some(id) = message.get("id").and_then(Value::as_str) else { continue };
+        if message.get("isSender").and_then(Value::as_bool) != Some(true)
+            || message.get("isDeleted").and_then(Value::as_bool) == Some(true)
+        {
+            continue;
+        }
+        let (read_at, read_by, readers) = receipt_details(message, chat);
+        let detail = MessageReadDetail { read_at, read_by, readers };
+        if !detail.is_empty() {
+            out.insert(message_id(id, &chat.id), detail);
+        }
+    }
+    out
 }
 
 /// The people of a chat a text tags as "@Name", by their id in the helper (`ChatTags`): the longest name wins.
@@ -674,6 +752,11 @@ impl ChatdBridge {
         Self::lock(&self.state).chats.get(chat_id).filter(|c| c.app == app).cloned()
     }
 
+    /// The helper's chat by its helper-side id alone (used when live typing events arrive).
+    pub fn chat_by_id(&self, chat_id: &str) -> Option<ServiceChat> {
+        Self::lock(&self.state).chats.get(chat_id).cloned()
+    }
+
     /// Older messages of one chat (scrolling back, `ChatHistoryBridge`): the app is asked for them, then `limit` of the
     /// newest are read, as history (never new). `None` when the helper does not know the chat.
     pub async fn older(&self, app: &str, chat_id: &str, limit: usize) -> Result<Option<BridgedChat>, String> {
@@ -681,7 +764,7 @@ impl ChatdBridge {
         let Some(chat) = self.chat(app, chat_id) else { return Ok(None) };
         let more = client.paginate(chat_id).await?;
         let json = client.messages(chat_id, limit, &[]).await?;
-        let mut bridged = Self::bridged(&chat, messages(&json, &chat), deleted(&json, &chat), false);
+        let mut bridged = Self::bridged(&chat, messages(&json, &chat), deleted(&json, &chat), message_read_details(&json, &chat), false);
         bridged.history = true;
         bridged.has_older = Some(more);
         Ok(Some(bridged))
@@ -694,7 +777,13 @@ impl ChatdBridge {
         list
     }
 
-    fn bridged(chat: &ServiceChat, messages: Vec<InboxMessage>, deleted: Vec<String>, current: bool) -> BridgedChat {
+    fn bridged(
+        chat: &ServiceChat,
+        messages: Vec<InboxMessage>,
+        deleted: Vec<String>,
+        read_details: HashMap<String, MessageReadDetail>,
+        current: bool,
+    ) -> BridgedChat {
         BridgedChat {
             app: chat.app.clone(),
             name: chat.title.clone(),
@@ -708,6 +797,7 @@ impl ChatdBridge {
             activity: chat.last,
             muted_in_app: current.then_some(chat.is_muted),
             listed: current,
+            read_details,
             ..Default::default()
         }
     }
@@ -759,7 +849,7 @@ impl ChatBridge for ChatdBridge {
                 if reread || remuted {
                     state.reported_unread.insert(chat.id.clone(), chat.unread);
                     state.reported_muted.insert(chat.id.clone(), chat.is_muted);
-                    let mut bridged = Self::bridged(chat, vec![], vec![], true);
+                    let mut bridged = Self::bridged(chat, vec![], vec![], HashMap::new(), true);
                     if !reread {
                         bridged.unread = None;
                     }
@@ -813,6 +903,7 @@ impl ChatBridge for ChatdBridge {
             };
             let messages = messages(&answer, chat);
             let deleted = deleted(&answer, chat);
+            let read_details = message_read_details(&answer, chat);
             // The chat moved to a message the answer does not hold yet: read again at the next turns, a few times.
             if is_behind(&messages, chat) && state.behind.get(&chat.id).copied().unwrap_or(0) < Self::BEHIND_RETRIES {
                 *state.behind.entry(chat.id.clone()).or_default() += 1;
@@ -826,10 +917,10 @@ impl ChatBridge for ChatdBridge {
                 state.reported_unread.insert(chat.id.clone(), chat.unread);
                 state.reported_muted.insert(chat.id.clone(), chat.is_muted);
             }
-            if messages.is_empty() && deleted.is_empty() && !current {
+            if messages.is_empty() && deleted.is_empty() && read_details.is_empty() && !current {
                 continue;
             }
-            result.push(Self::bridged(chat, messages, deleted, current));
+            result.push(Self::bridged(chat, messages, deleted, read_details, current));
         }
         if let Some(error) = failure {
             if result.is_empty() {
@@ -918,6 +1009,37 @@ mod tests {
         assert_eq!(receipt(&json!({"seen": "2026-11-17T12:00:00Z"})), Receipt::Read);
         assert_eq!(receipt(&json!({"seen": {"@bo": false, "@cy": true}})), Receipt::Read);
         assert_eq!(receipt(&json!({})), Receipt::Sent);
+
+        let mut people = HashMap::new();
+        people.insert("@bo".into(), "Bo".into());
+        people.insert("@cy".into(), "Cy".into());
+        let chat = ServiceChat {
+            id: "!g:nook".into(),
+            app: "telegram".into(),
+            title: "Group".into(),
+            is_group: true,
+            unread: 0,
+            is_muted: false,
+            last: None,
+            members: vec!["Bo".into(), "Cy".into()],
+            people,
+            me: Some("@me".into()),
+            account: None,
+        };
+        let (read_at, read_by, readers) = receipt_details(
+            &json!({
+                "seen": {"@bo": "2026-11-17T12:05:00Z", "@me": true},
+                "sendStatus": {"deliveredToUsers": ["@bo", "@cy", "@me"]}
+            }),
+            &chat,
+        );
+        assert!(read_at.is_some());
+        assert_eq!(read_by, vec!["Bo"]);
+        assert_eq!(readers.len(), 2);
+        assert_eq!(readers[0].name, "Bo");
+        assert_eq!(readers[0].receipt, Receipt::Read);
+        assert_eq!(readers[1].name, "Cy");
+        assert_eq!(readers[1].receipt, Receipt::Delivered);
     }
 
     #[test]

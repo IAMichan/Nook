@@ -53,8 +53,9 @@
 /* A section heading with an action on the right (`ConnectionListHeader` on the Mac: title left, + action right). */
 .settings .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin: var(--space-32) 0 0; }
 .settings .section-head h3 { margin: 0; }
-.settings .section-head .head-action { display: inline-flex; align-items: center; gap: var(--space-4); height: 22px; padding: 0 var(--space-8); border: none; border-radius: var(--radius-chip); background: var(--settings-fill); color: var(--text-strong); font: var(--text-label); }
-.settings .section-head .head-action:hover:not(:disabled) { background: var(--settings-control); color: var(--paper); }
+/* The add action beside a list's title (`ConnectionListHeader`): a plus and the words, no fill, as the Mac draws it. */
+.settings .section-head .head-action { display: inline-flex; align-items: center; gap: var(--space-6); height: auto; padding: 0; border: none; background: none; color: var(--text-strong); font: var(--text-control); white-space: nowrap; }
+.settings .section-head .head-action:hover:not(:disabled) { background: none; color: var(--paper); }
 /* Inline search card (`NookSearchField`, inline style on Archive and Connections): full-width surface card with magnifier. */
 .settings .search-card { display: flex; align-items: center; gap: var(--space-8); height: 40px; padding: 0 var(--space-12); background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); color: var(--text3); }
 .settings .search-card:focus-within { border-color: var(--line2); }

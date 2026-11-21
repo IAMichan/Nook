@@ -18,6 +18,8 @@
   import { openNewSessionIn } from "../new-session.svelte";
   import ApprovalCard from "../ApprovalCard.svelte";
   import QuestionCard from "../QuestionCard.svelte";
+  import ContextBreakdown from "./ContextBreakdown.svelte";
+  import GoalStrip from "./GoalStrip.svelte";
   import RunComposer from "./RunComposer.svelte";
   import SessionSidePanel from "./SessionSidePanel.svelte";
   import { sidePanel } from "./side-panel.svelte";
@@ -44,7 +46,17 @@
   const sessionKey = $derived(`run:${runId}`);
   const approvals = $derived(agents.approvals.filter((a) => a.sessionKey === sessionKey));
   const question = $derived(agents.questionFor(sessionKey));
-  const fraction = $derived(run?.usage.contextWindow && run.usage.contextTokens ? run.usage.contextTokens / run.usage.contextWindow : 0);
+  const showHeaderContext = $derived.by(() => {
+    if (!run) return false;
+    if (run.compacting) return true;
+    const win = run.usage.contextWindow ?? 0;
+    const used = run.usage.contextTokens ?? 0;
+    if (win <= 0 || used <= 0) return false;
+    const frac = used / win;
+    const threshold = Math.min(350_000, win * 0.8);
+    const pressure = threshold > 0 ? used / threshold : frac;
+    return frac > 0.6 || pressure > 0.8;
+  });
 
   // Only another run (or one that just got a repository) loads again: reading the run itself here would re-run this,
   // with a full git refresh, on every workspace update.
@@ -334,8 +346,8 @@
         </Dropdown>
       {/if}
       <span class="spacer"></span>
-      {#if fraction > 0.6}
-        <span class="ctx" class:crit={fraction > 0.85} title={tr("Hoe vol het contextvenster zat bij de laatste modelaanroep", "How full the context window was at the last model call")}>ctx {Math.round(fraction * 100)}%</span>
+      {#if showHeaderContext}
+        <ContextBreakdown {run} {events} below canCompact={run.provider === "claude" || run.provider === "codex"} />
       {/if}
       {#if usage && isActive(run.status)}
         <!-- `ResourceUsageBadge`: "34 % · 512 MB" while the agent works; amber past three cores. -->
@@ -417,6 +429,9 @@
             <!-- Suggested steps for what the agent just said (`ActionSuggestionBar`, BR-60), above the composer. -->
             <ActionSuggestionBar turn={suggestionTurn} busy={isActive(run.status)} place={{ kind: "agent", name: workspace.provider(run.provider)?.name ?? run.provider, title: run.title }}
               lines={() => events.filter((e) => e.kind === "user" || e.kind === "assistant").slice(-12).map((e) => ({ speaker: e.kind === "user" ? "You" : (workspace.provider(run.provider)?.name ?? run.provider), text: e.text, id: e.id }))} />
+            {#if run.goal}
+              <GoalStrip runId={run.id} goal={run.goal} />
+            {/if}
             <RunComposer bind:this={composer} {run} />
           {/if}
           </div>
@@ -453,8 +468,6 @@
   .foot { display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-16); flex: none; }
   .title-input { flex: 1; padding: 3px 8px; }
   .spacer { flex: 1; }
-  .ctx { font-family: var(--mono); font-size: 11px; color: var(--amber); }
-  .ctx.crit { color: var(--coral); }
   .files { font-family: var(--mono); font-size: 11px; color: var(--text3); }
   .branch { display: inline-flex; align-items: center; gap: var(--space-6); height: 26px; padding: 0 7px; margin: 0; border: 0; border-radius: var(--radius-control); background: none; font: var(--text-label); color: var(--text2); min-width: 0; white-space: nowrap; flex-shrink: 1; }
   .branch:hover, .branch.on { background: var(--smoke); color: var(--paper); }

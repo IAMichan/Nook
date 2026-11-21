@@ -89,7 +89,8 @@
     chats: { component: Accounts, props: { part: "chats" } },
     connections: { component: Accounts, props: { part: "services" } },
     iphone: { component: Companion, when: desktop },
-    privacy: { component: Privacy },
+    privacy: { component: Privacy, props: { part: "access" } },
+    activityLog: { component: Privacy, props: { part: "log" } },
     maintenance: { component: Maintenance },
     about: { component: About },
   };
@@ -101,7 +102,7 @@
     autocomplete: "text-cursor", autocompleteApps: "layout-grid", autocompleteStyle: "type", autocompletePlayground: "text-cursor-input",
     autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", usage: "chart-column", sessions: "messages-square",
     worktrees: "folder", openIn: "external-link", archive: "archive", automation: "calendar-clock", projects: "folder-cog", pullRequests: "git-branch", chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone",
-    privacy: "hand", maintenance: "wrench", about: "info",
+    privacy: "hand", activityLog: "list", maintenance: "wrench", about: "info",
   };
 
   const shown = (id: SettingsSectionId) => subjects[id].when?.() ?? true;

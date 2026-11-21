@@ -70,6 +70,7 @@ impl RunStore {
                     run.turn_started_at = None;
                     run.updated_at = now;
                 }
+                run.compacting = false;
                 run
             })
             .collect()
@@ -332,6 +333,8 @@ mod tests {
             pending_handoff: None,
             conversation: None,
             pending_rollback: None,
+            goal: None,
+            compacting: false,
         }
     }
 
@@ -341,6 +344,8 @@ mod tests {
         let store = RunStore::new(dir.clone());
         let mut active = run(RunStatus::Running, RunProvider::Claude, "");
         active.turn_started_at = Some(Utc::now());
+        active.goal = Some("Ship Windows parity".into());
+        active.compacting = true;
         let done = run(RunStatus::Completed, RunProvider::Codex, "");
         store.save_runs(&[active.clone(), done.clone()]).unwrap();
         let loaded = store.load_runs(Utc::now());
@@ -348,6 +353,8 @@ mod tests {
         assert_eq!(loaded[0].status, RunStatus::Stopped);
         assert_eq!(loaded[0].status_detail.as_deref(), Some("interrupted"));
         assert!(loaded[0].turn_started_at.is_none());
+        assert_eq!(loaded[0].goal.as_deref(), Some("Ship Windows parity"));
+        assert!(!loaded[0].compacting);
         assert_eq!(loaded[1].status, RunStatus::Completed);
         let _ = std::fs::remove_dir_all(dir);
     }

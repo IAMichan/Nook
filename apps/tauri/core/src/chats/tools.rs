@@ -101,7 +101,9 @@ pub fn overview(threads: &[&InboxThread], limit: usize) -> String {
         .map(|t| {
             let unread = if t.unread > 0 { format!(" · {} unread", t.unread) } else { String::new() };
             let last = t.messages.last().map(|m| format!(" · {} {}: {}", when(m.date), who(t, m), clip(&message_text(m), 120))).unwrap_or_default();
-            format!("- {} · {}{unread}{last}", app_name(&t.app), t.name)
+            let trust = t.trust();
+            let warning = if trust.is_suspicious() { format!(" · {}", trust.marker()) } else { String::new() };
+            format!("- {} · {}{unread}{last}{warning}", app_name(&t.app), t.name)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -121,6 +123,10 @@ pub fn transcript(thread: &InboxThread, limit: usize) -> String {
 /// What a chat is: its app, kind, members and unread count.
 pub fn details(thread: &InboxThread) -> String {
     let mut parts = vec![];
+    let trust = thread.trust();
+    if trust.is_suspicious() {
+        parts.push(trust.marker());
+    }
     if let Some(members) = thread.members.as_ref().filter(|m| !m.is_empty()) {
         parts.push(format!("Group with {}", members.join(", ")));
     }

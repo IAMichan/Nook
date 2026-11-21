@@ -153,6 +153,24 @@ class AgentsStore {
     return this.questions.find((q) => q.sessionKey === sessionKey);
   }
 
+  /// Files dropped onto a session row in the list, waiting for the detail view's composer to pick them up.
+  droppedFiles = $state<Record<string, string[]>>({});
+
+  queueDroppedFiles(sessionId: string, paths: string[]) {
+    const clean = paths.map((p) => p.trim()).filter(Boolean);
+    if (!clean.length) return;
+    const prev = this.droppedFiles[sessionId] ?? [];
+    this.droppedFiles = { ...this.droppedFiles, [sessionId]: [...prev, ...clean] };
+  }
+
+  takeDroppedFiles(sessionId: string): string[] {
+    const list = this.droppedFiles[sessionId];
+    if (!list?.length) return [];
+    const { [sessionId]: _, ...rest } = this.droppedFiles;
+    this.droppedFiles = rest;
+    return list;
+  }
+
   /// Deny and tell the agent why; a bridge request (no agent behind it) takes a plain Deny.
   async denyWithReason(a: AgentApproval, reason: string) {
     try {

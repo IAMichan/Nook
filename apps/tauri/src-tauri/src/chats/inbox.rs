@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use nook_core::chats::chatd::{network_id, ID_PREFIX};
-use nook_core::chats::{ChatInbox, ChatKind, ChatReadState, InboxMessage, InboxThread};
+use nook_core::chats::{ChatInbox, ChatKind, ChatReadState, FilledMessage, InboxThread};
 use nook_core::connectors::whatsapp;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -24,15 +24,20 @@ pub struct ChatSummary {
     name: String,
     kind: Option<ChatKind>,
     account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    handle: Option<String>,
     read: ChatReadState,
-    /// The newest message, when Nook has it.
-    last: Option<InboxMessage>,
+    /// The newest message, when Nook has it (with filled ticks and read details).
+    last: Option<FilledMessage>,
     /// When it last moved.
     activity: DateTime<Utc>,
     members: usize,
     muted_in_app: bool,
     /// Nook can write in it from here (its app is linked through the helper or the gateway).
     sends: bool,
+    /// People currently typing in this chat, when the app reports it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    typing: Vec<String>,
 }
 
 /// One chat with its messages, oldest first.
@@ -41,25 +46,32 @@ pub struct ChatSummary {
 pub struct ChatThread {
     #[serde(flatten)]
     summary: ChatSummary,
-    messages: Vec<InboxMessage>,
+    messages: Vec<FilledMessage>,
     /// A group's people by name.
     people: Vec<String>,
     has_older: bool,
 }
 
-fn summary(thread: &InboxThread, sends: bool) -> ChatSummary {
+fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSummary {
+    for who in &thread.typing {
+        if !who.is_empty() && !typing.iter().any(|existing| existing.eq_ignore_ascii_case(who)) {
+            typing.push(who.clone());
+        }
+    }
     ChatSummary {
         key: thread.id.clone(),
         app: thread.app.clone(),
         name: thread.name.clone(),
         kind: thread.kind,
         account: thread.account.clone(),
+        handle: thread.handle.clone(),
         read: thread.read_state(),
-        last: thread.messages.last().cloned(),
+        last: thread.filled_last(),
         activity: thread.last(),
         members: thread.members.as_ref().map_or(0, Vec::len),
         muted_in_app: thread.muted_in_app.unwrap_or(false),
         sends,
+        typing,
     }
 }
 
@@ -92,7 +104,7 @@ pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
             .into_iter()
             // A chat Nook knows only from disk, without a message, shows once its app lists it or brings one again.
             .filter(|t| !t.messages.is_empty() || ChatInbox::is_listed(t, now))
-            .map(|t| summary(t, if t.app == whatsapp::APP { wa } else { helper }))
+            .map(|t| summary(t, if t.app == whatsapp::APP { wa } else { helper }, c.chat_helper.typing_in(&t.id)))
             .collect()
     })
 }
@@ -101,10 +113,11 @@ pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
 #[tauri::command]
 pub fn chat_inbox_thread(c: State<'_, Connectors>, key: String) -> Option<ChatThread> {
     let can = chat_id(&c, &key).is_some_and(|(app, _)| sends(&c, &app));
+    let typing = c.chat_helper.typing_in(&key);
     c.env.chats.read(|inbox| {
         inbox.threads.get(&key).map(|t| ChatThread {
-            summary: summary(t, can),
-            messages: t.messages.clone(),
+            summary: summary(t, can, typing),
+            messages: t.filled_messages(),
             people: t.members.clone().unwrap_or_default(),
             has_older: t.has_older.unwrap_or(false),
         })
@@ -401,10 +414,14 @@ pub async fn chat_draft(app: AppHandle, c: State<'_, Connectors>, key: String, i
 }
 
 /// The answer you will likely send, as grey text in the empty field of a chat whose newest message is someone else's
-/// (`ChatReplySuggestion`); `None` when there is nothing to answer or no brain.
+/// (`ChatReplySuggestion`); `None` when there is nothing to answer, the chat looks like phishing/scam (CH-39), or no brain.
 #[tauri::command]
 pub async fn chat_suggest_reply(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<Option<String>> {
-    if !transcript(&c, &key).is_some_and(|(_, _, _, theirs)| theirs) {
+    let allowed = c
+        .env
+        .chats
+        .read(|inbox| inbox.threads.get(&key).is_some_and(nook_core::chats::follow_up::should_suggest_reply));
+    if !allowed {
         return Ok(None);
     }
     Ok(write_message(&app, &c, &key, "", 60).await.ok().flatten())

@@ -3,7 +3,7 @@
   // message, and where it stands at the end of that line: the count of what is new, one grey tick for read in Nook.
   // Under the pointer its one step shows where its time was (`ChatsRowAction`); a right-click opens its menu. The same
   // row for every chat app.
-  import { appName, clockOrDay, type ChatEntry } from "../../lib/chats-list";
+  import { appName, clockOrDay, typingLine, type ChatEntry } from "../../lib/chats-list";
   import { tr } from "../../lib/i18n.svelte";
   import CountBadge from "../../components/ui/CountBadge.svelte";
   import Ico from "../../components/ui/Ico.svelte";
@@ -17,6 +17,7 @@
   let menuAt = $state<DOMRect | null>(null);
   const unread = $derived(entry.read === "unread");
   const app = $derived(appName(entry.app));
+  const typing = $derived(typingLine(entry.typing, entry.isGroup, entry.name));
   // Where the click takes it: what is new read in Nook (WhatsApp reads in the app at once), read in Nook passed on to
   // the app, and read everywhere unread again.
   const step = $derived(
@@ -26,7 +27,7 @@
         ? { title: tr("Gelezen in {app}", "Read in {app}", { app }), help: tr("Markeer gelezen in {app}", "Mark as read in {app}", { app }), mark: "check-check" as const, run: () => markReadInApp(entry) }
         : { title: tr("Ongelezen", "Unread"), help: tr("Markeer als ongelezen", "Mark as unread"), mark: "dot" as const, run: () => markUnread(entry) },
   );
-  const label = $derived(`${app}, ${entry.name}${unread ? `, ${tr("{n} nieuw", "{n} new", { n: entry.unread })}` : entry.read === "readInNook" ? `, ${tr("Gelezen in Nook", "Read in Nook")}` : ""}: ${entry.preview}`);
+  const label = $derived(`${app}, ${entry.name}${unread ? `, ${tr("{n} nieuw", "{n} new", { n: entry.unread })}` : entry.read === "readInNook" ? `, ${tr("Gelezen in Nook", "Read in Nook")}` : ""}: ${typing ?? entry.preview}`);
 </script>
 
 <div class="wrap" role="presentation" onmouseenter={() => (hovering = true)} onmouseleave={() => (hovering = false)}
@@ -40,8 +41,12 @@
         <span class="when" class:hidden={hovering}>{clockOrDay(entry.last, now)}</span>
       </span>
       <span class="bottom">
-        {#if entry.ticks}<Ticks receipt={entry.ticks} size={12} />{/if}
-        <span class="preview">{entry.preview || " "}</span>
+        {#if typing}
+          <span class="preview typing">{typing}</span>
+        {:else}
+          {#if entry.ticks}<Ticks receipt={entry.ticks} size={12} />{/if}
+          <span class="preview">{entry.preview || " "}</span>
+        {/if}
         {#if unread}<CountBadge count={entry.unread} />{:else if entry.read === "readInNook" && !entry.lastIsMine}<span class="grey" title={tr("Gelezen in Nook", "Read in Nook")}><Ico name="check" size={11} stroke={2.8} /></span>{/if}
       </span>
     </span>
@@ -77,4 +82,5 @@
   .unread .when { color: var(--amber); }
   .preview { flex: 1; min-width: 0; font: var(--text-detail); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .unread .preview { color: var(--text-strong); }
+  .preview.typing, .unread .preview.typing { color: var(--mint); }
 </style>

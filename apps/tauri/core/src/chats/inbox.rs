@@ -48,6 +48,74 @@ pub struct InboxMessage {
     pub versions: Vec<MessageVersion>,
 }
 
+/// One person in a group and how far your message got with them (`ChatReader` on the Mac).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageReader {
+    pub name: String,
+    pub receipt: Receipt,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<DateTime<Utc>>,
+}
+
+/// Extra receipt details kept per message id on a thread (`read_at`, group `read_by`, per-person `readers`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MessageReadDetail {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readers: Vec<MessageReader>,
+}
+
+impl MessageReadDetail {
+    pub fn is_empty(&self) -> bool {
+        self.read_at.is_none() && self.read_by.is_empty() && self.readers.is_empty()
+    }
+
+    pub fn merge_from(&mut self, incoming: &MessageReadDetail) {
+        if incoming.read_at.is_some() && self.read_at.is_none() {
+            self.read_at = incoming.read_at;
+        }
+        for who in &incoming.read_by {
+            if !who.is_empty() && !self.read_by.iter().any(|existing| existing.eq_ignore_ascii_case(who)) {
+                self.read_by.push(who.clone());
+            }
+        }
+        for reader in &incoming.readers {
+            if let Some(existing) = self.readers.iter_mut().find(|r| r.name.eq_ignore_ascii_case(&reader.name)) {
+                let next = existing.receipt.advanced(reader.receipt);
+                if next != existing.receipt {
+                    existing.receipt = next;
+                    if reader.date.is_some() {
+                        existing.date = reader.date;
+                    }
+                } else if existing.date.is_none() && reader.date.is_some() {
+                    existing.date = reader.date;
+                }
+            } else if !reader.name.is_empty() {
+                self.readers.push(reader.clone());
+            }
+        }
+    }
+}
+
+/// A message serialized for the interface with filled ticks and optional `read_at` / `read_by` / `readers`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilledMessage {
+    #[serde(flatten)]
+    pub message: InboxMessage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readers: Vec<MessageReader>,
+}
+
 /// An earlier text of a message and until when it said that.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -141,6 +209,8 @@ pub struct BridgedChat {
     pub ephemeral: bool,
     /// A group you left or a chat deleted in the app: it goes, as one removed in Nook.
     pub gone: bool,
+    /// Per-message read details (`read_at`, group `read_by`, per-person `readers`) keyed by message id.
+    pub read_details: HashMap<String, MessageReadDetail>,
 }
 
 /// One chat in the inbox (`InboxThread` on the Mac).
@@ -190,6 +260,12 @@ pub struct InboxThread {
     pub muted_in_app: Option<bool>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ephemeral: bool,
+    /// Per-message read details (`read_at`, group `read_by`, per-person `readers`) keyed by message id.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub read_details: HashMap<String, MessageReadDetail>,
+    /// People currently typing in this chat (live ephemeral state; cleared before writing to disk).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub typing: Vec<String>,
 }
 
 impl InboxThread {
@@ -217,6 +293,8 @@ impl InboxThread {
             waits_in_app: None,
             muted_in_app: None,
             ephemeral: false,
+            read_details: HashMap::new(),
+            typing: vec![],
         }
     }
 
@@ -253,6 +331,162 @@ impl InboxThread {
     pub fn read_state(&self) -> ChatReadState {
         ChatReadState::of(self.unread, self.app_unread, self.newest_incoming(), self.read_in_nook, self.read_in_app, self.waits_in_app)
     }
+
+    /// Whether what they wrote last looks like phishing or a scam (`InboxThread.trust` on the Mac): their newest up to
+    /// three non-deleted incoming messages, judged by who the chat says they are (name + email handle if present) and
+    /// whether you ever wrote in this chat.
+    pub fn trust(&self) -> crate::brain::message_trust::Verdict {
+        let incoming: Vec<&str> = self
+            .messages
+            .iter()
+            .filter(|m| m.is_incoming() && !m.deleted)
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|m| m.text.as_str())
+            .collect();
+        if incoming.is_empty() {
+            return crate::brain::message_trust::Verdict::default();
+        }
+        let sender = match self.handle.as_deref().map(str::trim).filter(|h| h.contains('@') && !h.ends_with("@s.whatsapp.net") && !h.ends_with("@g.us") && !h.ends_with("@lid")) {
+            Some(email) => format!("{} <{email}>", self.name),
+            None => self.name.clone(),
+        };
+        let known = self.messages.iter().any(|m| m.from_me);
+        crate::brain::message_trust::assess(&sender, "", &incoming.join("\n"), known)
+    }
+
+    /// Whether Nook may automatically suggest a reply in the empty composer field: the newest non-deleted message must
+    /// be someone else's AND the thread must not look like phishing or a scam (CH-39).
+    pub fn should_suggest_reply(&self) -> bool {
+        let last_is_theirs = self.messages.iter().rev().find(|m| !m.deleted).is_some_and(|m| !m.from_me);
+        last_is_theirs && !self.trust().is_suspicious()
+    }
+
+    /// This thread's messages with ticks and group read receipts propagated to older outgoing messages (`ChatReceipts`).
+    pub fn filled_messages(&self) -> Vec<FilledMessage> {
+        fill_messages(&self.messages, &self.read_details, !self.is_group())
+    }
+
+    /// The newest message with filled ticks and read details (for list summaries).
+    pub fn filled_last(&self) -> Option<FilledMessage> {
+        self.filled_messages().pop()
+    }
+}
+
+/// Your messages' ticks as a chat shows them, oldest first (`ChatReceipts.filled` on the Mac): older outgoing messages
+/// without an explicit receipt still get at least `Sent` and advance to match any later outgoing message; in a private
+/// chat, an incoming reply after yours implies delivery.
+pub fn filled_receipts(messages: &[InboxMessage], is_private: bool) -> Vec<Option<Receipt>> {
+    let mut later: Option<Receipt> = None;
+    let mut later_went_out = false;
+    let mut theirs_later = false;
+    let mut out = vec![None; messages.len()];
+    for index in (0..messages.len()).rev() {
+        let message = &messages[index];
+        if !message.from_me {
+            theirs_later = true;
+            continue;
+        }
+        let mut receipt = message.receipt.unwrap_or(Receipt::Sent);
+        if receipt == Receipt::Pending && later_went_out {
+            receipt = Receipt::Sent;
+        }
+        if receipt >= Receipt::Sent {
+            if let Some(l) = later {
+                if l > receipt {
+                    receipt = l;
+                }
+            }
+        }
+        if receipt == Receipt::Sent && is_private && theirs_later {
+            receipt = Receipt::Delivered;
+        }
+        if receipt >= Receipt::Sent {
+            later = Some(later.map_or(receipt, |l| l.max(receipt)));
+        }
+        if message.receipt.is_some_and(|said| said >= Receipt::Sent) {
+            later_went_out = true;
+        }
+        out[index] = Some(receipt);
+    }
+    out
+}
+
+/// Returns `FilledMessage`s with filled receipts and propagated group `read_by` / `readers` on older outgoing
+/// messages (`ChatReceipts.filled` + `ChatReceipts.filledReaders` on the Mac).
+pub fn fill_messages(messages: &[InboxMessage], details: &HashMap<String, MessageReadDetail>, is_private: bool) -> Vec<FilledMessage> {
+    let receipts = filled_receipts(messages, is_private);
+    let mut out: Vec<FilledMessage> = messages
+        .iter()
+        .zip(receipts)
+        .map(|(msg, receipt)| {
+            let mut copy = msg.clone();
+            if copy.from_me {
+                copy.receipt = receipt;
+            }
+            let detail = details.get(&msg.id).cloned().unwrap_or_default();
+            FilledMessage { message: copy, read_at: detail.read_at, read_by: detail.read_by, readers: detail.readers }
+        })
+        .collect();
+    if !is_private {
+        // Someone who read or spoke after an outgoing message has also read the earlier ones.
+        let mut later_readers: HashMap<String, (String, Receipt)> = HashMap::new();
+        let mut spoken: HashMap<String, (String, DateTime<Utc>)> = HashMap::new();
+        for msg in out.iter_mut().rev() {
+            if !msg.message.from_me {
+                let name = msg.message.sender.trim();
+                if !name.is_empty() {
+                    spoken.insert(name.to_lowercase(), (name.to_string(), msg.message.date));
+                }
+                continue;
+            }
+            for (lower, (name, when)) in &spoken {
+                if let Some(existing) = msg.readers.iter_mut().find(|r| r.name.to_lowercase() == *lower) {
+                    if existing.receipt < Receipt::Read {
+                        existing.receipt = Receipt::Read;
+                        if existing.date.is_none() {
+                            existing.date = Some(*when);
+                        }
+                    }
+                } else {
+                    msg.readers.push(MessageReader { name: name.clone(), receipt: Receipt::Read, date: Some(*when) });
+                }
+                if !msg.read_by.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                    msg.read_by.push(name.clone());
+                }
+            }
+            for (lower, (name, step)) in &later_readers {
+                if let Some(existing) = msg.readers.iter_mut().find(|r| r.name.to_lowercase() == *lower) {
+                    if *step > existing.receipt {
+                        existing.receipt = *step;
+                    }
+                } else {
+                    msg.readers.push(MessageReader { name: name.clone(), receipt: *step, date: None });
+                }
+                if *step == Receipt::Read && !msg.read_by.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                    msg.read_by.push(name.clone());
+                }
+            }
+            for name in &msg.read_by {
+                if !msg.readers.iter().any(|r| r.name.eq_ignore_ascii_case(name)) {
+                    msg.readers.push(MessageReader { name: name.clone(), receipt: Receipt::Read, date: msg.read_at });
+                }
+            }
+            for reader in &msg.readers {
+                if reader.receipt >= Receipt::Delivered && !reader.name.is_empty() {
+                    let key = reader.name.to_lowercase();
+                    later_readers
+                        .entry(key)
+                        .and_modify(|(_, r)| *r = (*r).max(reader.receipt))
+                        .or_insert_with(|| (reader.name.clone(), reader.receipt));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Where a chat stands, the same for every app (`ChatReadState` on the Mac).
@@ -396,6 +630,7 @@ impl ChatInbox {
                 || chat.members.is_some()
                 || chat.listed
                 || !chat.deleted.is_empty()
+                || !chat.read_details.is_empty()
                 || chat.avatar.as_ref().is_some_and(|a| Some(a) != k.avatar.as_ref())
                 || chat.account.as_ref().is_some_and(|a| Some(a) != k.account.as_ref())
                 || chat.kind.is_some_and(|c| Some(c) != k.kind)
@@ -512,6 +747,17 @@ impl ChatInbox {
             let extra = thread.messages.len() - keeps;
             thread.messages.drain(..extra);
         }
+        for (id, detail) in &chat.read_details {
+            if detail.is_empty() {
+                continue;
+            }
+            let entry = thread.read_details.entry(id.clone()).or_default();
+            entry.merge_from(detail);
+        }
+        if !thread.read_details.is_empty() {
+            let live_ids: HashSet<&str> = thread.messages.iter().map(|m| m.id.as_str()).collect();
+            thread.read_details.retain(|id, d| live_ids.contains(id.as_str()) && !d.is_empty());
+        }
         if let Some(activity) = chat.activity {
             if thread.activity.is_none_or(|a| activity > a) {
                 thread.activity = Some(activity);
@@ -582,11 +828,22 @@ impl ChatInbox {
         let Some(thread) = self.threads.get_mut(key) else { return false };
         let wanted: HashSet<&String> = ids.iter().collect();
         let mut changed = false;
+        let now = Utc::now();
+        let mut stamped: Vec<String> = Vec::new();
         for m in thread.messages.iter_mut().filter(|m| m.from_me && wanted.contains(&m.id)) {
             let next = Some(m.receipt.unwrap_or(Receipt::Sent).advanced(receipt));
             if next != m.receipt {
                 m.receipt = next;
                 changed = true;
+                if next == Some(Receipt::Read) {
+                    stamped.push(m.id.clone());
+                }
+            }
+        }
+        for id in stamped {
+            let entry = thread.read_details.entry(id).or_default();
+            if entry.read_at.is_none() {
+                entry.read_at = Some(now);
             }
         }
         changed
@@ -697,6 +954,7 @@ impl ChatInbox {
     pub fn forget_message(&mut self, key: &str, id: &str) {
         if let Some(thread) = self.threads.get_mut(key) {
             thread.messages.retain(|m| m.id != id);
+            thread.read_details.remove(id);
         }
     }
 
@@ -792,6 +1050,9 @@ impl ChatInbox {
         let mut copy = self.clone();
         let ids: HashSet<String> = copy.threads.values().filter(|t| t.ephemeral).map(|t| t.id.clone()).collect();
         copy.forget_messages(&ids);
+        for thread in copy.threads.values_mut() {
+            thread.typing.clear();
+        }
         copy
     }
 
@@ -804,6 +1065,7 @@ impl ChatInbox {
                 thread.activity = Some(last);
             }
             thread.messages.clear();
+            thread.read_details.clear();
         }
     }
 
@@ -1143,5 +1405,66 @@ mod tests {
         let json = serde_json::to_string(&inbox).unwrap();
         let back: ChatInbox = serde_json::from_str(&json).unwrap();
         assert_eq!(back, inbox);
+    }
+
+    #[test]
+    fn older_messages_fill_ticks_and_group_readers() {
+        let mut m1 = msg("1", 0, true);
+        m1.receipt = None;
+        let mut m2 = msg("2", 1, true);
+        m2.receipt = Some(Receipt::Pending);
+        let mut m3 = msg("3", 2, true);
+        m3.receipt = Some(Receipt::Read);
+        let mut reply = msg("4", 4, false);
+        reply.sender = "Bo".into();
+
+        let mut details = HashMap::new();
+        details.insert(
+            "3".to_string(),
+            MessageReadDetail { read_at: Some(at(3)), read_by: vec!["Anna".into()], readers: vec![] },
+        );
+
+        // Private chat: m1 and m2 advance to Read because m3 was read.
+        let filled_private = fill_messages(&[m1.clone(), m2.clone(), m3.clone()], &details, true);
+        assert_eq!(filled_private[0].message.receipt, Some(Receipt::Read));
+        assert_eq!(filled_private[1].message.receipt, Some(Receipt::Read));
+        assert_eq!(filled_private[2].message.receipt, Some(Receipt::Read));
+        assert_eq!(filled_private[2].read_at, Some(at(3)));
+
+        // Private chat: incoming reply after a sent message implies delivered.
+        let mut sent = msg("s", 0, true);
+        sent.receipt = Some(Receipt::Sent);
+        let filled_reply = fill_messages(&[sent, msg("r", 1, false)], &HashMap::new(), true);
+        assert_eq!(filled_reply[0].message.receipt, Some(Receipt::Delivered));
+        assert_eq!(filled_reply[1].message.receipt, None);
+
+        // Group chat: Anna reading m3 and Bo replying after m3 both propagate to older outgoing messages.
+        let filled_group = fill_messages(&[m1, m3, reply], &details, false);
+        assert!(filled_group[0].read_by.contains(&"Anna".to_string()));
+        assert!(filled_group[0].read_by.contains(&"Bo".to_string()));
+        assert!(filled_group[1].read_by.contains(&"Bo".to_string()));
+
+        // FilledMessage flattens InboxMessage fields cleanly at the JSON top level.
+        let json = serde_json::to_value(&filled_group[1]).unwrap();
+        assert_eq!(json["id"], "3");
+        assert_eq!(json["receipt"], "read");
+        assert!(json["readAt"].is_string());
+        assert!(json["readBy"].is_array());
+    }
+
+    #[test]
+    fn deserializes_legacy_json_without_read_or_typing_fields_and_clears_typing_for_disk() {
+        let legacy = r#"{"threads":{"telegram#1":{"id":"telegram#1","app":"telegram","name":"Anna","messages":[{"id":"m1","text":"hi","date":"2026-11-17T12:00:00Z","fromMe":true}]}}}"#;
+        let mut inbox: ChatInbox = serde_json::from_str(legacy).unwrap();
+        let thread = inbox.threads.get_mut("telegram#1").unwrap();
+        assert!(thread.typing.is_empty());
+        assert!(thread.read_details.is_empty());
+        let filled = thread.filled_messages();
+        assert_eq!(filled[0].message.receipt, Some(Receipt::Sent));
+        assert_eq!(filled[0].read_at, None);
+        assert!(filled[0].read_by.is_empty());
+        thread.typing = vec!["Anna".into()];
+        let disk = inbox.for_disk();
+        assert!(disk.threads["telegram#1"].typing.is_empty());
     }
 }

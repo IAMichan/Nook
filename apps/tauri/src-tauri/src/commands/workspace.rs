@@ -1117,3 +1117,18 @@ pub async fn workspace_continue_past(app: AppHandle, key: String, message: Optio
     }
     Ok(id.to_string())
 }
+
+/// Sets or clears a session's active goal (`/goal`, AG-67); empty text clears it.
+#[tauri::command]
+pub fn workspace_set_goal(state: State<'_, WorkspaceState>, run: String, goal: Option<String>) -> Res<Option<String>> {
+    state.manager.set_goal(id(&run)?, goal)
+}
+
+/// Computes the context window breakdown and compaction pressure for a session (AG-65 & AG-66).
+#[tauri::command]
+pub fn workspace_context_usage(
+    state: State<'_, WorkspaceState>,
+    run: String,
+) -> Res<Option<nook_core::workspace::context_usage::ContextUsage>> {
+    Ok(state.manager.context_usage(id(&run)?))
+}

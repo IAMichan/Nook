@@ -2,6 +2,7 @@
 //! van hun transcripten en accounts, en de proceslijst. Zoals `AgentHub`, `AgentConfigInstaller`, `AgentHistory` en
 //! `AgentProfiles` op de Mac.
 
+pub mod granted_rules;
 pub mod history;
 pub mod hook;
 pub mod hub;
@@ -20,6 +21,7 @@ pub mod scanner;
 pub mod sessions;
 pub mod text;
 pub mod transcript;
+pub mod usage;
 
 use std::path::{Path, PathBuf};
 

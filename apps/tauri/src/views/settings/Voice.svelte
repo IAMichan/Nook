@@ -108,7 +108,7 @@
     await save({ speechEngine: id });
   }
 
-  // Each moment's sound (`NookSound` on the Mac; Windows plays one sound for a question and a permission request).
+  // Each moment's sound (`NookSound` on the Mac, in the same order: done, permission, attention, error).
   const moments = $derived<{ id: SoundName; title: string }[]>([
     { id: "done", title: tr("Agent is klaar", "Agent is done") },
     { id: "permission", title: tr("Agent vraagt toestemming", "Agent asks for permission") },
@@ -116,8 +116,16 @@
     { id: "error", title: tr("Agent stopt met een fout", "Agent stops with an error") },
   ]);
   let soundList = $state<{ system: string[]; custom: string[] }>({ system: [], custom: [] });
+  function refreshSounds() {
+    forgetCustomSounds();
+    services.systemSounds().then((v) => (soundList = v ?? soundList)).catch(() => {});
+  }
   $effect(() => {
-    if (part === "sound") services.systemSounds().then((v) => (soundList = v ?? soundList)).catch(() => {});
+    if (part !== "sound") return;
+    services.systemSounds().then((v) => (soundList = v ?? soundList)).catch(() => {});
+    const onFocus = () => refreshSounds();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   });
   // Picking a sound plays it, as the Mac's picker does.
   function chooseSound(id: SoundName, choice: string) {
@@ -130,8 +138,7 @@
   async function openFolder() {
     try {
       folder = await services.openSoundsFolder();
-      forgetCustomSounds();
-      soundList = await services.systemSounds().catch(() => soundList);
+      refreshSounds();
     } catch (e) {
       message = String(e);
     }
@@ -257,12 +264,13 @@
     {#each moments as moment (moment.id)}
       {@const choice = s.soundChoices?.[moment.id] ?? ""}
       {@const hasFile = soundList.custom.includes(moment.id)}
+      {@const systemChoices = choice && choice !== "file" && choice !== "none" && !soundList.system.includes(choice) ? [choice, ...soundList.system] : soundList.system}
       <div class="row">
         <span>{moment.title}</span>
         <span class="sound-choice">
-          <select value={choice} disabled={!s.sounds} onchange={(e) => chooseSound(moment.id, e.currentTarget.value)}>
+          <select aria-label={moment.title} value={choice} disabled={!s.sounds} onchange={(e) => chooseSound(moment.id, e.currentTarget.value)}>
             <option value="">{hasFile ? tr("Standaard (eigen bestand)", "Default (own file)") : tr("Standaard ({name})", "Default ({name})", { name: "Nook" })}</option>
-            {#if soundList.system.length}<hr />{#each soundList.system as name (name)}<option value={name}>{name}</option>{/each}<hr />{/if}
+            {#if systemChoices.length}<hr />{#each systemChoices as name (name)}<option value={name}>{name}</option>{/each}<hr />{/if}
             {#if hasFile || choice === "file"}<option value="file">{tr("Eigen bestand", "Own file")}</option>{/if}
             <option value="none">{tr("Geen geluid", "No sound")}</option>
           </select>

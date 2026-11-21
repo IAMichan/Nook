@@ -279,7 +279,8 @@ pub fn state(target: Target, home: Option<&Path>) -> State {
                 let asks = hooks.get("PreToolUse").and_then(Value::as_array).is_some_and(|groups| {
                     groups.iter().any(|g| g.get("matcher").and_then(Value::as_str) == Some("AskUserQuestion") && contains_marker(g))
                 });
-                return if current && asks { State::Installed } else { State::Outdated };
+                let compacts = !super::hook::lacks_compaction_hooks(super::hook::CLAUDE_COMPACT_EVENTS, &hooks, contains_marker);
+                return if current && asks && compacts { State::Installed } else { State::Outdated };
             }
             State::Installed
         }
@@ -410,6 +411,8 @@ pub fn prepare(target: Target, install: bool, home: Option<&Path>) -> Result<Cha
                     "StopFailure",
                     "SubagentStart",
                     "SubagentStop",
+                    "PreCompact",
+                    "PostCompact",
                 ] {
                     append(&mut hooks, event, group(&plain, None, 5))?;
                 }
@@ -423,9 +426,16 @@ pub fn prepare(target: Target, install: bool, home: Option<&Path>) -> Result<Cha
             let mut hooks = without_nook(hooks_object(&root)?)?;
             if install {
                 let plain = hook_command("--agent codex");
-                for (event, timeout) in
-                    [("SessionStart", 5), ("UserPromptSubmit", 5), ("PreToolUse", 5), ("PostToolUse", 5), ("Stop", 5), ("SessionEnd", 3)]
-                {
+                for (event, timeout) in [
+                    ("SessionStart", 5),
+                    ("UserPromptSubmit", 5),
+                    ("PreToolUse", 5),
+                    ("PostToolUse", 5),
+                    ("Stop", 5),
+                    ("SessionEnd", 3),
+                    ("PreCompact", 5),
+                    ("PostCompact", 5),
+                ] {
                     append(&mut hooks, event, group(&plain, None, timeout))?;
                 }
                 let mut waiting = group(&hook_command("--agent codex --wait"), None, 120);
@@ -445,6 +455,7 @@ pub fn prepare(target: Target, install: bool, home: Option<&Path>) -> Result<Cha
                     ("AfterTool", "PostToolUse", 5_000),
                     ("BeforeAgent", "UserPromptSubmit", 5_000),
                     ("AfterAgent", "Stop", 5_000),
+                    ("PreCompress", "PreCompact", 5_000),
                 ] {
                     append(&mut hooks, event, group(&hook_command(&format!("--agent gemini {name}")), Some("*"), timeout))?;
                 }
@@ -492,6 +503,7 @@ pub fn prepare(target: Target, install: bool, home: Option<&Path>) -> Result<Cha
                     "subagentStart",
                     "subagentStop",
                     "stop",
+                    "preCompact",
                 ] {
                     append(&mut hooks, event, json!({"command": hook_command(&format!("--agent cursor {event}"))}))?;
                 }
@@ -511,6 +523,7 @@ pub fn prepare(target: Target, install: bool, home: Option<&Path>) -> Result<Cha
                     ("agentStop", 10),
                     ("sessionEnd", 3),
                     ("notification", 10),
+                    ("preCompact", 5),
                 ] {
                     let command = hook_command(&format!("--agent copilot {event}"));
                     append(&mut hooks, event, json!({"type": "command", "bash": command, "powershell": command, "timeoutSec": timeout}))?;

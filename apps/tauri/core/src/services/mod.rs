@@ -13,6 +13,7 @@ pub mod fuzzy;
 pub mod lyrics;
 pub mod notes;
 pub mod notice_log;
+pub mod notice_pacer;
 pub mod notice_rules;
 pub mod nudge_filter;
 pub mod prefs;

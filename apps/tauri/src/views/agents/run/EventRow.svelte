@@ -66,6 +66,29 @@
   function copy(text: string) {
     navigator.clipboard?.writeText(text).catch(() => {});
   }
+
+  // Read aloud with the system voice (SV-52, matching `MessageView` / macOS `ReadAloudButton`); a second press stops it.
+  let speaking = $state(false);
+  function readAloud() {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+    if (!synth) return;
+    if (speaking) {
+      synth.cancel();
+      speaking = false;
+      return;
+    }
+    const plain = event.text.replace(/[*_`#>|]/g, "").trim();
+    if (!plain) return;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(plain);
+    u.lang = locale();
+    u.onend = u.onerror = () => (speaking = false);
+    speaking = true;
+    synth.speak(u);
+  }
+  $effect(() => () => {
+    if (speaking) window.speechSynthesis?.cancel();
+  });
 </script>
 
 <div class="row" class:hl={highlighted} class:rolled-back={event.rolledBack === true}>
@@ -102,9 +125,18 @@
     <!-- The agent's answer has no bubble at all. -->
     <div class="turn assistant">
       <div class="msg assistant"><MarkdownBody text={event.text} {baseFolder} {onrun} /></div>
-      <div class="meta">
+      <div class="meta" class:speaking>
         <span>{time}</span>
         <button class="metab" title={tr("Kopieer", "Copy")} aria-label={tr("Kopieer antwoord", "Copy answer")} onclick={() => copy(event.text)}><Icon name="copy" size={12} /></button>
+        {#if event.text.trim()}
+          <button
+            class="metab"
+            class:speaking
+            title={speaking ? tr("Stop met voorlezen", "Stop reading") : tr("Voorlezen", "Read aloud")}
+            aria-label={speaking ? tr("Stop met voorlezen", "Stop reading") : tr("Voorlezen", "Read aloud")}
+            onclick={readAloud}
+          ><Ico name={speaking ? "square" : "volume-2"} size={12} /></button>
+        {/if}
         {#if onfork}<button class="metab" title={tr("Vork vanaf dit antwoord", "Fork from this response")} aria-label={tr("Vork vanaf dit antwoord", "Fork from this response")} onclick={onfork}><Ico name="git-branch" size={12} /></button>{/if}
       </div>
     </div>
@@ -157,11 +189,25 @@
   {:else if event.kind === "system" && event.tool === "clear"}
     <!-- `/clear` (`TimelineNewDivider`): the agent remembers nothing above this line. -->
     <div class="new-divider" title={time}><span class="rule"></span><span>{event.text}</span><span class="rule"></span></div>
+  {:else if event.kind === "system" && event.tool === "compaction"}
+    <!-- Context compaction status (AG-65): spinning while running, compact icon when done, muted failure when stopped. -->
+    <div class="work-line" class:compacting={event.state === "running"} class:failed={event.state === "failed"} title={time}>
+      <span class="work-icon">
+        {#if event.state === "running"}
+          <span class="spin"><Ico name="loader-circle" size={15} stroke={2} /></span>
+        {:else if event.state === "failed"}
+          <Ico name="circle-alert" size={15} stroke={1.8} />
+        {:else}
+          <Ico name="minimize-2" size={15} stroke={1.8} />
+        {/if}
+      </span>
+      <span class="label sel">{event.state === "running" && !event.text ? tr("Vat het gesprek samen…", "Compacting the conversation…") : event.text}</span>
+    </div>
   {:else if event.kind === "system"}
     <!-- A note in the conversation as one quiet work line (`TranscriptWorkLine`): who started the session ("origin"),
-         the command Nook launched, or another note; no time, as on the Mac. -->
+         the command Nook launched, the session goal ("goal"), or another note; no time, as on the Mac. -->
     <div class="work-line" title={time}>
-      <span class="work-icon"><Ico name={event.tool === "origin" ? "corner-right-down" : event.tool === "launch" ? "terminal" : "info"} size={16} stroke={1.8} /></span>
+      <span class="work-icon"><Ico name={event.tool === "origin" ? "corner-right-down" : event.tool === "launch" ? "terminal" : event.tool === "goal" ? "target" : "info"} size={16} stroke={1.8} /></span>
       <span class="label sel" class:mono={event.tool === "launch"}>{event.text}</span>
     </div>
   {:else if event.kind === "result" && event.state === "failed"}
@@ -184,9 +230,9 @@
   .msg.user { max-width: 80%; padding: 8px 12px; border-radius: var(--radius-composer); background: var(--bubble); color: var(--paper); }
   .msg.assistant { padding: 2px 0; color: var(--text-strong); }
   .meta { display: flex; align-items: center; gap: 6px; padding: 0 4px; min-height: 20px; font-size: 12px; color: var(--text3); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity 200ms ease; }
-  .turn:hover .meta, .meta:focus-within { opacity: 1; }
+  .turn:hover .meta, .meta:focus-within, .meta.speaking { opacity: 1; }
   .metab { display: inline-flex; align-items: center; padding: 2px 4px; border-radius: var(--radius-chip); color: var(--text3); font-size: 12px; }
-  .metab:hover { color: var(--paper); background: var(--row-hover); }
+  .metab:hover, .metab.speaking { color: var(--paper); background: var(--row-hover); }
   button { background: none; border: none; padding: 0; text-align: left; color: inherit; font: inherit; border-radius: 6px; }
   button:hover { background: none; }
   .thinking { display: flex; flex-direction: column; gap: 4px; padding: 0 4px; color: var(--text2); width: 100%; }
@@ -234,6 +280,7 @@
   .work-line.link:hover { color: var(--paper); }
   .work-line.link:hover .chev { opacity: 1; }
   .work-icon { display: inline-flex; width: 16px; justify-content: center; flex: none; color: var(--text3); }
+  .work-line.compacting, .work-line.compacting .work-icon { color: var(--amber); }
   .work-line.failed, .work-line.failed .work-icon { color: color-mix(in srgb, var(--coral) 60%, transparent); }
   .small { font-size: 11.5px; }
 </style>

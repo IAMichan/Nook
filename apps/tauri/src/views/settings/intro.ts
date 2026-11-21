@@ -38,6 +38,7 @@ export function sectionSubtitle(section: SettingsSectionId): string {
     case "connections": return tr("Online diensten, je eigen servers en de apps op deze computer", "Online services, your own servers and the apps on this computer");
     case "iphone": return tr("Nook op je iPhone, ook buitenshuis", "Nook on your iPhone, also away from home");
     case "privacy": return tr("Wat een cloud-AI mag zien, en vergeten wat Nook zag", "What a cloud AI may see, and forgetting what Nook saw");
+    case "activityLog": return tr("Wat Nook deed, en wanneer", "What Nook did, and when");
     case "maintenance": return tr("Updates, achtergrondactiviteit en diagnose", "Updates, background activity and diagnostics");
     case "about": return tr("Versie, broncode en licentie", "Version, source code and license");
     case "games": return tr("Nook houdt zich stil terwijl je speelt", "Nook keeps quiet while you play");

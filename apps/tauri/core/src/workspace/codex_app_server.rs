@@ -462,6 +462,8 @@ impl CodexDriver {
                     step.event(ClaudeEvent::ToolResult { id, output: String::new(), is_error: false });
                 }
             }
+            "contextCompaction" if !finished => step.event(ClaudeEvent::CompactionStarted),
+            "contextCompaction" if finished && failed => step.event(ClaudeEvent::CompactionFailed(None)),
             "contextCompaction" if finished => step.event(ClaudeEvent::Notice("compact".into())),
             _ => {}
         }

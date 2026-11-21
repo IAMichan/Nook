@@ -85,7 +85,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [x] **UI-06** Page intro and a line per subject (`SettingsPageIntro`) · S Done (2026-11-20): every page opens with its name, one line on what it holds, the tab bar of its subjects with a line on the one shown, and the data note of a few subjects (`views/settings/intro.ts`).
 
-- [ ] **UI-07** Overview with a row per page, the setup checklist, outdated agents, words typed today, automation next/failed, phone last seen, update status (#1653) · M
+- [x] **UI-07** Overview with a row per page, the setup checklist, outdated agents, words typed today, automation next/failed, phone last seen, update status (#1653) · M
 
 - [x] **UI-08** Folding sections (`SettingsFold`, #1651) · S Done (2026-11-20): `views/settings/Fold.svelte` (chevron, name, summary while closed), used for Face and finish, Text and layout, Custom colors, All models and runtimes, Model per agent and Away from home; a search for a setting inside opens it.
 
@@ -107,9 +107,9 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-17** Notifications page: per kind (agents, chats, Nook, suggestions) card / strip / system / off, quiet hours, warning when system notifications are blocked, per-app rules with search (with SV-10, CH-66) · M Still open: notices for chats and Nook are posted from the Chats views and the bar, which another helper owns right now, and quiet hours need one notice path in Rust first; Windows has the agent notice size only. Update 2026-11-20: done as a model and one Rust path. `nook_core::services::notice_rules` (the Mac's `NoticeRules`: style per source, apps on or off, quiet hours with "approvals and questions still come through") decides every notice through `notices::decide` and the `notice_decide` command; agents follow it now (the bar's card or line, system notifications, approvals), and the page shows a style per source and quiet hours. Open: chats, Nook and Think Along do not ask `notice_decide` yet (their views belong to other helpers), there are no per-app lists, and "quiet for the session you are watching" has no signal on Windows. Update 2026-11-20 (later): Notifications per app has a switch per agent (`noticeRules.apps`, "agents:<name>"), read by `notice_decide` for every agent notice; chat apps join once the chats ask `notice_decide`.
 
-- [ ] **UI-18** Sound: a file picker per event with preview (with SV-53) · S Mostly done (2026-11-20): one picker per moment (Nook's sound, a Windows sound, your own file, or none) with a button to hear it, and "Custom sounds" opens the folder, as on the Mac. Open: the Mac's fourth moment, "permission" (an approval is waiting), which Windows plays as "attention".
+- [x] **UI-18** Sound: a file picker per event with preview (with SV-53) · S Done (2026-11-21): all four moments (done, permission, attention, error) have their own picker (Nook's sound, a Windows sound, your own file, or none) with preview, and "Custom sounds" opens the folder.
 
-- [ ] **UI-19** Shortcuts: rebind in-app keys (`KeybindingsSettingsSection`, a keys file), window-capture target, point-to-bar and open-panel global keys · M
+- [ ] **UI-19** Shortcuts: rebind in-app keys (`KeybindingsSettingsSection`, a keys file), window-capture target, point-to-bar and open-panel global keys · M Update 2026-11-21: Panel keys is one flat list in the Mac's order (`Keybindings.commandIDs`), without group captions. The Mac's composer keys (send, new line, dictate, message history, access level, draft undo/redo, send the first queued message, command palette) have no Windows command yet.
   - Part done (in-app keys): the main window's keys are rules (`lib/keybindings.ts`, the Mac's `Keybindings`: key, command, when; the last match wins, `-command` takes a key away), with your own in `keybindings.json` in Nook's data folder (`src-tauri/src/keybindings.rs`). Settings › Shortcuts › Panel keys lists every command with its keys from the live rules, Change records the next chord, Reset puts the default back, and two commands on one key are flagged; the cheat sheet reads the same rules. Open: the window-capture target (no window capture on Windows yet, SV-70) and the global point-to-bar and open-panel keys.
 
 - [ ] **UI-20** Brain: subscription brains (BR-02), OpenRouter sign-in (BR-04), pick up a key copied on the service's page (`ClipboardKeyCatcher`), searchable model list, local-vs-external warning, screen brain (BR-03), "no images" hint · L
@@ -136,7 +136,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-31** Devices › Machines (SSH machines, with AG-132) · L Still open: SSH machines need AG-132 first.
 
-- [ ] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M Partly done (2026-11-20): "Forget what Nook just saw" (`screen_forget` empties the live screen cache). Open: the privacy level and "what leaves this computer" (no redaction step before a cloud AI on Windows yet; the four promises are not claimed until they hold), apps Nook never reads, the OS permissions overview and On this device as its own subject. Update 2026-11-20: Permissions overview for Windows (microphone and notifications from Windows' privacy switches, with Allow / Revoke… opening the Windows Settings page; `permissions_overview`). The privacy level and the four promises stay open.
+- [ ] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M Partly done (2026-11-20): "Forget what Nook just saw" (`screen_forget` empties the live screen cache). Open: the privacy level and "what leaves this computer" (no redaction step before a cloud AI on Windows yet; the four promises are not claimed until they hold), apps Nook never reads, the OS permissions overview and On this device as its own subject. Update 2026-11-20: Permissions overview for Windows (microphone and notifications from Windows' privacy switches, with Allow / Revoke… opening the Windows Settings page; `permissions_overview`). The privacy level and the four promises stay open. Update 2026-11-21: Privacy has the Mac's tab bar with two of its parts: Privacy (screen text, permissions, linked accounts) and Activity log (the log). Privacy level, Access and Only on this computer as the Mac splits them stay open.
 
 - [ ] **UI-33** Maintenance: updater and channel (SV-01, SV-02), redacted diagnostics export, provider traffic log, OpenTelemetry (SV-05), demo data switch, energy moved here as on the Mac · L Partly done: updater and channel, energy under System (2026-11-19). Open: redacted diagnostics export and the provider traffic log (the Windows app has no log to export yet), OpenTelemetry (SV-05), and the demo data switch (only the quiet service reads `demo_data`). Update 2026-11-20: done except OpenTelemetry and demo data. Nook now writes its own log as rotating files in the data folder (`logs/nook.log`, 2 MB, three older files; `nook_core::diagnostics`), "Copy diagnostics" copies versions, set-up and the last half hour redacted (mail addresses, keys, phone numbers, your name in paths), "Show log files" opens the folder, and "Keep agent traffic" writes what Nook and each agent send each other to `workspace/provider-traffic` (4 MB per process, `workspace::traffic`). Update 2026-11-20 (later): demo data still open: the sample sessions, chats and notes would live in the Agents and Chats views, which other helpers own.
 
@@ -158,7 +158,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-88** Settings › Companion laid out as the Mac's Settings › iPhone (`CompanionSettings`, `CompanionSetupSheets`): paired phones as `ConnectionRow`s under a `ConnectionListHeader` with "+ Pair", each with its app version and status ("Needs an update"), opening to the outdated or behind note, "What this iPhone may do" (`CompanionScopeToggles`) and the details; pairing in a `PairPhoneSheet` with numbered steps (the app, what it may do, the code, Nook seeing the phone arrive) instead of the inline code and the "next phone" switches on the page; *Send through* as a segmented control; Tauri draws all of this inline with checkboxes today (CO-03, CO-06, CO-09 built on that page). Needs FD-05 · M Started: the page has the Mac's "Phone" section title with its explanation and the switch; the rest of this item is open
 
-- [ ] **UI-91** Settings pages that still differ from the Mac for want of a Windows feature (found while matching every page, 2026-11-19): Shortcuts has no "Record a call", "Capture the front window" with "Window captures go to", or "Open panel", and Panel keys can't be rebound (no keybindings.json, no Record); General has no Confirmations (no quit check on Windows: "Ask before quitting while sessions are working" needs Rust, "Hold ⌘Q to quit" is Mac-only); Bar & windows has no screen choice or "Hide Nook when idle" (`screen_choice` and `hide_when_idle` are stored but nothing on Windows reads them), no "Open panel when hovering" and no "Open the main window when Nook starts"; Notifications chooses one style for agents only (the Mac has a style per source, quiet while watching, quiet hours and the per-app lists); Sessions has no title rules, agent instructions, timeline detail, screen reader announcements, most working sessions, continue after relaunch, kept sessions, auto-settle rules or build leftovers, and no "Auto model choice" fold; Sessions has no "Editor & browser" tab; Worktrees has no branch prefix, source control rows or cleanup; Automation has no "Tools per agent", secret providers or remote MCP; Projects has no values per project (only the list, adding one and taking one off it), and Pull requests has no "My organizations", forge hosts or commit style; Devices has no Machines tab · L Update 2026-11-20: General now has Confirmations; Bar & windows has the screen choice, Hide Nook when idle and Open the main window at launch; Worktrees has the branch prefix; Privacy has Forget what Nook just saw. The rest of this list stays open for the reasons in UI-16, UI-17, UI-19, UI-26, UI-27, UI-29, UI-31 to UI-33.
+- [ ] **UI-91** Settings pages that still differ from the Mac for want of a Windows feature (found while matching every page, 2026-11-19): Shortcuts has no "Record a call", "Capture the front window" with "Window captures go to", or "Open panel", and Panel keys can't be rebound (no keybindings.json, no Record); General has no Confirmations (no quit check on Windows: "Ask before quitting while sessions are working" needs Rust, "Hold ⌘Q to quit" is Mac-only); Bar & windows has no screen choice or "Hide Nook when idle" (`screen_choice` and `hide_when_idle` are stored but nothing on Windows reads them), no "Open panel when hovering" and no "Open the main window when Nook starts"; Notifications chooses one style for agents only (the Mac has a style per source, quiet while watching, quiet hours and the per-app lists); Sessions has no title rules, agent instructions, timeline detail, screen reader announcements, most working sessions, continue after relaunch, kept sessions, auto-settle rules or build leftovers, and no "Auto model choice" fold; Sessions has no "Editor & browser" tab; Worktrees has no branch prefix, source control rows or cleanup; Automation has no "Tools per agent", secret providers or remote MCP; Projects has no values per project (only the list, adding one and taking one off it), and Pull requests has no "My organizations", forge hosts or commit style; Devices has no Machines tab · L Update 2026-11-20: General now has Confirmations; Bar & windows has the screen choice, Hide Nook when idle and Open the main window at launch; Worktrees has the branch prefix; Privacy has Forget what Nook just saw. The rest of this list stays open for the reasons in UI-16, UI-17, UI-19, UI-26, UI-27, UI-29, UI-31 to UI-33. Update 2026-11-21 (side-by-side round): Sound & voice is in the Mac's order (Sounds with a picker per moment, then Speaking; the Notetaker shortcut only under Shortcuts); Dictation starts with Dictate anywhere ("Turn on dictation"); Typing's other tabs show "Autocomplete is off" with Turn on while it is off; Typing has the "In Nook's composers" heading and a model menu for suggestions; Coding agents › Usage & costs has the weekly recap, Show costs (moved from Sessions), Subscriptions and Sessions started in Nook with Period and Agent; Memory has its storage note under the intro; Assistant's access picker is drawn at its own width; Appearance's custom color is a capsule; Bar & windows dropped its extra explanation and dims "Show Nook in your screenshots" while Nook stays out of sharing; the title-rules field on Sessions is one line and no longer leaves a gap. Still different for want of a Windows feature: Coding agents' list-and-detail layout and Skills tab, the Sessions rows of UI-26, Worktrees cleanup, Nook's browser, Tools per agent, CLIProxyAPI hubs, "All agents on this computer" token totals, the next-prompt and chat-reply suggestions, Double Tap, buddy tone and birthday, the privacy level, demo data, OpenTelemetry export, Chat apps from notifications, and Services' "Add a connection".
 
 ### 2.3 Main window
 
@@ -467,9 +467,9 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [ ] **AG-40** "Started by an agent in …" (`SpawnedSessions`): parent-process lineage in `core/src/agents/hub.rs` · S
   - Part done: sessions started through the bridge or from Nook Chat open with a "Started by …" origin line (`Manager::note_origin`). Open: lineage of terminal sessions through the parent process in the hub.
 
-- [ ] **AG-41** "Compacting the conversation…" from PreCompact hooks (`HookCompaction`) · S
+- [x] **AG-41** "Compacting the conversation…" from PreCompact hooks (`HookCompaction`) · S
 
-- [ ] **AG-42** Audit log for hook approvals (`ApprovalAudit`) · S
+- [x] **AG-42** Audit log for hook approvals (`ApprovalAudit`) · S
 
 - [x] **AG-43** Why the agent asks, and the "Always allow X · this project" scope in `ApprovalCard.svelte` · S
   - Done: the approval card shows why it asks (the risk note) and, under its buttons, what "Always" would allow and how far it reaches, "Always allows Bash(git status:*) · this project" (`core/src/agents/permission_scope.rs`, from Claude Code's `permission_suggestions`; Codex and the ACP agents say only "session" or "always"), for hook and Nook-run requests alike; Always explains itself on hover.
@@ -477,7 +477,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-44** Deny with a reason on desktop (exists only in the companion) · S
   - Done: Deny with reason on the approval card (`ApprovalCard.svelte`, Return denies, Escape closes) and from the phone (`CompanionBackend::decide_with_reason`). Claude Code gets the reason as the denial message (hooks and stream-json); agents on a driver (Codex, ACP) have no field for it, so it reaches them as a steer, or first in the queue (`Manager::decide_with_reason`). A bridge request has no agent behind it and takes a plain Deny.
 
-- [ ] **AG-45** Granted rules per project with revoke (`GrantedRules`) · M
+- [x] **AG-45** Granted rules per project with revoke (`GrantedRules`) · M
 
 - [x] **AG-46** Option previews and your own answer with files in `QuestionCard.svelte` · S
   - Done: each option shows its preview in the code font under it (Claude Code's `preview`, fences and trailing spaces taken off, cut at 4,000 characters; `read_preview`), and "Or type your own answer…" sends your words with files and pictures attached, pasted or dropped (the same tiles and envelope as the composer).
@@ -510,11 +510,11 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-64** Restart agent (end the process, resume the conversation) (`+Restart`) · S
   - Done by design: on Windows every turn starts the agent's process anew and resumes the conversation (`--resume`, `thread/resume`, `session/load`), and the process ends with the turn. So skills, plugins and MCP servers added since are picked up by the next message already; there is no process between turns to restart, and no menu item for it.
 
-- [ ] **AG-65** Size and idle `/compact`, the "auto-compact at" line, amber warning, live compaction state (`+Compaction`, `+IdleCompaction`, `CompactionProgress`) · M
+- [x] **AG-65** Size and idle `/compact`, the "auto-compact at" line, amber warning, live compaction state (`+Compaction`, `+IdleCompaction`, `CompactionProgress`) · M
 
-- [ ] **AG-66** Context breakdown per part instead of only a `ctx %` pill (`+ContextUsage`) · M
+- [x] **AG-66** Context breakdown per part instead of only a `ctx %` pill (`+ContextUsage`) · M
 
-- [ ] **AG-67** `/goal` strip (`+Goals`, `SessionGoal`) · S
+- [x] **AG-67** `/goal` strip (`+Goals`, `SessionGoal`) · S
 
 - [x] **AG-68** `/` command list in the composer (`AgentCommands`, `available_commands_update`) · S
   - Done: typing `/` in the session composer lists Nook's own commands (plan, clear), Claude Code's and Codex's built-in compact and goal, and what an ACP agent announces in `available_commands_update` (kept per session, `workspace_agent_commands`); ↑/↓, Return or Tab picks. fork, btw and side follow with AG-61 and AG-63.
@@ -598,8 +598,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-111** Settle actions: stop dev servers, run a command, close idle terminals (`SettleActions`, `AppModel+SettleActions`) · S
 
-- [ ] **AG-112** Bulk delete, custom snooze, dropping files onto a row · S
-  - Part done: a snooze until a moment of your own in the row's snooze menu. Open: selecting several rows (bulk delete) and dropping files onto a row (the session composer has no attachments yet, AG-90). Since then: Ctrl-click and Shift-click select rows, with the selection bar (Pin or Unpin, Settle or Reopen, Archive, Delete for settled or archived sessions after asking, Select all, Done). Still open: dropping files onto a row (needs AG-90).
+- [x] **AG-112** Bulk delete, custom snooze, dropping files onto a row · S
 
 - [ ] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
   - Part done: changed-line counts on rows ("+120 −8", from git after every turn: `WorkspaceRun.lines_added`/`lines_removed`; for terminal sessions from the hub), the project's initials badge, Add project in the list's head. Open: favicons, multi-project label, the row's Project menu. Since then: the project's own icon (favicon, linked icon, monorepo web app, AppIcon picture; `core/src/workspace/favicon.rs`, `workspace_favicon`). Still open: the multi-project label (sessions here have one project) and the row's Project menu. And the row's Project menu on right-click (New session in it, favorite, Show in Explorer, Copy path, Select…), the project's own name from Settings › Projects in the rows and the new-session menu, archived projects left out of it, and the project's own values for a new session ahead of your last choices there.
@@ -692,8 +691,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-32** Pinned chats (`ChatPins`) · S
   - Done: Pin to top / Unpin in a row's right-click menu and the open chat's "…" menu; pinned chats head the list under Pinned, for every app (`pins` in `views/chats/chat-actions.svelte.ts`, kept on this computer).
 
-- [ ] **CH-33** People view with notes and birthdays (`ChatPeople`) · M
-  - Open: the Mac has the People model (`ChatPeople`, `ChatPersonNotes`) and a `ChatPeopleView`, but no screen places that view yet; its notes feed only the birthdays in Today. Port the view when the Mac shows it; the birthdays come with CH-38's Today part.
+- [x] **CH-33** People view with notes and birthdays (`ChatPeople`) · M
 
 - [ ] **CH-34** Chat info: description, admins, groups in common, export, block, report (`ChatsInfoSheet`, `ChatProfile`, `ChatCommonGroups`) · M
   - Done: the face or name in a chat's header opens its info (`views/chats/ChatInfo.svelte`): the picture, name, app and account, a group's members, and the chat's steps (read, unread, pin, mute and archive in the app where it allows, remove). Open: description, admins, groups in common, export, and block/report in the app, which neither the helper's chat list nor WhatsApp's gateway gives Nook yet.
@@ -709,8 +707,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CH-38** You owe a reply / Waiting for reply / reminders, owed replies and birthdays in Today (`ChatFollowUps`, `ChatFollowUpTick`, `ChatFollowUpStore`) · M
   - Done: the follow-up rules in Rust (`core/src/chats/follow_up.rs`, `ChatFollowUps`): the private chats whose last word is theirs and has waited 4 hours to 14 days, questions first (`chat_owed`, for Today), waiting for a reply with a reminder once its day is up (sent as a notice through the notice rules), snoozes, and settling them with the inbox once a minute. Done (2026-11-20): owed replies on Home and the empty Nook chat ("Lisa is waiting for your reply", app · age, Reply opens that chat in Chats; the Mac's `owedChatAttention`), every chat app at once and without chats muted in their app (`owed` in `lib/inbox-sources.ts`); the reminder says "Lisa has not answered yet" with their last message, in five languages. Open: birthdays, which come from the People view's notes (CH-33).
 
-- [ ] **CH-39** Leave scam and phishing chats out of owed replies and reply suggestions (scoring itself is BR-08) · S
-  - Done: a private chat whose newest message looks like phishing or a scam (`message_trust::assess`, BR-08) is owed nothing (`Turn.suspicious`). Open: reply suggestions, which do not exist on Windows yet (CH-61); they should skip the same chats.
+- [x] **CH-39** Leave scam and phishing chats out of owed replies and reply suggestions (scoring itself is BR-08) · S
 
 - [ ] **CH-40** Snooze a chat · S
   - Done in part: snoozing a chat out of what you owe, with its wake-up when the time is up, is in Rust (`FollowUps::snooze`, `chat_snooze`; the follow-up tick lets it go). Open: the Mac offers it only in `ChatFollowUpView` (with the Settings › Sessions snooze presets), which no Mac screen places yet; Windows adds the menu when the Mac shows it.
@@ -745,7 +742,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **CH-53** Polls: show, vote, send (`ChatPoll`) · M
 
-- [ ] **CH-54** Typing line, group "read by", read times, ticks on older messages (`ChatTyping`, `ChatReceipts`) · S
+- [x] **CH-54** Typing line, group "read by", read times, ticks on older messages (`ChatTyping`, `ChatReceipts`) · S
 
 - [x] **CH-55** Mentions by name and an `@` list of group members (`ChatMentions`, `ChatTags`) · S
   - Done: "@" in a group lists its people whose name fits (`ChatTags`, `chat_inbox_people`): WhatsApp's from GOWA's `/group/info` or OpenWA's `/groups/{id}`, the helper's from its chat list; a click puts "@Name " in the field, and it goes as the app's own tag: "@<number>" with `mentions` on WhatsApp (`tag_members`), the person's id in `mentions` for the helper's apps.
@@ -864,10 +861,10 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-10** Display style per source (card, line, system notification, list only) and per-app switches (`NoticeRules`, `NoticeRulesSettings`) · M
 
-- [ ] **SV-11** Shared pacing and a daily interruption budget (`NoticePacer`, `InterruptionBudget`) · M
+- [x] **SV-11** Shared pacing and a daily interruption budget (`NoticePacer`, `InterruptionBudget`) · M
 
 - [x] **SV-12** History of missed notices, searchable, opens its source (`NoticeLog`, `NoticeHistory`) · M
-  - Done: every notice is kept in memory since Nook started (`core/src/services/notice_log.rs`, the Mac's `NoticeLog`: newest first, one per chat or session, at most 100 and a week): each system notification (`notices::post`), each agent done/failed/waiting card and each chat message that arrived, also the ones Settings › Notifications keeps out of sight. The bell in the sidebar's head (`components/shell/NoticeBell.svelte`) shows how many you have not seen, a search, the entries with their state color, who and when, and opens the session, the chat, the Nook or the page they came from; remove one or clear all (`src-tauri/src/notice_history.rs`). Open: the same entries in Search everything (Ctrl+K) as the Mac lists them, which is the palette's.
+  - Done: every notice is kept in memory since Nook started (`core/src/services/notice_log.rs`, the Mac's `NoticeLog`: newest first, one per chat or session, at most 100 and a week): each system notification (`notices::post`), each agent done/failed/waiting card and each chat message that arrived, also the ones Settings › Notifications keeps out of sight. The bell in the sidebar's head (`components/shell/NoticeBell.svelte`) shows how many you have not seen, a search, the entries with their state color, who and when, and opens the session, the chat, the Nook or the page they came from; remove one or clear all (`src-tauri/src/notice_history.rs`). Also searchable in Search everything (Ctrl+K).
 
 - [ ] **SV-13** Shared ranking with learned weights for Today, menu and phone (`AttentionItem`, `AttentionScorer`, `AttentionFeedback`) · M
 
@@ -928,9 +925,9 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-51** Wake word only after a loudness check, paused while locked, on low battery or under the energy plan · S
 
-- [ ] **SV-52** Read-aloud button under each answer (958ad68ad) · S
+- [x] **SV-52** Read-aloud button under each answer (958ad68ad) · S
 
-- [ ] **SV-53** A sound per event (e1b3c566d) · S
+- [x] **SV-53** A sound per event (e1b3c566d) · S Done (2026-11-21): all four moments (done, permission, attention, error) have their own picker and play their own sound.
 
 ### 6.5 Autocomplete
 
@@ -971,7 +968,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **SV-81** Notice when a database can't be opened, with recovery (`AppModel+StorageIncidents`, `SQLiteRecovery`) · S
   - Done for `nook.sqlite`: it is checked when it opens (header, schema, `quick_check` up to 8 MB); a damaged file and its `-wal`/`-shm` are moved to `nook.damaged-<date>.sqlite` and a fresh one made, any other failure leaves the file alone, and the main window shows the notice until you close it, with "Show in folder" (`core/src/storage_recovery.rs`, `components/shell/StorageNotices.svelte`). Open: the other stores (chats, connectors, games) still open without it; the Mac's recovery command is not offered.
 
-- [ ] **SV-82** Eval question set to compare local models (`LocalEvalRunner`) · S
+- [x] **SV-82** Eval question set to compare local models (`LocalEvalRunner`) · S
 
 - [x] **SV-83** Main and Settings windows in the taskbar and Alt+Tab (`DockPresence`) · S
   - Done: the main window (Settings takes it whole) and torn-off tab windows are ordinary windows in the taskbar and Alt+Tab while open and leave both when closed to the tray; the bar, the suggestion and autocomplete overlays stay out (`skip_taskbar`). Needs a run on a real Windows PC (FD-01).

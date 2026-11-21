@@ -36,6 +36,38 @@ export interface AgentSession {
   started: string | null;
   updated: string | null;
   pid: number | null;
+  /** True while the agent is compacting its conversation context (PreCompact → PostCompact / next event / 300s). */
+  compacting?: boolean;
+}
+
+export interface GrantedRuleEntry {
+  id: string;
+  project: string;
+  projectName: string;
+  rule: string;
+  reach: "project" | "sharedProject" | "user" | "session" | "agentDecides" | string;
+  reachLabel: string;
+  file: string;
+  agent: string;
+  grantedAt: string | null;
+}
+
+export type ApprovalSource = "app" | "notification" | "phone";
+
+export interface ApprovalAuditEntry {
+  id: string;
+  timestamp: string;
+  agent: string;
+  project: string;
+  projectPath: string;
+  tool: string;
+  summary: string;
+  decision: "allow" | "always" | "deny" | "terminal" | "expired" | string;
+  scope?: string | null;
+  source?: ApprovalSource | null;
+  danger: boolean;
+  args: string;
+  result: string;
 }
 
 export type ApprovalOrigin =
@@ -182,6 +214,14 @@ export const agentApi = {
   runInTerminal: (command: string, folder?: string) => invoke<void>("agents_run_in_terminal", { command, folder }),
   terminalName: (host: string) => invoke<string>("agents_terminal_name", { host }),
   sound: (kind: "attention" | "permission" | "done" | "error") => invoke<string | null>("agents_sound", { kind }),
+  grantedRules: (project?: string | null, extraProjects?: string[]) =>
+    invoke<GrantedRuleEntry[]>("agents_granted_rules", { project: project || null, extraProjects: extraProjects ?? null }),
+  revokeRule: (project: string, rule: string, file?: string | null) =>
+    invoke<boolean>("agents_revoke_rule", { project, rule, file: file || null }),
+  revokeProjectRules: (project: string) => invoke<number>("agents_revoke_project_rules", { project }),
+  approvalAudit: (query?: string | null, limit?: number) =>
+    invoke<ApprovalAuditEntry[]>("agents_approval_audit", { query: query || null, limit: limit ?? null }),
+  clearApprovalAudit: () => invoke<void>("agents_clear_approval_audit"),
 };
 
 export interface Gone { id: string; message: string | null }

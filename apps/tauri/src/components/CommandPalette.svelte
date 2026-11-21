@@ -1,18 +1,19 @@
 <script lang="ts">
   // Search everything (Ctrl+K), as the Mac's `SearchPanel`: one field over conversations with Nook, agent sessions and
-  // their transcripts, chats of every app, call notes, memories, Settings pages and actions. Typing ranks as you go; a
-  // chip (or Tab) keeps one kind; ↑/↓ (or Ctrl+N/P) move, Return opens the hit right where it matched, Ctrl+1 to Ctrl+9
-  // open the first nine, Escape (twice with text), the cross or a click beside it closes. Ctrl+Return (or the AI row)
-  // searches with AI: the brain plans searches, reads what they find and answers citing them. With nothing typed it
-  // shows what you opened lately, your recent searches, the open and settled sessions and how to search more precisely.
-  // The query language and ranking are in `search-everything.ts`; the text only the backend holds is searched there
-  // (`search-api.ts`). Notices are left out: Windows keeps no notice history yet (docs/WINDOWS-PARITY.md).
+  // their transcripts, chats of every app, call notes, memories, missed notices, Settings pages and actions. Typing
+  // ranks as you go; a chip (or Tab) keeps one kind; ↑/↓ (or Ctrl+N/P) move, Return opens the hit right where it
+  // matched, Ctrl+1 to Ctrl+9 open the first nine, Escape (twice with text), the cross or a click beside it closes.
+  // Ctrl+Return (or the AI row) searches with AI: the brain plans searches, reads what they find and answers citing
+  // them. With nothing typed it shows what you opened lately, your recent searches, the open and settled sessions and
+  // how to search more precisely. The query language and ranking are in `search-everything.ts`; the text only the
+  // backend holds is searched there (`search-api.ts`).
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { emit } from "@tauri-apps/api/event";
   import { api } from "../lib/api";
   import { nook, relativeTime } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
-  import type { Route } from "../lib/shell-routes";
+  import { parseRoute, type Route } from "../lib/shell-routes";
   import { onBack } from "../lib/mobile";
   import { appLanguage, tr, type AppLanguage } from "../lib/i18n.svelte";
   import { agents } from "../lib/agents.svelte";
@@ -22,9 +23,9 @@
   import { groupTitle, pageTitle, sectionTitle, settingsGroup, settingsHost, settingsSections, type SettingsSectionId } from "../lib/settings-pages";
   import {
     answerTokens, backendRequest, citations, cleanAnswer, clearRecent, cycleKind, gather, grouped, highlightRanges, isSettled, keywordQuery,
-    loadOpened, loadRecent, looksLikeQuestion, mergeBackend, openedBonus, orderedByCitation, parseQuery, positiveTerms,
+    loadOpened, loadRecent, looksLikeQuestion, mergeBackend, noticeDocs, openedBonus, orderedByCitation, parseQuery, positiveTerms,
     recentlyOpened, rememberOpened, rememberSearch, search, searchKinds, segments,
-    type BackendHit, type SearchDoc, type SearchHit, type SearchKind,
+    type BackendHit, type NoticeHistoryEntry, type SearchDoc, type SearchHit, type SearchKind,
   } from "../lib/search-everything";
   import { searchApi, type AISource } from "../lib/search-api";
   import { sessionFind } from "../lib/session-find.svelte";
@@ -69,17 +70,24 @@
   let ai = $state<AIAnswer | null>(null);
   let recent = $state<string[]>(loadRecent());
   let opened = $state(loadOpened());
+  /** Missed and recent notices from Rust's `notice_history` (empty in preview when unavailable). */
+  let notices = $state<NoticeHistoryEntry[]>([]);
 
   onMount(() => {
     const previous = document.activeElement;
     dialog.showModal();
     input.focus();
     const offBack = onBack(() => { onclose(); return true; });
-    // Gathering everything to search: the sessions and Nook's own runs, and the earlier sessions of every agent.
+    // Gathering everything to search: the sessions and Nook's own runs, earlier sessions of every agent, and notices.
     void agents.start();
     if (!agents.history) void agents.loadHistory();
     if (nook.info?.capabilities.terminals) workspace.start().catch(() => {});
+    let alive = true;
+    invoke<NoticeHistoryEntry[]>("notice_history", { query: "" })
+      .then((entries) => { if (alive && Array.isArray(entries)) notices = entries; })
+      .catch(() => {});
     return () => {
+      alive = false;
       offBack();
       dialog.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
@@ -186,6 +194,8 @@
       out.push(sessionDoc(`past:${p.agent}:${p.sessionId}`, p.title, agentNames[p.agent] ?? p.agent, projectName(p.cwd), p.branch || null,
         time(p.ended), ["done", "settled"], `${p.lastPrompt}\n${p.lastReply}\n${p.model}`));
     }
+    // Missed and recent notices from `notice_history`.
+    out.push(...noticeDocs(notices));
     // What you open often and lately ranks a little higher.
     return out.map((d) => (bonus[d.id] ? { ...d, boost: (d.boost ?? 0) + bonus[d.id] } : d));
   });
@@ -321,6 +331,30 @@
         break;
       }
       case "memory": openSettings("memory"); break;
+      case "notice": {
+        const noticeId = Number(value);
+        if (Number.isFinite(noticeId)) invoke("notice_history_seen", { id: noticeId }).catch(() => {});
+        const route = doc.route ?? "";
+        if (route.startsWith("agent:")) {
+          const target = route.slice(6);
+          agents.select(target.startsWith("run-") ? `run:${target.slice(4)}` : target);
+          onnavigate("agents");
+        } else if (route.startsWith("chat:")) {
+          const key = route.slice(5);
+          try { localStorage.setItem("chats.lastOpened", key); } catch { /* opens on the list instead */ }
+          onnavigate("chats");
+          window.dispatchEvent(new CustomEvent("nook-open-chat", { detail: key }));
+          if (key.startsWith("whatsapp#")) await whatsapp.show(key.slice("whatsapp#".length));
+        } else if (route.startsWith("nook:")) {
+          await nook.select(route.slice(5));
+          onnavigate("chat");
+        } else if (route.startsWith("settings:")) {
+          openSettings(route.slice(9) as SettingsSectionId);
+        } else {
+          onnavigate(parseRoute(route || null));
+        }
+        break;
+      }
     }
   }
 
@@ -441,7 +475,7 @@
 
   const kindTitle = (k: SearchKind) => ({
     conversation: "Nook", session: tr("Sessies", "Sessions"), chat: "Chats", note: tr("Notities", "Notes"), memory: tr("Geheugen", "Memory"),
-    setting: tr("Instellingen", "Settings"), action: tr("Acties", "Actions"),
+    notice: tr("Meldingen", "Notices"), setting: tr("Instellingen", "Settings"), action: tr("Acties", "Actions"),
   })[k];
   // "Open" as an adjective (the Mac's `search.sessions.open`): the catalog keys "Open" by English text and holds the verb.
   const openWord: Record<AppLanguage, string> = { nl: "Lopend", en: "Open", de: "Offen", fr: "En cours", es: "Abiertas" };
@@ -469,6 +503,7 @@
     if (doc.kind === "setting") return "settings";
     if (doc.kind === "note") return "audio-waveform";
     if (doc.kind === "memory") return "brain";
+    if (doc.kind === "notice") return "bell";
     if (doc.kind === "chat") return "message-circle";
     return "message-square";
   }
@@ -580,11 +615,11 @@
         {#if answer}
           <div class="answer">
             <div class="answer-head">
-              <Ico name="sparkles" size={13} />
+              <Ico name="sparkles" size={12} />
               <span class="answer-title">{tr("Antwoord van AI", "AI answer")}</span>
               <span class="spacer"></span>
               {#if answer.phase === "planning" || answer.phase === "reading"}<span class="busy" aria-hidden="true"></span>{/if}
-              {#if answer.phase === "answered"}<button class="ghost-small" onclick={() => continueInChat(answer.question)}>{tr("Verder in gesprek", "Continue in chat")}</button>{/if}
+              {#if answer.phase === "answered"}<button class="ghost-button" onclick={() => continueInChat(answer.question)}>{tr("Verder in gesprek", "Continue in chat")}</button>{/if}
             </div>
             {#if answer.phase === "planning"}<p class="answer-note">{tr("Bedenken waarop te zoeken…", "Working out what to search for…")}</p>
             {:else if answer.phase === "reading"}<p class="answer-note">{tr("{n} resultaten lezen…", "Reading {n} results…", { n: answer.count })}</p>
@@ -592,7 +627,7 @@
               <p class="answer-text">{#each answerTokens(answer.answer, answer.sources.length) as token, p (p)}{#if token.kind === "cite"}<span class="cite">{token.text}</span>{:else if token.kind === "bold"}<strong>{token.text}</strong>{:else if token.kind === "italic"}<em>{token.text}</em>{:else if token.kind === "code"}<code class="inline-code">{token.text}</code>{:else if token.kind === "link"}<a href={token.href} target="_blank" rel="noopener noreferrer">{token.text}</a>{:else}{token.text}{/if}{/each}</p>
             {:else if answer.phase === "noBrain"}
               <div class="answer-row"><p class="answer-note">{tr("Kies een brein om met AI te zoeken. Dit zijn de resultaten die er het dichtst bij komen.", "Choose a brain to search with AI. These are the closest results.")}</p>
-                <button class="ghost-small" onclick={chooseBrain}>{tr("Brein kiezen", "Choose brain")}</button></div>
+                <button class="ghost-button" onclick={chooseBrain}>{tr("Brein kiezen", "Choose brain")}</button></div>
             {:else}<p class="answer-note">{tr("De AI gaf geen antwoord. Dit zijn de resultaten die er het dichtst bij komen.", "The AI did not answer. These are the closest results.")}</p>{/if}
           </div>
         {/if}
@@ -713,6 +748,10 @@
   .ghost-small { padding: var(--space-2) var(--space-8); border: none; background: transparent; border-radius: var(--radius-control);
     font: var(--text-label); color: var(--text2); }
   .ghost-small:hover { background: var(--row-hover); color: var(--paper); }
+  /* `SmallGhostButton`: 30 high, the strong text, a graphite fill under the pointer. */
+  .ghost-button { height: 30px; padding: 0 10px; border: none; background: transparent; border-radius: var(--radius-control);
+    font: var(--text-emphasis); color: var(--text2); white-space: nowrap; flex: none; }
+  .ghost-button:hover { background: var(--graphite); color: var(--paper); }
   .start .hit:hover { background: var(--row-hover); }
   .answer { display: flex; flex-direction: column; gap: var(--space-6); margin: 0 0 var(--space-6); padding: var(--space-8);
     background: var(--smoke); border: 1px solid var(--line2); border-radius: var(--radius-control); }

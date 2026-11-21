@@ -448,7 +448,7 @@
   /* What search everything opened: marked for a moment, as the Mac lights the passage it scrolled to. */
   .msg.found { background: color-mix(in srgb, var(--iris) 8%, transparent); }
   .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
-  .bubble { background: var(--bubble); border-radius: var(--radius-bubble); padding: var(--space-12); max-width: 85%; white-space: pre-wrap; user-select: text; line-height: 1.3; }
+  .bubble { background: var(--bubble); color: var(--paper); border-radius: var(--radius-bubble); padding: var(--space-12); max-width: 85%; white-space: pre-wrap; user-select: text; line-height: 1.3; }
   .pic-btn { background: none; border: none; padding: 0; margin: 0 0 4px; display: inline-flex; max-width: 100%; border-radius: 10px; }
   .pic { display: block; max-width: 180px; max-height: 140px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
@@ -457,7 +457,7 @@
   .error-card { margin-top: 4px; padding: 14px; border-radius: var(--radius-sheet); background: color-mix(in srgb, var(--coral) 7%, transparent); }
   .error-head { display: flex; gap: 10px; align-items: flex-start; }
   .error-head .mark { color: var(--coral); font-weight: 600; width: 16px; text-align: center; }
-  .error-title { font-weight: 600; }
+  .error-title { color: var(--paper); font-weight: 600; }
   .error-detail { color: var(--text2); font: var(--text-detail); }
   .error-actions { padding-left: 26px; }
   .details { font: var(--text-detail); color: var(--text3); padding: 4px 0; margin-top: 6px; }
@@ -470,6 +470,10 @@
   .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
   .reply { display: flex; flex-direction: column; gap: var(--space-16); padding: 0 var(--space-2); }
   .reply > :global(*) { margin-top: 0; margin-bottom: 0; }
+  /* Running assistant prose uses `text-strong` while bold keeps full `paper` contrast (macOS `MarkdownView`). */
+  .answer-body { color: var(--text-strong); }
+  .answer-body :global(.markdown) { color: var(--text-strong); }
+  .answer-body :global(.markdown strong), .answer-body :global(.markdown b) { color: var(--paper); }
   /* `TranscriptMessageFooter`: kept in place while hidden so nothing jumps, shown on hover. */
   .footer { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-6) 0 0 calc(var(--space-2) - var(--space-4)); opacity: 0; transition: opacity var(--motion-hover); }
   .msg:hover .footer, .footer:focus-within { opacity: 1; }

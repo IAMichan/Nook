@@ -18,7 +18,7 @@ export const settingsSections = [
   "brain", "assistant", "memory", "instructions",
   "autocomplete", "autocompleteApps", "autocompleteStyle", "autocompletePlayground", "autocompleteStats", "dictation",
   "agents", "usage", "sessions", "worktrees", "openIn", "archive", "automation", "projects", "pullRequests",
-  "chats", "connections", "iphone", "privacy",
+  "chats", "connections", "iphone", "privacy", "activityLog",
   "maintenance", "about",
 ] as const;
 export type SettingsSectionId = (typeof settingsSections)[number];
@@ -48,7 +48,7 @@ export const settingsPages: Record<SettingsGroupId, { page: SettingsSectionId; p
     { page: "chats", parts: ["chats"] },
     { page: "connections", parts: ["connections"] },
     { page: "iphone", parts: ["iphone"] },
-    { page: "privacy", parts: ["privacy"] },
+    { page: "privacy", parts: ["privacy", "activityLog"] },
   ],
   system: [
     { page: "maintenance", parts: ["maintenance", "about"] },
@@ -134,6 +134,7 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "connections": return tr("Diensten", "Services");
     case "iphone": return "Companion";
     case "privacy": return tr("Privacy", "Privacy");
+    case "activityLog": return tr("Logboek", "Activity log");
     case "maintenance": return tr("Onderhoud", "Maintenance");
     case "about": return tr("Over Nook", "About Nook");
   }

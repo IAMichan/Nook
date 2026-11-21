@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { callDetail, callOf, callTitle, clockOrDay, firstLink, groupOf, inboxEntry, insertTag, typingTag, personTint, sections, shown, whatsAppEntry, type ChatEntry, type ReadMark } from "./chats-list";
+import {
+  aggregatePeople,
+  callDetail,
+  callOf,
+  callTitle,
+  clockOrDay,
+  dayAndClock,
+  fillReceipts,
+  firstLink,
+  foldPersonName,
+  formatBirthday,
+  groupOf,
+  inboxEntry,
+  insertTag,
+  isBirthdayToday,
+  personTint,
+  readReceiptSummary,
+  searchPeople,
+  sections,
+  shown,
+  typingLine,
+  typingTag,
+  whatsAppEntry,
+  type Bubble,
+  type ChatEntry,
+  type ReadMark,
+} from "./chats-list";
 import type { ChatSummary, WhatsAppConversation } from "./connectors";
 
 const now = new Date(2026, 10, 19, 15, 0);
@@ -9,6 +35,15 @@ function entry(id: string, last: Date | null, unread = 0, listKind: ChatEntry["l
   return {
     id, key: `whatsapp#${id}`, app: "whatsapp", name: id, isGroup: false, listKind, last, preview: `hello ${id}`, ticks: null, unread,
     read: read ?? (unread ? "unread" : "read"), lastIsMine: false, account, sends: true, mutedInApp: false,
+  };
+}
+
+function bubble(id: string, fromMe: boolean, over: Partial<Bubble> = {}): Bubble {
+  return {
+    id, sender: "", text: `msg ${id}`, date: at(0, 12).toISOString(), fromMe,
+    media: { kind: "none" }, receipt: null, edited: false, deleted: false, replyTo: null, reactions: [], versions: [],
+    readAt: null, readBy: [], readers: [],
+    ...over,
   };
 }
 
@@ -106,5 +141,56 @@ describe("the Chats list", () => {
     expect(callOf("call")).toBeNull();
     expect(firstLink("see https://example.com/a, ok")).toBe("https://example.com/a");
     expect(firstLink("http://localhost")).toBeNull();
+  });
+
+  it("fills ticks on older outgoing messages and propagates group readers (CH-54)", () => {
+    const m1 = bubble("1", true, { receipt: null });
+    const m2 = bubble("2", true, { receipt: "pending" });
+    const m3 = bubble("3", true, { receipt: "read", readAt: new Date(2026, 10, 19, 14, 5).toISOString(), readBy: ["Anna"] });
+    const reply = bubble("4", false, { sender: "Bo", date: new Date(2026, 10, 19, 14, 10).toISOString() });
+
+    const priv = fillReceipts([m1, m2, m3], true);
+    expect(priv.map((b) => b.receipt)).toEqual(["read", "read", "read"]);
+
+    const privReply = fillReceipts([bubble("s", true, { receipt: "sent" }), bubble("r", false)], true);
+    expect(privReply[0].receipt).toBe("delivered");
+    expect(privReply[1].receipt).toBeNull();
+
+    const grp = fillReceipts([m1, m3, reply], false);
+    expect(grp[0].readBy).toEqual(expect.arrayContaining(["Anna", "Bo"]));
+    expect(grp[1].readBy).toEqual(expect.arrayContaining(["Anna", "Bo"]));
+    expect(readReceiptSummary(grp[0], true, now, "en-GB")).toBe("Read by Bo and Anna");
+    expect(readReceiptSummary(priv[2], false, now, "en-GB")).toBe("Read 14:05");
+    expect(dayAndClock(at(1, 9).toISOString(), now, "en-GB")).toBe("Yesterday 09:00");
+  });
+
+  it("formats typing indicator lines cleanly for private and group chats (CH-54)", () => {
+    expect(typingLine([], false)).toBeNull();
+    expect(typingLine(["Anna"], false)).toBe("Anna is typing…");
+    expect(typingLine([""], false, "Anna")).toBe("Anna is typing…");
+    expect(typingLine([""], true)).toBe("Typing…");
+    expect(typingLine(["Anna", "Bo"], true)).toBe("Anna and Bo are typing…");
+    expect(typingLine(["Anna", "Bo", "Cy"], true)).toBe("Anna and 2 others are typing…");
+  });
+
+  it("aggregates, searches, and formats birthdays for People (CH-33)", () => {
+    const entries: ChatEntry[] = [
+      { ...entry("31612345678@s.whatsapp.net", at(0, 14), 2), name: "Ánna Bakker", app: "whatsapp", key: "whatsapp#31612345678@s.whatsapp.net", handle: "+31612345678" },
+      { ...entry("tg-anna", at(1, 10), 1), name: "Anna Bakker", app: "telegram", key: "telegram#tg-anna", preview: "See you Friday" },
+      { ...entry("grp", at(0, 15), 5), name: "Design Team", isGroup: true, app: "slack", key: "slack#grp" },
+      { ...entry("sig-bo", at(2, 9), 0), name: "Bo", app: "signal", key: "signal#sig-bo" },
+    ];
+    expect(foldPersonName("  Ánna\u200B  Bakker ")).toBe("anna bakker");
+    const people = aggregatePeople(entries);
+    expect(people.map((p) => p.name)).toEqual(["Ánna Bakker", "Bo"]);
+    expect(people[0].apps).toEqual(["whatsapp", "telegram"]);
+    expect(people[0].unread).toBe(3);
+
+    const notes = { "whatsapp#31612345678@s.whatsapp.net": { note: "Loves espresso", birthday: "11-19" } };
+    expect(searchPeople(people, "espresso", notes).map((p) => p.name)).toEqual(["Ánna Bakker"]);
+    expect(searchPeople(people, "signal", notes).map((p) => p.name)).toEqual(["Bo"]);
+    expect(isBirthdayToday("11-19", now)).toBe(true);
+    expect(isBirthdayToday("04-12", now)).toBe(false);
+    expect(formatBirthday("02-29", "en-GB")).toMatch(/29/);
   });
 });

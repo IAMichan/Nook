@@ -15,6 +15,7 @@
   import MicButton from "../../../components/MicButton.svelte";
   import AgentModelPicker from "./AgentModelPicker.svelte";
   import ComposerContext from "./ComposerContext.svelte";
+  import ContextBreakdown from "./ContextBreakdown.svelte";
   import PromptTools from "./PromptTools.svelte";
   import { composerInbox } from "../../../lib/workspace/composer-inbox.svelte";
   import { merging } from "../../../lib/workspace/session-prompts";
@@ -22,7 +23,7 @@
   import { compose, fileRef, isPicture, project, timeline, type ContextRef } from "../../../lib/workspace/context-refs";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { tr } from "../../../lib/i18n.svelte";
-  import { contextLevel, contextPercent, oneLine } from "../../../lib/workspace/timeline";
+  import { oneLine } from "../../../lib/workspace/timeline";
 
   let { run }: { run: WorkspaceRun } = $props();
 
@@ -63,7 +64,7 @@
   const steers = $derived(canSteer && steerDefault);
   const short = $derived(run.provider === "claude" ? "Claude" : workspace.provider(run.provider)?.name ?? run.provider);
   const prompt = $derived(active ? (steers ? tr("{agent} is bezig… typ om bij te sturen", "{agent} is working… type to steer", { agent: short }) : tr("{agent} is bezig… typ een vervolg voor de wachtrij", "{agent} is working… type a follow-up for the queue", { agent: short })) : tr("Stuur een vervolgbericht…", "Send a follow-up…"));
-  const fraction = $derived(run.usage.contextWindow && run.usage.contextTokens ? run.usage.contextTokens / run.usage.contextWindow : null);
+  const events = $derived(workspace.timelines[run.id] ?? []);
   /// The agents the picker offers: the ones on this computer, and this session's own in any case.
   const pickable = $derived(workspace.providers.filter((p) => p.supported && (p.executable || p.provider === run.provider)));
 
@@ -150,8 +151,8 @@
     workspace.loadQueue(run.id);
   }
 
-  // The `/` list (`AgentCommands`): only commands this agent really has. Nook's own (plan, clear), Claude Code's and
-  // Codex's built-in compact and goal, then what the agent announced itself (ACP `available_commands_update`).
+  // The `/` list (`AgentCommands`): only commands this agent really has. Nook's own (plan, clear, fork, goal), Claude
+  // Code's and Codex's built-in compact, then what the agent announced itself (ACP `available_commands_update`).
   type Command = { name: string; detail: string; insertion: string | null; run?: () => void };
   let offered = $state<{ name: string; detail: string; takesInput: boolean }[]>([]);
   let commandIndex = $state(0);
@@ -161,6 +162,7 @@
     workspaceApi.agentCommands(runId).then((c) => (offered = c)).catch(() => (offered = []));
   });
   const builtIn = (p: string) => p === "claude" || p === "codex";
+  const canCompact = $derived(builtIn(run.provider) || offered.some((c) => c.name === "compact"));
   const commands = $derived.by((): Command[] => {
     const list: Command[] = [];
     if (caps?.planMode) list.push({ name: "plan", detail: tr("Naar Plan-modus", "Switch to Plan mode"), insertion: null, run: () => workspace.act(() => workspaceApi.configure(run.id, { mode: "plan" })) });
@@ -168,8 +170,8 @@
     if (!active) list.push({ name: "fork", detail: tr("Een vork van deze sessie maken", "Fork this session"), insertion: null, run: () => fork() });
     if (builtIn(run.provider)) {
       list.push({ name: "compact", detail: tr("Het gesprek samenvatten om ruimte te maken", "Summarize the conversation to free up space"), insertion: "/compact" });
-      list.push({ name: "goal", detail: tr("Een doel instellen waar de agent naartoe werkt", "Set a goal the agent works toward"), insertion: "/goal " });
     }
+    list.push({ name: "goal", detail: tr("Een doel instellen waar de agent naartoe werkt", "Set a goal the agent works toward"), insertion: "/goal " });
     for (const c of offered) {
       if (!list.some((x) => x.name === c.name)) list.push({ name: c.name, detail: c.detail, insertion: `/${c.name}${c.takesInput ? " " : ""}` });
     }
@@ -376,9 +378,7 @@
         <button class="pill" disabled={active} title={modeHelp.plan} onclick={() => workspace.act(() => workspaceApi.configure(run.id, { mode: "agent" }))}><Ico name="list-checks" size={15} /><span>{tr("Plan", "Plan")}</span></button>
       {/if}
       <span class="spacer"></span>
-      {#if fraction !== null && fraction > 0}
-        <span class="ctx {contextLevel(fraction)}" title={tr("Hoe vol het contextvenster zat bij de laatste modelaanroep", "How full the context window was at the last model call")}>ctx {contextPercent(fraction)}</span>
-      {/if}
+      <ContextBreakdown {run} {events} {canCompact} />
       {#if active && draft.trim()}
         <button class="pill" onclick={() => deliver(steers ? "steer" : "queue")} title={steers ? tr("Bijsturen: gaat nu naar de agent", "Steer: goes to the agent now") : tr("In de wachtrij: gaat na deze beurt", "Queue: goes after this turn")}>{steers ? tr("Bijsturen", "Steer") : tr("In de wachtrij", "Queue")}</button>
       {/if}
@@ -432,9 +432,6 @@
   /* `ComposerDivider`: a gap, not a line. */
   .divider { width: var(--space-4); height: 16px; flex: none; }
   .spacer { flex: 1; }
-  .ctx { font: var(--text-caption); font-family: var(--mono); color: var(--text3); }
-  .ctx.warning { color: var(--amber); }
-  .ctx.critical { color: var(--coral); }
   /* Send and stop: 32 pt circles, the accent when they can act, smoke dimmed by half when not. */
   .round { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; margin: 0; border: 0; border-radius: 50%; flex: none; background: var(--iris); color: var(--on-iris); }
   .round:hover:not(:disabled) { background: color-mix(in srgb, var(--iris) 88%, var(--canvas)); }

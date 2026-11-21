@@ -64,6 +64,33 @@ export interface WorkspaceRun {
   limitResetAt: string | null;
   autoResume: boolean;
   effort: string | null;
+  /** The session's active goal (`/goal`, AG-67). */
+  goal?: string | null;
+  /** True while the agent is compacting/summarizing the conversation (AG-65). */
+  compacting?: boolean;
+}
+
+export type ContextLevel = "normal" | "warning" | "critical";
+export type ContextPartKind = "used" | "buffer" | "free";
+
+export interface ContextPart {
+  id: string;
+  tokens: number;
+  share: number;
+  kind: ContextPartKind;
+}
+
+export interface ContextUsage {
+  usedTokens: number;
+  window: number;
+  fraction: number;
+  pressure: number;
+  level: ContextLevel;
+  autoCompactAt: number | null;
+  headroomTokens: number;
+  compacting: boolean;
+  detailed: boolean;
+  parts: ContextPart[];
 }
 
 export interface RunEvent {
@@ -396,6 +423,10 @@ export const workspaceApi = {
   resources: (id: string) => invoke<{ cpuPercent: number; memoryBytes: number; processes: number } | null>("workspace_resources", { run: run(id) }),
   /** `/clear`: a new conversation with the agent; false while it works. */
   clear: (id: string) => invoke<boolean>("workspace_clear", { run: run(id) }),
+  /** Sets or clears a session's active goal (`/goal`, AG-67). */
+  setGoal: (id: string, goal: string | null) => invoke<string | null>("workspace_set_goal", { run: run(id), goal }),
+  /** Context window breakdown and compaction pressure for a session (AG-65 & AG-66). */
+  contextUsage: (id: string) => invoke<ContextUsage | null>("workspace_context_usage", { run: run(id) }),
   /** "Turn into project": a session's folder without a project becomes a favorite project. */
   keepScratch: (path: string) => invoke<void>("workspace_keep_scratch", { path }),
   /** "Make it a git repository": `git init` in a session's folder. */

@@ -74,7 +74,7 @@
 
 <div class="section-head">
   <h3>{tr("Gevolgde pull requests", "Watched pull requests")}</h3>
-  <button class="head-action" disabled={entries.length >= LIMIT} onclick={openAdd}><Ico name="plus" size={12} />{tr("Organisatie volgen", "Watch organization")}</button>
+  <button class="head-action" disabled={entries.length >= LIMIT} onclick={openAdd}><Ico name="plus" size={14} />{tr("Organisatie volgen", "Watch organization")}</button>
 </div>
 <p class="section-info">{tr("Hun open pull requests staan naast die van jou bij Agents, gezocht met elk gekoppeld GitHub-account.", "Their open pull requests show next to yours under Agents, searched with every connected GitHub account.")}</p>
 <div class="group">

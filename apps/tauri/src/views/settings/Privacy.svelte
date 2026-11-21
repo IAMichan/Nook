@@ -15,6 +15,9 @@
   import StatusRow from "./StatusRow.svelte";
   import { tip } from "../../components/ui/tip";
 
+  // The Mac's Privacy parts this page has: what Nook may reach (`access`) and the activity log (`log`).
+  let { part = "access" }: { part?: "access" | "log" } = $props();
+
   // Windows' privacy switches for what Nook uses (none on other systems), read again when the window comes back.
   let permissions = $state<{ id: string; granted: boolean }[]>([]);
   $effect(() => {
@@ -69,6 +72,7 @@
   }
 </script>
 
+{#if part === "access"}
 {#if nook.info?.capabilities.screenReading}
   <div class="group">
     <div class="row">
@@ -112,6 +116,9 @@
   {/each}
 </div>
 
+{/if}
+
+{#if part === "log"}
 <h3>{tr("Logboek", "Log")}</h3>
 <p class="section-info">{tr("Alles wat Nook voor je uitvoert, met wat er gebeurde. Wordt 90 dagen bewaard, alleen op deze computer.", "Everything Nook carries out for you, with what happened. Kept for 90 days, only on this computer.")}</p>
 <div class="group">
@@ -135,6 +142,7 @@
       onconfirm={async () => { await api.clearAudit(); audit = []; cleared = true; }} />
   </div>
 </div>
+{/if}
 
 <style>
   .linked { flex-wrap: nowrap; }

@@ -188,7 +188,7 @@ a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--and
 
 - Music (`NowPlayingService`, Music tab). **Tauri:** ◐ now playing and controls: MPRIS on Linux, Windows media controls (only compiled); lyrics from lrclib.net once turned on, synced lines following the track (SV-37); no Spotify, search, queue, playlists, library, history or output picker (SV-30…SV-39). **Where:** `platform/linux/mpris.rs`, `platform/windows/media.rs`
 
-- Nook itself (orb, ring, sounds). **Tauri:** ◐ (not all 17 moods, face looks and reactions, SV-20; no buddy moments, SV-19; one sound for all events, SV-53). **Where:** `components/Orb.svelte`, `lib/sounds.ts`
+- Nook itself (orb, ring, sounds). **Tauri:** ◐ (not all 17 moods, face looks and reactions, SV-20; no buddy moments, SV-19; a sound per moment chosen from Nook's tone, Windows' sounds, your own file or none, but one sound for a question and a permission request, SV-53). **Where:** `components/Orb.svelte`, `lib/sounds.ts`, `core/src/services/sounds.rs`
 
 - Notetaker. **Tauri:** ◐ (no speaker recognition). **Where:** `core/src/services/notes.rs`
 

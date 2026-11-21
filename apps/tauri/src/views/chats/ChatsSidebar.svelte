@@ -1,19 +1,23 @@
 <script lang="ts" module>
   /** An app in the sidebar: a chat app, or another linked app whose items the list shows (calendar, mail, GitHub). */
   export interface SidebarApp { id: string; title: string; domain: string | null; count: number }
+  /** Whether the Chats tab shows the list of chats or the People directory (`ChatsMode` on the Mac). */
+  export type ChatsMode = "chats" | "people";
 </script>
 
 <script lang="ts">
-  // The Chats tab's sidebar (`ChatsSidebar`): the views by where a chat stands, then every app with chats here (the
-  // chosen one with its accounts under it, while it has more than one), then a way to add one, and at the foot what the marks mean. In the main window it moves into the window's sidebar, under
-  // the tabs, as the Mac's does.
+  // The Chats tab's sidebar (`ChatsSidebar`): the Chats / People switch on top, the views by where a chat stands, then
+  // every app with chats here (the chosen one with its accounts under it, while it has more than one), then a way to
+  // add one, and at the foot what the marks mean. In the main window it moves into the window's sidebar, under the
+  // tabs, as the Mac's does.
   import { tr } from "../../lib/i18n.svelte";
   import { type ChatView, viewTitle } from "../../lib/chats-list";
   import Ico from "../../components/ui/Ico.svelte";
   import SectionLabel from "../../components/ui/SectionLabel.svelte";
   import ServiceIcon from "../connectors/ServiceIcon.svelte";
 
-  let { view, app, counts, apps, accounts = [], account = null, onview, onapp, onaccount, onadd }: {
+  let { mode = "chats", view, app, counts, apps, accounts = [], account = null, onmode, onview, onapp, onaccount, onadd }: {
+    mode?: ChatsMode;
     view: ChatView;
     app: string | null;
     /** How many chats wait in a view (only New and Only in Nook show it). */
@@ -22,6 +26,7 @@
     /** The chosen app's accounts with what is new in each. */
     accounts?: { name: string; count: number }[];
     account?: string | null;
+    onmode?: (m: ChatsMode) => void;
     onview: (v: ChatView) => void;
     onapp: (id: string | null) => void;
     onaccount?: (name: string | null) => void;
@@ -32,10 +37,22 @@
 </script>
 
 <div class="chats-sidebar">
+  {#if onmode}
+    <div class="modes" role="tablist" aria-label={tr("Weergave", "View")}>
+      <button type="button" role="tab" class="mode" class:on={mode === "chats"} aria-selected={mode === "chats"} onclick={() => onmode("chats")}>
+        <Ico name="messages-square" size={13} stroke={2} />
+        <span>{tr("Chats", "Chats")}</span>
+      </button>
+      <button type="button" role="tab" class="mode" class:on={mode === "people"} aria-selected={mode === "people"} onclick={() => onmode("people")}>
+        <Ico name="users" size={13} stroke={2} />
+        <span>{tr("Mensen", "People")}</span>
+      </button>
+    </div>
+  {/if}
   <div class="rows">
     {#each views as v (v)}
       {@const count = v === "unread" || v === "readInNook" ? counts[v] ?? 0 : 0}
-      <button class="row" class:on={view === v} aria-pressed={view === v} onclick={() => onview(v)}>
+      <button class="row" class:on={mode === "chats" && view === v} aria-pressed={mode === "chats" && view === v} onclick={() => { onmode?.("chats"); onview(v); }}>
         <span class="glyph">
           {#if v === "all"}<Ico name="inbox" size={14} stroke={2} />
           {:else if v === "unread"}<span class="dot"></span>
@@ -49,12 +66,12 @@
     {#if apps.length}
       <div class="apps-label"><SectionLabel text={tr("Apps", "Apps")} /></div>
       {#each apps as a (a.id)}
-        <button class="row" class:on={app === a.id} aria-pressed={app === a.id} onclick={() => onapp(app === a.id ? null : a.id)}>
+        <button class="row" class:on={mode === "chats" && app === a.id} aria-pressed={mode === "chats" && app === a.id} onclick={() => { onmode?.("chats"); onapp(app === a.id && mode === "chats" ? null : a.id); }}>
           <span class="glyph"><ServiceIcon domain={a.domain} title={a.title} size={15} /></span>
           <span class="title">{a.title}</span>
           {#if a.count}<span class="count">{a.count}</span>{/if}
         </button>
-        {#if app === a.id}
+        {#if mode === "chats" && app === a.id}
           {#each accounts as acc (acc.name)}
             <button class="row account" class:on={account === acc.name} aria-pressed={account === acc.name} onclick={() => onaccount?.(account === acc.name ? null : acc.name)}>
               <span class="glyph"><Ico name="circle-user" size={13} stroke={2} /></span>
@@ -80,6 +97,10 @@
 
 <style>
   .chats-sidebar { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .modes { flex: none; display: flex; gap: var(--space-2); padding: var(--space-2); margin: var(--space-4) 0 var(--space-6); background: var(--surface); border-radius: var(--radius-control); }
+  .mode { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-4); height: 26px; padding: 0 var(--space-6); border: 0; border-radius: var(--radius-chip); background: transparent; color: var(--text3); font: var(--text-label); white-space: nowrap; }
+  .mode:hover:not(:disabled) { background: var(--row-hover); border: 0; color: var(--text2); }
+  .mode.on { background: var(--row-selected); color: var(--paper); }
   .rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) 0; }
   .row { display: flex; align-items: center; gap: var(--space-8); width: 100%; min-height: 30px; padding: 0 var(--space-8); border: 0; border-radius: var(--radius-control); background: transparent; text-align: left; color: var(--text-strong); }
   .row:hover:not(:disabled) { background: var(--row-hover); border: 0; }

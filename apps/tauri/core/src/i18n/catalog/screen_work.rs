@@ -24,4 +24,10 @@ pub const ROWS: &[Row] = &[
         "{name} leyó esto en tu ordenador y dio una nota filtrada a {chosen} para que pudiera responder.",
     ),
     ("Thinking…", "Denke nach…", "Réflexion…", "Pensando…"),
+    (
+        "Controlling apps is not supported on this platform.",
+        "Das Steuern von Apps wird auf dieser Plattform nicht unterstützt.",
+        "Le contrôle des applications n’est pas pris en charge sur cette plateforme.",
+        "Controlar aplicaciones no es compatible con esta plataforma.",
+    ),
 ];

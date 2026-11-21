@@ -476,6 +476,12 @@ pub struct WorkspaceRun {
     /// A conversation rollback waiting for the next turn (Codex `thread/rollback`, Claude `--resume-session-at`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_rollback: Option<super::rollback::PendingRollback>,
+    /// The session's active goal (`/goal`, AG-67), persisted with the run.
+    #[serde(default)]
+    pub goal: Option<String>,
+    /// True while the agent is actively compacting/summarizing the conversation (AG-65).
+    #[serde(default)]
+    pub compacting: bool,
 }
 
 impl WorkspaceRun {
@@ -933,6 +939,8 @@ pub(crate) mod tests {
             pending_handoff: None,
             conversation: None,
             pending_rollback: None,
+            goal: None,
+            compacting: false,
         }
     }
 
