@@ -10,16 +10,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
-### Changed
-
-- When a usage limit stops a session, its end now looks like a stopped session: a quiet line with when the limit
-  resets and Retry, and one row to go on now with the account that has room left, under the logo of the model it goes
-  on with. "Another model" opens the model picker.
-- Building Nook now warns when the chat helper (`nook-chatd`) is older than the code in `apps/chatd`, with how many
-  changes it misses, so a stale helper no longer quietly drops fixes such as the account an Instagram chat belongs to.
-  Run `scripts/build-chatd.sh` to bring it up to date.
-
-## [0.1.2-beta.1] - 2026-11-21
+## [0.1.2] - 2026-11-21
 
 ### Added
 
@@ -57,6 +48,16 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Nook Chat now looks things up on the web when you ask what an abbreviation, term or word means ("Wat betekent PGO?",
   "What does SLA stand for?", in all five languages), instead of answering from the model's memory, and says where it
   found the answer. With **Search the web when needed** off, nothing changes.
+
+### Changed
+
+- When a usage limit stops a session, its end now looks like a stopped session: a quiet line with when the limit
+  resets and Retry, and one row to go on now with the account that has room left, under the logo of the model it goes
+  on with. "Another model" opens the model picker.
+
+- Building Nook now warns when the chat helper (`nook-chatd`) is older than the code in `apps/chatd`, with how many
+  changes it misses, so a stale helper no longer quietly drops fixes such as the account an Instagram chat belongs to.
+  Run `scripts/build-chatd.sh` to bring it up to date.
 
 ### Fixed
 
@@ -462,6 +463,6 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
-[0.1.2-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.1
+[0.1.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2
 [0.1.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1
 [0.1.0-beta.1]: https://github.com/IAMichan/nook/releases/tag/v0.1.0-beta.1
