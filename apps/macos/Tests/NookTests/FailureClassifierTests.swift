@@ -104,4 +104,15 @@ final class FailureClassifierTests: XCTestCase {
             XCTFail("assistant text is never read as a failure")
         }
     }
+
+    func testAntigravityLimitReplyIsALimit() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let reply = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 4 hours, 23 minutes."
+        let limit = FailureClassifier.limitReply(reply, now: now)
+        XCTAssertEqual(limit?.resetAt, now.addingTimeInterval(4 * 3_600 + 23 * 60))
+        XCTAssertNil(FailureClassifier.limitReply("Done. I fixed the usage limit card.", now: now))
+        let long = String(repeating: "The usage limit reached code path now works. ", count: 20)
+        XCTAssertNil(FailureClassifier.limitReply(long, now: now), "a long answer that mentions a limit is an answer")
+        XCTAssertNil(FailureClassifier.limitReply("", now: now))
+    }
 }
