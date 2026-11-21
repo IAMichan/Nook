@@ -55,7 +55,7 @@ pub struct WorkspaceSettings {
     pub agent_tools: bool,
     /// Een bericht terwijl een agent werkt, stuurt de beurt bij (Ctrl+Enter zet het in de wachtrij); uit: andersom.
     pub steer_by_default: bool,
-    /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard uit).
+    /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard aan).
     pub auto_resume_limited: bool,
     pub last_project: String,
     /// Favorite project folders: shown at the top of the project menu and never evicted.
@@ -81,7 +81,7 @@ impl Default for WorkspaceSettings {
             show_cost: true,
             agent_tools: true,
             steer_by_default: true,
-            auto_resume_limited: false,
+            auto_resume_limited: true,
             last_project: String::new(),
             favorite_projects: vec![],
             recent_projects: vec![],
