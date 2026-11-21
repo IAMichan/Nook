@@ -88,6 +88,26 @@ struct AgentStatusNotice: Equatable, Sendable {
     }
 }
 
+/// A turn the agent took by itself: a command or subagent it left running in the background ended, and the agent woke
+/// up to read its result. It ended no work you asked for, so it gets no "done" notice (no card, strip, sound or macOS
+/// notification); a failure, or the agent waiting on you, still tells you. The same for every agent: a terminal session
+/// knows who started the turn from its hooks, a session Nook runs from the wake in its timeline.
+/// Pure, so the rule can be tested without a Mac.
+enum AgentWake {
+    /// Whether you started the turn a hook's prompt opens: not when the whole prompt is the agent's own (a
+    /// `<task-notification>` of a finished background command or subagent).
+    static func startedByYou(prompt: String?) -> Bool {
+        guard let prompt else { return true }
+        return InjectedPrompt.prompt(prompt) != nil
+    }
+
+    /// Whether a finished turn gives a notice. `byYou`: nil when Nook does not know who started it (the agent's hooks
+    /// never say, or Nook came in mid-turn); then it does, as before.
+    static func announces(_ state: AgentStatusNotice.State, byYou: Bool?) -> Bool {
+        state != .done || byYou != false
+    }
+}
+
 /// Text for a macOS notification: a banner has room for about two short lines, so it gets the gist (the first sentence
 /// in plain words) instead of the whole reply. The full text stays one click away, in the session.
 /// Pure, so what a banner says can be tested without a Mac.

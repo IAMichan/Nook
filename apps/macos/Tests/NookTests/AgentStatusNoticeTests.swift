@@ -110,3 +110,25 @@ final class BannerTextTests: XCTestCase {
         XCTAssertEqual(notice.bannerBody, "Pushed. CI runs again and takes about ten minutes.")
     }
 }
+
+/// A turn the agent woke up for by itself (a background command or subagent ended) gives no "done" notice (`AgentWake`).
+final class AgentWakeTests: XCTestCase {
+    func testAPromptOfYoursStartsYourTurn() {
+        XCTAssertTrue(AgentWake.startedByYou(prompt: "Fix the login bug"))
+        XCTAssertTrue(AgentWake.startedByYou(prompt: nil), "an agent whose hook sends no prompt: as before")
+        XCTAssertTrue(AgentWake.startedByYou(prompt: "<system-reminder>worktree</system-reminder>\nFix it"))
+    }
+
+    func testAFinishedBackgroundTaskIsNoPromptOfYours() {
+        let note = "<task-notification><task-id>b1</task-id><status>completed</status></task-notification>"
+        XCTAssertFalse(AgentWake.startedByYou(prompt: note))
+    }
+
+    func testOnlyAWakeTurnThatEndsWellStaysQuiet() {
+        XCTAssertFalse(AgentWake.announces(.done, byYou: false))
+        XCTAssertTrue(AgentWake.announces(.done, byYou: true))
+        XCTAssertTrue(AgentWake.announces(.done, byYou: nil), "unknown who started it: tell")
+        XCTAssertTrue(AgentWake.announces(.failed, byYou: false), "a failure always tells you")
+        XCTAssertTrue(AgentWake.announces(.waiting, byYou: false), "waiting on you always tells you")
+    }
+}
