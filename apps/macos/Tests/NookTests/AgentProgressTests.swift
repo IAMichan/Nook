@@ -20,11 +20,16 @@ final class AgentProgressTests: XCTestCase {
     // MARK: The live line
 
     func testAStepStaysOnTheLiveLineThroughThePauseBeforeTheNext() {
-        XCTAssertTrue(AgentActivity.holds(.running("npm test"), before: .reviewing), "no 'Reviewing' between quick commands")
-        XCTAssertTrue(AgentActivity.holds(.reading("App.swift"), before: .thinking("Next")))
-        XCTAssertFalse(AgentActivity.holds(.running("npm test"), before: .running("npm run lint")), "the next step shows right away")
-        XCTAssertFalse(AgentActivity.holds(.running("npm test"), before: .compacting))
-        XCTAssertFalse(AgentActivity.holds(.reviewing, before: .writing), "only a step is held")
+        let ended = bash("npm test", .done, at: 1)
+        XCTAssertEqual(TimelinePresentation.endedStep([event(.user, "Fix it"), ended])?.id, ended.id)
+        XCTAssertNil(TimelinePresentation.endedStep([event(.user, "Fix it"), bash("npm test", .running)]), "a running step is live")
+        XCTAssertNil(TimelinePresentation.endedStep([event(.user, "Fix it"), ended, event(.thinking, "Next", at: 2)]))
+        var hold = EndedStepHold<UUID>()
+        XCTAssertEqual(hold.held(ended.id), ended.id)
+        hold.release(ended.id)
+        XCTAssertNil(hold.held(ended.id), "let go after its moment")
+        let next = bash("npm run lint", .done, at: 3)
+        XCTAssertEqual(hold.held(next.id), next.id, "the next step that ends is held again")
         XCTAssertGreaterThan(AgentActivity.stepDwell, 0)
     }
 

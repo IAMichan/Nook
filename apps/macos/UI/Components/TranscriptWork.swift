@@ -313,6 +313,8 @@ struct TranscriptWorkingLine: View {
 
 /// At the end of the turn that runs: the agent's task list, then what it does now in words ("Running the tests"),
 /// shimmering. Waiting on you, the line says so in amber instead; with a command running, a click opens its terminal.
+/// A step that just ended is held here a moment by the timeline around it (`EndedStepHold`), which leaves it out of its
+/// rows meanwhile.
 struct TranscriptLiveLine: View {
     let activity: AgentActivity
     /// The task list as the agent keeps it, shown above the line; nil when it has none (or it shows elsewhere).
@@ -326,30 +328,7 @@ struct TranscriptLiveLine: View {
     /// How far the step that runs is, when Nook can tell (`WorkProgress`).
     var progress: WorkProgress? = nil
 
-    /// What the line says about a step: the step, the terminal it opens, its tooltip and how far it is.
-    private struct Shown {
-        var activity: AgentActivity
-        var openConsole: (() -> Void)?
-        var help: String?
-        var progress: WorkProgress?
-    }
-
-    /// The last step the line showed. When it ends and nothing else runs yet, the line goes on showing it for a moment
-    /// (`AgentActivity.holds`, until `released`), so quick or parallel commands read as one steady line instead of a
-    /// blinking one. Decided while the view is drawn, so not even one frame shows the pause in between.
-    @State private var lastStep: Shown?
-    @State private var released = false
-    @State private var ended = 0
-
     var body: some View {
-        // Read through `self.`: the locals on the third line shadow these properties, and a bare name before them is a
-        // circular reference to the CI runner's compiler.
-        let current = self.activity
-        let held = released ? nil : lastStep.flatMap { AgentActivity.holds($0.activity, before: current) ? $0 : nil }
-        let line = held ?? Shown(activity: current, openConsole: self.openConsole, help: self.help, progress: self.progress)
-        let activity = line.activity, openConsole = line.openConsole, help = line.help
-        // A step that ended and is only held on the line is not running: it has no progress to show.
-        let progress = held == nil ? line.progress : nil
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let tasks { TaskChecklistCard(steps: tasks) }
             if waiting {
@@ -368,20 +347,6 @@ struct TranscriptLiveLine: View {
                     if let progress, activity.isStep { WorkProgressMark(progress: progress) }
                 }
             }
-        }
-        .onChange(of: self.activity, initial: true) { old, new in
-            if new.isStep {
-                lastStep = Shown(activity: new, openConsole: self.openConsole, help: self.help, progress: self.progress)
-                released = false
-            } else if old.isStep {
-                ended += 1
-            }
-        }
-        .task(id: ended) {
-            guard ended > 0 else { return }
-            try? await Task.sleep(for: .seconds(AgentActivity.stepDwell))
-            guard !Task.isCancelled else { return }
-            released = true
         }
     }
 }

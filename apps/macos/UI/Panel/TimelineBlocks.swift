@@ -12,6 +12,9 @@ struct TimelineBlockView: View, Equatable {
     /// did not change is not drawn again while the agent writes into the last one (see `.equatable()` where it is used);
     /// without it, it always is.
     var context: TimelineRowContext? = nil
+    /// The event of this block left out (the step that just ended, still on the live line), so letting it go draws the
+    /// block again.
+    var hidden: UUID? = nil
     let toggle: (String) -> Void
     let eventRow: (RunEvent) -> AnyView
 
@@ -19,7 +22,7 @@ struct TimelineBlockView: View, Equatable {
     /// they do not count.
     static func == (lhs: TimelineBlockView, rhs: TimelineBlockView) -> Bool {
         guard let context = lhs.context else { return false }
-        return context == rhs.context && lhs.expanded == rhs.expanded && lhs.block == rhs.block
+        return context == rhs.context && lhs.expanded == rhs.expanded && lhs.hidden == rhs.hidden && lhs.block == rhs.block
     }
 
     var body: some View {
