@@ -1,29 +1,41 @@
 <script lang="ts">
   // A chat in the list (`ChatsRow`, `ChatListRowContent`): its picture with its app's mark, its name, when, the newest
-  // message, and where it stands at the end of that line: the count of what is new, one grey tick for read in Nook.
-  // Under the pointer its one step shows where its time was (`ChatsRowAction`); a right-click opens its menu. The same
-  // row for every chat app.
-  import { appName, clockOrDay, typingLine, type ChatEntry } from "../../lib/chats-list";
+  // message, and where it stands at the end of that line: the count of what is new, one grey tick for read in Nook,
+  // plus compact pin/mute/archive indicators. Under the pointer its one step respects `ChatAbilities` (`ChatsRowAction`);
+  // a right-click opens its menu. The same row for every chat app.
+  import { appName, clockOrDay, entryAbilities, priorityBadge, typingLine, type ChatEntry } from "../../lib/chats-list";
   import { tr } from "../../lib/i18n.svelte";
   import CountBadge from "../../components/ui/CountBadge.svelte";
   import Ico from "../../components/ui/Ico.svelte";
   import Menu from "../../components/ui/Menu.svelte";
   import ChatFace from "./ChatFace.svelte";
   import Ticks from "./Ticks.svelte";
-  import { chatMenu, markReadInApp, markReadInNook, markUnread } from "./chat-actions.svelte";
+  import { chatMenu, isChatArchived, isChatMuted, isChatPinned, markReadInApp, markReadInNook, markUnread } from "./chat-actions.svelte";
 
   let { entry, selected, now, onselect, onclosed }: { entry: ChatEntry; selected: boolean; now: Date; onselect: () => void; onclosed?: () => void } = $props();
   let hovering = $state(false);
   let menuAt = $state<DOMRect | null>(null);
   const unread = $derived(entry.read === "unread");
   const app = $derived(appName(entry.app));
+  const abilities = $derived(entryAbilities(entry));
+  const pinned = $derived(isChatPinned(entry));
+  const muted = $derived(isChatMuted(entry));
+  const archived = $derived(isChatArchived(entry));
+  const badge = $derived(unread ? priorityBadge(entry.priority) : null);
   const typing = $derived(typingLine(entry.typing, entry.isGroup, entry.name));
-  // Where the click takes it: what is new read in Nook (WhatsApp reads in the app at once), read in Nook passed on to
-  // the app, and read everywhere unread again.
+  // Where the click takes it, respecting `ChatAbilities`: what is new read in Nook (WhatsApp reads in the app when
+  // `abilities.markRead` is true), read in Nook passed on to the app if supported, and read everywhere unread again.
   const step = $derived(
     entry.read === "unread"
-      ? { title: tr("Gelezen", "Read"), help: tr("Gelezen in Nook", "Read in Nook"), mark: "check" as const, run: () => (entry.app === "whatsapp" ? markReadInApp(entry) : markReadInNook(entry)) }
-      : entry.read === "readInNook"
+      ? {
+          title: tr("Gelezen", "Read"),
+          help: entry.app === "whatsapp" && abilities.markRead
+            ? tr("Markeer gelezen in {app}", "Mark as read in {app}", { app })
+            : tr("Gelezen in Nook", "Read in Nook"),
+          mark: "check" as const,
+          run: () => (entry.app === "whatsapp" && abilities.markRead ? markReadInApp(entry) : markReadInNook(entry)),
+        }
+      : entry.read === "readInNook" && abilities.markRead
         ? { title: tr("Gelezen in {app}", "Read in {app}", { app }), help: tr("Markeer gelezen in {app}", "Mark as read in {app}", { app }), mark: "check-check" as const, run: () => markReadInApp(entry) }
         : { title: tr("Ongelezen", "Unread"), help: tr("Markeer als ongelezen", "Mark as unread"), mark: "dot" as const, run: () => markUnread(entry) },
   );
@@ -47,6 +59,10 @@
           {#if entry.ticks}<Ticks receipt={entry.ticks} size={12} />{/if}
           <span class="preview">{entry.preview || " "}</span>
         {/if}
+        {#if pinned}<span class="flag" title={tr("Vastgezet", "Pinned")}><Ico name="pin" size={11} stroke={2.4} /></span>{/if}
+        {#if muted}<span class="flag" title={tr("Gedempt", "Muted")}><Ico name="bell-off" size={11} stroke={2.4} /></span>{/if}
+        {#if archived}<span class="flag" title={tr("Gearchiveerd", "Archived")}><Ico name="archive" size={11} stroke={2.4} /></span>{/if}
+        {#if badge}<span class="prio" class:urgent={badge.tone === "urgent"} title={badge.label}><Ico name={badge.icon} size={11} stroke={2.5} /></span>{/if}
         {#if unread}<CountBadge count={entry.unread} />{:else if entry.read === "readInNook" && !entry.lastIsMine}<span class="grey" title={tr("Gelezen in Nook", "Read in Nook")}><Ico name="check" size={11} stroke={2.8} /></span>{/if}
       </span>
     </span>
@@ -71,6 +87,9 @@
   .read:hover:not(:disabled) { background: var(--smoke); border-color: var(--separator); color: var(--paper); }
   .mint { display: inline-flex; color: var(--mint); }
   .grey { display: inline-flex; color: var(--text3); }
+  .flag { flex: none; display: inline-flex; color: var(--text3); }
+  .prio { flex: none; display: inline-flex; color: var(--amber); }
+  .prio.urgent { color: var(--coral); }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
   .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   .top, .bottom { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }

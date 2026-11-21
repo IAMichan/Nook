@@ -28,6 +28,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 mod nook;
+mod pulls;
+mod schedule;
+mod secrets;
 mod sessions;
 pub mod tasks;
 
@@ -52,10 +55,18 @@ pub struct BridgeRequest {
     pub connection: String,
 }
 
+/// Resolution of a pending bridge approval card: allowed/denied, plus an optional secret typed by the user
+/// (`(value, remember_in_nook)`) for `request_secret`.
+#[derive(Debug, Clone, Default)]
+pub(super) struct BridgeDecision {
+    pub allowed: bool,
+    pub secret: Option<(String, bool)>,
+}
+
 #[derive(Default)]
 pub struct Bridge {
     pending: Mutex<Vec<BridgeRequest>>,
-    waiters: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    waiters: Mutex<HashMap<String, tokio::sync::oneshot::Sender<BridgeDecision>>>,
 }
 
 /// Hoe lang een verzoek op jou wacht voordat de agent "niet toegestaan" hoort.
@@ -94,15 +105,22 @@ impl Bridge {
     }
 
     pub fn decide(&self, app: &AppHandle, id: &str, allow: bool) -> bool {
-        self.finish(app, id, allow, if allow { "Toegestaan" } else { "Geweigerd" })
+        self.finish(app, id, BridgeDecision { allowed: allow, secret: None }, if allow { "Toegestaan" } else { "Geweigerd" })
     }
 
-    fn finish(&self, app: &AppHandle, id: &str, allowed: bool, message: &str) -> bool {
+    /// Resolves a pending `request_secret` approval card with the value the user typed in the masked input.
+    /// The secret value is passed directly to the waiting handler and never emitted or logged.
+    pub fn submit_secret(&self, app: &AppHandle, id: &str, value: String, remember: bool) -> bool {
+        let req_id = id.strip_prefix("bridge-").unwrap_or(id);
+        self.finish(app, req_id, BridgeDecision { allowed: true, secret: Some((value, remember)) }, "Toegestaan")
+    }
+
+    fn finish(&self, app: &AppHandle, id: &str, decision: BridgeDecision, message: &str) -> bool {
         let Some(waiter) = lock(&self.waiters).remove(id) else { return false };
         lock(&self.pending).retain(|r| r.id != id);
         crate::agents::approval_gone(app, &format!("bridge-{id}"));
         let _ = app.emit("agent-approval-gone", serde_json::json!({"id": format!("bridge-{id}"), "message": message}));
-        let _ = waiter.send(allowed);
+        let _ = waiter.send(decision);
         true
     }
 
@@ -116,6 +134,19 @@ impl Bridge {
         note: String,
         connection: &str,
     ) -> bool {
+        self.ask_secret(app, caller, tool, title, detail, note, connection).await.allowed
+    }
+
+    async fn ask_secret(
+        &self,
+        app: &AppHandle,
+        caller: &BridgeCaller,
+        tool: BridgeTool,
+        title: String,
+        detail: String,
+        note: String,
+        connection: &str,
+    ) -> BridgeDecision {
         let id = Uuid::new_v4().simple().to_string()[..8].to_string();
         let request = BridgeRequest {
             id: id.clone(),
@@ -134,10 +165,10 @@ impl Bridge {
         let _ = app.emit("agent-approval", &approval);
         crate::agents::present_approval(app, &approval);
         match tokio::time::timeout(APPROVAL_TIMEOUT, rx).await {
-            Ok(Ok(allowed)) => allowed,
+            Ok(Ok(decision)) => decision,
             _ => {
-                self.finish(app, &id, false, "Verlopen");
-                false
+                self.finish(app, &id, BridgeDecision::default(), "Verlopen");
+                BridgeDecision::default()
             }
         }
     }
@@ -146,8 +177,23 @@ impl Bridge {
     fn connection_closed(&self, app: &AppHandle, connection: &str) {
         let ids: Vec<String> = lock(&self.pending).iter().filter(|r| r.connection == connection).map(|r| r.id.clone()).collect();
         for id in ids {
-            self.finish(app, &id, false, "Ingetrokken: de agent stopte");
+            self.finish(app, &id, BridgeDecision::default(), "Ingetrokken: de agent stopte");
         }
+    }
+}
+
+/// Submits a masked secret entered by the user on a `request_secret` approval card (`ApprovalCard.svelte`).
+#[tauri::command]
+pub fn bridge_submit_secret(app: AppHandle, id: String, value: String, remember: bool) -> Result<(), String> {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(tr("Vul eerst een waarde in.", "Enter a secret value first.").into());
+    }
+    let ws = workspace(&app).ok_or_else(|| tr("Deze vraag bestaat niet meer.", "This request no longer exists.").to_string())?;
+    if ws.bridge.submit_secret(&app, &id, trimmed, remember) {
+        Ok(())
+    } else {
+        Err(tr("Deze vraag bestaat niet meer.", "This request no longer exists.").into())
     }
 }
 
@@ -278,7 +324,7 @@ fn refusal(reason: Reason) -> &'static str {
         Reason::Disabled => "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace).",
         Reason::PlanMode => "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead.",
         Reason::Dangerous => "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed.",
-        Reason::NeedsReview | Reason::Outward | Reason::Delegation => "The user did not approve this in Nook.",
+        Reason::NeedsReview | Reason::Outward | Reason::Delegation | Reason::Schedule | Reason::Secret => "The user did not approve this in Nook.",
     }
 }
 
@@ -318,11 +364,21 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         | BridgeTool::TaskWait
         | BridgeTool::TaskCancel => tasks::call(app, tool, a, &caller, context).await,
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
+        BridgeTool::WatchPullRequest => pulls::watch_pull_request(app, a, &caller, context).await,
+        BridgeTool::GetPullRequestStatus => pulls::get_pull_request_status(app, a, &caller).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
         BridgeTool::SessionStart => sessions::session_start(app, a, &caller, context).await,
         BridgeTool::SessionSend => sessions::session_send(app, a, &caller, context).await,
         BridgeTool::SessionWait => sessions::session_wait(app, a).await,
+        BridgeTool::SessionSearch => sessions::session_search(app, a, &caller).await,
+        BridgeTool::SessionOrganize => sessions::session_organize(app, a, &caller, context).await,
+        BridgeTool::SessionQuestions => sessions::session_questions(app, a, &caller, context).await,
+        BridgeTool::ScheduleTask => schedule::schedule_task(app, a, &caller, context).await,
+        BridgeTool::ListScheduledTasks => schedule::list_scheduled_tasks(app, a, &caller),
+        BridgeTool::UpdateScheduledTask => schedule::update_scheduled_task(app, a, &caller, context).await,
+        BridgeTool::RunScheduledTaskNow => schedule::run_scheduled_task_now(app, a, &caller, context).await,
+        BridgeTool::RequestSecret => secrets::request_secret(app, a, &caller, context).await,
         t @ (BridgeTool::NookTools
         | BridgeTool::NookUse
         | BridgeTool::NookChatList

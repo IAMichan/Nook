@@ -11,10 +11,14 @@
   // add one, and at the foot what the marks mean. In the main window it moves into the window's sidebar, under the
   // tabs, as the Mac's does.
   import { tr } from "../../lib/i18n.svelte";
-  import { type ChatView, viewTitle } from "../../lib/chats-list";
+  import { chatsApi } from "../../lib/connectors";
+  import { type ChatView, inboxEntry, viewTitle } from "../../lib/chats-list";
+  import { activeCall } from "../../lib/chats-call.svelte";
   import Ico from "../../components/ui/Ico.svelte";
+  import Menu, { type MenuItem } from "../../components/ui/Menu.svelte";
   import SectionLabel from "../../components/ui/SectionLabel.svelte";
   import ServiceIcon from "../connectors/ServiceIcon.svelte";
+  import { markAllReadInNook, openChatSettings } from "./chat-actions.svelte";
 
   let { mode = "chats", view, app, counts, apps, accounts = [], account = null, onmode, onview, onapp, onaccount, onadd }: {
     mode?: ChatsMode;
@@ -34,6 +38,39 @@
   } = $props();
 
   const views: ChatView[] = ["all", "unread", "readInNook", "read"];
+  let appMenu = $state<{ item: SidebarApp; anchor: DOMRect } | null>(null);
+
+  async function markAppRead(appId: string) {
+    try {
+      const summaries = await chatsApi.list();
+      const matching = summaries.filter((s) => s.app === appId).map(inboxEntry);
+      await markAllReadInNook(matching);
+    } catch {
+      // Ignore if inbox is unavailable.
+    }
+  }
+
+  const appMenuSections = $derived.by<MenuItem[][]>(() => {
+    if (!appMenu) return [];
+    const target = appMenu.item;
+    const active = mode === "chats" && app === target.id;
+    return [
+      [
+        {
+          label: active ? tr("Alle apps tonen", "Show all apps") : tr("Toon alleen {app}", "Show only {app}", { app: target.title }),
+          icon: "inbox",
+          onselect: () => { onmode?.("chats"); onapp(active ? null : target.id); },
+        },
+        ...(target.count > 0
+          ? [{ label: tr("Alles gelezen in Nook", "Mark all read in Nook"), icon: "check", onselect: () => markAppRead(target.id) }]
+          : []),
+      ],
+      [
+        { label: tr("Open {app}", "Open {app}", { app: target.title }), icon: "external-link", onselect: () => activeCall.openApp(target.id) },
+        { label: tr("Chatinstellingen", "Chat settings"), icon: "info", onselect: openChatSettings },
+      ],
+    ];
+  });
 </script>
 
 <div class="chats-sidebar">
@@ -66,7 +103,9 @@
     {#if apps.length}
       <div class="apps-label"><SectionLabel text={tr("Apps", "Apps")} /></div>
       {#each apps as a (a.id)}
-        <button class="row" class:on={mode === "chats" && app === a.id} aria-pressed={mode === "chats" && app === a.id} onclick={() => { onmode?.("chats"); onapp(app === a.id && mode === "chats" ? null : a.id); }}>
+        <button class="row" class:on={mode === "chats" && app === a.id} aria-pressed={mode === "chats" && app === a.id}
+          onclick={() => { onmode?.("chats"); onapp(app === a.id && mode === "chats" ? null : a.id); }}
+          oncontextmenu={(e) => { e.preventDefault(); appMenu = { item: a, anchor: new DOMRect(e.clientX, e.clientY, 0, 0) }; }}>
           <span class="glyph"><ServiceIcon domain={a.domain} title={a.title} size={15} /></span>
           <span class="title">{a.title}</span>
           {#if a.count}<span class="count">{a.count}</span>{/if}
@@ -94,6 +133,7 @@
     <div class="line"><span class="mark ticks"><Ico name="check-check" size={12} stroke={2.6} /></span>{tr("Ook gelezen in de app", "Read in the app too")}</div>
   </div>
 </div>
+{#if appMenu}<Menu sections={appMenuSections} anchor={appMenu.anchor} onclose={() => (appMenu = null)} />{/if}
 
 <style>
   .chats-sidebar { flex: 1; min-height: 0; display: flex; flex-direction: column; }

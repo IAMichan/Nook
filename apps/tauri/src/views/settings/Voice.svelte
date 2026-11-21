@@ -11,6 +11,7 @@
   import IconButton from "../../components/ui/IconButton.svelte";
   import Ico from "../../components/ui/Ico.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { invoke } from "@tauri-apps/api/core";
 
   const s = $derived(nook.settings!);
 
@@ -28,17 +29,37 @@
   ]);
   const styleChoices = $derived<{ id: NoticeStyle; title: string }[]>([
     { id: "card", title: tr("Kaart", "Card") }, { id: "strip", title: tr("Eén regel", "One line") },
-    { id: "system", title: tr("Systeemmelding", "System notification") }, { id: "off", title: tr("Niet tonen", "Don't show") },
+    { id: "system", title: tr("Systeemmelding", "System notification") }, { id: "off", title: tr("Alleen in de lijst", "Only in the list") },
   ]);
   const AGENT_STYLE: Record<string, NoticeStyle> = { detailed: "card", compact: "strip", system: "system", off: "off" };
   const AGENT_NOTICE: Record<NoticeStyle, "detailed" | "compact" | "system" | "off"> = { card: "detailed", strip: "compact", system: "system", off: "off" };
+  const defaultStyle = (id: string): NoticeStyle => (id === "suggestions" ? "strip" : "card");
   function styleOf(id: string): NoticeStyle {
     if (id === "agents") return AGENT_STYLE[s.agentNotice ?? "detailed"] ?? "card";
-    return rules.styles[id] ?? (id === "suggestions" ? "strip" : "card");
+    return rules.styles[id] ?? defaultStyle(id);
   }
+  const usesSystem = $derived(sources.some((src) => styleOf(src.id) === "system"));
+  let systemBlocked = $state(false);
+  $effect(() => {
+    if (part !== "notices" || !caps?.desktop) return;
+    const check = () => {
+      invoke<{ id: string; granted: boolean }[]>("permissions_overview")
+        .then((list) => {
+          const notif = Array.isArray(list) ? list.find((p) => p.id === "notifications") : undefined;
+          systemBlocked = notif ? !notif.granted : false;
+        })
+        .catch(() => {});
+    };
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  });
   function setStyle(id: string, style: NoticeStyle) {
-    if (id === "agents") nook.saveSettings({ agentNotice: AGENT_NOTICE[style] });
-    else setRules({ styles: { ...rules.styles, [id]: style } });
+    const styles = { ...rules.styles };
+    if (style === defaultStyle(id)) delete styles[id];
+    else styles[id] = style;
+    if (id === "agents") nook.saveSettings({ agentNotice: AGENT_NOTICE[style], noticeRules: { ...rules, styles } });
+    else setRules({ styles });
   }
   function setRules(patch: Partial<Rules>) {
     nook.saveSettings({ noticeRules: { ...rules, ...patch } });
@@ -224,10 +245,10 @@
 
 
 {#if part === "notices" && caps?.desktop}
-  <!-- The Mac's "How notifications show" (`NoticeRulesSettings`, part how): one way of showing per source, then quiet
-       hours for all of them. Every notice asks `notice_decide` in Rust, so these rules are the only ones. -->
+  <!-- The Mac's "How notifications show" (`NoticeRulesSettings`, part how): one way of showing per source, quiet while
+       watching, then quiet hours for all of them. Every notice asks `notice_decide` in Rust, so these rules are the only ones. -->
   <h3>{tr("Hoe meldingen verschijnen", "How notifications show")}</h3>
-  <p class="section-info">{tr("Bij “Niet tonen” springt er niets op en klinkt er niets. Een vraag of toestemmingsverzoek van een agent bereikt je altijd.", "With “Don't show” nothing pops up or sounds. An agent's question or permission request always reaches you.")}</p>
+  <p class="section-info">{tr("Bij “Alleen in de lijst” springt er niets op en klinkt er niets; in de lijst en via zoeken vind je het nog terug. Een vraag of toestemmingsverzoek van een agent bereikt je altijd.", "With “Only in the list” nothing pops up or sounds; the list and search still find it. An agent's question or permission request always reaches you.")}</p>
   <div class="group">
     {#each sources as source (source.id)}
       <label class="row">
@@ -237,6 +258,16 @@
         </select>
       </label>
     {/each}
+    {#if systemBlocked && usesSystem}
+      <div class="row">
+        <span>{tr("Windows-meldingen staan uit voor Nook", "Windows notifications are turned off for Nook")}<br /><small class="faint">{tr("Zet meldingen aan in de Windows-instellingen zodat systeemmeldingen verschijnen.", "Turn on notifications in Windows Settings so system notifications appear.")}</small></span>
+        <button class="small" onclick={() => invoke("permissions_open", { id: "notifications" }).catch(() => {})}>{tr("Open Windows-instellingen", "Open Windows Settings")}</button>
+      </div>
+    {/if}
+    <label class="row">
+      <span>{tr("Stil terwijl je meekijkt", "Quiet while you're watching")}<br /><small class="faint">{tr("Geen melding voor een agent of gesprek waar je nu zelf naar kijkt.", "No notice for an agent or chat you are already looking at.")}</small></span>
+      <input type="checkbox" role="switch" checked={!!rules.quietWhileWatching} onchange={(e) => setRules({ quietWhileWatching: e.currentTarget.checked })} />
+    </label>
     <label class="row">
       <span>{tr("Stille uren", "Quiet hours")}<br /><small class="faint">{tr("Tussen deze uren geen pop-ups, geluiden of meldingen op je telefoon. Alles komt wel in de lijst.", "No pop-ups, sounds or phone notifications between these hours. Everything still goes into the list.")}</small></span>
       <input type="checkbox" role="switch" checked={!!rules.quietHours} onchange={(e) => setRules({ quietHours: e.currentTarget.checked ? (rules.quietHours ?? { from: 22, to: 7, allowsUrgent: true }) : null })} />

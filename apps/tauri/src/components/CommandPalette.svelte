@@ -24,8 +24,8 @@
   import {
     answerTokens, backendRequest, citations, cleanAnswer, clearRecent, cycleKind, gather, grouped, highlightRanges, isSettled, keywordQuery,
     loadOpened, loadRecent, looksLikeQuestion, mergeBackend, noticeDocs, openedBonus, orderedByCitation, parseQuery, positiveTerms,
-    recentlyOpened, rememberOpened, rememberSearch, search, searchKinds, segments,
-    type BackendHit, type NoticeHistoryEntry, type SearchDoc, type SearchHit, type SearchKind,
+    recentlyOpened, rememberOpened, rememberSearch, removeFilter, search, searchKinds, segments,
+    type ActiveFilter, type BackendHit, type NoticeHistoryEntry, type SearchDoc, type SearchHit, type SearchKind,
   } from "../lib/search-everything";
   import { searchApi, type AISource } from "../lib/search-api";
   import { sessionFind } from "../lib/session-find.svelte";
@@ -537,6 +537,11 @@
   /** A hit's number in the AI answer, as it cites it ([1] is the first source). */
   const sourceNumber = (doc: SearchDoc) => (answer ? answer.sources.findIndex((h) => h.doc.id === doc.id) + 1 || null : null);
   const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+
+  function dropFilter(filter: ActiveFilter) {
+    text = removeFilter(text, filter);
+    input.focus();
+  }
 </script>
 
 {#snippet face(doc: SearchDoc, selected: boolean)}
@@ -562,6 +567,21 @@
       </label>
       <button class="glyph close" aria-label={tr("Sluiten", "Close")} onclick={onclose}><Ico name="x" size={14} /></button>
     </div>
+    {#if query.filters.length > 0 && !answer}
+      <div class="active-filters" role="list" aria-label={tr("Actieve filters", "Active filters")}>
+        {#each query.filters as f (f.id)}
+          <span class="filter-pill" role="listitem">
+            <span class="filter-label">{f.label}</span>
+            <button
+              type="button"
+              class="filter-drop"
+              aria-label={tr("Filter verwijderen: {filter}", "Remove filter: {filter}", { filter: f.label })}
+              onclick={() => dropFilter(f)}
+            ><Ico name="x" size={11} /></button>
+          </span>
+        {/each}
+      </div>
+    {/if}
     {#if text && !answer}
       <div class="chips">
         <FilterChip label={tr("Alles", "All")} count={hits.length || undefined} selected={kind === null} onclick={() => (kind = null)} />
@@ -660,7 +680,9 @@
                   </span>
                   {#if doc.snippet}
                     <span class="sub">{#if doc.author && doc.kind !== "setting"}<span class="who">{`${authorName(doc.author)}: `}</span>{/if}{#each segments(doc.snippet, highlightRanges(doc.snippet, snippetQuery)) as piece, p (p)}{#if piece.marked}<b>{piece.text}</b>{:else}{piece.text}{/if}{/each}{#if doc.subtitle && doc.kind !== "conversation"}<span class="place">&nbsp;&nbsp;·&nbsp;&nbsp;{doc.subtitle}</span>{/if}</span>
-                  {:else if doc.subtitle}<span class="sub">{doc.subtitle}</span>{/if}
+                  {:else if doc.subtitle}
+                    <span class="sub">{#each segments(doc.subtitle, highlightRanges(doc.subtitle, snippetQuery)) as piece, p (p)}{#if piece.marked}<b>{piece.text}</b>{:else}{piece.text}{/if}{/each}</span>
+                  {/if}
                 </span>
               </button>
             {:else if row.type === "ai"}
@@ -709,6 +731,14 @@
     background: transparent; border-radius: var(--radius-control); color: var(--text3); }
   .glyph:hover { background: var(--row-hover); color: var(--paper); }
   .close { color: var(--text2); }
+  .active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: 0 var(--space-12) var(--space-6); }
+  .filter-pill { display: inline-flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-6) var(--space-2) var(--space-8);
+    background: color-mix(in srgb, var(--iris) 16%, var(--smoke)); border: 1px solid color-mix(in srgb, var(--iris) 32%, transparent);
+    border-radius: var(--radius-pill); color: var(--paper); font: var(--text-caption); }
+  .filter-label { white-space: nowrap; }
+  .filter-drop { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: none;
+    border-radius: 999px; background: transparent; color: var(--text2); cursor: pointer; }
+  .filter-drop:hover { background: var(--smoke); color: var(--paper); }
   .chips { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-2) var(--space-12) var(--space-8); overflow-x: auto; scrollbar-width: none; }
   /* Kind chips match macOS `NookFilterChip`: filled with `smoke` at rest, `iris` when chosen, `text-label`. */
   .chips :global(.chip) { padding: calc(var(--space-4) + 1px) calc(var(--space-8) + var(--space-2)); background: var(--smoke); border-color: transparent; color: var(--text-strong); font: var(--text-label); }

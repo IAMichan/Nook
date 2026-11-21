@@ -221,9 +221,12 @@ struct Inner {
     limit_resumes: HashMap<Uuid, u64>,
     /// The `/` commands each session's agent announced (ACP), kept while Nook runs.
     commands: HashMap<Uuid, Vec<driver::SlashCommand>>,
+    /// FIFO queue of turns waiting for a free concurrency slot (`CapacityScheduler` on macOS, AG-75).
+    capacity: super::capacity::CapacityScheduler,
 }
 
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
+type TelemetryProvider = Arc<dyn Fn() -> crate::services::telemetry::OtlpConfig + Send + Sync>;
 
 pub struct Manager {
     inner: Mutex<Inner>,
@@ -234,6 +237,8 @@ pub struct Manager {
     runtime: tokio::runtime::Handle,
     /// Het weekoverzicht: prompts, tools, beslissingen en beurten.
     pub recap: RecapSink,
+    /// Optional resolver for active OTLP telemetry config (AG-33 / SV-05); falls back to settings + process env.
+    telemetry_provider: Mutex<Option<TelemetryProvider>>,
 }
 
 /// Verzamelt events en stuurt ze pas als de mutex los is.
@@ -264,6 +269,7 @@ impl Manager {
             git: Git::locate(),
             runtime,
             recap: RecapSink::default(),
+            telemetry_provider: Mutex::new(None),
         });
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
         let waiting: Vec<Uuid> = manager.runs().iter().filter(|r| r.auto_resume && r.limit_reset_at.is_some()).map(|r| r.id).collect();
@@ -271,6 +277,117 @@ impl Manager {
             manager.arm_limit_resume(id);
         }
         manager
+    }
+
+    /// Registers a live resolver for OpenTelemetry export settings (including keychain headers from the host app).
+    pub fn set_telemetry_provider(&self, provider: impl Fn() -> crate::services::telemetry::OtlpConfig + Send + Sync + 'static) {
+        *self.telemetry_provider.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(provider));
+    }
+
+    pub fn has_telemetry_provider(&self) -> bool {
+        self.telemetry_provider.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    }
+
+    fn resolve_telemetry(&self) -> crate::services::telemetry::OtlpConfig {
+        if let Some(provider) = self.telemetry_provider.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            return provider();
+        }
+        if cfg!(test) {
+            return crate::services::telemetry::OtlpConfig::default();
+        }
+        let saved = crate::settings::Settings::load_from(&crate::paths::settings_file()).telemetry;
+        crate::services::telemetry::OtlpConfig::resolve_process(&saved, "")
+    }
+
+    /// Whether `id` is currently waiting in the FIFO queue for a free working session slot (AG-75).
+    pub fn is_waiting_for_capacity(&self, id: Uuid) -> bool {
+        self.lock().capacity.is_waiting(id)
+    }
+
+    /// Holds a turn in FIFO order when `max_working_sessions` is reached; returns `true` when queued.
+    fn wait_for_capacity(&self, id: Uuid, prompt: &str, executable: &str, show_prompt: bool) -> bool {
+        let limit = super::capacity::max_working_sessions();
+        if limit == 0 {
+            return false;
+        }
+        let mut out = Out::default();
+        {
+            let mut s = self.lock();
+            if s.capacity.is_waiting(id) {
+                return false;
+            }
+            let Some(status) = s.runs.iter().find(|r| r.id == id).map(|r| r.status) else {
+                return false;
+            };
+            if status.is_active() && status != RunStatus::Preparing {
+                return false;
+            }
+            let others_working = s
+                .runs
+                .iter()
+                .filter(|r| r.id != id && r.status.is_active() && !s.capacity.is_waiting(r.id))
+                .count();
+            if !super::capacity::must_wait(limit, others_working) {
+                return false;
+            }
+            Self::load_timeline(&self.store, &mut s, id);
+            if show_prompt {
+                Self::append(&mut s, id, RunEvent::new(EventKind::User, prompt.to_string()), &mut out);
+            }
+            s.capacity.add(id, prompt.to_string(), executable.to_string());
+            let waiting_text = trf(
+                "Wacht: er werken al {limit} sessies. Deze beurt start zodra er een klaar is (Instellingen › Agents › Sessies).",
+                "Waiting: {limit} sessions are already working. This turn starts as soon as one of them is done (Settings › Agents › Sessions).",
+                &[("limit", &limit)],
+            );
+            Self::update(&mut s, id, |r| {
+                r.move_to(RunStatus::Preparing, Some(waiting_text.clone()), Utc::now());
+            });
+            Self::append(&mut s, id, RunEvent::new(EventKind::System, waiting_text), &mut out);
+            out.push(ManagerEvent::Changed);
+        }
+        self.emit(out);
+        true
+    }
+
+    /// Starts waiting turns (oldest first) as far as `max_working_sessions` now allows.
+    pub fn start_waiting_turns(self: &Arc<Self>) {
+        let ready = {
+            let mut s = self.lock();
+            if s.capacity.is_empty() {
+                return;
+            }
+            let existing: HashSet<Uuid> = s.runs.iter().map(|r| r.id).collect();
+            s.capacity.prune(|id| existing.contains(&id));
+            let working = s
+                .runs
+                .iter()
+                .filter(|r| r.status.is_active() && !s.capacity.is_waiting(r.id))
+                .count();
+            let limit = super::capacity::max_working_sessions();
+            s.capacity.dequeue_ready(limit, working)
+        };
+        for (id, turn) in ready {
+            self.launch_turn(id, turn.prompt, turn.executable, false);
+        }
+    }
+
+    /// Cancels a turn waiting for a concurrency slot so it never starts.
+    fn cancel_waiting_turn(&self, id: Uuid) -> bool {
+        let mut out = Out::default();
+        {
+            let mut s = self.lock();
+            if s.capacity.remove(id).is_none() {
+                return false;
+            }
+            Self::update(&mut s, id, |r| {
+                r.move_to(RunStatus::Stopped, None, Utc::now());
+            });
+            Self::append(&mut s, id, RunEvent::new(EventKind::System, tr("Gestopt.", "Stopped.")), &mut out);
+            out.push(ManagerEvent::Changed);
+        }
+        self.emit(out);
+        true
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -1017,10 +1134,15 @@ impl Manager {
     }
 
     fn launch_turn(self: &Arc<Self>, id: Uuid, prompt: String, executable: String, show_prompt: bool) {
+        if self.wait_for_capacity(id, &prompt, &executable, show_prompt) {
+            return;
+        }
         // Does this version of the agent have its server? Asked once per program, before the lock.
         if let Some(provider) = self.run(id).map(|r| r.provider) {
             driver::warm(provider, &executable);
         }
+        // Resolve OTLP telemetry outside the mutex (may read settings/secrets/env).
+        let telemetry = self.resolve_telemetry();
         let mut out = Out::default();
         let (spec, mut turn_driver, used_claude_rollback) = {
             let mut s = self.lock();
@@ -1094,7 +1216,8 @@ impl Manager {
                             );
                         }
                     }
-                    (planned.spec, planned.driver, used_claude_rollback)
+                    let spec = command::apply_telemetry(run.provider, &telemetry, planned.spec);
+                    (spec, planned.driver, used_claude_rollback)
                 }
                 Err(message) => {
                     if let Some(run) = s.runs.iter_mut().find(|r| r.id == id) {
@@ -1108,6 +1231,7 @@ impl Manager {
                     drop(s);
                     out.push(ManagerEvent::Changed);
                     self.emit(out);
+                    self.start_waiting_turns();
                     return;
                 }
             }
@@ -1147,6 +1271,7 @@ impl Manager {
                 drop(s);
                 out.push(ManagerEvent::Changed);
                 self.emit(out);
+                self.start_waiting_turns();
                 return;
             }
         };
@@ -2068,6 +2193,7 @@ impl Manager {
         } else {
             self.refresh_git(id);
             self.send_queued(id);
+            self.start_waiting_turns();
         }
     }
 
@@ -2130,6 +2256,7 @@ impl Manager {
             run
         };
         self.emit(out);
+        self.start_waiting_turns();
         let mark = Self::conversation_mark(&run);
         if run.isolation == IsolationMode::Worktree && run.worktree_path.as_deref().is_some_and(|p| Path::new(p).exists()) {
             if let Some(git) = self.git.clone() {
@@ -2183,6 +2310,9 @@ impl Manager {
 
     /// Stopt de lopende beurt. Claude Code krijgt eerst een nette vraag om te onderbreken, daarna SIGINT.
     pub fn stop(self: &Arc<Self>, id: Uuid) {
+        if self.cancel_waiting_turn(id) {
+            return;
+        }
         let mut out = Out::default();
         let target = {
             let mut s = self.lock();
@@ -2192,6 +2322,7 @@ impl Manager {
                 });
                 drop(s);
                 self.emit(Out(vec![ManagerEvent::Changed]));
+                self.start_waiting_turns();
                 return;
             };
             let (pid, input, generation) = (proc_.pid, proc_.input.clone(), proc_.generation);
@@ -2597,6 +2728,7 @@ impl Manager {
             s.approvals.remove(&id);
             s.questions.remove(&id);
             s.queues.remove(&id);
+            s.capacity.forget(id);
             s.git.remove(&id);
             s.dirty_runs = true;
             s.dirty_queues = true;
@@ -3235,6 +3367,7 @@ impl Manager {
                     }
                 }
             }
+            s.capacity.clear();
             for r in s.runs.iter_mut().filter(|r| r.status.is_active()) {
                 r.status = RunStatus::Stopped;
                 r.status_detail = Some("interrupted".into());
@@ -3682,6 +3815,74 @@ read rest
         assert!(!reloaded.run(id).unwrap().compacting);
         assert!(reloaded.run(id).unwrap().usage.context_tokens.is_none());
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn capacity_queues_cancels_and_promotes_waiting_turns() {
+        struct ResetCap;
+        impl Drop for ResetCap {
+            fn drop(&mut self) {
+                super::super::capacity::set_max_working_sessions(0);
+            }
+        }
+        let _reset = ResetCap;
+
+        let root = std::env::temp_dir().join(format!("nook-cap-{}", Uuid::new_v4()));
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let hooks = Hooks {
+            executable: Box::new(|_| Some("/usr/bin/true".into())),
+            account_environment: Box::new(|_| BTreeMap::new()),
+            bridge: Box::new(|| None),
+            worktree_root: Box::new(|| "/tmp".into()),
+            auto_resume_limited: Box::new(|| false),
+        };
+        let manager = Manager::new(root.join("store"), hooks, tokio::runtime::Handle::current(), |_| {});
+        let a = manager.adopt(RunProvider::Claude, "s-a", "claude", project.to_str().unwrap(), "Run A", vec![], false).unwrap();
+        let b = manager.adopt(RunProvider::Claude, "s-b", "claude", project.to_str().unwrap(), "Run B", vec![], false).unwrap();
+        let c = manager.adopt(RunProvider::Claude, "s-c", "claude", project.to_str().unwrap(), "Run C", vec![], false).unwrap();
+
+        // Telemetry provider hook works and overrides default.
+        assert!(!manager.has_telemetry_provider());
+        manager.set_telemetry_provider(|| {
+            let mut endpoints = BTreeMap::new();
+            endpoints.insert(crate::services::telemetry::OtlpSignal::Traces, "http://localhost:4318/v1/traces".into());
+            crate::services::telemetry::OtlpConfig { enabled: true, endpoints, ..Default::default() }
+        });
+        assert!(manager.has_telemetry_provider());
+        assert!(manager.resolve_telemetry().is_exporting());
+
+        // Cap at 1 working session and mark A as actively running.
+        super::super::capacity::set_max_working_sessions(1);
+        {
+            let mut s = manager.lock();
+            Manager::update(&mut s, a, |r| {
+                r.move_to(RunStatus::Running, None, Utc::now());
+            });
+        }
+
+        // B and C wait in FIFO order without spawning.
+        assert!(manager.wait_for_capacity(b, "prompt b", "/usr/bin/true", true));
+        assert!(manager.wait_for_capacity(c, "prompt c", "/usr/bin/true", true));
+        assert!(manager.is_waiting_for_capacity(b));
+        assert!(manager.is_waiting_for_capacity(c));
+        assert_eq!(manager.run(b).unwrap().status, RunStatus::Preparing);
+        assert!(manager.run(b).unwrap().status_detail.is_some());
+        assert!(manager.timeline(b).iter().any(|e| e.kind == EventKind::User && e.text == "prompt b"));
+
+        // Stopping a waiting turn cancels it cleanly without freeing A's slot.
+        manager.stop(b);
+        assert!(!manager.is_waiting_for_capacity(b));
+        assert_eq!(manager.run(b).unwrap().status, RunStatus::Stopped);
+        assert!(manager.is_waiting_for_capacity(c));
+
+        // Stopping A (no backing process) frees the slot and auto-promotes C out of the waiting queue.
+        manager.stop(a);
+        assert_eq!(manager.run(a).unwrap().status, RunStatus::Stopped);
+        assert!(!manager.is_waiting_for_capacity(c), "C should be dequeued and launched once A stops");
+
+        manager.shutdown();
         let _ = std::fs::remove_dir_all(root);
     }
 }

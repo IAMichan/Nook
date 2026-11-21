@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use nook_core::chats::chatd::{network_id, ID_PREFIX};
-use nook_core::chats::{ChatInbox, ChatKind, ChatReadState, FilledMessage, InboxThread};
+use nook_core::chats::{ChatAbilities, ChatInbox, ChatKind, ChatReadState, FilledMessage, InboxThread, NoticeScore};
 use nook_core::connectors::whatsapp;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -33,8 +33,15 @@ pub struct ChatSummary {
     activity: DateTime<Utc>,
     members: usize,
     muted_in_app: bool,
+    pinned: bool,
+    archived: bool,
     /// Nook can write in it from here (its app is linked through the helper or the gateway).
     sends: bool,
+    /// Per-chat capabilities (`ChatAbilities`, CH-58).
+    abilities: ChatAbilities,
+    /// Notice priority for the newest incoming message when unread or elevated (`ChatNoticePriority`, CH-64).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<NoticeScore>,
     /// People currently typing in this chat, when the app reports it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     typing: Vec<String>,
@@ -58,6 +65,12 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
             typing.push(who.clone());
         }
     }
+    let pinned = thread.pinned || thread.pinned_in_app.unwrap_or(false);
+    let muted = thread.muted_in_app.unwrap_or(false);
+    let archived = thread.archived;
+    let abilities = ChatAbilities::for_app(&thread.app, sends, pinned, muted, archived);
+    let scored = super::notify::score_thread(thread);
+    let priority = (scored.raises || (thread.unread > 0 && scored.score > 0)).then_some(scored);
     ChatSummary {
         key: thread.id.clone(),
         app: thread.app.clone(),
@@ -69,18 +82,22 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
         last: thread.filled_last(),
         activity: thread.last(),
         members: thread.members.as_ref().map_or(0, Vec::len),
-        muted_in_app: thread.muted_in_app.unwrap_or(false),
+        muted_in_app: muted,
+        pinned,
+        archived,
         sends,
+        abilities,
+        priority,
         typing,
     }
 }
 
 /// The app's own id of the chat behind a key, for asking its app.
-fn chat_id(c: &Connectors, key: &str) -> Option<(String, String)> {
+pub(crate) fn chat_id(c: &Connectors, key: &str) -> Option<(String, String)> {
     c.env.chats.read(|inbox| inbox.threads.get(key).map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default())))
 }
 
-fn sends(c: &Connectors, app: &str) -> bool {
+pub(crate) fn sends(c: &Connectors, app: &str) -> bool {
     if app == whatsapp::APP {
         c.whatsapp_accounts.is_connected()
     } else {
@@ -88,7 +105,19 @@ fn sends(c: &Connectors, app: &str) -> bool {
     }
 }
 
-fn changed(app: &AppHandle) {
+/// Computes `ChatAbilities` for a thread key in the shared inbox (or a WhatsApp chat key).
+pub(crate) fn abilities_for(c: &Connectors, key: &str) -> Option<ChatAbilities> {
+    c.env.chats.read(|inbox| {
+        inbox.threads.get(key).map(|t| {
+            let connected = sends(c, &t.app);
+            let pinned = t.pinned || t.pinned_in_app.unwrap_or(false);
+            let muted = t.muted_in_app.unwrap_or(false);
+            ChatAbilities::for_app(&t.app, connected, pinned, muted, t.archived)
+        })
+    })
+}
+
+pub(crate) fn changed(app: &AppHandle) {
     let _ = app.emit("chats-changed", ());
 }
 
@@ -151,11 +180,11 @@ pub async fn chat_inbox_mark_read(app: AppHandle, c: State<'_, Connectors>, key:
 pub async fn chat_inbox_mark_unread(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<()> {
     let Some((source, id)) = chat_id(&c, &key) else { return Ok(()) };
     c.env.chats.with(|inbox| inbox.mark_unread(&key, Utc::now()));
-    if source != whatsapp::APP {
-        if let Some(client) = c.chat_helper.bridge.client() {
-            if client.mark_unread(&id).await.is_ok() {
-                c.env.chats.with(|inbox| inbox.mark_unread_in_app(&key));
-            }
+    if source == whatsapp::APP {
+        c.wa(&id).mark_unread(&id);
+    } else if let Some(client) = c.chat_helper.bridge.client() {
+        if client.mark_unread(&id).await.is_ok() {
+            c.env.chats.with(|inbox| inbox.mark_unread_in_app(&key));
         }
     }
     changed(&app);
@@ -168,6 +197,25 @@ pub fn chat_inbox_mark_all_read(app: AppHandle, c: State<'_, Connectors>, keys: 
     let now = Utc::now();
     c.env.chats.with(|inbox| keys.iter().for_each(|k| inbox.mark_read(k, now)));
     changed(&app);
+}
+
+/// Marks a chat read after replying to it, across WhatsApp and helper apps (CH-68).
+async fn mark_read_after_reply(c: &Connectors, key: &str, source: &str, id: &str) {
+    let now = Utc::now();
+    if source == whatsapp::APP {
+        let link = c.wa(id);
+        if link.settings().mark_read_on_reply {
+            link.mark_read(id);
+            c.env.chats.with(|inbox| inbox.mark_read_in_app(key, now, None));
+        } else {
+            c.env.chats.with(|inbox| inbox.mark_read(key, now));
+        }
+    } else {
+        if let Some(client) = c.chat_helper.bridge.client() {
+            let _ = client.mark_read(id).await;
+        }
+        c.env.chats.with(|inbox| inbox.mark_read_in_app(key, now, None));
+    }
 }
 
 /// Sends text to the chat, after your own Return or click, as an answer to `reply_to` (a message's id) when given.
@@ -187,10 +235,8 @@ pub async fn chat_inbox_send(app: AppHandle, c: State<'_, Connectors>, key: Stri
         let mentions = c.chat_helper.bridge.chat(&source, &id).map(|chat| nook_core::chats::chatd::tagged(&text, &chat)).unwrap_or_default();
         client.send_tagging(&id, &text, quoted.as_deref(), &mentions).await?;
         c.chat_helper.bridge.changed(&id, None);
-        // Answering reads the chat, in its app too.
-        let now = Utc::now();
-        c.env.chats.with(|inbox| inbox.mark_read_in_app(&key, now, None));
     }
+    mark_read_after_reply(&c, &key, &source, &id).await;
     changed(&app);
     Ok(())
 }
@@ -234,6 +280,7 @@ pub async fn chat_inbox_send_file(
         client.send_file(&chat, &name, &mime, &bytes, caption.trim(), voice.unwrap_or(false)).await?;
         c.chat_helper.bridge.changed(&chat, None);
     }
+    mark_read_after_reply(&c, &key, &source, &chat).await;
     changed(&app);
     Ok(())
 }
@@ -333,7 +380,18 @@ pub async fn chat_inbox_older(app: AppHandle, c: State<'_, Connectors>, key: Str
 /// Pins, mutes or archives the chat in its app itself (`ChatAbilities`), where its app lets Nook: the helper's apps.
 #[tauri::command]
 pub async fn chat_inbox_in_app(app: AppHandle, c: State<'_, Connectors>, key: String, pinned: Option<bool>, muted: Option<bool>, archived: Option<bool>) -> Res<()> {
+    use nook_core::chats::ChatAction;
     let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    let abilities = abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    if pinned.is_some() && !abilities.allows(ChatAction::Pin) {
+        return Err("This chat's app does not support pinning from Nook.".into());
+    }
+    if muted.is_some() && !abilities.allows(ChatAction::Mute) {
+        return Err("This chat's app does not support muting from Nook.".into());
+    }
+    if archived.is_some() && !abilities.allows(ChatAction::Archive) {
+        return Err("This chat's app does not support archiving from Nook.".into());
+    }
     if source == whatsapp::APP {
         return Err("WhatsApp's gateway cannot pin, mute or archive a chat on your phone.".into());
     }
@@ -344,13 +402,17 @@ pub async fn chat_inbox_in_app(app: AppHandle, c: State<'_, Connectors>, key: St
     if let Some(archived) = archived {
         client.archive(&chat, archived).await?;
     }
-    if let Some(m) = muted {
-        c.env.chats.with(|inbox| {
-            if let Some(t) = inbox.threads.get_mut(&key) {
-                t.muted_in_app = Some(m);
-            }
-        });
-    }
+    c.env.chats.with(|inbox| {
+        if let Some(p) = pinned {
+            inbox.set_pinned(&key, p, true);
+        }
+        if let Some(m) = muted {
+            inbox.set_muted(&key, m);
+        }
+        if let Some(a) = archived {
+            inbox.set_archived(&key, a);
+        }
+    });
     c.chat_helper.bridge.changed(&chat, None);
     changed(&app);
     Ok(())

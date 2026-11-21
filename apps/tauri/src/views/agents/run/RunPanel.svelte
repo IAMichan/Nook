@@ -22,6 +22,7 @@
   import GoalStrip from "./GoalStrip.svelte";
   import RunComposer from "./RunComposer.svelte";
   import SessionSidePanel from "./SessionSidePanel.svelte";
+  import SideChatStrip, { type SideChatItem } from "./SideChatStrip.svelte";
   import { sidePanel } from "./side-panel.svelte";
   import Timeline from "./Timeline.svelte";
 
@@ -39,10 +40,44 @@
   let editWorking = $state(false);
   let confirmDelete = $state(false);
   let composer = $state<ReturnType<typeof RunComposer>>();
+  let sideChatsByRun = $state<Record<string, SideChatItem[]>>({});
 
   const run = $derived(workspace.run(runId));
   const events = $derived(workspace.timelines[runId] ?? []);
+  const sideChats = $derived(sideChatsByRun[runId] ?? []);
   const panel = $derived(sidePanel.forRun(runId));
+
+  /** Runs a quick `/btw` or `/side` side question with session context without interrupting the main agent (AG-61). */
+  async function askSideChat(question: string) {
+    const targetRun = runId;
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const entry: SideChatItem = { id, question, answer: null, error: null, model: null, loading: true };
+    sideChatsByRun = { ...sideChatsByRun, [targetRun]: [entry, ...(sideChatsByRun[targetRun] ?? [])] };
+    try {
+      const reply = await workspaceApi.sideChat(targetRun, question);
+      const list = sideChatsByRun[targetRun] ?? [];
+      sideChatsByRun = {
+        ...sideChatsByRun,
+        [targetRun]: list.map((item) =>
+          item.id === id ? { ...item, answer: reply.answer, model: reply.model, loading: false } : item,
+        ),
+      };
+    } catch (e) {
+      const list = sideChatsByRun[targetRun] ?? [];
+      sideChatsByRun = {
+        ...sideChatsByRun,
+        [targetRun]: list.map((item) =>
+          item.id === id ? { ...item, error: String(e), loading: false } : item,
+        ),
+      };
+    }
+  }
+
+  function dismissSideChat(id: string) {
+    const targetRun = runId;
+    const next = (sideChatsByRun[targetRun] ?? []).filter((item) => item.id !== id);
+    sideChatsByRun = { ...sideChatsByRun, [targetRun]: next };
+  }
   const sessionKey = $derived(`run:${runId}`);
   const approvals = $derived(agents.approvals.filter((a) => a.sessionKey === sessionKey));
   const question = $derived(agents.questionFor(sessionKey));
@@ -432,7 +467,8 @@
             {#if run.goal}
               <GoalStrip runId={run.id} goal={run.goal} />
             {/if}
-            <RunComposer bind:this={composer} {run} />
+            <SideChatStrip items={sideChats} ondismiss={dismissSideChat} />
+            <RunComposer bind:this={composer} {run} onsidechat={askSideChat} />
           {/if}
           </div>
         </div>

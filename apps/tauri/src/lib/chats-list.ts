@@ -13,6 +13,43 @@ export type ChatView = "all" | "unread" | "readInNook" | "read";
 /** Where a chat stands (`ChatReadState`). */
 export type ReadMark = "unread" | "readInNook" | "read";
 
+/** Outgoing attachment kinds a chat can accept besides plain text (`OutgoingKind` in core/chats/abilities.rs). */
+export type OutgoingKind = "photo" | "video" | "gif" | "audio" | "voice" | "file";
+export const ALL_OUTGOING_KINDS: OutgoingKind[] = ["photo", "video", "gif", "audio", "voice", "file"];
+
+/** Per-chat capabilities (`ChatAbilities` in core/chats/abilities.rs, CH-58). */
+export interface ChatAbilities {
+  send: boolean;
+  sends?: OutgoingKind[];
+  reply: boolean;
+  react: boolean;
+  edit: boolean;
+  delete: boolean;
+  markRead: boolean;
+  markUnread: boolean;
+  pin: boolean;
+  mute: boolean;
+  archive: boolean;
+  deleteChat: boolean;
+  pinned: boolean;
+  muted: boolean;
+  archived: boolean;
+  vote: boolean;
+  deleteForMe: boolean;
+}
+
+/** Priority tier of an incoming chat notice (`NoticePriorityLevel` in core/chats/priority.rs, CH-64). */
+export type NoticePriorityLevel = "normal" | "elevated" | "urgent";
+export type PriorityReason = "directMention" | "replyToMe" | "question" | "urgentCue";
+
+/** Scored notice priority for an incoming chat message (`NoticeScore` in core/chats/priority.rs, CH-64). */
+export interface NoticeScore {
+  score: number;
+  level: NoticePriorityLevel;
+  raises: boolean;
+  reasons?: PriorityReason[];
+}
+
 export interface MessageReader {
   name: string;
   receipt: WhatsAppReceipt;
@@ -45,13 +82,28 @@ export interface ChatEntry {
   sends: boolean;
   /** Muted in its own app. */
   mutedInApp: boolean;
+  /** Pinned in Nook or in its own app. */
+  pinned?: boolean;
+  /** Archived in Nook or in its own app. */
+  archived?: boolean;
+  /** Per-chat capabilities from `abilities.rs` (CH-58). */
+  abilities?: ChatAbilities;
+  /** Notice priority of the latest incoming unread message (CH-64). */
+  priority?: NoticeScore | null;
   /** The person's phone number or address, when known (used for People matching). */
   handle?: string | null;
   /** People currently typing in this chat (live ephemeral state). */
   typing?: string[];
 }
 
-type ExtendedSummary = ChatSummary & { handle?: string | null; typing?: string[] };
+type ExtendedSummary = ChatSummary & {
+  handle?: string | null;
+  typing?: string[];
+  pinned?: boolean;
+  archived?: boolean;
+  abilities?: ChatAbilities;
+  priority?: NoticeScore | null;
+};
 type ExtendedInboxMessage = InboxMessage & { readAt?: string | null; readBy?: string[]; readers?: MessageReader[] };
 
 /** The chat apps Nook can read on this computer, by id: their name and the domain their icon comes from. WhatsApp
@@ -122,7 +174,11 @@ export function whatsAppEntry(c: WhatsAppConversation, inbox?: ChatSummary, send
     lastIsMine: !!m?.fromMe,
     account: inbox?.account ?? null,
     sends,
-    mutedInApp: false,
+    mutedInApp: ext?.mutedInApp ?? false,
+    pinned: ext?.pinned ?? false,
+    archived: ext?.archived ?? false,
+    abilities: ext?.abilities,
+    priority: ext?.priority ?? null,
     handle: ext?.handle ?? whatsAppHandle(c.id, c.isGroup),
     typing: ext?.typing ?? [],
   };
@@ -151,6 +207,10 @@ export function inboxEntry(s: ChatSummary): ChatEntry {
     account: s.account,
     sends: s.sends,
     mutedInApp: s.mutedInApp,
+    pinned: ext.pinned ?? false,
+    archived: ext.archived ?? false,
+    abilities: ext.abilities,
+    priority: ext.priority ?? null,
     handle: ext.handle ?? null,
     typing: ext.typing ?? [],
   };
@@ -270,7 +330,7 @@ export function shown(all: ChatEntry[], o: { view: ChatView; app: string | null;
   const needle = o.query.trim().toLowerCase();
   return all
     .filter((e) => e.listKind === o.kind && (!o.app || e.app === o.app) && (!o.account || e.account === o.account))
-    .filter((e) => (needle ? `${e.name}\n${e.preview}`.toLowerCase().includes(needle) : shows(o.view, e)))
+    .filter((e) => (needle ? `${e.name}\n${e.preview}`.toLowerCase().includes(needle) : !e.archived && shows(o.view, e)))
     .sort((a, b) => (b.last?.getTime() ?? 0) - (a.last?.getTime() ?? 0));
 }
 
@@ -305,10 +365,11 @@ export function groupOf(last: Date | null, now: Date): ChatGroup {
 /** The rows in their groups, in order, pinned ones first; empty groups are left out. */
 export function sections(entries: ChatEntry[], now: Date, pinned: string[] = []): { group: ChatGroup; entries: ChatEntry[] }[] {
   const out: { group: ChatGroup; entries: ChatEntry[] }[] = [];
-  const pins = entries.filter((e) => pinned.includes(e.key));
+  const isPinned = (e: ChatEntry) => !!e.pinned || pinned.includes(e.key);
+  const pins = entries.filter(isPinned);
   if (pins.length) out.push({ group: "pinned", entries: pins });
   for (const e of entries) {
-    if (pinned.includes(e.key)) continue;
+    if (isPinned(e)) continue;
     const g = groupOf(e.last, now);
     const tail = out[out.length - 1];
     if (tail?.group === g) tail.entries.push(e);
@@ -739,3 +800,140 @@ export function searchPeople(people: ChatPerson[], query: string, notes: Record<
     return foldPersonName(haystack).includes(needle);
   });
 }
+
+// --- CH-58: Per-chat capabilities (`ChatAbilities` in core/chats/abilities.rs) ---
+
+/** Capabilities for a chat app given whether its bridge/gateway can send and its current flags. */
+export function abilitiesForApp(
+  app: string,
+  connected: boolean,
+  flags: { pinned?: boolean; muted?: boolean; archived?: boolean } = {},
+): ChatAbilities {
+  const sends = connected ? [...ALL_OUTGOING_KINDS] : [];
+  const pinned = !!flags.pinned;
+  const muted = !!flags.muted;
+  const archived = !!flags.archived;
+  if (app === "whatsapp") {
+    return {
+      send: connected,
+      sends,
+      reply: connected,
+      react: connected,
+      edit: connected,
+      delete: connected,
+      markRead: connected,
+      markUnread: false,
+      pin: false,
+      mute: false,
+      archive: false,
+      deleteChat: false,
+      pinned,
+      muted,
+      archived,
+      vote: false,
+      deleteForMe: connected,
+    };
+  }
+  return {
+    send: connected,
+    sends,
+    reply: connected,
+    react: connected,
+    edit: connected,
+    delete: connected,
+    markRead: connected,
+    markUnread: connected,
+    pin: connected,
+    mute: connected,
+    archive: connected,
+    deleteChat: false,
+    pinned,
+    muted,
+    archived,
+    vote: connected,
+    deleteForMe: false,
+  };
+}
+
+/** Resolves a chat entry's capabilities, falling back to `abilitiesForApp` when the summary omitted them. */
+export function entryAbilities(
+  e: Pick<ChatEntry, "app" | "sends" | "pinned" | "mutedInApp" | "archived" | "abilities">,
+): ChatAbilities {
+  if (e.abilities) {
+    return {
+      ...e.abilities,
+      sends: e.abilities.sends ?? [],
+    };
+  }
+  return abilitiesForApp(e.app, e.sends, {
+    pinned: e.pinned,
+    muted: e.mutedInApp,
+    archived: e.archived,
+  });
+}
+
+// --- CH-48: Forward capability checks (`ChatForward` in core/chats/forward.rs) ---
+
+/** Maps a bubble's media descriptor to an `OutgoingKind`, or null when non-sendable or absent. */
+export function outgoingKindOfMedia(media: { kind: string; name?: string | null } | null | undefined): OutgoingKind | null {
+  if (!media) return null;
+  switch (media.kind) {
+    case "image":
+      return media.name?.toLowerCase().endsWith(".gif") ? "gif" : "photo";
+    case "video":
+      return "video";
+    case "audio":
+      return "audio";
+    case "voice":
+      return "voice";
+    case "document":
+      return "file";
+    default:
+      return null;
+  }
+}
+
+/** Whether `target` can receive a forwarded message with `text` and optional `mediaKind` (`ChatForward.parts`). */
+export function canForwardTo(
+  target: Pick<ChatEntry, "app" | "sends" | "pinned" | "mutedInApp" | "archived" | "abilities">,
+  text: string,
+  mediaKind: OutgoingKind | null = null,
+): boolean {
+  const abilities = entryAbilities(target);
+  if (!abilities.send) return false;
+  if (mediaKind) return (abilities.sends ?? []).includes(mediaKind);
+  return text.trim().length > 0;
+}
+
+// --- CH-64: Priority badge (`ChatNoticePriority` in core/chats/priority.rs) ---
+
+export interface PriorityBadge {
+  label: string;
+  tone: "urgent" | "elevated";
+  icon: "triangle-alert" | "bell-dot" | "reply" | "message-circle-question";
+}
+
+/** Compact badge for a bar chat card when an incoming message raises priority (CH-64). */
+export function priorityBadge(score: NoticeScore | null | undefined): PriorityBadge | null {
+  if (!score || !score.raises || score.level === "normal") return null;
+  const tone: "urgent" | "elevated" = score.level === "urgent" ? "urgent" : "elevated";
+  const reasons = score.reasons ?? [];
+  if (reasons.includes("urgentCue")) {
+    return { label: tr("Urgent", "Urgent"), tone, icon: "triangle-alert" };
+  }
+  if (reasons.includes("directMention")) {
+    return { label: tr("Genoemd", "Mentioned"), tone, icon: "bell-dot" };
+  }
+  if (reasons.includes("replyToMe")) {
+    return { label: tr("Reactie", "Replied"), tone, icon: "reply" };
+  }
+  if (reasons.includes("question")) {
+    return { label: tr("Vraag", "Question"), tone, icon: "message-circle-question" };
+  }
+  return {
+    label: tone === "urgent" ? tr("Urgent", "Urgent") : tr("Belangrijk", "Priority"),
+    tone,
+    icon: tone === "urgent" ? "triangle-alert" : "bell-dot",
+  };
+}
+

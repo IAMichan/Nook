@@ -190,6 +190,16 @@ export interface WorkspaceSettings {
   agentInstructions?: string;
   /// The editor a session's folder opens in ("code", "cursor", …); empty: the file manager.
   editor?: string;
+  /// At most this many sessions may work at once (`ws.maxWorkingSessions` on macOS, AG-75); 0 = no limit.
+  maxWorkingSessions?: number;
+}
+
+/// Answer to a quick side question (`/btw`, `/side`, AG-61) asked while a session keeps running.
+export interface SideChatReply {
+  question: string;
+  answer: string;
+  model: string;
+  createdAt: string;
 }
 
 /// What one project sets for itself (Settings › Projects); a field left out follows the setting for all projects.
@@ -427,6 +437,8 @@ export const workspaceApi = {
   setGoal: (id: string, goal: string | null) => invoke<string | null>("workspace_set_goal", { run: run(id), goal }),
   /** Context window breakdown and compaction pressure for a session (AG-65 & AG-66). */
   contextUsage: (id: string) => invoke<ContextUsage | null>("workspace_context_usage", { run: run(id) }),
+  /** Quick side question (`/btw`, `/side`, AG-61) answered with recent timeline context while the main agent keeps running. */
+  sideChat: (id: string, question: string) => invoke<SideChatReply>("workspace_side_chat", { run: run(id), question }),
   /** "Turn into project": a session's folder without a project becomes a favorite project. */
   keepScratch: (path: string) => invoke<void>("workspace_keep_scratch", { path }),
   /** "Make it a git repository": `git init` in a session's folder. */

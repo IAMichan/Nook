@@ -1,15 +1,28 @@
-//! The arguments and answers of the bridge's tools for other sessions: `session_start`, `session_send` and
-//! `session_wait` (`BridgeSessionArguments` on the Mac). Pure rules, tested here; the app does the work in
+//! The arguments and answers of the bridge's tools for other sessions: `session_start`, `session_send`,
+//! `session_wait`, `session_search`, `session_organize` and `session_questions` (`BridgeSessionArguments` and
+//! `WorkspaceBridgeSessions` on the Mac). Pure rules, tested here; the app does the work in
 //! `src-tauri/src/workspace/bridge/sessions.rs`.
 
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Datelike, Duration, NaiveTime, TimeZone, Utc};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+use super::bridge_nook::shielded;
 use super::delegation::Snapshot;
+use super::models::{EventKind, RunEvent, WorkspaceRun};
+use crate::agents::models::QuestionItem;
 
 pub const MAX_START: usize = 20;
 pub const MAX_TASK_LENGTH: usize = 120_000;
 pub const MAX_WAIT_SESSIONS: usize = 8;
+pub const MAX_ORGANIZE_SESSIONS: usize = 20;
+pub const MAX_SEARCH_LIMIT: usize = 25;
+pub const DEFAULT_SEARCH_LIMIT: usize = 10;
+pub const MAX_SEARCH_QUERY: usize = 200;
+pub const EXCERPTS_PER_SESSION: usize = 3;
+pub const EXCERPT_RADIUS: usize = 70;
 
 /// One session of a `session_start` call.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -251,9 +264,578 @@ pub fn scratch_folder_name(day: &str, prompt: &str, id: Uuid) -> String {
     }
 }
 
+// MARK: session_search (AG-06)
+
+/// Parsed arguments for `session_search`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchArgs {
+    pub query: String,
+    pub session_id: Option<Uuid>,
+    pub project: Option<String>,
+    pub limit: usize,
+    pub include_archived: bool,
+}
+
+/// Parses arguments for `session_search`.
+pub fn parse_search(arguments: &Map<String, Value>) -> Result<SearchArgs, String> {
+    let query = text(arguments, "query").ok_or("Give a search query in query.")?;
+    if query.chars().count() > MAX_SEARCH_QUERY {
+        return Err(format!("The search query is too long (at most {MAX_SEARCH_QUERY} characters)."));
+    }
+    let session_id = match text(arguments, "session_id") {
+        Some(raw) => Some(Uuid::parse_str(&raw).map_err(|_| format!("{raw} is not a session id from session_list."))?),
+        None => None,
+    };
+    let project = text(arguments, "project");
+    let limit = arguments
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_SEARCH_LIMIT as u64)
+        .clamp(1, MAX_SEARCH_LIMIT as u64) as usize;
+    let include_archived = arguments.get("include_archived").and_then(Value::as_bool).unwrap_or(session_id.is_some());
+    Ok(SearchArgs { query, session_id, project, limit, include_archived })
+}
+
+/// One matching session returned by `session_search`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchMatch {
+    pub session_id: Uuid,
+    pub title: String,
+    pub agent: String,
+    pub status: String,
+    pub project: String,
+    pub branch: Option<String>,
+    pub archived: bool,
+    pub matched_meta: bool,
+    pub excerpts: Vec<String>,
+}
+
+/// Simple case/whitespace-normalized fold for substring search.
+fn fold_query(text: &str) -> String {
+    text.to_lowercase()
+}
+
+/// Builds a compact, secret-redacted excerpt around the first occurrence of `query` in `source`.
+pub fn excerpt(source: &str, query: &str, radius: usize) -> Option<String> {
+    let collapsed: String = source.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    let haystack = fold_query(&collapsed);
+    let needle = fold_query(query.trim());
+    if needle.is_empty() {
+        return None;
+    }
+    let byte_pos = haystack.find(&needle)?;
+    // Map byte offset back to char index safely on the original collapsed string.
+    let chars: Vec<char> = collapsed.chars().collect();
+    let lower_prefix_chars = haystack[..byte_pos].chars().count().min(chars.len());
+    let needle_chars = needle.chars().count();
+    let start = lower_prefix_chars.saturating_sub(radius);
+    let end = (lower_prefix_chars + needle_chars + radius).min(chars.len());
+    let slice: String = chars[start..end].iter().collect();
+    let clean = shielded(&slice);
+    let prefix = if start > 0 { "…" } else { "" };
+    let suffix = if end < chars.len() { "…" } else { "" };
+    Some(format!("{prefix}{clean}{suffix}"))
+}
+
+fn event_role(kind: EventKind) -> Option<&'static str> {
+    match kind {
+        EventKind::User => Some("User"),
+        EventKind::Assistant => Some("Agent"),
+        EventKind::Tool => Some("Tool"),
+        EventKind::FileChange => Some("File"),
+        EventKind::Error => Some("Error"),
+        EventKind::System => Some("System"),
+        EventKind::Result => Some("Result"),
+        EventKind::Thinking | EventKind::Approval => None,
+    }
+}
+
+/// Matches a single session's metadata and timeline events against `query`.
+#[allow(clippy::too_many_arguments)]
+pub fn search_session_parts(
+    session_id: Uuid,
+    title: &str,
+    task: &str,
+    agent: &str,
+    status: &str,
+    project: &str,
+    working_directory: &str,
+    branch: Option<&str>,
+    archived: bool,
+    events: &[RunEvent],
+    query: &str,
+) -> Option<SearchMatch> {
+    let needle = fold_query(query.trim());
+    if needle.is_empty() {
+        return None;
+    }
+    let matched_meta = [title, task, project, working_directory, branch.unwrap_or("")]
+        .iter()
+        .any(|field| fold_query(field).contains(&needle));
+
+    let mut excerpts = Vec::new();
+    for event in events {
+        if excerpts.len() >= EXCERPTS_PER_SESSION {
+            break;
+        }
+        let Some(role) = event_role(event.kind) else { continue };
+        let candidate = match (&event.text, &event.detail, &event.output) {
+            (t, _, _) if fold_query(t).contains(&needle) => Some(t.as_str()),
+            (_, Some(d), _) if fold_query(d).contains(&needle) => Some(d.as_str()),
+            (_, _, Some(o)) if fold_query(o).contains(&needle) => Some(o.as_str()),
+            _ => None,
+        };
+        if let Some(raw) = candidate {
+            if let Some(snippet) = excerpt(raw, query, EXCERPT_RADIUS) {
+                let line = format!("{role}: {snippet}");
+                if !excerpts.contains(&line) {
+                    excerpts.push(line);
+                }
+            }
+        }
+    }
+
+    if !matched_meta && excerpts.is_empty() {
+        return None;
+    }
+    Some(SearchMatch {
+        session_id,
+        title: title.to_string(),
+        agent: agent.to_string(),
+        status: status.to_string(),
+        project: project.to_string(),
+        branch: branch.map(str::to_string),
+        archived,
+        matched_meta,
+        excerpts,
+    })
+}
+
+/// Convenience wrapper matching a [`WorkspaceRun`] and its timeline.
+pub fn search_run(run: &WorkspaceRun, events: &[RunEvent], status: &str, query: &str) -> Option<SearchMatch> {
+    search_session_parts(
+        run.id,
+        &run.title,
+        &run.task,
+        run.provider.display_name(),
+        status,
+        &run.project_name(),
+        &run.working_directory,
+        run.branch.as_deref(),
+        run.archived,
+        events,
+        query,
+    )
+}
+
+/// Formats `session_search` results cleanly with untrusted-data boundaries around excerpts.
+pub fn render_search_results(matches: &[SearchMatch], query: &str) -> String {
+    if matches.is_empty() {
+        return format!("No sessions matched \"{query}\".");
+    }
+    let mut lines = vec![format!("# Search results for \"{query}\" ({} session(s))", matches.len())];
+    for m in matches {
+        let mut header = format!("- {} · {} · {} · {} · {}", m.session_id, m.title, m.agent, m.status, m.project);
+        if let Some(branch) = &m.branch {
+            header += &format!(" · {branch}");
+        }
+        if m.archived {
+            header += " · archived";
+        }
+        lines.push(header);
+        if !m.excerpts.is_empty() {
+            let body = crate::brain::text::wrap_untrusted(&m.excerpts.join("\n"));
+            for row in body.lines() {
+                lines.push(format!("  {row}"));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+// MARK: session_organize (AG-06)
+
+/// When a snoozed session should wake back up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SnoozeChoice {
+    Hours(u32),
+    Tonight,
+    Tomorrow,
+    NextWeek,
+    Until(DateTime<Utc>),
+}
+
+impl SnoozeChoice {
+    /// Resolves the wake-up timestamp in the provided timezone.
+    pub fn resolve<Tz: TimeZone>(&self, now: DateTime<Utc>, tz: &Tz) -> DateTime<Utc> {
+        let local = now.with_timezone(tz);
+        let at_hour = |day: chrono::NaiveDate, hour: u32| -> DateTime<Utc> {
+            let dt = day.and_time(NaiveTime::from_hms_opt(hour, 0, 0).unwrap_or_default());
+            tz.from_local_datetime(&dt)
+                .earliest()
+                .map(|d| d.with_timezone(&Utc))
+                .unwrap_or_else(|| now + Duration::hours(4))
+        };
+        match self {
+            Self::Hours(h) => now + Duration::hours(i64::from((*h).clamp(1, 168))),
+            Self::Tonight => {
+                let candidate = at_hour(local.date_naive(), 19);
+                if candidate > now {
+                    candidate
+                } else {
+                    at_hour(local.date_naive() + Duration::days(1), 19)
+                }
+            }
+            Self::Tomorrow => at_hour(local.date_naive() + Duration::days(1), 9),
+            Self::NextWeek => {
+                // Next Monday 09:00 local time.
+                let days_since_mon = local.weekday().num_days_from_monday() as i64;
+                let days_until_mon = if days_since_mon == 0 { 7 } else { 7 - days_since_mon };
+                at_hour(local.date_naive() + Duration::days(days_until_mon), 9)
+            }
+            Self::Until(ts) => *ts,
+        }
+    }
+}
+
+/// Actions supported by `session_organize`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrganizeAction {
+    Pin,
+    Unpin,
+    Settle,
+    Reopen,
+    Snooze(SnoozeChoice),
+    Wake,
+    Archive,
+    Unarchive,
+    MarkUnread,
+    MarkRead,
+    Rename(String),
+}
+
+/// Parsed `session_organize` request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrganizeArgs {
+    pub session_ids: Vec<Uuid>,
+    pub action: OrganizeAction,
+}
+
+/// Parses `session_organize` arguments.
+pub fn parse_organize(arguments: &Map<String, Value>) -> Result<OrganizeArgs, String> {
+    let mut ids = Vec::new();
+    if let Some(single) = text(arguments, "session_id") {
+        let id = Uuid::parse_str(&single).map_err(|_| format!("{single} is not a session id from session_list."))?;
+        ids.push(id);
+    }
+    if let Some(arr) = arguments.get("session_ids").and_then(Value::as_array) {
+        for raw in arr.iter().filter_map(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
+            let id = Uuid::parse_str(raw).map_err(|_| format!("{raw} is not a session id from session_list."))?;
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    if ids.is_empty() || ids.len() > MAX_ORGANIZE_SESSIONS {
+        return Err(format!("Pass between 1 and {MAX_ORGANIZE_SESSIONS} session ids in session_id or session_ids."));
+    }
+
+    let raw_action = text(arguments, "action").ok_or(
+        "Give an action: pin, unpin, settle, reopen, snooze, wake, archive, unarchive, mark_unread, mark_read or rename.",
+    )?;
+    let action = match raw_action.to_ascii_lowercase().as_str() {
+        "pin" => OrganizeAction::Pin,
+        "unpin" => OrganizeAction::Unpin,
+        "settle" | "done" => OrganizeAction::Settle,
+        "reopen" => OrganizeAction::Reopen,
+        "wake" | "unsnooze" => OrganizeAction::Wake,
+        "archive" => OrganizeAction::Archive,
+        "unarchive" => OrganizeAction::Unarchive,
+        "mark_unread" | "unread" => OrganizeAction::MarkUnread,
+        "mark_read" | "read" => OrganizeAction::MarkRead,
+        "rename" => {
+            if ids.len() > 1 {
+                return Err("rename works on one session at a time.".into());
+            }
+            let title = text(arguments, "title").ok_or("Give the new title in title when action is rename.")?;
+            let clean: String = title.chars().take(120).collect();
+            OrganizeAction::Rename(clean)
+        }
+        "snooze" => {
+            let choice = parse_snooze(arguments)?;
+            OrganizeAction::Snooze(choice)
+        }
+        other => {
+            return Err(format!(
+                "Unknown action \"{other}\". Use pin, unpin, settle, reopen, snooze, wake, archive, unarchive, mark_unread, mark_read or rename."
+            ));
+        }
+    };
+    Ok(OrganizeArgs { session_ids: ids, action })
+}
+
+fn parse_snooze(arguments: &Map<String, Value>) -> Result<SnoozeChoice, String> {
+    if let Some(hours) = arguments.get("hours").and_then(Value::as_u64) {
+        if !(1..=168).contains(&hours) {
+            return Err("hours must be between 1 and 168.".into());
+        }
+        return Ok(SnoozeChoice::Hours(hours as u32));
+    }
+    let Some(until) = text(arguments, "until") else {
+        return Ok(SnoozeChoice::Hours(2));
+    };
+    match until.to_ascii_lowercase().as_str() {
+        "tonight" => Ok(SnoozeChoice::Tonight),
+        "tomorrow" => Ok(SnoozeChoice::Tomorrow),
+        "next_week" | "nextweek" => Ok(SnoozeChoice::NextWeek),
+        raw => {
+            let parsed = DateTime::parse_from_rfc3339(raw)
+                .map_err(|_| format!("until must be tonight, tomorrow, next_week, or an ISO-8601 timestamp (got \"{raw}\")."))?;
+            Ok(SnoozeChoice::Until(parsed.with_timezone(&Utc)))
+        }
+    }
+}
+
+/// Short human-readable description of an organize action for approval cards & audit logs.
+pub fn describe_organize(action: &OrganizeAction) -> String {
+    match action {
+        OrganizeAction::Pin => "pin".into(),
+        OrganizeAction::Unpin => "unpin".into(),
+        OrganizeAction::Settle => "settle (mark done)".into(),
+        OrganizeAction::Reopen => "reopen".into(),
+        OrganizeAction::Snooze(SnoozeChoice::Hours(h)) => format!("snooze for {h}h"),
+        OrganizeAction::Snooze(SnoozeChoice::Tonight) => "snooze until tonight".into(),
+        OrganizeAction::Snooze(SnoozeChoice::Tomorrow) => "snooze until tomorrow".into(),
+        OrganizeAction::Snooze(SnoozeChoice::NextWeek) => "snooze until next week".into(),
+        OrganizeAction::Snooze(SnoozeChoice::Until(ts)) => format!("snooze until {}", ts.to_rfc3339()),
+        OrganizeAction::Wake => "wake".into(),
+        OrganizeAction::Archive => "archive".into(),
+        OrganizeAction::Unarchive => "unarchive".into(),
+        OrganizeAction::MarkUnread => "mark unread".into(),
+        OrganizeAction::MarkRead => "mark read".into(),
+        OrganizeAction::Rename(title) => format!("rename to \"{title}\""),
+    }
+}
+
+// MARK: session_questions (AG-06)
+
+/// Parsed request for `session_questions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuestionAction {
+    List { session_id: Option<Uuid> },
+    Read { session_id: Uuid, request_id: Option<String> },
+    Answer { session_id: Uuid, request_id: Option<String>, answers: BTreeMap<String, Vec<String>> },
+}
+
+/// Parses `session_questions` arguments (`list`, `read`, or `answer`).
+pub fn parse_questions(arguments: &Map<String, Value>) -> Result<QuestionAction, String> {
+    let session_id = match text(arguments, "session_id") {
+        Some(raw) => Some(Uuid::parse_str(&raw).map_err(|_| format!("{raw} is not a session id from session_list."))?),
+        None => None,
+    };
+    let request_id = text(arguments, "request_id");
+    let raw_answers = arguments.get("answers");
+
+    let explicit = text(arguments, "action").map(|s| s.to_ascii_lowercase());
+    let mode = match explicit.as_deref() {
+        Some("list") => "list",
+        Some("read") => "read",
+        Some("answer") => "answer",
+        Some(other) => return Err(format!("Unknown action \"{other}\". Use list, read or answer.")),
+        None => {
+            if raw_answers.is_some() {
+                "answer"
+            } else if session_id.is_some() {
+                "read"
+            } else {
+                "list"
+            }
+        }
+    };
+
+    match mode {
+        "list" => Ok(QuestionAction::List { session_id }),
+        "read" => {
+            let sid = session_id.ok_or("Give session_id to read a session's pending question.")?;
+            Ok(QuestionAction::Read { session_id: sid, request_id })
+        }
+        "answer" => {
+            let sid = session_id.ok_or("Give session_id to answer a pending question.")?;
+            let map = raw_answers
+                .and_then(Value::as_object)
+                .filter(|m| !m.is_empty())
+                .ok_or("Give answers as an object mapping each question id (e.g. \"q1\") to the chosen option label(s).")?;
+            let mut parsed = BTreeMap::new();
+            for (k, v) in map {
+                let key = k.trim();
+                if key.is_empty() {
+                    continue;
+                }
+                let values: Vec<String> = match v {
+                    Value::String(s) => {
+                        let s = s.trim();
+                        if s.is_empty() { vec![] } else { vec![s.to_string()] }
+                    }
+                    Value::Array(arr) => arr
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                    _ => return Err(format!("Answer for \"{key}\" must be a string or an array of strings.")),
+                };
+                if values.is_empty() {
+                    return Err(format!("Answer for \"{key}\" cannot be empty."));
+                }
+                parsed.insert(key.to_string(), values);
+            }
+            if parsed.is_empty() {
+                return Err("Give at least one answer in answers.".into());
+            }
+            Ok(QuestionAction::Answer { session_id: sid, request_id, answers: parsed })
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// Validates and maps an agent's `answers` object onto the ordered `selections` slice expected by
+/// [`super::manager::Manager::answer_question`].
+pub fn resolve_question_selections(
+    items: &[QuestionItem],
+    answers: &BTreeMap<String, Vec<String>>,
+) -> Result<Vec<Vec<String>>, String> {
+    if items.is_empty() {
+        return Err("This question has no items to answer.".into());
+    }
+    let mut selections = Vec::with_capacity(items.len());
+    for (idx, item) in items.iter().enumerate() {
+        let q_key = format!("q{}", idx + 1);
+        let one_based = (idx + 1).to_string();
+        let zero_based = idx.to_string();
+        let chosen = answers
+            .get(&q_key)
+            .or_else(|| answers.get(&one_based))
+            .or_else(|| answers.get(&item.header))
+            .or_else(|| answers.get(&item.question))
+            .or_else(|| answers.get(&zero_based))
+            .or_else(|| (items.len() == 1 && answers.len() == 1).then(|| answers.values().next()).flatten())
+            .ok_or_else(|| format!("Missing answer for {q_key} (\"{}\").", item.question))?;
+
+        if chosen.is_empty() {
+            return Err(format!("Answer for {q_key} cannot be empty."));
+        }
+        if !item.multi_select && chosen.len() > 1 {
+            return Err(format!("Question {q_key} only accepts a single choice."));
+        }
+        // Normalize case-insensitive matches against option labels so the agent gets exact labels;
+        // custom text is kept when it does not match a label (matching AskUserQuestion "Other").
+        let mut normalized = Vec::with_capacity(chosen.len());
+        for raw in chosen {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Err(format!("Answer for {q_key} contains an empty choice."));
+            }
+            let exact = item
+                .options
+                .iter()
+                .find(|o| o.label.eq_ignore_ascii_case(trimmed))
+                .map(|o| o.label.clone())
+                .unwrap_or_else(|| trimmed.to_string());
+            if !normalized.contains(&exact) {
+                normalized.push(exact);
+            }
+        }
+        selections.push(normalized);
+    }
+    Ok(selections)
+}
+
+/// Summary row for a pending question in `session_questions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingQuestionView {
+    pub session_id: Uuid,
+    pub session_title: String,
+    pub agent: String,
+    pub request_id: String,
+    pub items: Vec<QuestionItem>,
+}
+
+/// Read-only notice of a pending permission approval (never answerable through `session_questions`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingApprovalNotice {
+    pub session_id: Option<Uuid>,
+    pub agent: String,
+    pub tool: String,
+    pub title: String,
+}
+
+/// Renders all pending questions (and read-only permission notices) across sessions.
+pub fn render_questions_list(questions: &[PendingQuestionView], approvals: &[PendingApprovalNotice]) -> String {
+    if questions.is_empty() && approvals.is_empty() {
+        return "No pending questions or approvals.".into();
+    }
+    let mut lines = Vec::new();
+    if !questions.is_empty() {
+        lines.push(format!("# Pending questions ({})", questions.len()));
+        for q in questions {
+            lines.push(format!(
+                "- session_id: {} · {} ({}) · request_id: {}",
+                q.session_id, q.session_title, q.agent, q.request_id
+            ));
+            for (idx, item) in q.items.iter().enumerate() {
+                let kind = if item.multi_select { "multi-select" } else { "single-select" };
+                let labels: Vec<&str> = item.options.iter().map(|o| o.label.as_str()).collect();
+                lines.push(format!("  - q{} ({kind}): {} [{}]", idx + 1, item.question, labels.join(" | ")));
+            }
+        }
+    }
+    if !approvals.is_empty() {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(format!("# Pending permission approvals ({}) — user-only", approvals.len()));
+        lines.push("Permission prompts cannot be approved through session_questions; wait for the user in Nook.".into());
+        for a in approvals {
+            let sid = a.session_id.map(|id| format!("{id} · ")).unwrap_or_default();
+            lines.push(format!("- {sid}{} · {}: {}", a.agent, a.tool, a.title));
+        }
+    }
+    lines.join("\n")
+}
+
+/// Renders a single pending question in full detail for `session_questions { action: "read" }`.
+pub fn render_question_detail(q: &PendingQuestionView) -> String {
+    let mut lines = vec![
+        format!("# Pending question in \"{}\"", q.session_title),
+        format!("session_id: {}", q.session_id),
+        format!("request_id: {}", q.request_id),
+        format!("agent: {}", q.agent),
+    ];
+    for (idx, item) in q.items.iter().enumerate() {
+        lines.push(String::new());
+        let header = if item.header.is_empty() { format!("q{}", idx + 1) } else { format!("q{} · {}", idx + 1, item.header) };
+        let kind = if item.multi_select { "multi-select" } else { "single-select" };
+        lines.push(format!("## {header} ({kind})"));
+        lines.push(item.question.clone());
+        for opt in &item.options {
+            if opt.description.is_empty() {
+                lines.push(format!("- {}", opt.label));
+            } else {
+                lines.push(format!("- {}: {}", opt.label, opt.description));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::models::QuestionOption;
     use crate::workspace::delegation::TaskState;
     use serde_json::json;
 
@@ -332,5 +914,131 @@ mod tests {
         assert_eq!(v["settled"][0], id.to_string());
         let name = scratch_folder_name("2026-11-17", "Try the parser", id);
         assert!(name.starts_with("2026-11-17-") && name.len() > 18);
+    }
+
+    #[test]
+    fn session_search_parses_matches_and_renders() {
+        assert!(parse_search(&args(json!({}))).is_err());
+        let parsed = parse_search(&args(json!({"query": "oauth", "limit": 99}))).unwrap();
+        assert_eq!(parsed.query, "oauth");
+        assert_eq!(parsed.limit, MAX_SEARCH_LIMIT);
+        assert!(!parsed.include_archived);
+
+        let id = Uuid::new_v4();
+        let events = vec![
+            RunEvent::new(EventKind::User, "Fix the OAuth callback bug in login.ts"),
+            RunEvent::new(EventKind::Assistant, "Updated OAuth redirect handling and added unit tests."),
+            RunEvent::new(EventKind::Thinking, "OAuth internal thought should be skipped"),
+        ];
+        let hit = search_session_parts(
+            id,
+            "Login fix",
+            "Fix login",
+            "Claude Code",
+            "done",
+            "web",
+            "/repo/web",
+            Some("fix/oauth"),
+            false,
+            &events,
+            "oauth",
+        )
+        .unwrap();
+        assert!(hit.matched_meta);
+        assert_eq!(hit.excerpts.len(), 2);
+        assert!(hit.excerpts[0].starts_with("User:"));
+        assert!(hit.excerpts[1].starts_with("Agent:"));
+        let rendered = render_search_results(&[hit], "oauth");
+        assert!(rendered.contains(&id.to_string()));
+        assert!(rendered.contains("fix/oauth"));
+        assert!(render_search_results(&[], "missing").contains("No sessions matched"));
+    }
+
+    #[test]
+    fn session_organize_parsing_and_snooze() {
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        assert!(parse_organize(&args(json!({"action": "pin"}))).is_err());
+        assert!(parse_organize(&args(json!({"session_id": id1.to_string(), "action": "bogus"}))).is_err());
+
+        let pin = parse_organize(&args(json!({"session_ids": [id1.to_string(), id2.to_string()], "action": "pin"}))).unwrap();
+        assert_eq!(pin.session_ids, vec![id1, id2]);
+        assert_eq!(pin.action, OrganizeAction::Pin);
+
+        let rename = parse_organize(&args(json!({"session_id": id1.to_string(), "action": "rename", "title": "Auth refactor"}))).unwrap();
+        assert_eq!(rename.action, OrganizeAction::Rename("Auth refactor".into()));
+        assert!(parse_organize(&args(json!({"session_id": id1.to_string(), "action": "rename"}))).is_err());
+        assert!(parse_organize(&args(json!({"session_ids": [id1.to_string(), id2.to_string()], "action": "rename", "title": "x"}))).is_err());
+
+        let snooze = parse_organize(&args(json!({"session_id": id1.to_string(), "action": "snooze", "until": "tomorrow"}))).unwrap();
+        assert_eq!(snooze.action, OrganizeAction::Snooze(SnoozeChoice::Tomorrow));
+        let now = Utc.with_ymd_and_hms(2026, 11, 21, 14, 0, 0).unwrap();
+        let wake = SnoozeChoice::Tomorrow.resolve(now, &Utc);
+        assert_eq!(wake, Utc.with_ymd_and_hms(2026, 11, 22, 9, 0, 0).unwrap());
+        let next_wk = SnoozeChoice::NextWeek.resolve(now, &Utc);
+        assert_eq!(next_wk.weekday(), chrono::Weekday::Mon);
+    }
+
+    #[test]
+    fn session_questions_parsing_and_selection_validation() {
+        let sid = Uuid::new_v4();
+        assert_eq!(parse_questions(&args(json!({}))).unwrap(), QuestionAction::List { session_id: None });
+        assert_eq!(
+            parse_questions(&args(json!({"session_id": sid.to_string()}))).unwrap(),
+            QuestionAction::Read { session_id: sid, request_id: None }
+        );
+        let ans = parse_questions(&args(json!({
+            "session_id": sid.to_string(),
+            "answers": {"q1": "postgres", "q2": ["Unit", "Integration"]}
+        })))
+        .unwrap();
+        let QuestionAction::Answer { answers, .. } = ans else { panic!("expected answer") };
+
+        let items = vec![
+            QuestionItem {
+                question: "Which database?".into(),
+                header: "DB".into(),
+                options: vec![
+                    QuestionOption { label: "Postgres".into(), description: "Primary".into(), preview: String::new() },
+                    QuestionOption { label: "SQLite".into(), description: "Local".into(), preview: String::new() },
+                ],
+                multi_select: false,
+            },
+            QuestionItem {
+                question: "Which test suites?".into(),
+                header: "Tests".into(),
+                options: vec![
+                    QuestionOption { label: "Unit".into(), description: String::new(), preview: String::new() },
+                    QuestionOption { label: "Integration".into(), description: String::new(), preview: String::new() },
+                ],
+                multi_select: true,
+            },
+        ];
+
+        let selections = resolve_question_selections(&items, &answers).unwrap();
+        assert_eq!(selections, vec![vec!["Postgres".to_string()], vec!["Unit".to_string(), "Integration".to_string()]]);
+
+        // Single-select rejects multiple choices.
+        let mut bad = BTreeMap::new();
+        bad.insert("q1".into(), vec!["Postgres".into(), "SQLite".into()]);
+        bad.insert("q2".into(), vec!["Unit".into()]);
+        assert!(resolve_question_selections(&items, &bad).is_err());
+
+        // Rendering includes both questions and read-only approval notices.
+        let rendered = render_questions_list(
+            &[PendingQuestionView { session_id: sid, session_title: "DB migration".into(), agent: "Claude Code".into(), request_id: "r1".into(), items: items.clone() }],
+            &[PendingApprovalNotice { session_id: Some(sid), agent: "Claude Code".into(), tool: "Bash".into(), title: "Run migrations".into() }],
+        );
+        assert!(rendered.contains("Pending questions (1)"));
+        assert!(rendered.contains("Pending permission approvals (1)"));
+        assert!(rendered.contains("cannot be approved through session_questions"));
+        let detail = render_question_detail(&PendingQuestionView {
+            session_id: sid,
+            session_title: "DB migration".into(),
+            agent: "Claude Code".into(),
+            request_id: "r1".into(),
+            items,
+        });
+        assert!(detail.contains("## q1 · DB (single-select)"));
     }
 }

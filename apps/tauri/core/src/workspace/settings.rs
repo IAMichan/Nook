@@ -118,6 +118,9 @@ pub struct WorkspaceSettings {
     pub project_overrides: BTreeMap<String, ProjectOverride>,
     /// "Check for new models online" (`ws.onlineModelList`): the model list comes fresh from Nook's repository.
     pub online_model_list: bool,
+    /// At most this many sessions may work at once (`ws.maxWorkingSessions` on the Mac); `0` = no limit.
+    #[serde(default)]
+    pub max_working_sessions: u32,
 }
 
 impl Default for WorkspaceSettings {
@@ -146,6 +149,7 @@ impl Default for WorkspaceSettings {
             editor: String::new(),
             project_overrides: BTreeMap::new(),
             online_model_list: true,
+            max_working_sessions: 0,
         }
     }
 }
@@ -173,6 +177,7 @@ impl WorkspaceSettings {
         super::models::set_branch_prefix(&settings.branch_prefix);
         super::traffic::set_enabled(settings.keep_traffic);
         super::model_manifest::set_online(settings.online_model_list);
+        super::capacity::set_max_working_sessions(settings.max_working_sessions);
         settings
     }
 
@@ -180,6 +185,7 @@ impl WorkspaceSettings {
         super::models::set_branch_prefix(&self.branch_prefix);
         super::traffic::set_enabled(self.keep_traffic);
         super::model_manifest::set_online(self.online_model_list);
+        super::capacity::set_max_working_sessions(self.max_working_sessions);
         if let Ok(bytes) = serde_json::to_vec_pretty(self) {
             let _ = crate::paths::write_atomic(file, &bytes);
         }

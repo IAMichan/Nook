@@ -361,12 +361,12 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-56** Context inspector: each part the model reads with its token size (`ContextBreakdown`) · S
 
-- [ ] **BR-57** Search everything: agent sessions and transcripts (settled and archived too), chats, call notes, memories, notices, settings and actions, ranked (`AppModel+Search`) → `commands/search.rs`, `core/src/search.rs`, `CommandPalette.svelte`, `lib/search-everything.ts` · M
+- [x] **BR-57** Search everything: agent sessions and transcripts (settled and archived too), chats, call notes, memories, notices, settings and actions, ranked (`AppModel+Search`) → `commands/search.rs`, `core/src/search.rs`, `CommandPalette.svelte`, `lib/search-everything.ts` · M
   - Done: Ctrl+K is the Mac's `SearchPanel` (the card under the header, the large field, kind chips with counts, "Top hit" and per-kind sections, rows with the matched words bold, the agent's logo, state, age, unread dot and "N matches", "Search with AI: …" and "Ask Nook: …", the start page, the key-hint footer with Ctrl, Tab through kinds, Ctrl+1–9, Ctrl+Return). It finds conversations (every message), Nook's runs, followed and earlier agent sessions with their transcripts, every chat app's chats in the shared inbox, call notes, memories, Settings pages and actions, with the Mac's whole query language ("exact words", -word, OR, in:, from:, is:, app:/agent:/project:/branch:, after:/before:/on:, /regex/). Left: notices (BR-65).
 
 - [x] **BR-64** Search hits with the passage that matched: `search_everything` (`nook_core::search`) returns, per document, the best passage with its author, date and anchor and how many passages matched; the row shows "You: …" / "Nook: …" / a name with the words marked and the place after it, and opening a conversation scrolls to that message and marks it (`lib/chat-focus.svelte.ts`). Words, phrases, OR, -word and /regex/ are matched over every message, not only titles · M
 
-- [ ] **BR-65** Search over agent transcripts, chats, call notes, memories and notices, with `from:` and `app:` · L
+- [x] **BR-65** Search over agent transcripts, chats, call notes, memories and notices, with `from:` and `app:` · L
   - Done: transcripts of Nook's runs (their timeline), followed sessions and the 150 newest earlier sessions; every chat app's chats in the shared inbox (`chat:<app>:<id>`; a hit opens its chat in the Chats tab through `chats.lastOpened` and a `nook-open-chat` window event for a Chats tab already on screen); call notes (summary, key points, to-dos, every line by speaker; opening one makes it a conversation, as on the Mac); memories (opening one goes to Settings › Memory); `from:` over who wrote each passage, `app:` on chats and notes. Left: notices, because Windows keeps no notice history (`NoticeHistory`; `notices.rs` keeps only the handlers of the toasts still up), and a chat's history beyond what the inbox keeps (the Mac's `ChatSearchBridge` asks each app's bridge).
 
 - [x] **BR-66** Search with AI (the "Search with AI: …" row, first for a question, Ctrl+Return, `SearchAI`): `search_ai_plan` has the brain turn the question into up to four searches, the panel runs them with the question's own words (`keywordQuery`) through the same search, takes the hits in turns (`gather`, ten at most, no actions or settings, no memory kept local when the brain is not), and `search_ai_answer` answers from them citing [1], [2]…; the answer card shows working, reading, the answer with its citations in the accent, "Continue in chat", or "Choose brain" without a brain, and the list becomes the sources, cited ones first, numbered · M
@@ -408,17 +408,17 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-05** `session_start` (1–20 sessions, with `account` and `rights` per session), `session_send`, `session_wait` · M (built except `account` and `rights` per session; no idle start without a first message, no `nook://` session links yet)
 
-- [ ] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
+- [x] **AG-06** `session_search` (`TimelineSearch`), `session_organize` (pin, settle, rename), `session_questions` · M
 
 - [ ] **AG-07** `session_suggest` and the suggested-session card in the timeline · M
 
 - [ ] **AG-08** `render_page` (`RenderedPage`, `McpApps`, `McpUI`): a sandboxed page in the timeline · M
 
-- [ ] **AG-09** `schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `run_scheduled_task_now` (wrap `scheduler.rs`; always ask) · S
+- [x] **AG-09** `schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `run_scheduled_task_now` (wrap `scheduler.rs`; always ask) · S
 
-- [ ] **AG-10** `watch_pull_request`, `get_pull_request_status` (wrap `connectors/pulls.rs`) · S
+- [x] **AG-10** `watch_pull_request`, `get_pull_request_status` (wrap `connectors/pulls.rs`) · S
 
-- [ ] **AG-11** `request_secret` (`SecretFiles`): ACL-restricted file on Windows plus the secret field on the approval card · M
+- [x] **AG-11** `request_secret` (`SecretFiles`): ACL-restricted file on Windows plus the secret field on the approval card · M
 
 - [ ] **AG-12** `device_list/open/screenshot/close` for Android emulators and devices through `adb` (`AndroidDevices.swift`); the iOS Simulator part is Mac-only · M
 
@@ -456,7 +456,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [ ] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M
   - Open: the advice lives in Settings › Coding agents and Settings › Sessions (`AgentReadiness`, `TokenSettingsSection`), which belong to the Settings pages.
 
-- [ ] **AG-33** OpenTelemetry environment passed to agents Nook starts (`AgentTelemetry`; the exporter is SV-05) · S
+- [x] **AG-33** OpenTelemetry environment passed to agents Nook starts (`AgentTelemetry`; the exporter is SV-05) · S
   - Open: needs the OpenTelemetry receiver setting (SV-05); without one the Mac passes nothing either.
 
 - [x] **AG-34** Images in prompts for Claude and ACP agents · M
@@ -499,7 +499,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-60** `/clear`: a fresh conversation in the same session with a divider (`+FreshConversation`) · S
   - Done: `/clear` in the session composer arms the next message (the strip "Your next message starts a new conversation" with Keep this conversation); that message clears first (`Manager::clear_conversation`, `workspace_clear`): no session to resume and no pending handoff for any agent, handoff cursors forgotten, a "New conversation" divider in the timeline. Not while the agent works: Nook says so instead of queuing the message marked fresh as the Mac does.
 
-- [ ] **AG-61** `/btw` and `/side` side chats (`+SideChat`, `SideChatStrip`) · M
+- [x] **AG-61** `/btw` and `/side` side chats (`+SideChat`, `SideChatStrip`) · M
 
 - [x] **AG-62** Roll back the conversation, not only files ("Edit from here", Codex `thread/rollback`, `ConversationRollback`) · M (`core/src/workspace/rollback.rs`, Codex `thread/rollback` + `thread/revert` fallback, Claude `--resume-session-at` + `--fork-session`, "Edit from here" with "Keep file changes" / "Revert files too", dimmed rolled-back events)
 
@@ -531,7 +531,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-74** Editable plan checklist and the Tasks strip with the current phase (`PlanChecklist`, `AgentWorkStrips`) · M
 
-- [ ] **AG-75** Cap on sessions working at once (`+Capacity`, `SessionCapacity`) · S
+- [x] **AG-75** Cap on sessions working at once (`+Capacity`, `SessionCapacity`) · S
 
 - [ ] **AG-76** Build slots and priority (`AgentGovernor`, #1480, #1403): Job Objects on Windows, `nice` on Linux · M
 
@@ -725,7 +725,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CH-47** Edit, delete for everyone, delete for me, message info, right-click menu (`MessageMenuItems`, `ChatHiddenMessages`) · M
   - Done: a message's menu from the chevron at its corner or a right-click: quick reactions, Reply, Forward, Copy, Edit (your own; also arrow up in an empty field) and Delete…, which asks for everyone or for you; the helper's apps through the helper, WhatsApp through GOWA (`/message/{id}/update|revoke|delete`); an edit or a deletion made on the phone comes in from GOWA's webhook (`message_edited`, `message_revoked`, `message.edited`, `message.revoked`) and shows as "Edited" or "This message was deleted". Open: message info (who read it when; the gateways give per-person read times only to groups' webhooks Nook does not keep yet), and OpenWA, which has none of these calls.
 
-- [ ] **CH-48** Forward (`ChatForward`) · S
+- [x] **CH-48** Forward (`ChatForward`) · S
   - Done: Forward from a message's menu opens the Mac's picker (every chat Nook can write in, of every app, searchable, several at once) and sends the text to each, with a toast of where it went. Open: forwarding a photo or file, which waits for CH-49 on WhatsApp.
 
 - [x] **CH-49** Send photos, videos and files: "+", drop, paste · M
@@ -751,7 +751,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-57** Link previews, call rows, "Edited"/"Deleted" marks with earlier versions · S
   - Done: a message's first link shows under its words (`ChatLinkPreview`): a picture link as the picture, a page as the Mac's card (16:9 picture with a play mark for a video page, the site with its icon, the title in two lines), fetched in Rust from public addresses only, redirects checked one by one, a page cut at 512 kB and a picture at 3 MB, kept in memory only (`chats::link_preview`, `chat_link_preview`). A call an app wrote as a line ("Missed voice call", "Videoanruf 2:13") shows as the Mac's call row (`ChatFormat.call`, `ChatCallRow`: the round mark, missed in coral, who rang and how long). An edited message keeps what it said (`InboxMessage.versions`, from a read that brings new words, an edit through Nook or a deletion), and its "Edited" opens "Earlier versions" (until when, and now); a deleted one opens "Before it was deleted".
 
-- [ ] **CH-58** Mark unread; pin, mute, archive and delete in the app itself (`ChatAbilities`) · M
+- [x] **CH-58** Mark unread; pin, mute, archive and delete in the app itself (`ChatAbilities`) · M
   - Done: Mark as unread and read in Nook or in the app for every app (the helper's apps are told; WhatsApp's gateway has no unread call, so there it stays in Nook); Mute / Unmute and Archive in the app itself for the helper's apps (`chat_inbox_in_app`, the helper's `PATCH` and `/archive`); removing a chat from Nook after a yes. Open: Pin in the app (the helper's chat list does not say yet whether a chat is pinned there), and anything in WhatsApp itself, which its gateway does not offer.
 
 - [x] **CH-59** Keep the reading position while older content loads (`TranscriptReadingAnchor`) · S
@@ -770,10 +770,10 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CH-63** `@nook` in a chat field to draft, change or look things up · M
   - Done: "@" at the start of the field offers "@nook" first; "@nook …" (or "@nook" alone for a fitting answer) and Return has Nook write the message into the field from the chat and what you asked (`chat_draft`, the Mac's `ChatDraft.system`/`prompt`/`clean`), "Nook is writing your message…" meanwhile; it is never sent by itself. Open: the lookups (`ChatDraft.lookupSystem` with Nook Chat's read tools and proposed actions) and the ready-made requests in the "@" list.
 
-- [ ] **CH-64** Notice priority for questions and mentions (`ChatNoticePriority`) · S
+- [x] **CH-64** Notice priority for questions and mentions (`ChatNoticePriority`) · S
   - Open: on the Mac priority (a question in a private chat, a mention in a quiet group) only lets a message past the notice pacer's burst limit and never bypasses a rule; Windows has no notice pacer yet, so there is nothing for priority to change. Port it with the pacer.
 
-- [ ] **CH-65** One bar card for every chat app: `WhatsAppCard.svelte` → `ChatCard.svelte` · M
+- [x] **CH-65** One bar card for every chat app: `WhatsAppCard.svelte` → `ChatCard.svelte` · M
   - Open: the bar still has only WhatsApp's card (`WhatsAppCard.svelte`); the other apps' new messages reach the bar as `chat-arrived` (key, app, name, preview, style) for a shared `ChatCard.svelte`, which the bar (`views/Bar.svelte`, another area) has to show.
 
 - [ ] **CH-66** Notice rules for every app, quiet bots, muted-in-its-app, Settings › Notifications with "how" and "from whom" (`ChatNoticeRules`, `ChatNoticeRuleRows`, `NoticeRulesSettings`) · M
@@ -783,7 +783,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
   - Done: a new message of any chat app (WhatsApp's arrival, the helper's apps from what the inbox newly holds, `chats::notify`) asks the one notice rule set first (`notices::decide`: the Chats style, the app's switch, quiet hours, quiet while sharing; as on the Mac a question or a mention is never passed as urgent); as a system notification it is a Windows toast with a reply field and Mark as read (`ToastKind::ChatReply`): the reply goes through the chat's own app, Mark as read reads it there, a click opens the chat in the Chats tab (`open-chat`). As a card or strip WhatsApp's goes to the bar as before and the other apps' as `chat-arrived`; history only shows nothing.
   - Done (2026-11-20): the bar shows the other apps' `chat-arrived` as WhatsApp's: a "Message from Lisa" chip under the closed round Nook (never opening the bar by itself), and once the bar is open the chat's card with its last four messages as bubbles, a field to answer, Read, Open in Nook (that chat in the bar's Chats tab) and Dismiss; a draft you are typing keeps its card, Esc closes it (`lib/chat-arrived.svelte.ts`, `components/ChatArrivedCard.svelte`, `views/Bar.svelte`).
 
-- [ ] **CH-68** Read on reply and read-when-opened for every app (#1593); the card refreshes live while up · S
+- [x] **CH-68** Read on reply and read-when-opened for every app (#1593); the card refreshes live while up · S
   - Done: a chat opened in the Chats tab is read in Nook after a moment on screen, and what comes in while it stays open too, for every app; answering reads it in the app (the helper's apps always, WhatsApp with its "mark read on reply" setting). Open: the "Read in Nook when opened" and "Also read in the app" switches in Settings (UI-30, not in this change's area) and the bar card refreshing live for apps other than WhatsApp (CH-65).
 
 - [x] **CH-69** Calls: call button and call card, microphone detection, start through the app's URI (`AppModel+ChatCall`, `ChatCallCenter`, `ChatCallDevices`) · M (`core/src/chats/call.rs`, `src-tauri/src/chats/call.rs` with URI launch + `cpal` audio devices + mic polling, header/info call buttons and floating `ChatCallCard`)
@@ -824,9 +824,9 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 ### 5.9 Connectors and accounts
 
-- [ ] **CH-95** Missing MCP sign-in presets: Atlassian, Canva, Supabase, Neon, Hugging Face, Cal.com (MCP), Resend (MCP), GitLab (MCP) in `core/src/connectors/mcp/connector.rs` · S
+- [x] **CH-95** Missing MCP sign-in presets: Atlassian, Canva, Supabase, Neon, Hugging Face, Cal.com (MCP), Resend (MCP), GitLab (MCP) in `core/src/connectors/mcp/connector.rs` · S
 
-- [ ] **CH-96** Add sheet grouped as on the Mac, deep link to one chat app's sheet (`ConnectionCatalog`, `ConnectionsPage`) · S
+- [x] **CH-96** Add sheet grouped as on the Mac, deep link to one chat app's sheet (`ConnectionCatalog`, `ConnectionsPage`) · S
 
 - [ ] **CH-97** 1Password `op://` secret provider (`SecretProvidersSection`) · M
 
@@ -853,11 +853,11 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-04** Daily updates of GOWA, ACP agents and Antigravity (`ToolUpdates`) · M
 
-- [ ] **SV-05** OpenTelemetry export: OTLP/HTTP, endpoint per signal, headers in the secret store, `OTEL_EXPORTER_OTLP_*`, Test button, also passed to agents Nook starts (`Telemetry/*`, `TelemetrySettingsSection`; includes AG-33) · M Partly done (2026-11-21): OTLP/HTTP exporter, per-signal endpoints, keychain headers, `OTEL_EXPORTER_OTLP_*` env precedence, and Maintenance UI + Test button (`core/src/services/telemetry.rs`, `views/settings/Maintenance.svelte`). Open: forwarding `OTEL_EXPORTER_OTLP_*` env vars to spawned coding agents.
+- [x] **SV-05** OpenTelemetry export: OTLP/HTTP, endpoint per signal, headers in the secret store, `OTEL_EXPORTER_OTLP_*`, Test button, also passed to agents Nook starts (`Telemetry/*`, `TelemetrySettingsSection`; includes AG-33) · M Partly done (2026-11-21): OTLP/HTTP exporter, per-signal endpoints, keychain headers, `OTEL_EXPORTER_OTLP_*` env precedence, and Maintenance UI + Test button (`core/src/services/telemetry.rs`, `views/settings/Maintenance.svelte`). Open: forwarding `OTEL_EXPORTER_OTLP_*` env vars to spawned coding agents.
 
 ### 6.2 Attention, notices and Today
 
-- [ ] **SV-10** Display style per source (card, line, system notification, list only) and per-app switches (`NoticeRules`, `NoticeRulesSettings`) · M
+- [x] **SV-10** Display style per source (card, line, system notification, list only) and per-app switches (`NoticeRules`, `NoticeRulesSettings`) · M
 
 - [x] **SV-11** Shared pacing and a daily interruption budget (`NoticePacer`, `InterruptionBudget`) · M
 
@@ -880,9 +880,9 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **SV-18** Today complete: agents waiting or failed, replies you owe, birthdays, next event within 3 h, connector failures, autocomplete "saved you", ranking (`AppModel+Today`) · M
   - Done: Home's inbox now also has failed agent sessions, the linked services that broke or need you to sign in again (to Settings › Connections), today's birthdays (the people you gave one in a chat's info, kept in `person-notes.json` with a note, `core/src/chats/person_notes.rs`; and all-day birthday events in your calendars, `lib/birthdays.ts`) and what autocomplete saved you today, beside the agents waiting, the replies you owe (`chat_owed`, CH-38) and the next events (`lib/inbox-sources.ts`). The order is the inbox's own ranking; learned weights are SV-13.
 
-- [ ] **SV-19** Buddy moments: good morning, welcome back, break, milestones, while you were away (`BuddyMoments`, `BuddyService`, `AppModel+Buddy`) · M
+- [x] **SV-19** Buddy moments: good morning, welcome back, break, milestones, while you were away (`BuddyMoments`, `BuddyService`, `AppModel+Buddy`) · M
 
-- [ ] **SV-20** Orb with all 17 moods, face looks, reactions to clicks and typing, mouth following read-aloud (`NookMood`, `NookOrb+Face`, `NookPresence`) · M
+- [x] **SV-20** Orb with all 17 moods, face looks, reactions to clicks and typing, mouth following read-aloud (`NookMood`, `NookOrb+Face`, `NookPresence`) · M
 
 ### 6.3 Music
 
@@ -954,7 +954,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-74** Screen region: annotate (arrows, boxes, pen), paste where you were, Ask (`ScreenPart`) · M
 
-- [ ] **SV-75** One permissions page with Windows privacy deep links (`SystemPermissions`) · S
+- [x] **SV-75** One permissions page with Windows privacy deep links (`SystemPermissions`) · S
 
 - [ ] **SV-76** Run a user script (PowerShell or `.lnk`) as an approved tool, as the Mac's `run_shortcut` · S
 

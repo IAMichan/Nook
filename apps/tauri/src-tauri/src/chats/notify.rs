@@ -3,7 +3,8 @@
 //! notification it carries Reply and Mark as read (`ToastKind::ChatReply`), so you can answer from the Windows toast
 //! itself; as a card or strip the bar shows it; "history only" keeps it in the list without anything popping up.
 
-use nook_core::chats::{ChatInbox, InboxThread};
+use nook_core::chats::priority::{self, ChatNoticeMode, NoticePriorityLevel, NoticeScore};
+use nook_core::chats::{ChatInbox, InboxMessage, InboxThread};
 use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
 use nook_core::services::toast::{NoticeOptions, NoticeTarget, Toast, ToastLevel};
 use tauri::{AppHandle, Emitter, Manager};
@@ -21,6 +22,29 @@ pub struct ChatArrived {
     pub unread: usize,
     /// "card" or "strip", as Settings › Notifications says.
     pub style: String,
+    /// Scored notice priority (CH-64): raises above burst pacing and powers the card's priority badge.
+    pub priority: NoticeScore,
+}
+
+/// Evaluates notice priority for a specific incoming message inside `thread` (CH-64).
+/// Group chats default to `quiet_by_kind = true` so only direct mentions and replies-to-me raise priority.
+pub fn score_message(thread: &InboxThread, message: &InboxMessage) -> NoticeScore {
+    let mode = if thread.muted_in_app == Some(true) {
+        ChatNoticeMode::Muted
+    } else {
+        ChatNoticeMode::Automatic
+    };
+    priority::evaluate(thread, message, thread.is_group(), mode)
+}
+
+/// Evaluates notice priority for the newest incoming message in `thread` (CH-64).
+pub fn score_thread(thread: &InboxThread) -> NoticeScore {
+    let mode = if thread.muted_in_app == Some(true) {
+        ChatNoticeMode::Muted
+    } else {
+        ChatNoticeMode::Automatic
+    };
+    priority::evaluate_latest(thread, thread.is_group(), mode)
 }
 
 /// The app's display name for the notice rules' per-app switches.
@@ -52,13 +76,32 @@ pub fn style(handle: &AppHandle, app: &str, urgent: bool) -> Option<NoticeStyle>
 /// A system notification for a chat's newest message, with Reply and Mark as read. Answering sends through the chat's
 /// own app (WhatsApp's gateway or the helper), marking reads it there; a click opens the chat in Nook.
 pub fn toast(handle: &AppHandle, key: &str, app: &str, name: &str, preview: &str, sends: bool) {
+    toast_with_priority(handle, key, app, name, preview, sends, &NoticeScore::default());
+}
+
+/// System notification with priority awareness (CH-64): urgent priority may pass burst pacing after user rules
+/// (`style(..., false)`) have already allowed the notice.
+pub fn toast_with_priority(
+    handle: &AppHandle,
+    key: &str,
+    app: &str,
+    name: &str,
+    preview: &str,
+    sends: bool,
+    priority: &NoticeScore,
+) {
+    let level = if priority.raises && priority.level == NoticePriorityLevel::Urgent {
+        ToastLevel::TimeSensitive
+    } else {
+        ToastLevel::Active
+    };
     let toast = Toast::notice(
         &format!("chat-{key}"),
         name,
         app_name(app),
         preview,
         NoticeTarget::Chat(key.to_string()),
-        ToastLevel::Active,
+        level,
         NoticeOptions { reply: sends, read: true, app: None },
     );
     let (reply_app, read_app, show_app) = (handle.clone(), handle.clone(), handle.clone());
@@ -102,18 +145,26 @@ pub fn open(handle: &AppHandle, key: &str) {
     });
 }
 
-/// The chats of the helper's apps that got something new from someone else since `before`: each is told as Settings
-/// says, and handed to the automations that start on a message (BR-16).
+/// The chats of the helper's apps that got something new from someone else since `before`: each is scored by
+/// `ChatNoticePriority` (CH-64), told as Settings says, and handed to the automations that start on a message (BR-16).
 pub fn arrived(handle: &AppHandle, before: &ChatInbox, now: &ChatInbox) {
     let since = chrono::Utc::now() - chrono::Duration::minutes(10);
     let mut messages = vec![];
+    let mut ranked: Vec<(String, &InboxThread, &InboxMessage, NoticeScore)> = vec![];
     for key in now.fresh(before, since) {
         let Some(thread) = now.threads.get(&key) else { continue };
         // WhatsApp tells its own arrivals (`whatsapp-message`); its chats are in the inbox too.
-        if thread.app == "whatsapp" || thread.muted_in_app == Some(true) {
+        if thread.app == "whatsapp" || thread.muted_in_app == Some(true) || thread.archived {
             continue;
         }
-        let Some(newest) = thread.messages.iter().rev().find(|m| m.is_incoming()) else { continue };
+        let Some(newest) = thread.messages.iter().rev().find(|m| m.is_incoming() && !m.deleted) else { continue };
+        let priority = score_message(thread, newest);
+        ranked.push((key, thread, newest, priority));
+    }
+    // Lower-priority notices go first so the highest-priority arrival is emitted last and surfaces on top.
+    ranked.sort_by_key(|(_, _, newest, p)| (p.raises, p.score, newest.date));
+
+    for (key, thread, newest, priority) in ranked {
         let preview = preview(thread, newest);
         crate::notice_history::record(
             handle,
@@ -135,14 +186,22 @@ pub fn arrived(handle: &AppHandle, before: &ChatInbox, now: &ChatInbox) {
             id: newest.id.clone(),
         });
         // A question or a mention never counts as urgent here (`ChatNoticePriority`: priority only passes a pacer, it
-        // never bypasses a rule).
+        // never bypasses a user rule like quiet hours, quiet mode, or an app switched off).
         match style(handle, &thread.app, false) {
-            Some(NoticeStyle::System) => toast(handle, &key, &thread.app, &thread.name, &preview, true),
+            Some(NoticeStyle::System) => toast_with_priority(handle, &key, &thread.app, &thread.name, &preview, true, &priority),
             Some(style) => {
                 let style = if style == NoticeStyle::Strip { "strip" } else { "card" };
                 let _ = handle.emit(
                     "chat-arrived",
-                    ChatArrived { key: key.clone(), app: thread.app.clone(), name: thread.name.clone(), preview, unread: thread.unread, style: style.into() },
+                    ChatArrived {
+                        key: key.clone(),
+                        app: thread.app.clone(),
+                        name: thread.name.clone(),
+                        preview,
+                        unread: thread.unread,
+                        style: style.into(),
+                        priority,
+                    },
                 );
             }
             None => {}

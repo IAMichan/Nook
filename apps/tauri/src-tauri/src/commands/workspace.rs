@@ -58,10 +58,26 @@ pub struct Overview {
     settings: WorkspaceSettings,
 }
 
+/// Connects `Manager` to Nook's live OpenTelemetry settings and keychain headers (AG-33 / SV-05).
+fn ensure_telemetry_provider(app: &AppHandle, manager: &Arc<Manager>) {
+    if manager.has_telemetry_provider() {
+        return;
+    }
+    let handle = app.clone();
+    manager.set_telemetry_provider(move || {
+        use nook_core::services::telemetry::{OtlpConfig, HEADERS_SECRET_ACCOUNT};
+        let state = handle.state::<crate::state::AppState>();
+        let saved = state.settings().telemetry;
+        let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+        OtlpConfig::resolve_process(&saved, &saved_headers)
+    });
+}
+
 /// Sessies, welke er lopen, welke agents er zijn en de voorkeuren.
 #[tauri::command]
-pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
+pub fn workspace_overview(app: AppHandle, state: State<'_, WorkspaceState>) -> Overview {
     let m = &state.manager;
+    ensure_telemetry_provider(&app, m);
     let runs = m.runs();
     let running = runs.iter().filter(|r| m.is_running(r.id)).map(|r| r.id).collect();
     let desktop = crate::platform::capabilities().local_agents;
@@ -101,6 +117,8 @@ pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, Workspace
     settings.save_to(&WorkspaceSettings::file());
     *current = settings;
     drop(current);
+    // Raising or removing `max_working_sessions` lets waiting turns start immediately (AG-75).
+    state.manager.start_waiting_turns();
     let _ = app.emit("workspace-changed", ());
 }
 
@@ -205,6 +223,7 @@ pub async fn workspace_start(
         config.permission = config.provider.capabilities().policies.first().copied().unwrap_or_default();
     }
     let m = state.manager.clone();
+    ensure_telemetry_provider(&app, &m);
     let chosen = config.clone();
     let id = blocking(move || m.start(config, allow_shared)).await??;
     crate::workspace::automation::title_new_session(&app, id, !chosen.title.trim().is_empty());
@@ -527,7 +546,8 @@ pub fn workspace_configure(
 
 /// Een bericht: start een nieuwe beurt, of komt in de wachtrij als de agent nog werkt.
 #[tauri::command]
-pub fn workspace_send(state: State<'_, WorkspaceState>, run: String, text: String) -> Res<()> {
+pub fn workspace_send(app: AppHandle, state: State<'_, WorkspaceState>, run: String, text: String) -> Res<()> {
+    ensure_telemetry_provider(&app, &state.manager);
     state.manager.send(id(&run)?, &text)
 }
 
@@ -1688,5 +1708,96 @@ pub fn workspace_reveal_path(app: AppHandle, path: String) -> Res<()> {
     };
     app.opener().open_path(target.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// MARK: Side chat (`/btw`, `/side`, AG-61)
+
+const SIDE_CHAT_SYSTEM: &str = "You are answering a quick side question (/btw or /side) about a coding-agent session in Nook. \
+The main coding agent keeps running separately and uninterrupted. Answer directly, concisely, and accurately using the session context provided. \
+Do not claim you ran tools or edited files. Reply in the same language as the user's question.";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SideChatReply {
+    pub question: String,
+    pub answer: String,
+    pub model: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Answers a quick side question (`/btw <question>`, `/side <question>`) about a session using a bounded summary of
+/// its recent timeline as context, without interrupting the main agent turn (AG-61).
+#[tauri::command]
+pub async fn workspace_side_chat(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    run: String,
+    question: String,
+) -> Res<SideChatReply> {
+    let run_id = id(&run)?;
+    let clean = question.trim().to_string();
+    if clean.is_empty() {
+        return Err(tr("Stel een vraag na /btw of /side.", "Ask a question after /btw or /side.").to_string());
+    }
+    let session = state
+        .manager
+        .run(run_id)
+        .ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
+    let events = state.manager.timeline(run_id);
+
+    // Match macOS `SideChat.cutoff`: exclude the currently in-flight user turn while the main agent works.
+    let cutoff = if session.status.is_active() {
+        events.iter().rposition(|e| e.kind == EventKind::User).unwrap_or(events.len())
+    } else {
+        events.len()
+    };
+    let slice = &events[..cutoff.min(events.len())];
+    let summary = nook_core::workspace::handoff::render(slice, 0, session.provider.display_name(), 6_000).map(|r| r.text);
+
+    let mut prompt = String::new();
+    prompt.push_str(&format!("Session title: {}\n", session.title));
+    prompt.push_str(&format!("Agent: {}\n", session.provider.display_name()));
+    if !session.project_path.is_empty() {
+        prompt.push_str(&format!("Project: {}\n", session.project_name()));
+    }
+    if let Some(ref goal) = session.goal {
+        if !goal.trim().is_empty() {
+            prompt.push_str(&format!("Goal: {}\n", goal.trim()));
+        }
+    }
+    if !session.task.trim().is_empty() {
+        prompt.push_str(&format!("Initial task: {}\n", session.task.trim()));
+    }
+    if let Some(ref ctx) = summary {
+        prompt.push_str("\nRecent session timeline:\n");
+        prompt.push_str(ctx);
+        prompt.push('\n');
+    }
+    prompt.push_str(&format!("\nSide question: {clean}\n"));
+
+    let app_state = app.state::<crate::state::AppState>();
+    let settings = app_state.settings();
+    let model = settings.active_model();
+    let env = nook_core::brain::service::BrainEnv {
+        key: app_state.key_for(settings.provider),
+        memory_gb: crate::brain::memory_gb(),
+        country: crate::brain::country(),
+        timezone: crate::brain::timezone(),
+    };
+
+    let answer = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        nook_core::brain::service::complete(&settings, &env, SIDE_CHAT_SYSTEM, &prompt),
+    )
+    .await
+    .map_err(|_| tr("Het zijgesprek duurde te lang.", "The side chat timed out.").to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(SideChatReply {
+        question: clean,
+        answer: answer.trim().to_string(),
+        model,
+        created_at: Utc::now(),
+    })
 }
 

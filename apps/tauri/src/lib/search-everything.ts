@@ -1,9 +1,9 @@
 // Search everything (Ctrl+K), as the Mac's `SearchPanel` with `SearchIndex`, `SearchQuery` and `SearchAI` do it. The
-// interface reads the query language ("exact words", -word, a OR b, in:kind, is:flag, from:, key:value facets,
-// after:/before:/on: dates, /regex/) and searches what it holds itself (actions, Settings pages, the session lists,
-// and missed/recent notices from `notice_history`); the backend (`search_everything`, `nook_core::search`) searches the
-// text only it holds (every message of every conversation, agent transcripts, chats of every app, call notes, memories)
-// and hands back the passage that matched.
+// interface reads the query language ("exact words", -word, a OR b, in:kind, is:flag, from:, app:/via:, key:value
+// facets, after:/before:/on: dates, /regex/) and searches what it holds itself (actions, Settings pages, the session
+// lists, and missed/recent notices from `notice_history`); the backend (`search_everything`, `nook_core::search`)
+// searches the text only it holds (every message of every conversation, agent transcripts including settled/archived,
+// chats of every app, call notes, memories) and hands back the best passage and BM25 score.
 
 export type SearchKind = "conversation" | "session" | "chat" | "note" | "memory" | "notice" | "setting" | "action";
 
@@ -47,6 +47,8 @@ export interface SearchDoc {
   route?: string;
   /** The backend found the words in its passages: no need to find them in the title here. */
   contentHit?: boolean;
+  /** Backend BM25 / passage relevance score from `nook_core::search`. */
+  backendScore?: number;
   /** What matched in its text, who wrote it, when, and where it is (the backend's best passage). */
   snippet?: string;
   author?: string;
@@ -80,8 +82,17 @@ export interface BackendRequest {
   excluded: string[];
   regex: string | null;
   from: string[];
+  app: string[];
   kinds: string[];
   limit: number;
+}
+
+export interface ActiveFilter {
+  id: string;
+  kind: "from" | "app" | "in" | "is" | "facet" | "date" | "regex" | "exclude";
+  label: string;
+  /** Exact raw token from the input so dismissing the pill removes it cleanly. */
+  raw: string;
 }
 
 export interface SearchHit {
@@ -96,14 +107,18 @@ export interface ParsedQuery {
   alternatives: string[][];
   excluded: string[];
   kinds: string[];
-  /** from: — only what these wrote ("me", "nook", a name); only the backend knows who wrote a passage. */
+  /** from: — only what these wrote ("me", "nook", a person or agent name). */
   from: string[];
+  /** app:/via: — only documents from these apps or agents ("whatsapp", "telegram", "claude"…). */
+  app: string[];
   is: string[];
   isNot: string[];
   facets: [string, string][];
   after?: number;
   before?: number;
   regex?: RegExp;
+  /** Structured active filters parsed from the query, for filter pills in CommandPalette. */
+  filters: ActiveFilter[];
 }
 
 /// Folds case and accents, so "geluid" finds "Geluid" and "reglages" finds "Réglages".
@@ -126,16 +141,53 @@ function foldMap(text: string): { folded: string; at: number[] } {
   return { folded, at };
 }
 
-const kindNames: Record<string, string> = {
-  nook: "conversation", conversation: "conversation", conversations: "conversation", gesprek: "conversation", gesprekken: "conversation",
-  agent: "session", agents: "session", session: "session", sessions: "session", sessies: "session",
-  setting: "setting", settings: "setting", instellingen: "setting",
-  action: "action", actions: "action", acties: "action",
-  chat: "chat", chats: "chat", note: "note", notes: "note", notities: "note", call: "note", calls: "note",
-  memory: "memory", memories: "memory", geheugen: "memory",
+const ME_ALIASES = new Set(["me", "i", "ik", "mij", "mezelf", "ich", "mich", "moi", "je", "yo", "mi", "you", "jij"]);
+
+const APP_ALIASES: Record<string, string> = {
+  wa: "whatsapp",
+  tg: "telegram",
+  imessage: "messages",
+  twitter: "x",
+};
+
+/** Canonical app token normalization matching `nook_core::search::normalize_app_token`. */
+export function normalizeApp(value: string): string {
+  const f = fold(value.trim());
+  return APP_ALIASES[f] ?? f;
+}
+
+const kindNames: Record<string, SearchKind> = {
+  nook: "conversation", nooks: "conversation", conversation: "conversation", conversations: "conversation",
+  gesprek: "conversation", gesprekken: "conversation", gesprach: "conversation", conversacion: "conversation", ask: "conversation",
+  agent: "session", agents: "session", session: "session", sessions: "session",
+  sessie: "session", sessies: "session", sitzung: "session", sesion: "session", run: "session", runs: "session", code: "session",
+  setting: "setting", settings: "setting", instelling: "setting", instellingen: "setting",
+  einstellung: "setting", reglage: "setting", ajuste: "setting", prefs: "setting",
+  action: "action", actions: "action", command: "action", commands: "action",
+  actie: "action", acties: "action", aktion: "action", commande: "action", accion: "action",
+  chat: "chat", chats: "chat", message: "chat", messages: "chat", bericht: "chat", berichten: "chat", nachricht: "chat", mensaje: "chat",
+  note: "note", notes: "note", notitie: "note", notities: "note", call: "note", calls: "note", meeting: "note", meetings: "note", notiz: "note", nota: "note",
+  memory: "memory", memories: "memory", geheugen: "memory", herinnering: "memory", herinneringen: "memory", gedachtnis: "memory", memoire: "memory", memoria: "memory",
   notice: "notice", notices: "notice", notification: "notice", notifications: "notice",
   melding: "notice", meldingen: "notice", mitteilung: "notice", mitteilungen: "notice", aviso: "notice", avisos: "notice",
 };
+
+const flagNames: Record<string, string> = {
+  unread: "unread", ongelezen: "unread", ungelesen: "unread", nonlu: "unread", noleido: "unread",
+  pinned: "pinned", vastgezet: "pinned", angeheftet: "pinned", epingle: "pinned", fijado: "pinned",
+  archived: "archived", gearchiveerd: "archived", archiviert: "archived", archive: "archived", archivado: "archived",
+  settled: "settled", afgehandeld: "settled", erledigt: "settled", regle: "settled", resuelto: "settled",
+  running: "running", bezig: "running", aktiv: "running", actif: "running", activo: "running",
+  waiting: "waiting", wachtend: "waiting", wartend: "waiting",
+  failed: "failed", mislukt: "failed", fehlgeschlagen: "failed", echoue: "failed", fallido: "failed",
+  done: "done", klaar: "done", fertig: "done", termine: "done", listo: "done",
+  group: "group", groep: "group", gruppe: "group", groupe: "group", grupo: "group",
+  local: "local", lokaal: "local", lokal: "local",
+};
+
+const FROM_KEYS = new Set(["from", "van", "by", "door", "von", "de"]);
+const APP_KEYS = new Set(["app", "via"]);
+const IN_KEYS = new Set(["in", "within", "binnen"]);
 
 /** Turns `notice_history` entries into searchable notice documents, matching macOS `NookSearch` notice indexing. */
 export function noticeDocs(entries: NoticeHistoryEntry[]): SearchDoc[] {
@@ -186,52 +238,174 @@ export function parseDate(value: string, now = Date.now()): number | undefined {
   return undefined;
 }
 
+/** Splits query text into raw tokens, keeping `"exact phrases"`, `key:"quoted values"`, and `/regex/` intact. */
+function tokenize(text: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inQuote = false;
+  let inRegex = false;
+  const flush = () => {
+    if (current) {
+      tokens.push(current);
+      current = "";
+    }
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuote) {
+      current += ch;
+      if (ch === '"' || ch === "\u201d") {
+        inQuote = false;
+        flush();
+      }
+      continue;
+    }
+    if (inRegex) {
+      current += ch;
+      if (ch === "/" && text[i - 1] !== "\\") {
+        // Consume optional trailing flags like /foo/i.
+        while (i + 1 < text.length && /[a-z]/i.test(text[i + 1])) {
+          i++;
+          current += text[i];
+        }
+        inRegex = false;
+        flush();
+      }
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      flush();
+      continue;
+    }
+    if ((ch === '"' || ch === "\u201c") && (current === "" || current === "-" || current.endsWith(":"))) {
+      inQuote = true;
+      current += ch;
+      continue;
+    }
+    if (ch === "/" && current === "") {
+      inRegex = true;
+      current += ch;
+      continue;
+    }
+    current += ch;
+  }
+  flush();
+  return tokens;
+}
+
+function unquote(value: string): string {
+  return value.replace(/^["\u201c]|["\u201d]$/g, "").trim();
+}
+
 /** Reads what is typed into words, phrases and filters. */
 export function parseQuery(text: string, now = Date.now()): ParsedQuery {
-  const q: ParsedQuery = { alternatives: [[]], excluded: [], kinds: [], from: [], is: [], isNot: [], facets: [] };
-  const tokens = text.match(/-?"[^"]*"?|\/(?:[^/\\]|\\.)+\/[a-z]*|\S+/g) ?? [];
+  const q: ParsedQuery = { alternatives: [[]], excluded: [], kinds: [], from: [], app: [], is: [], isNot: [], facets: [], filters: [] };
+  const tokens = tokenize(text);
+  let filterIdx = 0;
+  const pushFilter = (kind: ActiveFilter["kind"], label: string, raw: string) => {
+    q.filters.push({ id: `${kind}:${filterIdx++}:${label}`, kind, label, raw });
+  };
+
   for (const raw of tokens) {
-    if (raw === "OR") {
+    if (raw === "OR" || raw === "|") {
       if (q.alternatives[q.alternatives.length - 1].length) q.alternatives.push([]);
       continue;
     }
     const negative = raw.startsWith("-") && raw.length > 1;
     const token = negative ? raw.slice(1) : raw;
-    if (token.startsWith('"')) {
-      const phrase = fold(token.replace(/^"|"$/g, "").trim());
+    if (token.startsWith('"') || token.startsWith("\u201c")) {
+      const phrase = fold(unquote(token));
       if (!phrase) continue;
-      (negative ? q.excluded : q.alternatives[q.alternatives.length - 1]).push(phrase);
+      if (negative) {
+        q.excluded.push(phrase);
+        pushFilter("exclude", `-"${phrase}"`, raw);
+      } else {
+        q.alternatives[q.alternatives.length - 1].push(phrase);
+      }
       continue;
     }
     const regex = /^\/(.+)\/([a-z]*)$/.exec(token);
     if (regex && !negative) {
-      try { q.regex = new RegExp(regex[1], regex[2].includes("i") ? regex[2] : regex[2] + "i"); } catch { /* typed halfway: no filter yet */ }
+      try {
+        q.regex = new RegExp(regex[1], regex[2].includes("i") ? regex[2] : regex[2] + "i");
+        pushFilter("regex", `/${regex[1]}/`, raw);
+      } catch { /* typed halfway: no filter yet */ }
       continue;
     }
-    const filter = /^([a-z]+):(.*)$/i.exec(token);
+    const filter = /^([a-z]+):(.+)$/i.exec(token);
     if (filter) {
-      const key = filter[1].toLowerCase();
-      const value = filter[2];
-      if (!value) continue;
-      if (key === "in") { q.kinds.push(kindNames[value.toLowerCase()] ?? value.toLowerCase()); continue; }
-      if (key === "from" && !negative) { q.from.push(fold(value)); continue; }
-      if (key === "is") { (negative ? q.isNot : q.is).push(value.toLowerCase()); continue; }
+      const key = fold(filter[1]);
+      const rawValue = unquote(filter[2]);
+      if (!rawValue) continue;
+      // Ignore URLs like https://example.com
+      if (rawValue.startsWith("//")) {
+        const word = fold(token);
+        if (word) (negative ? q.excluded : q.alternatives[q.alternatives.length - 1]).push(word);
+        continue;
+      }
+      if (IN_KEYS.has(key) && !negative) {
+        const mapped = kindNames[fold(rawValue)] ?? fold(rawValue);
+        if (!q.kinds.includes(mapped)) q.kinds.push(mapped);
+        pushFilter("in", `in:${rawValue}`, raw);
+        continue;
+      }
+      if (FROM_KEYS.has(key) && !negative) {
+        const folded = fold(rawValue);
+        if (folded) {
+          const normalized = ME_ALIASES.has(folded) ? "me" : folded;
+          if (!q.from.includes(normalized)) q.from.push(normalized);
+          pushFilter("from", `from:${rawValue}`, raw);
+        }
+        continue;
+      }
+      if (APP_KEYS.has(key) && !negative) {
+        const normalized = normalizeApp(rawValue);
+        if (normalized) {
+          if (!q.app.includes(normalized)) q.app.push(normalized);
+          pushFilter("app", `app:${rawValue}`, raw);
+        }
+        continue;
+      }
+      if (key === "is") {
+        const flag = flagNames[fold(rawValue)] ?? fold(rawValue);
+        (negative ? q.isNot : q.is).push(flag);
+        pushFilter("is", `${negative ? "-" : ""}is:${rawValue}`, raw);
+        continue;
+      }
       if (key === "after" || key === "before" || key === "on") {
-        const date = parseDate(value, now);
+        const date = parseDate(rawValue, now);
         if (date === undefined) continue;
         if (key === "after") q.after = date;
         else if (key === "before") q.before = date;
         else { q.after = date; q.before = date + DAY; }
+        pushFilter("date", `${key}:${rawValue}`, raw);
         continue;
       }
-      q.facets.push([key, fold(value)]);
+      q.facets.push([key, fold(rawValue)]);
+      pushFilter("facet", `${key}:${rawValue}`, raw);
       continue;
     }
     const word = fold(token);
-    if (word) (negative ? q.excluded : q.alternatives[q.alternatives.length - 1]).push(word);
+    if (word) {
+      if (negative) {
+        q.excluded.push(word);
+        pushFilter("exclude", `-${word}`, raw);
+      } else {
+        q.alternatives[q.alternatives.length - 1].push(word);
+      }
+    }
   }
   q.alternatives = q.alternatives.filter((a) => a.length);
   return q;
+}
+
+/** Removes one active filter token from the raw query text, cleaning up extra whitespace. */
+export function removeFilter(rawQuery: string, filter: Pick<ActiveFilter, "raw">): string {
+  const tokens = tokenize(rawQuery);
+  const idx = tokens.indexOf(filter.raw);
+  if (idx < 0) return rawQuery.trim();
+  tokens.splice(idx, 1);
+  return tokens.join(" ").trim();
 }
 
 /** Every word and phrase typed to find something (not to leave it out), once. */
@@ -241,29 +415,35 @@ export function positiveTerms(q: ParsedQuery): string[] {
 
 /** True when the query asks for anything at all. */
 export function hasQuery(q: ParsedQuery): boolean {
-  return q.alternatives.length > 0 || q.excluded.length > 0 || q.kinds.length > 0 || q.from.length > 0 || q.is.length > 0 || q.isNot.length > 0
-    || q.facets.length > 0 || q.after !== undefined || q.before !== undefined || q.regex !== undefined;
+  return q.alternatives.length > 0 || q.excluded.length > 0 || q.kinds.length > 0 || q.from.length > 0
+    || q.app.length > 0 || q.is.length > 0 || q.isNot.length > 0 || q.facets.length > 0
+    || q.after !== undefined || q.before !== undefined || q.regex !== undefined;
 }
 
-/** What the backend searches for: the words, left-out words, regex, authors and the kinds it holds. */
+/** What the backend searches for: the words, left-out words, regex, authors, apps and the kinds it holds. */
 export function backendRequest(q: ParsedQuery, limit = 200): BackendRequest | null {
   const kinds = q.kinds.filter((k) => (backendKinds as string[]).includes(k));
-  // in: asks only for what the backend does not hold (settings, actions): nothing to ask it.
+  // in: asks only for what the backend does not hold (settings, actions, notices): nothing to ask it.
   if (q.kinds.length && !kinds.length) return null;
-  const words = q.alternatives.length > 0 || q.regex !== undefined || q.from.length > 0;
+  const words = q.alternatives.length > 0 || q.regex !== undefined || q.from.length > 0 || q.app.length > 0;
   if (!words && !kinds.length) return null;
-  return { alternatives: q.alternatives, excluded: q.excluded, regex: q.regex?.source ?? null, from: q.from, kinds, limit };
+  return { alternatives: q.alternatives, excluded: q.excluded, regex: q.regex?.source ?? null, from: q.from, app: q.app, kinds, limit };
 }
 
 /**
  * The interface's documents with what the backend found: a document it has too (a session, a conversation) gets the
- * passage; the rest (chats, notes, memories, earlier sessions) are added as they came.
+ * passage and BM25 score; the rest (chats, notes, memories, earlier sessions) are added as they came.
  */
 export function mergeBackend(docs: SearchDoc[], hits: BackendHit[]): SearchDoc[] {
   const byId = new Map(hits.map((h) => [h.id, h]));
   const extra = (h: BackendHit): Partial<SearchDoc> => ({
-    contentHit: true, snippet: h.snippet || undefined, author: h.author || undefined, anchor: h.anchor,
-    passageDate: h.passageDate ? Date.parse(h.passageDate) : undefined, matches: h.matches,
+    contentHit: true,
+    backendScore: h.score,
+    snippet: h.snippet || undefined,
+    author: h.author || undefined,
+    anchor: h.anchor,
+    passageDate: h.passageDate ? Date.parse(h.passageDate) : undefined,
+    matches: h.matches,
   });
   const out = docs.map((d) => (byId.has(d.id) ? { ...d, ...extra(byId.get(d.id)!) } : d));
   const known = new Set(docs.map((d) => d.id));
@@ -281,11 +461,34 @@ function haystack(doc: SearchDoc): string {
   return fold([doc.title, doc.subtitle ?? "", doc.text ?? "", ...Object.values(doc.facets ?? {})].join("\n"));
 }
 
+function matchesAppFilter(doc: SearchDoc, apps: string[]): boolean {
+  if (!apps.length) return true;
+  const primary = doc.facets?.app ? normalizeApp(doc.facets.app) : "";
+  const agent = doc.facets?.agent ? normalizeApp(doc.facets.agent) : "";
+  if (!primary && !agent) return Boolean(doc.contentHit);
+  return apps.every((wanted) => {
+    const norm = normalizeApp(wanted);
+    return (primary && primary.includes(norm)) || (agent && agent.includes(norm));
+  });
+}
+
+function matchesFromFilter(doc: SearchDoc, from: string[]): boolean {
+  if (!from.length) return true;
+  if (doc.contentHit) return true;
+  const candidates = [doc.author, doc.facets?.author, doc.facets?.agent].filter((v): v is string => !!v).map(fold);
+  if (!candidates.length) return false;
+  return from.some((wanted) => {
+    const f = fold(wanted);
+    if (ME_ALIASES.has(f)) return candidates.includes("me");
+    return candidates.some((c) => c.includes(f));
+  });
+}
+
 /** Whether a document passes the query, and how well it matches; null when it does not. */
 export function scoreDoc(doc: SearchDoc, q: ParsedQuery, now = Date.now()): number | null {
   if (q.kinds.length && !q.kinds.includes(doc.kind)) return null;
-  // Who wrote what only the backend knows: from: keeps what it found.
-  if (q.from.length && !doc.contentHit) return null;
+  if (!matchesFromFilter(doc, q.from)) return null;
+  if (!matchesAppFilter(doc, q.app)) return null;
   const flags = doc.flags ?? [];
   if (q.is.some((f) => !flags.includes(f)) || q.isNot.some((f) => flags.includes(f))) return null;
   for (const [key, value] of q.facets) {
@@ -298,11 +501,12 @@ export function scoreDoc(doc: SearchDoc, q: ParsedQuery, now = Date.now()): numb
   if (q.excluded.some((t) => hay.includes(t))) return null;
   if (q.regex && !doc.contentHit && !q.regex.test([doc.title, doc.subtitle ?? "", doc.text ?? ""].join("\n"))) return null;
   const title = fold(doc.title);
+  const backendBoost = doc.contentHit && doc.backendScore !== undefined ? Math.min(8, doc.backendScore * 0.6) : 0;
   let best = q.alternatives.length ? -1 : 0;
-  if (doc.contentHit && !q.alternatives.length) best = Math.log1p(doc.matches ?? 1) * 0.5;
+  if (doc.contentHit && !q.alternatives.length) best = Math.max(backendBoost, Math.log1p(doc.matches ?? 1) * 0.5);
   for (const alternative of q.alternatives) {
     if (!doc.contentHit && !alternative.every((t) => hay.includes(t))) continue;
-    let score = doc.contentHit ? Math.log1p(doc.matches ?? 1) * 0.5 : 0;
+    let score = doc.contentHit ? Math.max(backendBoost, Math.log1p(doc.matches ?? 1) * 0.5) : 0;
     for (const term of alternative) {
       const at = title.indexOf(term);
       if (at < 0) { score += hay.includes(term) ? 1 : 0.5; continue; }
@@ -390,7 +594,7 @@ export function grouped(hits: SearchHit[], kind: SearchKind | null): { hit: Sear
 }
 
 export function isSettled(doc: SearchDoc): boolean {
-  return doc.flags?.includes("settled") ?? false;
+  return (doc.flags?.includes("settled") || doc.flags?.includes("archived")) ?? false;
 }
 
 /** Tab: the next kind that has hits, then back to all; Shift+Tab the other way. */

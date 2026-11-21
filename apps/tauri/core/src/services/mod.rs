@@ -5,6 +5,7 @@
 pub mod app_catalog;
 pub mod audio;
 pub mod autocomplete;
+pub mod buddy;
 pub mod double_tap_suggest;
 pub mod energy;
 pub mod files;

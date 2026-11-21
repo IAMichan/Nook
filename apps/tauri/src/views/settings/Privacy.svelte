@@ -18,18 +18,78 @@
   // The Mac's Privacy parts this page has: what Nook may reach (`access`) and the activity log (`log`).
   let { part = "access" }: { part?: "access" | "log" } = $props();
 
-  // Windows' privacy switches for what Nook uses (none on other systems), read again when the window comes back.
-  let permissions = $state<{ id: string; granted: boolean }[]>([]);
+  interface PermissionItem {
+    id: string;
+    granted: boolean;
+    windowsAllowed?: boolean | null;
+    settingsUri?: string;
+    recommended?: boolean;
+    kind?: "switch" | "note";
+  }
+
+  // Windows' privacy & system switches (`SystemPermission` on the Mac), read again when the window comes back or while
+  // this page stays open.
+  let permissions = $state<PermissionItem[]>([]);
   $effect(() => {
-    const read = () => invoke<{ id: string; granted: boolean }[]>("permissions_overview").then((p) => (permissions = Array.isArray(p) ? p : [])).catch(() => {});
+    if (part !== "access") return;
+    const read = () =>
+      invoke<PermissionItem[]>("permissions_overview")
+        .then((p) => (permissions = Array.isArray(p) ? p : []))
+        .catch(() => {});
     read();
     window.addEventListener("focus", read);
-    return () => window.removeEventListener("focus", read);
+    const timer = setInterval(read, 3000);
+    return () => {
+      window.removeEventListener("focus", read);
+      clearInterval(timer);
+    };
   });
-  const permissionTitle = (id: string) => (id === "microphone" ? tr("Microfoon", "Microphone") : tr("Meldingen", "Notifications"));
-  const permissionDetail = (id: string) => (id === "microphone"
-    ? tr("Om met Nook te praten, te dicteren en gesprekken te noteren.", "To talk to Nook, dictate and take call notes.")
-    : tr("Voor meldingen van Windows als je die kiest bij Meldingen.", "For Windows notifications when you choose them under Notifications."));
+
+  const switchPermissions = $derived(permissions.filter((p) => p.kind !== "note"));
+  const notePermissions = $derived(permissions.filter((p) => p.kind === "note"));
+
+  function permissionTitle(id: string): string {
+    switch (id) {
+      case "microphone": return tr("Microfoon", "Microphone");
+      case "notifications": return tr("Meldingen", "Notifications");
+      case "screen": return tr("Scherm en vastleggen", "Screen & capture");
+      case "location": return tr("Locatie", "Location");
+      case "calendar": return tr("Agenda", "Calendar");
+      case "mail": return tr("E-mail", "Mail");
+      case "background": return tr("Achtergrond-apps", "Background apps");
+      case "startup": return tr("Opstart-apps", "Startup apps");
+      default: return id;
+    }
+  }
+
+  function permissionDetail(p: PermissionItem): string {
+    switch (p.id) {
+      case "microphone":
+        return tr("Om met Nook te praten, te dicteren en gesprekken te noteren.", "To talk to Nook, dictate and take call notes.");
+      case "notifications":
+        return tr("Voor meldingen van Windows als je die kiest bij Meldingen.", "For Windows notifications when you choose them under Notifications.");
+      case "screen":
+        return tr("Om je actieve vensters te lezen voor antwoorden, schermcontext en Meedenken.", "To read your active windows for answers, screen context and Think Along.");
+      case "location":
+        return tr("Optioneel. Windows-locatiemachtigingen gelden voor Windows-apps; Nook gebruikt locatie alleen als je erom vraagt.", "Optional. Windows location privacy applies to Windows apps; Nook only uses location when you ask.");
+      case "calendar":
+        return tr("Windows-agendamachtigingen gelden voor Windows-apps. Nook leest Google- en Microsoft 365-agenda’s via Diensten.", "Windows calendar privacy applies to Windows apps. Nook reads Google and Microsoft 365 calendars via Services.");
+      case "mail":
+        return tr("Windows-e-mailmachtigingen gelden voor Windows-apps. Nook leest Gmail- en Outlook-accounts via Diensten.", "Windows email privacy applies to Windows apps. Nook reads Gmail and Outlook accounts via Services.");
+      case "background":
+        return tr("Laat Nook op de achtergrond in het systeemvak klaarstaan voor sneltoetsen, agents en meldingen.", "Lets Nook stay ready in the system tray for shortcuts, agents and notifications.");
+      case "startup":
+        return tr("Laat Windows Nook automatisch starten zodra je inlogt.", "Lets Windows launch Nook automatically when you sign in.");
+      default:
+        return "";
+    }
+  }
+
+  function openPermission(p: PermissionItem) {
+    invoke("permissions_open", { id: p.id }).catch((e) => {
+      toast.error(String(e));
+    });
+  }
 
   let audit = $state<AuditEntry[]>([]);
   let auditQuery = $state("");
@@ -84,17 +144,45 @@
 {/if}
 
 {#if permissions.length}
-  <!-- The Mac's Permissions (`SystemPermission`): what Windows lets Nook use, with a check once it may, and the page in
-       Windows Settings that changes it. -->
+  <!-- The Mac's Permissions (`SystemPermission`): what Windows lets Nook use, with a check once it may, and one-click
+       `ms-settings:` deep links to the exact Windows Settings page. -->
   <h3>{tr("Machtigingen", "Permissions")}</h3>
+  <p class="section-info">{tr("Wat Windows Nook laat gebruiken. Elke knop opent direct de juiste pagina in de Windows-instellingen; Nook leest de status opnieuw zodra je terugkomt.", "What Windows lets Nook use. Each button opens the matching page in Windows Settings directly; Nook checks the status again as soon as you come back.")}</p>
   <div class="group">
-    {#each permissions as p (p.id)}
-      <StatusRow done={p.granted} title={permissionTitle(p.id)} detail={p.granted ? "" : permissionDetail(p.id)}>
-        <button use:tip={p.granted ? tr("Alleen jij kunt dit uitzetten, in de Windows-instellingen › Privacy en beveiliging. Dit opent die pagina.", "Only you can turn this off, in Windows Settings › Privacy & security. This opens that page.") : undefined}
-          class="small" onclick={() => invoke("permissions_open", { id: p.id }).catch(() => {})}>{p.granted ? tr("Intrekken…", "Revoke…") : tr("Toestaan", "Allow")}</button>
+    {#each switchPermissions as p (p.id)}
+      <StatusRow done={p.granted} title={permissionTitle(p.id)} detail={permissionDetail(p)}>
+        <button
+          use:tip={p.settingsUri
+            ? tr("Opent {uri} in de Windows-instellingen.", "Opens {uri} in Windows Settings.", { uri: p.settingsUri })
+            : tr("Opent deze pagina in de Windows-instellingen.", "Opens this page in Windows Settings.")}
+          class="small"
+          onclick={() => openPermission(p)}
+        >
+          {tr("Open Windows-instellingen", "Open Windows Settings")}
+        </button>
       </StatusRow>
     {/each}
   </div>
+
+  {#if notePermissions.length}
+    <h3>{tr("Windows-toegang voor locatie, agenda en e-mail", "Windows access for location, calendar & mail")}</h3>
+    <p class="section-info">{tr("Deze Windows-schakelaars gelden voor Windows-apps. Voor Google en Microsoft 365 gebruikt Nook je gekoppelde accounts onder Diensten.", "These Windows switches apply to Windows apps. For Google and Microsoft 365, Nook uses your linked accounts under Services.")}</p>
+    <div class="group">
+      {#each notePermissions as p (p.id)}
+        <StatusRow done={p.windowsAllowed ?? true} title={permissionTitle(p.id)} detail={permissionDetail(p)}>
+          <button
+            use:tip={p.settingsUri
+              ? tr("Opent {uri} in de Windows-instellingen.", "Opens {uri} in Windows Settings.", { uri: p.settingsUri })
+              : tr("Opent deze pagina in de Windows-instellingen.", "Opens this page in Windows Settings.")}
+            class="small"
+            onclick={() => openPermission(p)}
+          >
+            {tr("Open Windows-instellingen", "Open Windows Settings")}
+          </button>
+        </StatusRow>
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 <h3>{tr("Gekoppelde accounts en diensten", "Linked accounts and services")}</h3>

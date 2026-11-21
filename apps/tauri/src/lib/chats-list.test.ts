@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  abilitiesForApp,
   aggregatePeople,
   callDetail,
   callOf,
   callTitle,
+  canForwardTo,
   clockOrDay,
   dayAndClock,
+  entryAbilities,
   fillReceipts,
   firstLink,
   foldPersonName,
@@ -14,7 +17,9 @@ import {
   inboxEntry,
   insertTag,
   isBirthdayToday,
+  outgoingKindOfMedia,
   personTint,
+  priorityBadge,
   readReceiptSummary,
   searchPeople,
   sections,
@@ -193,4 +198,83 @@ describe("the Chats list", () => {
     expect(isBirthdayToday("04-12", now)).toBe(false);
     expect(formatBirthday("02-29", "en-GB")).toMatch(/29/);
   });
+
+  it("derives per-app ChatAbilities and respects pinned/archived flags (CH-58)", () => {
+    const wa = abilitiesForApp("whatsapp", true, { pinned: true });
+    expect(wa.send).toBe(true);
+    expect(wa.markRead).toBe(true);
+    expect(wa.deleteForMe).toBe(true);
+    expect(wa.pin).toBe(false);
+    expect(wa.mute).toBe(false);
+    expect(wa.archive).toBe(false);
+    expect(wa.pinned).toBe(true);
+
+    const tg = abilitiesForApp("telegram", true, { muted: true, archived: true });
+    expect(tg.pin).toBe(true);
+    expect(tg.mute).toBe(true);
+    expect(tg.archive).toBe(true);
+    expect(tg.markUnread).toBe(true);
+    expect(tg.deleteForMe).toBe(false);
+    expect(tg.muted).toBe(true);
+    expect(tg.archived).toBe(true);
+
+    const readonly = abilitiesForApp("signal", false);
+    expect(readonly.send).toBe(false);
+    expect(readonly.sends).toEqual([]);
+    expect(readonly.pin).toBe(false);
+
+    const pinnedEntry = { ...entry("p", at(2)), pinned: true };
+    const archivedEntry = { ...entry("arch", at(0)), archived: true };
+    const active = [entry("b", at(0)), pinnedEntry, archivedEntry];
+    expect(shown(active, { view: "all", app: null, kind: "chats", query: "" }).map((e) => e.id)).toEqual(["b", "p"]);
+    expect(shown(active, { view: "all", app: null, kind: "chats", query: "arch" }).map((e) => e.id)).toEqual(["arch"]);
+    expect(sections([entry("b", at(0)), pinnedEntry], now).map((s) => [s.group, s.entries.map((e) => e.id)])).toEqual([
+      ["pinned", ["p"]],
+      ["today", ["b"]],
+    ]);
+  });
+
+  it("checks media outgoing kinds and forward target capabilities (CH-48)", () => {
+    expect(outgoingKindOfMedia({ kind: "image", name: "photo.jpg" })).toBe("photo");
+    expect(outgoingKindOfMedia({ kind: "image", name: "funny.GIF" })).toBe("gif");
+    expect(outgoingKindOfMedia({ kind: "video" })).toBe("video");
+    expect(outgoingKindOfMedia({ kind: "voice" })).toBe("voice");
+    expect(outgoingKindOfMedia({ kind: "document", name: "report.pdf" })).toBe("file");
+    expect(outgoingKindOfMedia({ kind: "sticker" })).toBeNull();
+    expect(outgoingKindOfMedia({ kind: "none" })).toBeNull();
+
+    const writable = entry("w", at(0));
+    const readOnly = { ...entry("r", at(0)), sends: false };
+    const textOnly = { ...entry("t", at(0)), abilities: { ...entryAbilities(writable), sends: [] } };
+
+    expect(canForwardTo(writable, "hello", null)).toBe(true);
+    expect(canForwardTo(writable, "", "photo")).toBe(true);
+    expect(canForwardTo(writable, "   ", null)).toBe(false);
+    expect(canForwardTo(readOnly, "hello", null)).toBe(false);
+    expect(canForwardTo(textOnly, "hello", null)).toBe(true);
+    expect(canForwardTo(textOnly, "caption", "photo")).toBe(false);
+  });
+
+  it("maps scored notice priorities to compact badges (CH-64)", () => {
+    expect(priorityBadge(null)).toBeNull();
+    expect(priorityBadge({ score: 15, level: "normal", raises: false, reasons: [] })).toBeNull();
+    expect(priorityBadge({ score: 50, level: "elevated", raises: false, reasons: ["question"] })).toBeNull();
+
+    expect(priorityBadge({ score: 55, level: "elevated", raises: true, reasons: ["question"] })).toEqual({
+      label: "Question",
+      tone: "elevated",
+      icon: "message-circle-question",
+    });
+    expect(priorityBadge({ score: 70, level: "elevated", raises: true, reasons: ["directMention"] })).toEqual({
+      label: "Mentioned",
+      tone: "elevated",
+      icon: "bell-dot",
+    });
+    expect(priorityBadge({ score: 90, level: "urgent", raises: true, reasons: ["question", "urgentCue"] })).toEqual({
+      label: "Urgent",
+      tone: "urgent",
+      icon: "triangle-alert",
+    });
+  });
 });
+

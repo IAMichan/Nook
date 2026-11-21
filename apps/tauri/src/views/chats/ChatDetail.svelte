@@ -13,11 +13,11 @@
   import { tick } from "svelte";
   import { listen as listenEvent } from "@tauri-apps/api/event";
   import { chatsApi, connectorEvents, connectorsApi, type ChatThread } from "../../lib/connectors";
-  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, dayAndClock, fillReceipts, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, personTint, QUICK_REACTIONS, readReceiptSummary, typingLine, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
+  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, canForwardTo, dayAndClock, entryAbilities, fillReceipts, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, outgoingKindOfMedia, personTint, QUICK_REACTIONS, readReceiptSummary, typingLine, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
   import Dialog from "../../components/ui/Dialog.svelte";
   import TimelineEarlierRow from "../../components/ui/TimelineEarlierRow.svelte";
   import ChatQuote from "./ChatQuote.svelte";
-  import ForwardSheet from "./ForwardSheet.svelte";
+  import ChatForwardSheet from "./ChatForwardSheet.svelte";
   import ChatInfo from "./ChatInfo.svelte";
   import LinkCard from "./LinkCard.svelte";
   import ActionSuggestionBar from "../../components/ActionSuggestionBar.svelte";
@@ -37,7 +37,7 @@
   import Ticks from "./Ticks.svelte";
   import { canCallChat } from "../../lib/chats-call";
   import { activeCall } from "../../lib/chats-call.svelte";
-  import { chatMenu, markReadInApp, markReadInNook, openChatSettings } from "./chat-actions.svelte";
+  import { chatMenu, invokeOrFallback, isChatArchived, isChatMuted, isChatPinned, markReadInApp, markReadInNook, openChatSettings } from "./chat-actions.svelte";
 
   let { entry, targets = [], onclose, onnook }: {
     entry: ChatEntry;
@@ -50,6 +50,7 @@
   const isWhatsApp = $derived(entry.app === "whatsapp");
   const app = $derived(appName(entry.app));
   const isGroup = $derived(entry.isGroup);
+  const abilities = $derived(entryAbilities(entry));
 
   // The chat from the shared inbox, read again whenever it changes (WhatsApp's too: its card fills it).
   let thread = $state<ChatThread | null>(null);
@@ -93,6 +94,31 @@
       if (bubbles[i].fromMe && !bubbles[i].deleted) return bubbles[i].id;
     }
     return null;
+  });
+  // CH-68: opening an unread chat marks it read in Nook once visible, and re-runs only if a newer incoming message
+  // arrives while the chat stays open (so manually marking a chat unread stays sticky until something new comes in).
+  let autoReadMarker = "";
+  $effect(() => {
+    const key = entry.key;
+    const isUnread = entry.read === "unread" || thread?.read.state === "unread";
+    if (!isUnread) return;
+    let newestIncoming = "";
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      if (!bubbles[i].fromMe && !bubbles[i].deleted) {
+        newestIncoming = bubbles[i].id;
+        break;
+      }
+    }
+    const marker = `${key}#${newestIncoming || entry.unread}`;
+    if (marker === autoReadMarker) return;
+    const timer = setTimeout(() => {
+      if (document.hidden) return;
+      autoReadMarker = marker;
+      chatsApi.markRead(key, false)
+        .then(() => { whatsapp.version++; })
+        .catch(() => {});
+    }, 550);
+    return () => clearTimeout(timer);
   });
   const activeTyping = $derived(
     liveTyping ?? ((thread as (ChatThread & { typing?: string[] }) | null)?.typing ?? entry.typing ?? []),
@@ -340,6 +366,7 @@
       for (let i = 0; i < data.length; i += 0x8000) binary += String.fromCharCode(...data.subarray(i, i + 0x8000));
       await chatsApi.sendFile(entry.key, "voice-note.webm", blob.type, btoa(binary), "", replying?.id ?? null, true);
       replying = null;
+      whatsapp.version++;
       await loadThread();
     } catch (e) {
       notice = tr("Niet verstuurd: {error}", "Not sent: {error}", { error: String(e) });
@@ -366,6 +393,7 @@
         caption = "";
       }
       draft = "";
+      whatsapp.version++;
       await loadThread();
     } catch (e) {
       notice = tr("Niet verstuurd: {error}", "Not sent: {error}", { error: String(e) });
@@ -375,8 +403,9 @@
     }
   }
 
-  /// Files go to every chat Nook can write in (WhatsApp through its gateway, the helper's apps through the helper).
-  const takesFiles = $derived(entry.sends);
+  /// Files go to every chat whose abilities allow outgoing attachments (WhatsApp + connected helper apps).
+  const takesFiles = $derived(abilities.send && (abilities.sends?.length ?? 0) > 0);
+  const takesVoice = $derived(abilities.send && (abilities.sends ?? []).includes("voice"));
   let picker = $state<HTMLInputElement | null>(null);
   function addFiles(list: FileList | File[] | null | undefined) {
     if (!list || !takesFiles) return;
@@ -404,7 +433,7 @@
 
   // "@" in a group lists its people (`ChatTags`): a click puts "@Name " in the field and its app tags them.
   let caret = $state(0);
-  const tagging = $derived(entry.sends ? typingTag(draft.slice(0, caret)) : null);
+  const tagging = $derived(abilities.send ? typingTag(draft.slice(0, caret)) : null);
   const tagMatches = $derived(tagging === null || !isGroup ? [] : people.filter((p) => p.toLowerCase().startsWith(tagging.toLowerCase())).slice(0, 6));
   /// "@" offers "@nook" first, at the start of the field (`ChatDraft.choices`).
   const offersNook = $derived(tagging !== null && "nook".startsWith(tagging.toLowerCase()) && draft.slice(0, caret).trim().startsWith("@"));
@@ -434,8 +463,14 @@
   });
   const suggestionLines = (): SuggestionLine[] =>
     bubbles.filter((b) => !b.deleted).slice(-30).map((b) => ({ speaker: b.fromMe ? tr("Jij", "You") : b.sender || entry.name, text: b.text || fileLabel(b.media) || "", id: b.id }));
-  // Forwarding a message (`ChatForward`): to every chat Nook can write in.
+  // Forwarding a message (`ChatForward`, CH-48): to every chat whose capabilities accept the text/attachment.
   let forwarding = $state<Bubble | null>(null);
+  function canForwardMessage(m: Bubble): boolean {
+    if (m.deleted) return false;
+    const kind = outgoingKindOfMedia(m.media);
+    if (!m.text.trim() && !kind) return false;
+    return targets.some((t) => t.key !== entry.key && canForwardTo(t, m.text, kind));
+  }
   // Deleting a message asks how (`chat.delete.choose`).
   let deleting = $state<Bubble | null>(null);
   async function step(m: Bubble, what: "revoke" | "deleteForMe" | "react", text?: string) {
@@ -449,8 +484,24 @@
   }
 
   async function nook() {
-    const id = await whatsapp.askNook();
-    if (id) onnook(id);
+    if (isWhatsApp) {
+      const id = await whatsapp.askNook();
+      if (id) onnook(id);
+      return;
+    }
+    try {
+      const id = await invokeOrFallback<string | null>(
+        "chat_ask_nook",
+        { key: entry.key },
+        async () => {
+          await writeWithNook("");
+          return null;
+        },
+      );
+      if (id) onnook(id);
+    } catch (e) {
+      notice = String(e);
+    }
   }
 
   function keydown(e: KeyboardEvent) {
@@ -474,7 +525,7 @@
       else if (editing) { editing = null; draft = ""; }
       else if (replying) replying = null;
       else if (!draft) onclose();
-    } else if (e.key === "ArrowUp" && !draft && entry.sends) {
+    } else if (e.key === "ArrowUp" && !draft && abilities.edit) {
       // Arrow up in an empty field changes your last message, as the chat apps have it.
       const last = [...bubbles].reverse().find((b) => b.fromMe && !b.deleted && b.text);
       if (last) { e.preventDefault(); startEdit(last); }
@@ -507,15 +558,15 @@
   const photo = (m: Bubble) => (isWhatsApp && m.media.kind === "image" ? whatsapp.card?.previews[m.id]?.image ?? null : null);
   const textOf = (m: Bubble) => bubbleText({ ...m, chat: entry.id, senderName: m.sender, media: m.media });
 
-  // The "…" menu: the chat's own steps, then Nook's answer where Nook can write it (WhatsApp).
+  // The "…" menu: Nook's answer where Nook can write it, then the chat's own steps respecting ChatAbilities.
   let menuAnchor = $state<DOMRect | null>(null);
   const menu = $derived<MenuItem[][]>([
-    ...(isWhatsApp ? [[{ label: tr("Laat Nook antwoorden", "Let Nook reply"), icon: "sparkles", onselect: nook }]] : []),
+    ...(abilities.send ? [[{ label: tr("Laat Nook antwoorden", "Let Nook reply"), icon: "sparkles", onselect: nook }]] : []),
     ...chatMenu(entry, onclose),
   ]);
 
   // A message's menu, from the chevron on it or a right-click (`MessageMenuItems`): the quick reactions on top, then
-  // reply, forward, copy, and for your own message info, edit and delete.
+  // reply, forward, copy, and for your own message info, edit and delete, all respecting `ChatAbilities`.
   let messageMenu = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
   let receiptInfo = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
   function openMessageInfo(e: MouseEvent, m: Bubble) {
@@ -526,21 +577,20 @@
     if (!messageMenu) return [];
     const m = messageMenu.m;
     const anchor = messageMenu.anchor;
-    const live = entry.sends && !m.deleted;
     return [
       [
-        ...(live ? [{ label: tr("Beantwoorden", "Reply"), icon: "reply", onselect: () => quote(m) }] : []),
-        ...(m.text && !m.deleted && targets.length ? [{ label: tr("Doorsturen", "Forward"), icon: "forward", onselect: () => (forwarding = m) }] : []),
+        ...(abilities.reply && !m.deleted ? [{ label: tr("Beantwoorden", "Reply"), icon: "reply", onselect: () => quote(m) }] : []),
+        ...(canForwardMessage(m) ? [{ label: tr("Doorsturen", "Forward"), icon: "forward", onselect: () => (forwarding = m) }] : []),
         ...(m.text ? [{ label: tr("Kopieer", "Copy"), icon: "copy", onselect: () => navigator.clipboard.writeText(m.text).catch(() => {}) }] : []),
         ...(m.fromMe && !m.deleted ? [{ label: tr("Berichtinfo", "Message info"), icon: "info", onselect: () => (receiptInfo = { m, anchor }) }] : []),
       ],
       [
-        ...(live && m.fromMe && m.text ? [{ label: tr("Bewerken", "Edit"), icon: "pencil", onselect: () => startEdit(m) }] : []),
+        ...(abilities.edit && m.fromMe && !m.deleted && m.text ? [{ label: tr("Bewerken", "Edit"), icon: "pencil", onselect: () => startEdit(m) }] : []),
         ...(!m.deleted ? [{ label: tr("Verwijderen…", "Delete…"), icon: "trash-2", destructive: true, onselect: () => (deleting = m) }] : []),
       ],
     ].filter((s) => s.length);
   });
-  const messageReactions = $derived(messageMenu && entry.sends && !messageMenu.m.deleted ? {
+  const messageReactions = $derived(messageMenu && abilities.react && !messageMenu.m.deleted ? {
     emoji: QUICK_REACTIONS,
     mine: messageMenu.m.reactions.filter((r) => r.mine).map((r) => r.emoji),
     onpick: (e: string) => { const m = messageMenu!.m; step(m, "react", m.reactions.some((r) => r.mine && r.emoji === e) ? "" : e); },
@@ -592,6 +642,18 @@
             <span class="dot" aria-hidden="true">·</span>
             <span title={people.join(", ")}>{people.length ? tr("{n} leden", "{n} members", { n: people.length }) : tr("Groep", "Group")}</span>
           {/if}
+          {#if isChatPinned(entry)}
+            <span class="dot" aria-hidden="true">·</span>
+            <span class="status-mark" title={tr("Vastgezet", "Pinned")}><Ico name="pin" size={11} stroke={2.4} /></span>
+          {/if}
+          {#if isChatMuted(entry)}
+            <span class="dot" aria-hidden="true">·</span>
+            <span class="status-mark" title={tr("Gedempt", "Muted")}><Ico name="bell-off" size={11} stroke={2.4} /></span>
+          {/if}
+          {#if isChatArchived(entry)}
+            <span class="dot" aria-hidden="true">·</span>
+            <span class="status-mark" title={tr("Gearchiveerd", "Archived")}><Ico name="archive" size={11} stroke={2.4} /></span>
+          {/if}
           {#if entry.read !== "unread" && !entry.lastIsMine && bubbles.length}
             <span class="dot" aria-hidden="true">·</span>
             <span>{entry.read === "readInNook" ? tr("Gelezen in Nook", "Read in Nook") : tr("Gelezen", "Read")}</span>
@@ -630,6 +692,7 @@
         {@const text = m.deleted || call ? "" : file ? m.text : textOf(m)}
         {@const link = text ? firstLink(text) : null}
         {@const answered = m.replyTo ? byId.get(m.replyTo) : undefined}
+        {@const forwardable = canForwardMessage(m)}
         {@const receiptTip = m.fromMe && !m.deleted ? readReceiptSummary(m, isGroup, receiptNow) : null}
         {@const showReceiptFoot = m.fromMe && !m.deleted && m.id === lastMineId && !!receiptTip && ((isGroup && (m.readBy?.length ?? 0) > 0) || (!isGroup && m.receipt === "read" && !!m.readAt))}
         {#if m.id === newFrom && m.id !== bubbles[0]?.id}
@@ -692,12 +755,17 @@
                 </span>
               {/if}
             </span>
-            {#if !m.deleted && (entry.sends || m.text)}
-              <button class="message-menu" title={tr("Meer acties", "More actions")} aria-label={tr("Meer acties", "More actions")} onclick={(e) => openMessageMenu(e, m)}><Ico name="chevron-down" size={12} stroke={2.4} /></button>
+            {#if !m.deleted && (abilities.send || m.text || forwardable)}
+              <span class="bubble-actions">
+                {#if forwardable}
+                  <button class="bubble-action" title={tr("Doorsturen", "Forward")} aria-label={tr("Doorsturen", "Forward")} onclick={(e) => { e.stopPropagation(); forwarding = m; }}><Ico name="forward" size={12} stroke={2.4} /></button>
+                {/if}
+                <button class="bubble-action" title={tr("Meer acties", "More actions")} aria-label={tr("Meer acties", "More actions")} onclick={(e) => openMessageMenu(e, m)}><Ico name="chevron-down" size={12} stroke={2.4} /></button>
+              </span>
             {/if}
           </div>
           {#if m.reactions.length}
-            <div class="reactions"><ReactionChips reactions={m.reactions} onreact={entry.sends ? (e) => step(m, "react", e) : undefined} /></div>
+            <div class="reactions"><ReactionChips reactions={m.reactions} onreact={abilities.react ? (e) => step(m, "react", e) : undefined} /></div>
           {/if}
           {#if showReceiptFoot && receiptTip}
             <div class="receipt-foot">
@@ -729,9 +797,9 @@
         <span class="tray-line">{tr("{n} nieuw", "{n} new", { n: entry.unread })}</span>
         <span class="spacer"></span>
         {#if !isWhatsApp}<button class="mark" onclick={() => markReadInNook(entry)}><Ico name="check" size={12} stroke={2.8} />{tr("Gelezen in Nook", "Read in Nook")}</button>{/if}
-        <button class="mark" onclick={() => markReadInApp(entry)}><span class="mint"><Ico name="check-check" size={12} stroke={2.8} /></span>{tr("Markeer gelezen in {app}", "Mark as read in {app}", { app })}</button>
+        {#if abilities.markRead}<button class="mark" onclick={() => markReadInApp(entry)}><span class="mint"><Ico name="check-check" size={12} stroke={2.8} /></span>{tr("Markeer gelezen in {app}", "Mark as read in {app}", { app })}</button>{/if}
       </div>
-    {:else if !entry.sends && !limitsHidden.includes(entry.app)}
+    {:else if !abilities.send && !limitsHidden.includes(entry.app)}
       <!-- What Nook cannot do in this chat, and the one step that brings it (`ChatLimitsLine`). -->
       <div class="tray ctray">
         <span class="amber"><Ico name="eye" size={13} stroke={2.4} /></span>
@@ -780,7 +848,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="box" class:dragging ondragover={(e) => { if (takesFiles && e.dataTransfer?.types.includes("Files")) { e.preventDefault(); dragging = true; } }}
       ondragleave={() => (dragging = false)} ondrop={(e) => { e.preventDefault(); dragging = false; addFiles(e.dataTransfer?.files); }}>
-      {#if entry.sends}
+      {#if abilities.send}
         <div class="leading" class:hidden={!!recording}>
           {#if takesFiles}
             <IconButton title={tr("Foto's en bestanden", "Photos and files")} size={28} onclick={() => picker?.click()}><Ico name="plus" size={15} stroke={2.2} /></IconButton>
@@ -797,10 +865,10 @@
         <span class="recording" aria-label={tr("Spraakbericht wordt opgenomen", "Recording a voice message")}><span class="rec-dot"></span>{clock(elapsed)}</span>
         <IconButton title={tr("Opname weggooien", "Discard recording")} size={28} onclick={() => stopRecording()}><Ico name="trash-2" size={14} /></IconButton>
         <button class="send ready" title={tr("Verstuur", "Send")} aria-label={tr("Verstuur", "Send")} onclick={sendRecording}><Ico name="arrow-up" size={15} stroke={2.6} /></button>
-      {:else if entry.sends && !draft.trim() && !files.length && !editing}
+      {:else if takesVoice && !draft.trim() && !files.length && !editing}
         <button class="send" title={tr("Spraakbericht opnemen", "Record a voice message")} aria-label={tr("Spraakbericht opnemen", "Record a voice message")} onclick={record} disabled={sending}><Ico name="mic" size={15} stroke={2.4} /></button>
       {:else}
-      <button class="send" class:ready disabled={!ready} title={entry.sends ? tr("Verstuur", "Send") : tr("Kopieer voor {app}", "Copy for {app}", { app })} aria-label={entry.sends ? tr("Verstuur", "Send") : tr("Kopieer voor {app}", "Copy for {app}", { app })} onclick={send}><Ico name={entry.sends ? "arrow-up" : "copy"} size={15} stroke={2.6} /></button>
+      <button class="send" class:ready disabled={!ready} title={abilities.send ? tr("Verstuur", "Send") : tr("Kopieer voor {app}", "Copy for {app}", { app })} aria-label={abilities.send ? tr("Verstuur", "Send") : tr("Kopieer voor {app}", "Copy for {app}", { app })} onclick={send}><Ico name={abilities.send ? "arrow-up" : "copy"} size={15} stroke={2.6} /></button>
       {/if}
     </div>
   </footer>
@@ -811,13 +879,13 @@
 {#if versionsOf}<Menu title={versionsOf.m.deleted ? tr("Voordat het werd verwijderd", "Before it was deleted") : tr("Eerdere versies", "Earlier versions")} sections={versionRows} anchor={versionsOf.anchor} onclose={() => (versionsOf = null)} />{/if}
 {#if infoAt}<ChatInfo {entry} {people} anchor={infoAt} onclose={() => (infoAt = null)} onclosechat={onclose} />{/if}
 <ChatCallCard />
-{#if forwarding}<ForwardSheet targets={targets.filter((t) => t.key !== entry.key)} sender={forwarding.fromMe ? tr("Jij", "You") : forwarding.sender || entry.name} text={forwarding.text} onclose={() => (forwarding = null)} />{/if}
+{#if forwarding}<ChatForwardSheet sourceKey={entry.key} messageId={forwarding.id} targets={targets} sender={forwarding.fromMe ? tr("Jij", "You") : forwarding.sender || entry.name} text={forwarding.text} media={forwarding.media} onclose={() => (forwarding = null)} />{/if}
 {#if deleting}
   {@const m = deleting}
   <Dialog title={tr("Bericht verwijderen?", "Delete message?")}
-    message={m.fromMe && entry.sends ? tr("Voor iedereen verdwijnt het ook in {app}; voor jou alleen in Nook.", "For everyone it goes in {app} too; for you only in Nook.", { app }) : tr("Het verdwijnt alleen in Nook.", "It goes only in Nook.")}
+    message={m.fromMe && abilities.delete ? tr("Voor iedereen verdwijnt het ook in {app}; voor jou alleen in Nook.", "For everyone it goes in {app} too; for you only in Nook.", { app }) : abilities.deleteForMe ? tr("Het verdwijnt voor jou in Nook en {app}.", "It goes for you in Nook and {app}.", { app }) : tr("Het verdwijnt alleen in Nook.", "It goes only in Nook.")}
     buttons={[
-      ...(m.fromMe && entry.sends ? [{ label: tr("Verwijderen voor iedereen", "Delete for everyone"), destructive: true, bold: true, onselect: () => step(m, "revoke") }] : []),
+      ...(m.fromMe && abilities.delete ? [{ label: tr("Verwijderen voor iedereen", "Delete for everyone"), destructive: true, bold: true, onselect: () => step(m, "revoke") }] : []),
       { label: tr("Verwijderen voor mij", "Delete for me"), destructive: true, onselect: () => step(m, "deleteForMe") },
       { label: tr("Annuleer", "Cancel"), onselect: () => {} },
     ]}
@@ -891,6 +959,7 @@
   .name { padding: 0; border: 0; background: none; text-align: left; font: var(--text-title); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .name:hover:not(:disabled) { background: none; border: 0; text-decoration: underline; }
   .sub { display: flex; align-items: center; gap: var(--space-4); font: var(--text-detail); color: var(--text3); white-space: nowrap; overflow: hidden; }
+  .status-mark { display: inline-flex; align-items: center; color: var(--text3); }
   .typing-head { color: var(--mint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { flex: 1; }
 
@@ -932,10 +1001,11 @@
   .body:empty { display: none; }
   .text { flex: 1 1 auto; min-width: 0; font: var(--text-body); color: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
   .stamp { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-4); font: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--chat-stamp); white-space: nowrap; }
-  /* The chevron that opens a message's menu, at its top corner under the pointer (`MessageMenuButton`). */
-  .message-menu { position: absolute; top: var(--space-4); right: var(--space-4); width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 0; border-radius: var(--radius-chip); background: inherit; color: var(--text2); opacity: 0; transition: opacity 120ms ease; }
-  .bubble:hover .message-menu, .message-menu:focus-visible { opacity: 1; }
-  .message-menu:hover:not(:disabled) { color: var(--paper); border: 0; }
+  /* Quick forward + chevron menu buttons at a message's top corner under the pointer (`MessageMenuButton`). */
+  .bubble-actions { position: absolute; top: var(--space-4); right: var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2); border-radius: var(--radius-chip); background: inherit; opacity: 0; transition: opacity 120ms ease; }
+  .bubble:hover .bubble-actions, .bubble-actions:focus-within { opacity: 1; }
+  .bubble-action { width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 0; border-radius: var(--radius-chip); background: transparent; color: var(--text2); }
+  .bubble-action:hover:not(:disabled) { color: var(--paper); border: 0; background: var(--row-hover); }
   .photo { padding: 0; border: 0; background: none; cursor: zoom-in; display: block; }
   .photo img { display: block; max-width: 300px; max-height: 240px; border-radius: var(--radius-card); object-fit: cover; }
   .file { display: flex; align-items: center; gap: var(--space-8); font: var(--text-detail); color: var(--text2); }

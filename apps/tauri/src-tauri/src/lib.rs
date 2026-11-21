@@ -587,6 +587,17 @@ pub fn run() {
             commands::workspace_tools::browser_close,
             commands::workspace_tools::workspace_editors,
             commands::workspace_tools::workspace_open_in,
+            commands::search::buddy_moment,
+            commands::whatsapp::chat_forward,
+            commands::whatsapp::chat_abilities,
+            commands::whatsapp::chat_mark_unread,
+            commands::whatsapp::chat_set_pinned,
+            commands::whatsapp::chat_set_muted,
+            commands::whatsapp::chat_set_archived,
+            commands::whatsapp::chat_delete,
+            commands::whatsapp::chat_ask_nook,
+            commands::workspace::workspace_side_chat,
+            workspace::bridge::bridge_submit_secret,
         ])
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")

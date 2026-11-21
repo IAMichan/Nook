@@ -125,6 +125,13 @@
         value={s.agentInstructions ?? ""} onchange={(e) => { s!.agentInstructions = e.currentTarget.value.trim(); save(); }}></textarea>
     </label>
     <label class="row"><span>{tr("Een bericht tijdens een beurt stuurt de agent bij (Ctrl+Enter zet het in de wachtrij)", "A message during a turn steers the agent (Ctrl+Enter queues it)")}</span><input type="checkbox" role="switch" bind:checked={s.steerByDefault} onchange={save} /></label>
+    <label class="row">
+      <span>{tr("Sessies tegelijk aan het werk", "Sessions working at once")}<br /><small>{tr("Hooguit zoveel sessies werken tegelijk; een nieuwe beurt daarboven wacht en start zodra de beurt van een andere sessie klaar is.", "At most this many sessions work at the same time; a new turn past it waits and starts as soon as another session's turn ends.")}</small></span>
+      <select value={s.maxWorkingSessions ?? 0} onchange={(e) => { s!.maxWorkingSessions = Number(e.currentTarget.value); save(); }}>
+        <option value={0}>{tr("Geen limiet", "No limit")}</option>
+        {#each [2, 3, 4, 6, 8] as count (count)}<option value={count}>{count}</option>{/each}
+      </select>
+    </label>
   </div>
 
   <h3>{tr("Als een sessie stopt of Nook herstart", "When a session stops or Nook restarts")}</h3>

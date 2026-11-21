@@ -111,18 +111,34 @@ fn gather(app: &AppHandle) -> Vec<Document> {
                 (!e.text.trim().is_empty()).then(|| Passage::new(e.text, author, Some(e.date), Some(e.id.to_string())))
             }));
             let project = run.project_name();
+            use nook_core::workspace::models::RunStatus;
+            let mut flags = Vec::new();
+            if run.status.is_active() {
+                flags.push("running".to_string());
+            }
+            match run.status {
+                RunStatus::WaitingApproval => flags.push("waiting".to_string()),
+                RunStatus::Failed => flags.push("failed".to_string()),
+                RunStatus::Completed => flags.push("done".to_string()),
+                _ => {}
+            }
+            if run.archived {
+                flags.push("archived".to_string());
+                flags.push("settled".to_string());
+            }
             docs.push(Document {
                 id: format!("run:{}", run.id),
                 kind: "session".into(),
                 title: run.title.clone(),
                 subtitle: [agent.as_str(), project.as_str(), run.branch.as_deref().unwrap_or("")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · "),
                 date: Some(run.updated_at),
+                flags,
                 facets: [("agent".to_string(), agent.clone()), ("project".to_string(), project.clone())]
                     .into_iter()
                     .chain(run.branch.clone().map(|b| ("branch".to_string(), b)))
                     .collect(),
+                boost: if run.status.is_active() { 0.3 } else { 0.0 },
                 passages,
-                ..Default::default()
             });
         }
     }
@@ -139,15 +155,25 @@ fn gather(app: &AppHandle) -> Vec<Document> {
                 .map(|(t, a)| Passage::new(t.clone(), a, s.updated, None))
                 .collect();
         }
+        use nook_core::agents::models::AgentStatus;
+        let mut flags = Vec::new();
+        match s.status {
+            AgentStatus::Running => flags.push("running".to_string()),
+            AgentStatus::Waiting => flags.push("waiting".to_string()),
+            AgentStatus::Failed => flags.push("failed".to_string()),
+            AgentStatus::Done => flags.push("done".to_string()),
+            AgentStatus::Detected => {}
+        }
         docs.push(Document {
             id: s.id.clone(),
             kind: "session".into(),
             title: if s.summary.is_empty() { s.project.clone() } else { s.summary.clone() },
             subtitle: format!("{} · {}", s.name, s.project),
             date: s.updated.or(s.started),
+            flags,
             facets: [("agent".to_string(), s.name.clone()), ("project".to_string(), s.project.clone())].into_iter().collect(),
+            boost: if s.status == AgentStatus::Running { 0.3 } else { 0.0 },
             passages,
-            ..Default::default()
         });
     }
     let past = crate::agents::lock(&agents.last_history).sessions.clone();
@@ -356,3 +382,65 @@ pub fn search_open_note(app: AppHandle, id: String) -> Res<String> {
     let _ = tauri::Emitter::emit(&app, "nook-updated", &conversation);
     Ok(conversation)
 }
+
+static BUDDY: std::sync::OnceLock<Mutex<nook_core::services::buddy::BuddyService>> = std::sync::OnceLock::new();
+
+fn buddy_service() -> &'static Mutex<nook_core::services::buddy::BuddyService> {
+    BUDDY.get_or_init(|| Mutex::new(nook_core::services::buddy::BuddyService::open_default()))
+}
+
+/// Evaluates and returns Nook's current buddy moment (SV-19), or `None` when quiet/disabled/none due.
+/// Pass `dismiss_id` to dismiss a currently surfaced moment.
+#[tauri::command]
+pub fn buddy_moment(app: AppHandle, dismiss_id: Option<String>) -> Option<nook_core::services::buddy::BuddyMomentView> {
+    let settings = app.state::<AppState>().settings();
+    if !settings.buddy_moments {
+        return None;
+    }
+
+    let mut svc = buddy_service().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(id) = dismiss_id.as_deref().filter(|s| !s.is_empty()) {
+        svc.dismiss(id);
+        return None;
+    }
+
+    // Feed completed runs and historical agent sessions into milestone & while-you-were-away counters.
+    if let Some(ws) = app.try_state::<crate::workspace::WorkspaceState>() {
+        use nook_core::workspace::models::RunStatus;
+        for run in ws.manager.runs() {
+            if run.status == RunStatus::Completed {
+                svc.note_finished_agent(&format!("run:{}", run.id), run.updated_at);
+            }
+        }
+    }
+    if let Some(agents) = app.try_state::<AgentsState>() {
+        use nook_core::agents::models::AgentStatus;
+        for s in agents.hub.sessions() {
+            if s.status == AgentStatus::Done {
+                svc.note_finished_agent(&s.id, s.updated.unwrap_or_else(chrono::Utc::now));
+            }
+        }
+        let past = crate::agents::lock(&agents.last_history).sessions.clone();
+        for p in past {
+            svc.note_finished_agent(&p.session_id, p.ended);
+        }
+    }
+
+    // Feed Flow word count into word milestones and check quiet mode (meetings / screen sharing).
+    let mut in_event = false;
+    if let Some(services) = app.try_state::<Services>() {
+        let words = services.flow.lock().unwrap_or_else(|e| e.into_inner()).stats.total_words();
+        svc.sync_words_total(words);
+        in_event = crate::services::quiet::silent(&app);
+    }
+
+    svc.current_moment(
+        0.0,
+        chrono::Local::now().fixed_offset(),
+        nook_core::services::buddy::BuddyTone::Warm,
+        in_event,
+        0,
+        None,
+    )
+}
+

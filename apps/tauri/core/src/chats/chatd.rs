@@ -45,6 +45,7 @@ pub struct ServiceChat {
     /// Everyone's name by their id in it.
     pub people: HashMap<String, String>,
     pub is_muted: bool,
+    pub is_pinned: bool,
     pub account: Option<String>,
 }
 
@@ -145,6 +146,7 @@ pub fn chats(json: &Value) -> Vec<ServiceChat> {
                 me,
                 people: names,
                 is_muted: chat.get("isMuted").and_then(Value::as_bool) == Some(true),
+                is_pinned: chat.get("isPinned").and_then(Value::as_bool) == Some(true),
                 account,
             })
         })
@@ -796,6 +798,7 @@ impl ChatdBridge {
             kind: Some(if chat.is_group { ChatKind::Group } else { ChatKind::Person }),
             activity: chat.last,
             muted_in_app: current.then_some(chat.is_muted),
+            pinned_in_app: current.then_some(chat.is_pinned),
             listed: current,
             read_details,
             ..Default::default()
@@ -1020,6 +1023,7 @@ mod tests {
             is_group: true,
             unread: 0,
             is_muted: false,
+            is_pinned: false,
             last: None,
             members: vec!["Bo".into(), "Cy".into()],
             people,

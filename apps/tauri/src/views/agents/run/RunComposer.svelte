@@ -25,7 +25,7 @@
   import { tr } from "../../../lib/i18n.svelte";
   import { oneLine } from "../../../lib/workspace/timeline";
 
-  let { run }: { run: WorkspaceRun } = $props();
+  let { run, onsidechat }: { run: WorkspaceRun; onsidechat?: (question: string) => void } = $props();
 
   // The parent hands a new `run` object on every workspace update; only another run reloads the draft and takes focus.
   const runId = $derived(run.id);
@@ -114,6 +114,14 @@
     return out;
   }
 
+  /** Extracts the question from `/btw <question>` or `/side <question>` (AG-61), or null for other messages. */
+  function parseSideChat(text: string): string | null {
+    const match = text.match(/^\/(?:btw|side)(?:\s+([\s\S]*))?$/i);
+    return match ? (match[1] ?? "").trim() : null;
+  }
+
+  const sideDraft = $derived(parseSideChat(draft.trim()));
+
   async function send() {
     const text = draft.trim();
     if (editing) {
@@ -121,6 +129,19 @@
       return;
     }
     if (!text && !hasAttachments) return;
+    // `/btw <question>` or `/side <question>` (AG-61): runs as a side chat without interrupting the main agent.
+    const sideQuestion = parseSideChat(text);
+    if (sideQuestion !== null) {
+      if (!sideQuestion) {
+        workspace.error = tr("Typ je vraag achter /btw of /side.", "Type your question after /btw or /side.");
+        textarea?.focus();
+        return;
+      }
+      workspace.error = null;
+      draft = "";
+      onsidechat?.(sideQuestion);
+      return;
+    }
     if (/^\/clear\s*$/i.test(text)) {
       draft = "";
       fresh = true;
@@ -151,8 +172,8 @@
     workspace.loadQueue(run.id);
   }
 
-  // The `/` list (`AgentCommands`): only commands this agent really has. Nook's own (plan, clear, fork, goal), Claude
-  // Code's and Codex's built-in compact, then what the agent announced itself (ACP `available_commands_update`).
+  // The `/` list (`AgentCommands`): only commands this agent really has. Nook's own (plan, clear, fork, goal, btw, side),
+  // Claude Code's and Codex's built-in compact, then what the agent announced itself (ACP `available_commands_update`).
   type Command = { name: string; detail: string; insertion: string | null; run?: () => void };
   let offered = $state<{ name: string; detail: string; takesInput: boolean }[]>([]);
   let commandIndex = $state(0);
@@ -172,6 +193,8 @@
       list.push({ name: "compact", detail: tr("Het gesprek samenvatten om ruimte te maken", "Summarize the conversation to free up space"), insertion: "/compact" });
     }
     list.push({ name: "goal", detail: tr("Een doel instellen waar de agent naartoe werkt", "Set a goal the agent works toward"), insertion: "/goal " });
+    list.push({ name: "btw", detail: tr("Stel een snelle zijvraag zonder de agent te onderbreken", "Ask a quick side question without interrupting the agent"), insertion: "/btw " });
+    list.push({ name: "side", detail: tr("Stel een snelle zijvraag zonder de agent te onderbreken", "Ask a quick side question without interrupting the agent"), insertion: "/side " });
     for (const c of offered) {
       if (!list.some((x) => x.name === c.name)) list.push({ name: c.name, detail: c.detail, insertion: `/${c.name}${c.takesInput ? " " : ""}` });
     }
@@ -213,7 +236,7 @@
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       // Ctrl+Enter doet het andere: in de wachtrij in plaats van bijsturen, of andersom.
-      if (active && (e.ctrlKey || e.metaKey)) deliver(steers ? "queue" : "steer");
+      if (active && (e.ctrlKey || e.metaKey) && sideDraft === null) deliver(steers ? "queue" : "steer");
       else send();
     } else if (e.key === "Escape" && editing) {
       cancelEdit();
@@ -380,7 +403,11 @@
       <span class="spacer"></span>
       <ContextBreakdown {run} {events} {canCompact} />
       {#if active && draft.trim()}
-        <button class="pill" onclick={() => deliver(steers ? "steer" : "queue")} title={steers ? tr("Bijsturen: gaat nu naar de agent", "Steer: goes to the agent now") : tr("In de wachtrij: gaat na deze beurt", "Queue: goes after this turn")}>{steers ? tr("Bijsturen", "Steer") : tr("In de wachtrij", "Queue")}</button>
+        {#if sideDraft !== null}
+          <button class="pill" onclick={send} title={tr("Stel een snelle zijvraag zonder de agent te onderbreken", "Ask a quick side question without interrupting the agent")}>{tr("Zijgesprek", "Side chat")}</button>
+        {:else}
+          <button class="pill" onclick={() => deliver(steers ? "steer" : "queue")} title={steers ? tr("Bijsturen: gaat nu naar de agent", "Steer: goes to the agent now") : tr("In de wachtrij: gaat na deze beurt", "Queue: goes after this turn")}>{steers ? tr("Bijsturen", "Steer") : tr("In de wachtrij", "Queue")}</button>
+        {/if}
       {/if}
       <MicButton size={15} />
       {#if active}

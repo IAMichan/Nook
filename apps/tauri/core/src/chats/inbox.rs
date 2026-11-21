@@ -205,6 +205,8 @@ pub struct BridgedChat {
     /// The app still holds the chat unread (its own read mark), when it says so.
     pub waits_in_app: Option<bool>,
     pub muted_in_app: Option<bool>,
+    pub pinned_in_app: Option<bool>,
+    pub archived_in_app: Option<bool>,
     /// The app keeps the messages, Nook only shows them: they never reach the disk (`forDisk`).
     pub ephemeral: bool,
     /// A group you left or a chat deleted in the app: it goes, as one removed in Nook.
@@ -258,6 +260,14 @@ pub struct InboxThread {
     pub waits_in_app: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub muted_in_app: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_in_app: Option<bool>,
+    /// Pinned to the top of the Chats list in Nook (and synced in-app where supported).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
+    /// Archived in Nook (and in its app where supported).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub archived: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ephemeral: bool,
     /// Per-message read details (`read_at`, group `read_by`, per-person `readers`) keyed by message id.
@@ -292,6 +302,9 @@ impl InboxThread {
             activity: None,
             waits_in_app: None,
             muted_in_app: None,
+            pinned_in_app: None,
+            pinned: false,
+            archived: false,
             ephemeral: false,
             read_details: HashMap::new(),
             typing: vec![],
@@ -640,6 +653,8 @@ impl ChatInbox {
                 || chat.activity.is_some_and(|a| Some(a) != k.activity)
                 || chat.waits_in_app.is_some_and(|w| Some(w) != k.waits_in_app)
                 || chat.muted_in_app.is_some_and(|m| Some(m) != k.muted_in_app)
+                || chat.pinned_in_app.is_some_and(|p| Some(p) != k.pinned_in_app)
+                || chat.archived_in_app.is_some_and(|a| a != k.archived)
         });
         if messages.is_empty() && !described && !(known.is_none() && gone.is_none() && chat.listed) {
             return false;
@@ -809,6 +824,13 @@ impl ChatInbox {
         }
         if chat.muted_in_app.is_some() {
             thread.muted_in_app = chat.muted_in_app;
+        }
+        if let Some(pinned) = chat.pinned_in_app {
+            thread.pinned_in_app = Some(pinned);
+            thread.pinned = pinned;
+        }
+        if let Some(archived) = chat.archived_in_app {
+            thread.archived = archived;
         }
         if chat.ephemeral {
             thread.ephemeral = true;
@@ -1006,6 +1028,30 @@ impl ChatInbox {
         if let Some(thread) = self.threads.get_mut(key).filter(|_| !name.is_empty()) {
             thread.name = name.to_string();
         }
+    }
+
+    /// Pins or unpins a chat in Nook (and records the in-app state when synced with the app).
+    pub fn set_pinned(&mut self, key: &str, pinned: bool, in_app: bool) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        thread.pinned = pinned;
+        if in_app {
+            thread.pinned_in_app = Some(pinned);
+        }
+        true
+    }
+
+    /// Mutes or unmutes a chat.
+    pub fn set_muted(&mut self, key: &str, muted: bool) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        thread.muted_in_app = Some(muted);
+        true
+    }
+
+    /// Archives or unarchives a chat.
+    pub fn set_archived(&mut self, key: &str, archived: bool) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        thread.archived = archived;
+        true
     }
 
     /// Removes a chat; its app brings back only what is newer.
@@ -1466,5 +1512,34 @@ mod tests {
         thread.typing = vec!["Anna".into()];
         let disk = inbox.for_disk();
         assert!(disk.threads["telegram#1"].typing.is_empty());
+    }
+
+    #[test]
+    fn pin_mute_and_archive_state_updates_and_merges() {
+        let mut inbox = ChatInbox::default();
+        let now = at(10);
+        let bridged = BridgedChat {
+            app: "telegram".into(),
+            name: "Design".into(),
+            chat_id: Some("42".into()),
+            listed: true,
+            pinned_in_app: Some(true),
+            muted_in_app: Some(false),
+            ..Default::default()
+        };
+        assert!(inbox.merge(bridged, now));
+        let key = ChatInbox::key("telegram", "42");
+        assert!(inbox.threads[&key].pinned);
+        assert_eq!(inbox.threads[&key].pinned_in_app, Some(true));
+
+        assert!(inbox.set_pinned(&key, false, true));
+        assert!(!inbox.threads[&key].pinned);
+        assert_eq!(inbox.threads[&key].pinned_in_app, Some(false));
+
+        assert!(inbox.set_muted(&key, true));
+        assert_eq!(inbox.threads[&key].muted_in_app, Some(true));
+
+        assert!(inbox.set_archived(&key, true));
+        assert!(inbox.threads[&key].archived);
     }
 }

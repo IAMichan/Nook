@@ -28,7 +28,7 @@ pub struct RemoteService {
     pub tagline: &'static str,
 }
 
-pub const REMOTE_SERVICES: [RemoteService; 5] = [
+pub const REMOTE_SERVICES: [RemoteService; 13] = [
     RemoteService {
         id: "notion",
         name: "Notion",
@@ -69,7 +69,101 @@ pub const REMOTE_SERVICES: [RemoteService; 5] = [
         category: "development",
         tagline: "Fouten en prestaties van je apps",
     },
+    RemoteService {
+        id: "atlassian",
+        name: "Jira & Confluence",
+        url: "https://mcp.atlassian.com/v1/mcp",
+        domain: "atlassian.com",
+        category: "work",
+        tagline: "Jira issues and Confluence pages",
+    },
+    RemoteService {
+        id: "canva",
+        name: "Canva",
+        url: "https://mcp.canva.com/mcp",
+        domain: "canva.com",
+        category: "work",
+        tagline: "Your designs, to find and create",
+    },
+    RemoteService {
+        id: "supabase",
+        name: "Supabase",
+        url: "https://mcp.supabase.com/mcp",
+        domain: "supabase.com",
+        category: "development",
+        tagline: "Your projects, tables and logs",
+    },
+    RemoteService {
+        id: "neon",
+        name: "Neon",
+        url: "https://mcp.neon.tech/mcp",
+        domain: "neon.tech",
+        category: "development",
+        tagline: "Your Postgres databases",
+    },
+    RemoteService {
+        id: "huggingface",
+        name: "Hugging Face",
+        url: "https://huggingface.co/mcp",
+        domain: "huggingface.co",
+        category: "development",
+        tagline: "Models, datasets and Spaces",
+    },
+    // Sign in instead of a key: Cal.com and Resend host their own MCP server with OAuth, as does GitLab.com (the
+    // token stays the way for a self-hosted GitLab and for merge requests in the bar).
+    RemoteService {
+        id: "calcom",
+        name: "Cal.com",
+        url: "https://mcp.cal.com/mcp",
+        domain: "cal.com",
+        category: "work",
+        tagline: "Your bookings and event types",
+    },
+    RemoteService {
+        id: "resend",
+        name: "Resend",
+        url: "https://mcp.resend.com/mcp",
+        domain: "resend.com",
+        category: "business",
+        tagline: "Emails you send and their delivery",
+    },
+    RemoteService {
+        id: "gitlab",
+        name: "GitLab",
+        url: "https://gitlab.com/api/v4/mcp",
+        domain: "gitlab.com",
+        category: "development",
+        tagline: "Your merge requests, issues and pipelines",
+    },
 ];
+
+/// Looks up one built-in OAuth MCP preset by id.
+pub fn remote_service(id: &str) -> Option<&'static RemoteService> {
+    REMOTE_SERVICES.iter().find(|s| s.id == id)
+}
+
+impl RemoteService {
+    /// Localized one-line description matching macOS `MCPRemoteService.tagline`.
+    pub fn localized_tagline(&self) -> &'static str {
+        use crate::i18n::tr;
+        match self.id {
+            "notion" => tr("Pagina’s en databases die je deelt", "Pages and databases you share"),
+            "linear" => tr("Issues, projecten en cycles", "Issues, projects and cycles"),
+            "stripe" => tr("Omzet, betalingen en klanten", "Revenue, payments and customers"),
+            "vercel" => tr("Deploys, builds en logs", "Deployments, builds and logs"),
+            "sentry" => tr("Fouten en prestaties van je apps", "Errors and performance of your apps"),
+            "atlassian" => tr("Jira-issues en Confluence-pagina’s", "Jira issues and Confluence pages"),
+            "canva" => tr("Je ontwerpen, zoeken en maken", "Your designs, to find and create"),
+            "supabase" => tr("Je projecten, tabellen en logs", "Your projects, tables and logs"),
+            "neon" => tr("Je Postgres-databases", "Your Postgres databases"),
+            "huggingface" => tr("Modellen, datasets en Spaces", "Models, datasets and Spaces"),
+            "calcom" => tr("Je boekingen en afspraaktypes", "Your bookings and event types"),
+            "resend" => tr("E-mails die je verstuurt en hun bezorging", "Emails you send and their delivery"),
+            "gitlab" => tr("Je merge requests, issues en pipelines", "Your merge requests, issues and pipelines"),
+            _ => self.tagline,
+        }
+    }
+}
 
 // Beheer
 
@@ -477,5 +571,48 @@ mod tests {
         remove(&env, "github");
         assert_eq!(env.secrets.read("connector.mcp.github.GITHUB_TOKEN"), None);
         assert_eq!(servers(&env.store).len(), 1);
+    }
+
+    #[test]
+    fn remote_services_match_macos_presets() {
+        assert_eq!(REMOTE_SERVICES.len(), 13);
+        let expected: &[(&str, &str, &str, &str, &str)] = &[
+            ("notion", "Notion", "https://mcp.notion.com/mcp", "notion.so", "work"),
+            ("linear", "Linear", "https://mcp.linear.app/mcp", "linear.app", "work"),
+            ("stripe", "Stripe", "https://mcp.stripe.com", "stripe.com", "business"),
+            ("vercel", "Vercel", "https://mcp.vercel.com", "vercel.com", "development"),
+            ("sentry", "Sentry", "https://mcp.sentry.dev/mcp", "sentry.io", "development"),
+            ("atlassian", "Jira & Confluence", "https://mcp.atlassian.com/v1/mcp", "atlassian.com", "work"),
+            ("canva", "Canva", "https://mcp.canva.com/mcp", "canva.com", "work"),
+            ("supabase", "Supabase", "https://mcp.supabase.com/mcp", "supabase.com", "development"),
+            ("neon", "Neon", "https://mcp.neon.tech/mcp", "neon.tech", "development"),
+            ("huggingface", "Hugging Face", "https://huggingface.co/mcp", "huggingface.co", "development"),
+            ("calcom", "Cal.com", "https://mcp.cal.com/mcp", "cal.com", "work"),
+            ("resend", "Resend", "https://mcp.resend.com/mcp", "resend.com", "business"),
+            ("gitlab", "GitLab", "https://gitlab.com/api/v4/mcp", "gitlab.com", "development"),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for &(id, name, url, domain, category) in expected {
+            assert!(seen.insert(id), "duplicate preset id: {id}");
+            let svc = remote_service(id).unwrap_or_else(|| panic!("missing remote preset: {id}"));
+            assert_eq!(svc.name, name);
+            assert_eq!(svc.url, url);
+            assert_eq!(svc.domain, domain);
+            assert_eq!(svc.category, category);
+            assert!(svc.url.starts_with("https://"));
+            assert!(!svc.tagline.is_empty());
+            assert!(!svc.localized_tagline().is_empty());
+        }
+        assert!(remote_service("unknown").is_none());
+    }
+
+    #[test]
+    fn remote_preset_adds_oauth_http_server() {
+        let env = Env::new(Arc::new(MemorySecrets::default()), Arc::new(ConnectorStore::in_memory()));
+        let svc = remote_service("supabase").unwrap();
+        let config = add(&env, svc.name, Transport::Http { url: svc.url.into() }, &[], true, Some(svc.id)).unwrap();
+        assert_eq!(config.service_id.as_deref(), Some("supabase"));
+        assert!(config.signs_in());
+        assert_eq!(config.target(), "https://mcp.supabase.com/mcp");
     }
 }

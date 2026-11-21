@@ -199,7 +199,15 @@ pub fn unregister(id: &str) {
 }
 
 pub fn descriptor(id: &str) -> Option<SourceDescriptor> {
-    all().into_iter().find(|d| d.id == id)
+    if let Some(found) = all().into_iter().find(|d| d.id == id) {
+        return Some(found);
+    }
+    let key = id.strip_prefix("mcp.").unwrap_or(id);
+    crate::connectors::mcp::connector::remote_service(key).map(|service| SourceDescriptor {
+        id: id.to_string(),
+        title: service.name.to_string(),
+        kind: SourceKind::Oauth,
+    })
 }
 
 pub fn title(id: &str) -> String {
@@ -242,5 +250,16 @@ mod tests {
         unregister("mcp.test");
         assert_eq!(source_for_tool("mcp_test_echo"), None);
         assert_eq!(title("github"), "GitHub");
+    }
+
+    #[test]
+    fn remote_mcp_presets_resolve_titles_and_descriptors() {
+        assert_eq!(title("atlassian"), "Jira & Confluence");
+        assert_eq!(title("mcp.supabase"), "Supabase");
+        assert_eq!(title("canva"), "Canva");
+        assert_eq!(title("neon"), "Neon");
+        assert_eq!(title("huggingface"), "Hugging Face");
+        assert_eq!(title("gitlab"), "GitLab");
+        assert_eq!(descriptor("mcp.neon").map(|d| d.kind), Some(SourceKind::Oauth));
     }
 }

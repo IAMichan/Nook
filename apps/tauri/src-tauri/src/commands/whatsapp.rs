@@ -122,6 +122,9 @@ pub async fn whatsapp_ask_nook(app: AppHandle, c: State<'_, Connectors>, chat: S
     let key = link.chat_key(&chat);
     let conversation = link.conversation(&key).ok_or("Deze chat is niet meer in Nook.")?;
     link.mark_read(&key);
+    let inbox_key = nook_core::chats::ChatInbox::key(nook_core::connectors::whatsapp::APP, &key);
+    c.env.chats.with(|inbox| inbox.mark_read_in_app(&inbox_key, chrono::Utc::now(), None));
+    crate::chats::inbox::changed(&app);
     let prompt = format!("Schrijf een kort antwoord aan {} op WhatsApp dat ik kan versturen.", prompt_name(&conversation.name));
     let nook_id = app.state::<AppState>().with_chat(|c| c.new_conversation());
     let run =
@@ -381,4 +384,350 @@ pub async fn whatsapp_install_gowa(app: AppHandle, c: State<'_, Connectors>, upd
             Err(message)
         }
     }
+}
+
+// --- CH-48 (ChatForward), CH-58 (ChatAbilities & thread actions), CH-65 (Unified ChatCard "Let Nook reply") ---
+
+/// One target that failed to receive a forwarded message.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardFailure {
+    pub key: String,
+    pub name: String,
+    pub reason: String,
+}
+
+/// Summary of forwarding a message to one or more target chats (`ChatForward`, CH-48).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardResult {
+    pub forwarded: Vec<String>,
+    pub failed: Vec<ForwardFailure>,
+}
+
+fn mime_for_forward(path: &Path, kind: nook_core::chats::OutgoingKind) -> &'static str {
+    use nook_core::chats::OutgoingKind;
+    let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "ogg" | "oga" | "opus" => "audio/ogg; codecs=opus",
+        "mp3" => "audio/mpeg",
+        "m4a" | "aac" => "audio/mp4",
+        "wav" => "audio/wav",
+        "pdf" => "application/pdf",
+        _ => match kind {
+            OutgoingKind::Photo => "image/jpeg",
+            OutgoingKind::Gif => "image/gif",
+            OutgoingKind::Video => "video/mp4",
+            OutgoingKind::Voice => "audio/ogg; codecs=opus",
+            OutgoingKind::Audio => "audio/mpeg",
+            OutgoingKind::File => "application/octet-stream",
+        },
+    }
+}
+
+/// Forwards a message (text and/or attachment) from `source_key` to one or more `target_keys`, respecting each target
+/// chat's `ChatAbilities` and `ChatForward` caption/attachment rules (CH-48).
+#[tauri::command]
+pub async fn chat_forward(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    source_key: String,
+    message_id: String,
+    target_keys: Vec<String>,
+) -> Res<ForwardResult> {
+    use std::collections::HashSet;
+    use nook_core::chats::{ChatAction, ChatForward, ChatMedia, OutgoingKind};
+    use nook_core::connectors::whatsapp;
+
+    if target_keys.is_empty() {
+        return Ok(ForwardResult { forwarded: vec![], failed: vec![] });
+    }
+
+    // Locate the source message from the shared inbox, falling back to the WhatsApp link when needed.
+    let source_info = c.env.chats.read(|inbox| {
+        let thread = inbox.threads.get(&source_key)?;
+        let msg = thread.messages.iter().find(|m| m.id == message_id && !m.deleted)?;
+        Some((thread.app.clone(), thread.chat_id.clone().unwrap_or_default(), msg.text.clone(), msg.media.clone()))
+    });
+
+    let (source_app, source_chat_id, text, media) = match source_info {
+        Some(found) => found,
+        None => {
+            // Fallback: check WhatsApp conversation directly if source_key is a WhatsApp chat.
+            let raw_id = source_key.strip_prefix("whatsapp#").unwrap_or(&source_key);
+            let conv = c.wa(raw_id).conversation(raw_id).ok_or("This chat is no longer in Nook.")?;
+            let msg = conv.messages.iter().find(|m| m.id == message_id).ok_or("This message is no longer in Nook.")?;
+            let mapped = match &msg.media {
+                Media::None => ChatMedia::None,
+                Media::Image => ChatMedia::Image,
+                Media::Video => ChatMedia::Video,
+                Media::Audio => ChatMedia::Audio,
+                Media::Voice => ChatMedia::Voice,
+                Media::Document { name } => ChatMedia::Document { name: name.clone() },
+                Media::Sticker => ChatMedia::Sticker,
+                Media::Location => ChatMedia::Location,
+                Media::Contact => ChatMedia::Contact,
+                Media::Other => ChatMedia::Other,
+            };
+            (whatsapp::APP.to_string(), conv.id, msg.text.clone(), mapped)
+        }
+    };
+
+    // Resolve on-disk file for openable WhatsApp media attachments so forwarding carries the actual file.
+    let mut file_path: Option<PathBuf> = None;
+    if source_app == whatsapp::APP && media.is_openable() {
+        let link = c.wa(&source_chat_id);
+        if let Some(p) = link.preview(&message_id).filter(|p| p.is_file()) {
+            file_path = Some(p);
+        } else if let Ok(p) = link.download(&message_id, &source_chat_id).await {
+            if link.owns_file(&p) && p.is_file() {
+                file_path = Some(p);
+            }
+        }
+    }
+
+    let outgoing_kind = ChatForward::outgoing_kind(&media, file_path.as_ref());
+    let forward = ChatForward::new(&text, file_path, outgoing_kind)
+        .ok_or_else(|| "Nothing to forward from this message.".to_string())?;
+
+    let mut forwarded = Vec::new();
+    let mut failed = Vec::new();
+
+    for target_key in target_keys {
+        let target_meta = c.env.chats.read(|inbox| {
+            inbox.threads.get(&target_key).map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default(), t.name.clone()))
+        });
+        let Some((target_app, target_id, target_name)) = target_meta else {
+            failed.push(ForwardFailure {
+                key: target_key.clone(),
+                name: target_key,
+                reason: "This chat is no longer in Nook.".into(),
+            });
+            continue;
+        };
+
+        let Some(abilities) = crate::chats::inbox::abilities_for(&c, &target_key) else {
+            failed.push(ForwardFailure { key: target_key, name: target_name, reason: "This chat is no longer in Nook.".into() });
+            continue;
+        };
+        if !abilities.allows(ChatAction::Send) {
+            failed.push(ForwardFailure {
+                key: target_key,
+                name: target_name,
+                reason: "Nook cannot send messages to this chat right now.".into(),
+            });
+            continue;
+        }
+        let allowed_sends: HashSet<OutgoingKind> = abilities.sends.iter().copied().collect();
+        let Some(parts) = forward.parts(&allowed_sends) else {
+            failed.push(ForwardFailure {
+                key: target_key,
+                name: target_name,
+                reason: "This chat does not accept that attachment type.".into(),
+            });
+            continue;
+        };
+
+        let mut step_err: Option<String> = None;
+        if let Some(att) = &parts.attachment {
+            match std::fs::read(&att.file) {
+                Ok(bytes) => {
+                    let name = att
+                        .file
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "attachment".into());
+                    let mime = mime_for_forward(&att.file, att.kind);
+                    let is_voice = att.kind == OutgoingKind::Voice;
+                    if target_app == whatsapp::APP {
+                        use nook_core::connectors::whatsapp::provider::{FileKind, OutgoingFile};
+                        let file = OutgoingFile {
+                            kind: FileKind::of(mime, is_voice),
+                            name: &name,
+                            mime,
+                            bytes: &bytes,
+                            caption: &att.caption,
+                        };
+                        if let Err(e) = c.wa(&target_id).send_file(&target_id, &file, None).await {
+                            step_err = Some(e.message);
+                        }
+                    } else if let Some(client) = c.chat_helper.bridge.client() {
+                        if let Err(e) = client.send_file(&target_id, &name, mime, &bytes, &att.caption, is_voice).await {
+                            step_err = Some(e);
+                        } else {
+                            c.chat_helper.bridge.changed(&target_id, None);
+                        }
+                    } else {
+                        step_err = Some("Nook's chat helper is not running.".into());
+                    }
+                }
+                Err(_) => {
+                    step_err = Some("The attachment file could not be read.".into());
+                }
+            }
+        }
+
+        if step_err.is_none() && !parts.text.is_empty() {
+            if target_app == whatsapp::APP {
+                if let Err(e) = c.wa(&target_id).send_reply(&parts.text, &target_id, None).await {
+                    step_err = Some(e.message);
+                }
+            } else if let Some(client) = c.chat_helper.bridge.client() {
+                if let Err(e) = client.send_tagging(&target_id, &parts.text, None, &[]).await {
+                    step_err = Some(e);
+                } else {
+                    c.chat_helper.bridge.changed(&target_id, None);
+                }
+            } else {
+                step_err = Some("Nook's chat helper is not running.".into());
+            }
+        }
+
+        match step_err {
+            None => forwarded.push(target_name),
+            Some(reason) => failed.push(ForwardFailure { key: target_key, name: target_name, reason }),
+        }
+    }
+
+    if !forwarded.is_empty() {
+        crate::chats::inbox::changed(&app);
+    }
+    Ok(ForwardResult { forwarded, failed })
+}
+
+/// Returns the computed `ChatAbilities` for a chat key (CH-58).
+#[tauri::command]
+pub fn chat_abilities(c: State<'_, Connectors>, key: String) -> Res<nook_core::chats::ChatAbilities> {
+    crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())
+}
+
+/// Marks a chat as unread in Nook and in its app when supported by `ChatAbilities` (CH-58).
+#[tauri::command]
+pub async fn chat_mark_unread(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<()> {
+    crate::chats::inbox::chat_inbox_mark_unread(app, c, key).await
+}
+
+/// Pins or unpins a chat in Nook, and syncs to its app when `ChatAbilities::pin` allows it (CH-58).
+#[tauri::command]
+pub async fn chat_set_pinned(app: AppHandle, c: State<'_, Connectors>, key: String, pinned: bool) -> Res<nook_core::chats::ChatAbilities> {
+    use nook_core::chats::ChatAction;
+    let (_, chat_id) = crate::chats::inbox::chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    let abilities = crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    let mut synced_in_app = false;
+    if abilities.allows(ChatAction::Pin) {
+        if let Some(client) = c.chat_helper.bridge.client() {
+            client.set_chat(&chat_id, Some(pinned), None).await?;
+            c.chat_helper.bridge.changed(&chat_id, None);
+            synced_in_app = true;
+        }
+    }
+    c.env.chats.with(|inbox| {
+        inbox.set_pinned(&key, pinned, synced_in_app);
+    });
+    crate::chats::inbox::changed(&app);
+    crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())
+}
+
+/// Mutes or unmutes a chat, syncing to WhatsApp's per-chat mode or the helper app when `ChatAbilities::mute` allows it (CH-58).
+#[tauri::command]
+pub async fn chat_set_muted(app: AppHandle, c: State<'_, Connectors>, key: String, muted: bool) -> Res<nook_core::chats::ChatAbilities> {
+    use nook_core::chats::ChatAction;
+    let (source, chat_id) = crate::chats::inbox::chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    let abilities = crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    if source == nook_core::connectors::whatsapp::APP {
+        c.wa(&chat_id).set_mode(&chat_id, if muted { ChatMode::Muted } else { ChatMode::Automatic });
+    } else if abilities.allows(ChatAction::Mute) {
+        if let Some(client) = c.chat_helper.bridge.client() {
+            client.set_chat(&chat_id, None, Some(muted)).await?;
+            c.chat_helper.bridge.changed(&chat_id, None);
+        }
+    }
+    c.env.chats.with(|inbox| {
+        inbox.set_muted(&key, muted);
+    });
+    crate::chats::inbox::changed(&app);
+    crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())
+}
+
+/// Archives or unarchives a chat, syncing to the app when `ChatAbilities::archive` allows it (CH-58).
+#[tauri::command]
+pub async fn chat_set_archived(app: AppHandle, c: State<'_, Connectors>, key: String, archived: bool) -> Res<nook_core::chats::ChatAbilities> {
+    use nook_core::chats::ChatAction;
+    let (_, chat_id) = crate::chats::inbox::chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    let abilities = crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    if abilities.allows(ChatAction::Archive) {
+        if let Some(client) = c.chat_helper.bridge.client() {
+            client.archive(&chat_id, archived).await?;
+            c.chat_helper.bridge.changed(&chat_id, None);
+        }
+    }
+    c.env.chats.with(|inbox| {
+        inbox.set_archived(&key, archived);
+    });
+    crate::chats::inbox::changed(&app);
+    crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())
+}
+
+/// Removes a chat from Nook (never deletes remotely when `ChatAbilities::delete_chat` is false, CH-58).
+#[tauri::command]
+pub async fn chat_delete(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<()> {
+    let info = crate::chats::inbox::chat_id(&c, &key);
+    c.env.chats.with(|inbox| inbox.remove(&key, chrono::Utc::now()));
+    if let Some((source, chat_id)) = info {
+        if source == nook_core::connectors::whatsapp::APP && !chat_id.is_empty() {
+            c.wa(&chat_id).ignore(&chat_id);
+        }
+    }
+    crate::chats::inbox::changed(&app);
+    Ok(())
+}
+
+/// Unified "Let Nook reply" for any chat app (`ChatCard.svelte`, CH-65): marks the chat read and starts a focused Nook
+/// conversation that drafts a reply to only this chat. Returns the new Nook conversation id.
+#[tauri::command]
+pub async fn chat_ask_nook(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<String> {
+    let (source, chat_id, name) = c
+        .env
+        .chats
+        .read(|inbox| {
+            inbox
+                .threads
+                .get(&key)
+                .map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default(), t.name.clone()))
+        })
+        .ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+
+    if source == nook_core::connectors::whatsapp::APP {
+        let target = if chat_id.is_empty() {
+            key.strip_prefix("whatsapp#").unwrap_or(&key).to_string()
+        } else {
+            chat_id
+        };
+        return whatsapp_ask_nook(app, c, target).await;
+    }
+
+    // Mark read in Nook (and in the helper app if connected) before opening the Nook reply run.
+    let now = chrono::Utc::now();
+    if let Some(client) = c.chat_helper.bridge.client() {
+        let _ = client.mark_read(&chat_id).await;
+    }
+    c.env.chats.with(|inbox| inbox.mark_read_in_app(&key, now, None));
+    crate::chats::inbox::changed(&app);
+
+    let app_label = crate::chats::notify::app_name(&source);
+    let prompt = format!("Write a short reply to {} on {app_label} that I can send.", prompt_name(&name));
+    let nook_id = app.state::<AppState>().with_chat(|chat| chat.new_conversation());
+    let run = CardRun {
+        focus: vec![("chat_inbox".into(), serde_json::json!({"chat": name, "app": source, "limit": 20}))],
+        only_chat: None,
+    };
+    chat::ask_from_card(&app, &nook_id, &prompt, run)?;
+    Ok(nook_id)
 }
