@@ -97,6 +97,61 @@ final class AgentGovernorPolicyTests: XCTestCase {
         let freed = AgentGovernorPolicy.next(agents: all, current: next, strain: .critical, calmSince: nil, now: t0 + 605)
         XCTAssertEqual(freed[101]?.throttle, .background)
     }
+
+    // MARK: Heavy work
+
+    private func heavyAgents(_ count: Int) -> [AgentLoad] {
+        agents(count).map { var agent = $0; agent.heavy = true; return agent }
+    }
+
+    func testPressedMacLetsOneHeavyJobGoOnAtFullSpeedAndTheYoungerOneWaits() {
+        // Two test runs with a worker per core: the youngest waits right away, not once the Mac swaps.
+        var all = heavyAgents(2)
+        all.append(AgentLoad(pid: 102, started: t0 + 120, hasWork: true))
+        let next = AgentGovernorPolicy.next(agents: all, current: [:], strain: .pressed, calmSince: t0, now: t0 + 600)
+        XCTAssertEqual(throttles(next), [100: .normal, 101: .paused, 102: .background],
+                       "the oldest heavy job keeps the performance cores, light work goes to the background")
+    }
+
+    func testOneHeavyJobAloneIsNotPausedAndLightWorkStaysAsBefore() {
+        var all = heavyAgents(1)
+        all.append(contentsOf: agents(2).map { AgentLoad(pid: $0.pid + 1, started: $0.started + 60, hasWork: true) })
+        let next = AgentGovernorPolicy.next(agents: all, current: [:], strain: .pressed, calmSince: t0, now: t0 + 600)
+        XCTAssertEqual(throttles(next), [100: .normal, 101: .background, 102: .background])
+        let calm = AgentGovernorPolicy.next(agents: heavyAgents(2), current: [:], strain: .calm, calmSince: t0, now: t0 + 600)
+        XCTAssertEqual(Set(throttles(calm).values), [.normal], "a calm Mac runs heavy jobs side by side")
+    }
+
+    func testWaitingHeavyWorkComesBackOnlyOnceTheOtherHeavyJobIsDone() {
+        let now = t0 + 600
+        var all = heavyAgents(2)
+        let waiting: [Int32: AgentGovernorState] = [100: AgentGovernorState(throttle: .normal, since: now),
+                                                     101: AgentGovernorState(throttle: .paused, since: now)]
+        // Memory has room again, but the older test run still holds its workers: the younger one keeps waiting.
+        let still = AgentGovernorPolicy.next(agents: all, current: waiting, strain: .calm, calmSince: t0, now: now + 30)
+        XCTAssertEqual(still[101]?.throttle, .paused)
+        // The older run is done: its commands are gone and so is the memory they held.
+        all[0].heavy = false
+        all[0].hasWork = false
+        let free = AgentGovernorPolicy.next(agents: all, current: still, strain: .calm, calmSince: t0, now: now + 35)
+        XCTAssertEqual(throttles(free), [100: .normal, 101: .normal])
+    }
+
+    func testAHeavyWaitStillEndsAfterTheLimit() {
+        let now = t0 + 600
+        let waiting: [Int32: AgentGovernorState] = [101: AgentGovernorState(throttle: .paused, since: now)]
+        let end = AgentGovernorPolicy.next(agents: heavyAgents(2), current: waiting, strain: .pressed, calmSince: t0,
+                                           now: now + AgentGovernorPolicy.maxPause)
+        XCTAssertEqual(end[101]?.throttle, .normal, "a test run with time limits must not wait forever")
+    }
+
+    func testCriticalStillPausesLightWorkWhenNoHeavyJobCanWait() {
+        let next = AgentGovernorPolicy.next(agents: agents(2), current: [:], strain: .critical, calmSince: nil, now: t0 + 600)
+        XCTAssertEqual(throttles(next), [100: .background, 101: .paused])
+        // Critical with heavy work: the heavy one runs in the background band too, the Mac comes first.
+        let heavy = AgentGovernorPolicy.next(agents: heavyAgents(2), current: [:], strain: .critical, calmSince: nil, now: t0 + 600)
+        XCTAssertEqual(throttles(heavy), [100: .background, 101: .paused])
+    }
 }
 
 final class AgentWorkTreeTests: XCTestCase {

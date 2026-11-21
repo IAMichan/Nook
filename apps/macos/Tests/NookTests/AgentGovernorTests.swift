@@ -105,6 +105,12 @@ final class AgentGovernorTests: XCTestCase {
         governor.release(agent: younger.agent.pid)
         XCTAssertFalse(isStopped(younger.command), "an agent that stops lets its commands go on first")
     }
+
+    func testResidentMemoryIsReadFromTheProcessTable() {
+        let own = AgentGovernor.residentBytes(of: [getpid()])
+        XCTAssertGreaterThan(own, 0)
+        XCTAssertEqual(AgentGovernor.residentBytes(of: [getpid(), -1]), own, "a process that is gone counts for nothing")
+    }
 }
 
 /// A value set from another thread.
