@@ -5,6 +5,9 @@ import Foundation
 
 let nookTaskTranslations: [AppLanguage: [String: String]] = [
     .en: [
+        "sessionTask.off": "Scheduled tasks are off",
+        "sessionTask.turnOn": "Turn on",
+        "sessionTask.help": "Runs in this session by itself. Click to change it.",
         "nookTask.section": "Scheduled",
         "nookTask.new": "New scheduled task for Nook",
         "nookTask.running": "Running…",
@@ -53,6 +56,9 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "autonomy.change.notQuiet": "always report"
     ],
     .nl: [
+        "sessionTask.off": "Geplande taken staan uit",
+        "sessionTask.turnOn": "Aanzetten",
+        "sessionTask.help": "Draait vanzelf in deze sessie. Klik om aan te passen.",
         "nookTask.section": "Gepland",
         "nookTask.new": "Nieuwe geplande taak voor Nook",
         "nookTask.running": "Bezig…",
@@ -101,6 +107,9 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "autonomy.change.notQuiet": "altijd melden"
     ],
     .de: [
+        "sessionTask.off": "Geplante Aufgaben sind aus",
+        "sessionTask.turnOn": "Einschalten",
+        "sessionTask.help": "Läuft von selbst in dieser Sitzung. Zum Ändern klicken.",
         "nookTask.section": "Geplant",
         "nookTask.new": "Neue geplante Aufgabe für Nook",
         "nookTask.running": "Läuft…",
@@ -149,6 +158,9 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "autonomy.change.notQuiet": "immer melden"
     ],
     .fr: [
+        "sessionTask.off": "Les tâches planifiées sont désactivées",
+        "sessionTask.turnOn": "Activer",
+        "sessionTask.help": "S’exécute toute seule dans cette session. Cliquez pour la modifier.",
         "nookTask.section": "Planifiées",
         "nookTask.new": "Nouvelle tâche planifiée pour Nook",
         "nookTask.running": "En cours…",
@@ -197,6 +209,9 @@ let nookTaskTranslations: [AppLanguage: [String: String]] = [
         "autonomy.change.notQuiet": "toujours signaler"
     ],
     .es: [
+        "sessionTask.off": "Las tareas programadas están desactivadas",
+        "sessionTask.turnOn": "Activar",
+        "sessionTask.help": "Se ejecuta sola en esta sesión. Haz clic para cambiarla.",
         "nookTask.section": "Programadas",
         "nookTask.new": "Nueva tarea programada para Nook",
         "nookTask.running": "En curso…",

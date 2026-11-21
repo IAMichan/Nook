@@ -346,3 +346,117 @@ struct ScheduledRunMarker: View {
         .padding(.vertical, NookTheme.Spacing.xs)
     }
 }
+
+// MARK: A session's tasks
+
+/// The scheduled tasks that run in this session (`ScheduledTaskTarget.existingSession`), in the tray above its composer
+/// beside its pull requests: what it will do by itself, and when. A click opens the editor; run now, pause and remove sit
+/// on hover and right-click. While agent tasks are off in Settings, an enabled one says it will not run and offers the
+/// switch, so a task an agent planned for tomorrow never silently does nothing.
+struct SessionScheduledTaskRow: View {
+    let task: ScheduledTask
+    @ObservedObject private var store = ScheduledTaskStore.shared
+    @ObservedObject private var settings = WorkspaceSettings.shared
+    @State private var hovering = false
+    @State private var editing: NookTaskEdit?
+    @State private var deleting: ScheduledTask?
+
+    /// The tasks that go to this session, the next to run first.
+    static func tasks(for runID: UUID, in tasks: [ScheduledTask]) -> [ScheduledTask] {
+        tasks.filter { $0.target.sessionID == runID }
+            .sorted { ($0.nextRun ?? .distantFuture, $0.title) < ($1.nextRun ?? .distantFuture, $1.title) }
+    }
+
+    private var running: Bool { store.isRunning(task.id) }
+    /// Enabled and still to run, but held back because agent tasks are off.
+    private var heldBack: Bool { task.enabled && !task.isDone && !store.mayRun(task) }
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Group {
+                if running {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(icon: task.enabled ? "clock" : "pause.circle")
+                        .font(NookTheme.font(11, .medium))
+                        .foregroundStyle(heldBack ? NookTheme.amber : NookTaskText.tint(task, running: running))
+                }
+            }
+            .frame(width: 14)
+            .padding(.leading, 5)
+            Text(task.title.isEmpty ? tr("sched.untitled") : task.title)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(task.enabled && !task.isDone ? NookTheme.textStrong : NookTheme.textSecondary)
+                .truncationMode(.tail)
+                .nookTipWhenCut(task.title)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            trailing
+        }
+        .padding(.leading, NookTheme.Spacing.xs)
+        .frame(minHeight: 26)
+        .hoverRowFill($hovering, radius: NookTheme.Radius.chip)
+        .contentShape(Rectangle())
+        .nookClickable()
+        .onTapGesture { editing = NookTaskEdit(task: task) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(task.title), \(status)")
+        .accessibilityHint(tr("sessionTask.help"))
+        .accessibilityAction(named: tr("sched.edit")) { editing = NookTaskEdit(task: task) }
+        .contextMenu { menu }
+        .animation(NookTheme.hover, value: hovering)
+        .nookTaskSheets(editing: $editing, deleting: $deleting)
+    }
+
+    /// What it does when, or why it will not; on hover the actions take that place.
+    @ViewBuilder
+    private var trailing: some View {
+        if hovering {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                ToolbarIconButton("play", tr("sched.runNow"), height: 22, width: 22) { NookTaskText.runNow(task) }
+                    .disabled(running || !store.mayRun(task))
+                ToolbarIconButton(task.enabled ? "pause" : "play.circle", tr(task.enabled ? "nookTask.pause" : "nookTask.resume"),
+                                  height: 22, width: 22) { store.setEnabled(task.id, !task.enabled) }
+                ToolbarIconButton("trash", tr("sched.delete"), height: 22, width: 22) { deleting = task }
+            }
+        } else if heldBack {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("sessionTask.off"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.amber)
+                    .lineLimit(1)
+                    .fixedSize()
+                Button(tr("sessionTask.turnOn")) { settings.scheduledTasksEnabled = true }
+                    .buttonStyle(.nookPlain)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.iris)
+                    .fixedSize()
+            }
+        } else if task.lastStatus == .failed, !running {
+            NookTag(tr("nookTask.failed"), tint: NookTheme.coralSoft)
+        } else {
+            Text(status)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    /// "Every day at 09:00 · next Sun 17:00"; for a once-task only its moment, as the rule already says it.
+    private var status: String {
+        let state = NookTaskText.status(task, running: running)
+        if task.rule.isOnce, task.enabled, !task.isDone, !running { return ScheduledTaskText.summary(task.rule) }
+        return [ScheduledTaskText.summary(task.rule), state].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        Button(tr("sched.runNow")) { NookTaskText.runNow(task) }
+            .disabled(running || !store.mayRun(task))
+        Button(tr(task.enabled ? "nookTask.pause" : "nookTask.resume")) { store.setEnabled(task.id, !task.enabled) }
+        Button(tr("sched.edit")) { editing = NookTaskEdit(task: task) }
+        Divider()
+        Button(tr("sched.delete"), role: .destructive) { deleting = task }
+    }
+}

@@ -396,15 +396,19 @@ extension AgentRunPanel {
                                             shown: ([pullRequest] + branches.map(\.pullRequest)).compactMap { $0 },
                                             aliases: aliases)
         let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil || !others.isEmpty
-        if hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
+        // What it will do by itself later: the scheduled tasks that continue this session, above its pull requests.
+        let scheduled = SessionScheduledTaskRow.tasks(for: runID, in: scheduledTasks.tasks)
+        if !scheduled.isEmpty || hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if !quotes.isEmpty {
                         ComposerQuoteChips(quotes: quotes.items, remove: { id in quotes.remove(id) },
                                            setNote: { id, note in quotes.setNote(note, for: id) },
                                            jump: { quote in jumpToQuote(quote) })
-                        if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
+                        if !scheduled.isEmpty || hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
+                    ForEach(scheduled) { task in SessionScheduledTaskRow(task: task) }
+                    if !scheduled.isEmpty && (hasPullRequests || !waiting.isEmpty) { ComposerTrayDivider() }
                     ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases) }
                     if !branches.isEmpty {
                         RunBranchTray(rows: branches, watches: watches, canWatchCurrent: watchable != nil, runID: runID, workspace: workspace,
