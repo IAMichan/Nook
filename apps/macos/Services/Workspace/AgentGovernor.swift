@@ -7,7 +7,8 @@ import os
 ///
 /// Every few seconds while agents run, it reads how hard the Mac is pressed and which commands each agent runs, and then:
 /// moves those commands into macOS's background band (`PRIO_DARWIN_BG`: leftover processor, throttled disk) when memory is
-/// tight or the Mac is hot; and when the Mac swaps hard, holds the commands of the youngest agents still (`SIGSTOP` to their
+/// tight or the Mac is hot (except heavy work: of that only the oldest goes on, at full speed, and the rest waits); and
+/// when the Mac swaps hard, holds the commands of the youngest agents still (`SIGSTOP` to their
 /// process groups) until there is room again. The agent processes themselves are never slowed or paused, so their
 /// connections and Nook's view of them stay live.
 ///
@@ -152,8 +153,9 @@ final class AgentGovernor: @unchecked Sendable {
             let run = agent.spec.extraEnvironment["NOOK_RUN_ID"].flatMap(UUID.init(uuidString:))
             runOf[agent.pid] = run
             let started = ProcessIdentity.of(agent.pid).map { Date(timeIntervalSince1970: Double($0.startTime) / 1_000_000) }
+            let heavy = Self.residentBytes(of: found.processes) >= AgentGovernorPolicy.heavyWorkBytes
             loads.append(AgentLoad(pid: agent.pid, started: started ?? .distantPast, hasWork: !found.groups.isEmpty,
-                                   exempt: run.map(exempted.contains) ?? false))
+                                   heavy: heavy, exempt: run.map(exempted.contains) ?? false))
         }
 
         let before = states
@@ -161,7 +163,8 @@ final class AgentGovernor: @unchecked Sendable {
         for (pid, state) in states where before[pid]?.throttle != state.throttle && (before[pid] != nil || state.throttle != .normal) {
             Log.resources.notice("""
                 agent \(pid) -> \(state.throttle.rawValue, privacy: .public) \
-                (\(work[pid]?.processes.count ?? 0) commands in \(work[pid]?.groups.count ?? 0) groups)
+                (\(work[pid]?.processes.count ?? 0) commands in \(work[pid]?.groups.count ?? 0) groups\
+                \(loads.first { $0.pid == pid }?.heavy == true ? ", heavy" : "", privacy: .public))
                 """)
         }
         for agent in loads {
@@ -253,6 +256,18 @@ final class AgentGovernor: @unchecked Sendable {
     }
 
     // MARK: The process table
+
+    /// Resident memory of these processes together. Only the commands of running agents are read, a few dozen at most.
+    static func residentBytes(of pids: [Int32]) -> UInt64 {
+        let size = Int32(MemoryLayout<proc_taskinfo>.size)
+        var total: UInt64 = 0
+        for pid in pids {
+            var info = proc_taskinfo()
+            guard proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, size) == size else { continue }
+            total += info.pti_resident_size
+        }
+        return total
+    }
 
     static func processTable() -> [ProcessEntry] {
         let estimate = proc_listallpids(nil, 0)
