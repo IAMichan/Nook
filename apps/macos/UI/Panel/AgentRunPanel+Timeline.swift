@@ -228,7 +228,10 @@ extension AgentRunPanel {
             // instead of a `scrollTo` (a layout down to the end and a scroll) for every streamed update.
             // A session opens at its end, also when its timeline arrives after the first frame: never at its first messages.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor((run.status.isActive || landsOnLoad) && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
+            // Also once the run is done, as in an agent's own transcript: the turn folds to "Worked for …" in the update
+            // that ends the run and its card comes under it, and rows above are measured anew; let go then, the
+            // conversation jumped up by hundreds of points (thousands in a long session) before `keepEnd` caught it.
+            .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -453,7 +456,17 @@ extension AgentRunPanel {
     /// up from its end as it opens. A landing follows the end (`settleAtEnd`), so it ends there too. Only moving while the
     /// sizes stay the same, or a wheel step up, is you scrolling away.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
-        guard new.resized(from: old), !finding else { return }
+        guard !finding else { return }
+        // The scroll view put back an old offset by itself, thousands of points up (`ScrollModel.movedBySelf`): back to
+        // the end while following, also while a scroll of yours toward it still runs out.
+        if ScrollModel.movedBySelf(from: old, to: new) {
+            guard scroll.shouldFollowEnd, scrollPhase.value != .animating else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+            return
+        }
+        guard new.resized(from: old) else { return }
         // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a size
         // change in the same frame as your step no longer pulls the view back to the end.
         guard scroll.shouldFollowEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }

@@ -446,6 +446,15 @@ struct TranscriptConversation: View {
             withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             return
         }
+        // The scroll view put back an old offset by itself, thousands of points up (`ScrollModel.movedBySelf`): back to
+        // the end while following, also while a scroll of yours toward it still runs out.
+        if ScrollModel.movedBySelf(from: old, to: new) {
+            guard scroll.shouldFollowEnd, scrollPhase.value != .animating else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+            return
+        }
         if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: new) { scroll.userScrolled() }
     }
 
