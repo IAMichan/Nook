@@ -112,6 +112,23 @@ enum FailureClassifier {
         return LimitReply(resetAt: UsageLimits.textReset(trimmed, now: now))
     }
 
+    /// The limit notice a saved timeline's last turn ended on, and when that turn ended: for a turn that ended normally
+    /// before Nook read such a reply as a limit (or whose limit was not noted for another reason). The words after the
+    /// turn's last tool call are read, as a live turn reads them, with the reset counted from when the turn ended. Nil
+    /// when the last turn is still open, failed, rolled back, already noted a limit, or ended with any other reply.
+    static func endedOnLimitReply(_ events: [RunEvent]) -> (reply: LimitReply, at: Date)? {
+        let live = events.filter { $0.rolledBack != true }
+        guard let result = live.lastIndex(where: { $0.kind == .result }), live[result].state != .failed else { return nil }
+        let start = live.lastIndex(where: { $0.kind == .user }).map { $0 + 1 } ?? live.startIndex
+        guard start <= result else { return nil }
+        let turn = live[start..<result]
+        guard !turn.contains(where: { $0.kind == .system && $0.tool == "limit" }) else { return nil }
+        let afterTools = turn.lastIndex(where: { $0.kind == .tool }).map { $0 + 1 } ?? turn.startIndex
+        let reply = live[afterTools..<result].filter { $0.kind == .assistant }.map(\.text).joined(separator: "\n\n")
+        let ended = live[result].date
+        return limitReply(reply, now: ended).map { ($0, ended) }
+    }
+
     /// What agents say when their login no longer works, lowercased: Claude Code, Codex, Gemini CLI, the ACP agents
     /// ("Authentication required", -32000) and the rest. Kept narrow: a word like "token" alone also appears in
     /// context-window errors. The one list behind `.authentication`, `AgentSignInFailure` and `AgentErrorText`.
