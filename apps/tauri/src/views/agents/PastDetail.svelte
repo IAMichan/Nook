@@ -3,9 +3,12 @@
   import { agentApi, agentNames, formatTokens, total, type PastSession } from "../../lib/agents";
   import Conversation from "./Conversation.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { EndFollow } from "../../lib/end-follow.svelte";
   import { ago, duration, folderName } from "./time";
 
   let { session, oncontinue }: { session: PastSession; oncontinue?: (s: PastSession, message?: string) => void } = $props();
+  // Opens at the end of the transcript and follows it while it grows, until you scroll up yourself.
+  const follow = new EndFollow(".msg, .thinking, .step, p");
   let error = $state<string | null>(null);
   let message = $state("");
 
@@ -38,7 +41,7 @@
       {#if total(session.tokens)} · {tr("{n} tokens", "{n} tokens", { n: formatTokens(total(session.tokens)) })}{/if}
     </div>
   </header>
-  <div class="scroll"><div class="thread-column body"><Conversation path={session.path} baseFolder={session.lastCwd || session.cwd} /></div></div>
+  <div class="scroll" {@attach follow.attach}><div class="thread-column body"><Conversation path={session.path} baseFolder={session.lastCwd || session.cwd} /></div></div>
   <div class="thread-column foot">
   {#if error}<p class="err">{error}</p>{/if}
   {#if oncontinue}

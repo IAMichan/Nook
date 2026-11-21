@@ -8,11 +8,11 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "../../components/ui/Ico.svelte";
+  import { EndFollow } from "../../lib/end-follow.svelte";
 
-  let { children, floating, version, reserve = 0, background, land = null }: {
+  let { children, floating, reserve = 0, background, land = null }: {
     children: Snippet;
     floating?: Snippet;
-    version: unknown;
     /** The id of an element to open at instead of the end (a chat's first unread message): set once, it lands there
      * at the top and holds still; where it is near the end anyway, the end is followed again. */
     land?: string | null;
@@ -21,37 +21,30 @@
     background?: string;
   } = $props();
   let box = $state<HTMLDivElement | null>(null);
-  let atEnd = $state(true);
-  let far = $state(false);
+  // Follows the end by the rules in `end-follow.ts`: only a swipe up of your own lets go, only one down to the end
+  // follows again, and the message you read stays put while what is below it grows.
+  const follow = new EndFollow("[id], .column > *");
 
-  function measure() {
-    if (!box) return;
-    const gap = box.scrollHeight - box.scrollTop - box.clientHeight;
-    atEnd = gap < 32;
-    far = gap > 120;
-  }
   function toEnd() {
-    if (box) box.scrollTop = box.scrollHeight;
-    atEnd = true;
-    far = false;
+    follow.toEnd();
   }
 
-  // Something new arrived: follow it only when you were at the end.
+  // The room under the content changed (padding, so the content itself did not resize): stay at the end.
   $effect(() => {
-    void version;
-    const follow = atEnd;
-    tick().then(() => follow && toEnd());
+    void reserve;
+    tick().then(() => follow.following && follow.toEnd());
   });
 
-  // Landing on an element: after the follow above, so it wins over the end it just scrolled to.
+  // Landing on an element: it lands at the top and holds still; near the end anyway, the end is followed again.
   $effect(() => {
     const target = land;
     if (!target) return;
     tick().then(() => {
       const el = box?.querySelector<HTMLElement>(`#${CSS.escape(target)}`);
       if (!box || !el) return;
+      follow.release();
       box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - 8;
-      measure();
+      if (box.scrollHeight - box.scrollTop - box.clientHeight < 32) follow.toEnd();
     });
   });
 
@@ -66,12 +59,12 @@
 
 <div class="wrap" style:background>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="scroll" bind:this={box} onscroll={measure} onclick={click} style:padding-bottom="{12 + reserve}px">
+  <div class="scroll" bind:this={box} {@attach follow.attach} onclick={click} style:padding-bottom="{12 + reserve}px">
     <div class="column">{@render children()}</div>
   </div>
   <div class="over">
     {@render floating?.()}
-    {#if far}
+    {#if !follow.following && follow.far}
       <button class="end" onclick={toEnd} aria-label={tr("Naar het einde", "Scroll to end")}><Ico name="arrow-down" size={15} stroke={2.6} /></button>
     {/if}
   </div>

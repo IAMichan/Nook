@@ -9,6 +9,7 @@
   import Icon from "../../../components/Icon.svelte";
   import EventRow from "./EventRow.svelte";
   import PlanCard from "./PlanCard.svelte";
+  import { EndFollow } from "../../../lib/end-follow.svelte";
 
   let {
     run,
@@ -33,8 +34,7 @@
   let open = $state(new Set<string>());
   let expanded = $state(new Set<string>());
   let scroller = $state<HTMLDivElement>();
-  let atEnd = $state(true);
-  let follow = $state(true);
+  const follow = new EndFollow("[data-event], .summary, .live, .recovery");
   let finding = $state(false);
   let query = $state("");
   let findIndex = $state<number | null>(null);
@@ -75,41 +75,22 @@
     return run.autoResume ? tr("Gaat verder om {time} (over {wait})", "Continues at {time} (in {wait})", { time: clock, wait }) : tr("Vrij om {time} (over {wait})", "Resets at {time} (in {wait})", { time: clock, wait });
   }
 
-  // Nieuwe events volgen het einde, tenzij je weggescrold bent.
-  $effect(() => {
-    void shown.length;
-    void shown[shown.length - 1]?.text.length;
-    if (follow) queueMicrotask(() => toEnd(false));
-  });
+  // Follows the end while it grows (see `end-follow.ts`): only scrolling up yourself lets go, only scrolling down to
+  // the end yourself follows again. While the agent works the end never shrinks under you.
+  $effect(() => follow.hold(active && !finding));
 
-  // Je stuurde iets: dat is het nieuwste en volgt weer.
+  // You sent something: that is the newest and follows again.
   let lastUser = "";
   $effect(() => {
     const u = [...shown].reverse().find((e) => e.kind === "user")?.id ?? "";
     if (u && u !== lastUser) {
-      if (lastUser) follow = true;
+      if (lastUser) follow.toEnd();
       lastUser = u;
     }
   });
 
-  function toEnd(smooth: boolean) {
-    scroller?.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? "smooth" : "auto" });
-  }
-
-  function onscroll() {
-    if (!scroller) return;
-    atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 48;
-    if (atEnd) follow = true;
-  }
-
-  function onwheel() {
-    if (!atEnd) follow = false;
-    queueMicrotask(() => {
-      if (!atEnd) follow = false;
-    });
-  }
-
   function toggleBlock(key: string) {
+    follow.unhold();
     const next = new Set(open);
     if (next.has(key)) next.delete(key);
     else next.add(key);
@@ -117,6 +98,7 @@
   }
 
   function toggleEvent(id: string) {
+    follow.unhold();
     const next = new Set(expanded);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -126,7 +108,7 @@
   function reveal(id: string) {
     const keys = T.containers(list)[id] ?? [];
     if (keys.length) open = new Set([...open, ...keys]);
-    follow = false;
+    follow.release();
     requestAnimationFrame(() => scroller?.querySelector(`[data-event="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
   }
 
@@ -182,7 +164,7 @@
       <button class="ghost" title={tr("Sluit", "Close")} onclick={closeFind}>✕</button>
     </div>
   {/if}
-  <div class="scroll" bind:this={scroller} {onscroll} {onwheel}>
+  <div class="scroll" bind:this={scroller} {@attach follow.attach}>
     <div class="thread-column rows">
     {#if !shown.length}<p class="faint small">{tr("Nog niets in dit gesprek. Stuur een bericht om verder te gaan.", "Nothing in this conversation yet. Send a message to continue.")}</p>{/if}
 
@@ -273,8 +255,8 @@
     {/if}
     </div>
   </div>
-  {#if !follow && !atEnd && !finding}
-    <button class="to-end" onclick={() => { follow = true; toEnd(true); }}>{tr("Naar einde", "To the end")} ↓</button>
+  {#if !follow.following && follow.far && !finding}
+    <button class="to-end" onclick={() => follow.toEnd(true)}>{tr("Naar einde", "To the end")} ↓</button>
   {/if}
 </div>
 

@@ -6,6 +6,7 @@
   import { agents } from "../../lib/agents.svelte";
   import { ask } from "../../lib/confirm.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { EndFollow } from "../../lib/end-follow.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import Conversation from "./Conversation.svelte";
   import DiffView from "./DiffView.svelte";
@@ -13,6 +14,8 @@
   import { ago } from "./time";
 
   let { session, ontakeover }: { session: AgentSession; ontakeover?: (s: AgentSession, endTerminal: boolean, message?: string) => void } = $props();
+  // Opens at the end of the transcript and follows it while it grows, until you scroll up yourself.
+  const follow = new EndFollow(".msg, .thinking, .step, p");
   let canEnd = $state(false);
   let terminalName = $state("terminal");
   let message = $state("");
@@ -67,7 +70,7 @@
     </div>
   </header>
 
-  <div class="scroll">
+  <div class="scroll" {@attach follow.attach}>
   <div class="thread-column body">
   {#if approval}<ApprovalCard {approval} />{/if}
   {#if question}{#key question.id}<QuestionCard request={question} />{/key}{/if}
