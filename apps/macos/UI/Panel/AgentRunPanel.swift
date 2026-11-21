@@ -88,6 +88,8 @@ struct AgentRunPanel: View {
     @ObservedObject var workspaceSettings = WorkspaceSettings.shared
     /// The pull requests of the session's branches, for the tray above the box.
     @ObservedObject var pullRequestSync = PullRequestSync.shared
+    /// The scheduled tasks that run in this session, shown in the tray above its composer.
+    @ObservedObject var scheduledTasks = ScheduledTaskStore.shared
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) var outputsLink
     @Environment(\.sessionSide) var sideLink
