@@ -623,6 +623,8 @@ final class WorkspaceManager: ObservableObject {
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
+        // And those whose last turn ended on a limit notice that was not noted as a limit.
+        recheckLimitReplies()
         reattachKeptRuns()
         restoreWaiting(waiting)
         // Guest links that still work connect again (within their 24 hours).
