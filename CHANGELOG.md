@@ -10,6 +10,8 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+## [0.1.2-beta.1] - 2026-11-21
+
 ### Added
 
 - Ask Nook to do something on a page from its browser side panel ("fill in this form", "find the cheapest flight")
@@ -17,6 +19,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   Before, it made a plan you had to run in Nook's window. Each step waits for **Allow** in the side panel, or turn on
   **Act without asking** for a site (or press **Always on this site**). Paying, ordering, sending, deleting and booking
   always ask first. Needs version 1.4 of the extension.
+
 - The browser extension works much faster: after a click it looks at the page once instead of three times, no longer
   waits a fixed quarter of a second, goes on as soon as a new page can be used instead of waiting for every picture and
   advert, ignores animations that never stop, and its cursor glides quicker.
@@ -25,18 +28,23 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   button appears in the sidebar footer, and **Install and restart** in Settings › Maintenance downloads it, checks its
   signature, installs it over the current version and starts Nook again. No more uninstalling and reinstalling; your
   data and settings stay. Pick Stable or Beta there too.
+
 - The `.msi` and `.deb` installs of Nook update themselves as well (Windows or your system asks for permission once
   per update), and from your phone you can now install an update on your computer: the home shows a **Nook update**
   card with **Install** (or **Restart now** when agents are still working).
+
 - Administrators can turn updates off, or keep Nook on Stable, with a configuration profile on the Mac, a registry
   policy on Windows or `/etc/nook/policy.json` on Linux; `NOOK_DISABLE_UPDATES=1` does it for one machine.
+
 - Nook checks for updates through a small file on the latest release instead of GitHub's API, so many copies behind
   one internet connection no longer run into GitHub's rate limit.
+
 - Nook's browser extension can now point at something on any page for your coding agent, as Nook's own browser and
   PDF viewer do: press the crosshair in the side panel (or Alt+Shift+E), click an element, and its address, selector,
   markup and text are on your clipboard, ready to paste in an agent's prompt. Shift-click takes several. In a PDF the
   click takes the spot and copies a picture of it with the spot marked; the crosshair then shows a PDF page, so you
   see which of the two it selects. On browser pages where it cannot select, it is greyed out.
+
 - Nook Chat now looks things up on the web when you ask what an abbreviation, term or word means ("Wat betekent PGO?",
   "What does SLA stand for?", in all five languages), instead of answering from the model's memory, and says where it
   found the answer. With **Search the web when needed** off, nothing changes.
@@ -47,6 +55,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
   near the end no longer gets pulled back down by the next streamed words, and the text you are reading stays put while
   new steps arrive or a group folds. Following the end resumes only when you scroll down to it yourself, as on the Mac.
   Transcripts of sessions Nook follows from outside now open at the end too. Also for Nook chat.
+
 - Scrolling through an agent's conversation (and Nook chat) no longer jumps up or down by itself: scrolling up near
   the end is no longer pulled back to the end, the text you read stays put while the agent adds new steps below it,
   and the first step up after following the agent no longer leaps far through the conversation. The view follows the
@@ -444,5 +453,6 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
+[0.1.2-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.1
 [0.1.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1
 [0.1.0-beta.1]: https://github.com/IAMichan/nook/releases/tag/v0.1.0-beta.1
