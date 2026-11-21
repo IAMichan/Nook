@@ -92,6 +92,26 @@ enum FailureClassifier {
         return lower.range(of: #"(^|[^0-9.])429([^0-9]|$)"#, options: .regularExpression) != nil
     }
 
+    struct LimitReply: Equatable {
+        var resetAt: Date?
+    }
+
+    /// A reply longer than this is an answer, not a limit notice.
+    static let limitReplyLength = 600
+
+    /// A turn that ended normally but whose whole reply says a usage limit stopped it, as Antigravity answers when its
+    /// quota runs out ("Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will
+    /// reset in 4 hours, 23 minutes."). Nil for any other reply, also a long answer that only mentions a limit.
+    static func limitReply(_ text: String, now: Date = Date()) -> LimitReply? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= limitReplyLength else { return nil }
+        let lower = trimmed.lowercased()
+        let phrases = ["usage limit reached", "reached your current quota", "reached your usage limit", "you've hit your limit",
+                       "you have hit your limit", "quota exceeded", "resource_exhausted"]
+        guard phrases.contains(where: lower.contains) else { return nil }
+        return LimitReply(resetAt: UsageLimits.textReset(trimmed, now: now))
+    }
+
     /// What agents say when their login no longer works, lowercased: Claude Code, Codex, Gemini CLI, the ACP agents
     /// ("Authentication required", -32000) and the rest. Kept narrow: a word like "token" alone also appears in
     /// context-window errors. The one list behind `.authentication`, `AgentSignInFailure` and `AgentErrorText`.
