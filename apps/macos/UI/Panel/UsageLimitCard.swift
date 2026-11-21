@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// At the end of the timeline of a session a usage limit stopped, in the place and shape of the "You stopped the agent"
-/// card (`recovery`): what happened and when the limit resets beside Retry, then the accounts with room left to go on
-/// with at once (best first, each with a model you can change and how much of it is used), "Another model" (the one
-/// model picker, every agent, account and model), and "Resume at reset" (sends "Continue where you left off." once it has).
+/// At the end of the timeline of a session a usage limit stopped, in the shape of the "Stopped" marker
+/// (`stoppedMarker`): a hairline on either side of a small pill that says the limit was reached, whose account, and
+/// when it resets, with Retry. Under it one quiet row to go on now with the best account that has room left (the
+/// logo of the model it goes on with, a model you can change, how much of it is used, "Another model" for the model
+/// picker over every agent, account and model, and Go on), then "Resume at reset" (sends "Continue where you left
+/// off." once it has) and a banked reset credit.
 struct UsageLimitCard: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var app: AppModel
@@ -11,88 +13,144 @@ struct UsageLimitCard: View {
     /// The model you picked per account to go on with, instead of the one Nook suggests.
     @State private var picked: [String: String] = [:]
 
-    /// At most this many accounts to go on with: the best ones; "Another model" has every account.
-    private static let shownOptions = 3
-
     /// Whether this session shows the limit card instead of the stopped/failed one.
     static func shows(_ run: WorkspaceRun) -> Bool { run.limitedAt != nil && !run.status.isActive }
 
     var body: some View {
         if Self.shows(run) {
             let auto = run.autoResume == true
-            let options = Array(suggestions().prefix(Self.shownOptions))
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                AdaptiveActionRow(spacing: 10, alignment: .top) {
-                    header(auto: auto)
-                } actions: {
-                    // The limit may already be free (or the reset was early): try the turn again now.
-                    NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(run.id) }
-                }
-                NookDivider()
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        Text(tr(options.isEmpty ? "ws.limit.goOnOther" : "ws.limit.goOnWith"))
+            VStack(spacing: NookTheme.Spacing.sm) {
+                marker(auto: auto)
+                VStack(spacing: NookTheme.Spacing.sm) {
+                    offer(suggestions().first)
+                    // Also without a known reset: Nook then tries again now and then until the limit lets it through.
+                    Toggle(isOn: Binding(get: { auto }, set: { workspace.setAutoResume(run.id, $0) })) {
+                        Text(tr("ws.limit.autoResume"))
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                        Spacer(minLength: NookTheme.Spacing.sm)
-                        otherModelMenu
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    ForEach(Array(options.enumerated()), id: \.element.profile.id) { index, option in
-                        LimitOptionRow(option: option, best: index == 0, pickModel: { model in
-                            picked[option.profile.id] = model
-                        }) {
-                            _ = workspace.switchProvider(run.id, to: option.provider, profileID: option.profile.id,
-                                                         model: option.model, resumeIfLimited: true)
-                        }
+                    .compactSwitch(.mini)
+                    .tint(NookTheme.amber)
+                    // A banked reset credit of this account frees it now, instead of waiting for the reset.
+                    if let profile = app.profiles.profile(id: run.profileID) {
+                        ResetCreditRow(profile: profile)
                     }
                 }
-                NookDivider()
-                // Also without a known reset: Nook then tries again now and then until the limit lets it through.
-                Toggle(isOn: Binding(get: { auto }, set: { workspace.setAutoResume(run.id, $0) })) {
-                    Text(tr("ws.limit.autoResume"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
-                .compactSwitch(.mini)
-                .tint(NookTheme.amber)
-                // A banked reset credit of this account frees it now, instead of waiting for the reset.
-                if let profile = app.profiles.profile(id: run.profileID) {
-                    ResetCreditRow(profile: profile)
-                }
+                .frame(maxWidth: 560)
             }
-            .padding(NookTheme.Spacing.md)
-            .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.3), radius: NookTheme.Radius.card)
+            .padding(.vertical, NookTheme.Spacing.sm)
         }
     }
 
-    /// "⌛ Usage limit reached", whose account is at its limit, when it resets, and its 5-hour and weekly windows: laid
-    /// out as the stopped and failed cards are.
-    private func header(auto: Bool) -> some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            BannerMark(symbol: "hourglass", tint: NookTheme.amber)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
-                Text(tr("ws.limit.accountAt", accountWords(run.provider, profileID: run.profileID)))
+    /// "⏳ Usage limit reached · Claude Code · Work · Resets at 20:10 (in 1h 16m)  Retry": the stopped marker's pill,
+    /// the reset in amber. Without the account when the row is too narrow.
+    private func marker(auto: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider()
+            HStack(spacing: NookTheme.Spacing.sm) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Image(icon: "hourglass")
+                        .font(NookTheme.font(12, .semibold))
+                        .foregroundStyle(NookTheme.amber)
+                    TimelineView(.nookTicks(every: 30)) { context in
+                        let when = line(now: context.date, auto: auto)
+                        ViewThatFits(in: .horizontal) {
+                            markerText([tr("ws.limit.title"), accountWords(run.provider, profileID: run.profileID)], when: when)
+                            markerText([tr("ws.limit.title")], when: when)
+                            markerText([], when: when)
+                        }
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                // The limit may already be free (or the reset was early): try the turn again now.
+                NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(run.id) }
+            }
+            .padding(.leading, NookTheme.Spacing.lg)
+            .padding(.trailing, NookTheme.Spacing.xs)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .cardBackground(NookTheme.well, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
+            .layoutPriority(1)
+            NookDivider()
+        }
+    }
+
+    /// The pill's words: what happened and whose account, then when it resets in amber.
+    private func markerText(_ words: [String], when: String) -> some View {
+        (Text(words.map { $0 + " · " }.joined()).foregroundStyle(NookTheme.textSecondary)
+            + Text(when).foregroundStyle(NookTheme.amber))
+            .font(NookTheme.TextStyle.caption)
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    /// "[logo] Go on now with Personal  Sonnet 5.5 ⌄ · 20% used     Another model ⌄  Go on": the best account to go on
+    /// with, under the logo of the model it goes on with; with none, only "Another model". Always one line: where it is
+    /// too narrow, the use goes first, then "Go on now with", then the model menu.
+    private func offer(_ option: LimitOption?) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if let option {
+                ModelMark(model: option.modelName, agent: option.provider.displayName, size: 16)
+                    .accountBadge(option.badge, size: 16, ring: NookTheme.well)
+                    .padding(.trailing, option.badge == nil ? 0 : 3)
+                ViewThatFits(in: .horizontal) {
+                    offerWords(option, lead: true, model: true, used: true)
+                    offerWords(option, lead: true, model: true, used: false)
+                    offerWords(option, lead: false, model: true, used: false)
+                    offerWords(option, lead: false, model: false, used: false, truncates: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(tr("ws.limit.goOnOther"))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                TimelineView(.nookTicks(every: 30)) { context in
-                    Text(line(now: context.date, auto: auto))
-                        .font(NookTheme.TextStyle.detail)
-                        .monospacedDigit()
-                        .foregroundStyle(NookTheme.amber)
-                        .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            otherModelMenu.fixedSize()
+            if let option {
+                SmallPrimaryButton(title: tr("ws.limit.goOn"), compact: true) {
+                    _ = workspace.switchProvider(run.id, to: option.provider, profileID: option.profile.id,
+                                                 model: option.model, resumeIfLimited: true)
                 }
-                // Which window ran out (5 hours or the week) and how full the other one is.
-                if let profile = app.profiles.profile(id: run.profileID) {
-                    let own = QuotaLimit.perWindow(app.quota.limits(for: profile), model: run.model)
-                    if !own.isEmpty {
-                        LimitWindowMeters(limits: own).padding(.top, NookTheme.Spacing.xs)
+                .fixedSize()
+            }
+        }
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .cardBackground(NookTheme.well, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
+    }
+
+    /// The offer's words on one line, each part at its own width: "Go on now with", the account, its model as a menu,
+    /// and "· 20% used"; the last form cuts the account's name short when even that is too wide.
+    private func offerWords(_ option: LimitOption, lead: Bool, model: Bool, used: Bool, truncates: Bool = false) -> some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            if lead {
+                Text(tr("ws.limit.goOnWith")).foregroundStyle(NookTheme.textSecondary)
+            }
+            Text(option.sameAgent ? AccountLabel.name(option.profile, app: app) : option.title)
+                .fontWeight(.medium)
+                .foregroundStyle(NookTheme.textStrong)
+            if model {
+                ComposerDropdown(width: ModelPickerStyle.width) {
+                    LimitMenuLabel(text: option.modelName)
+                } content: {
+                    AgentModelPicker(providers: [option.provider], provider: option.provider, profileID: option.profile.id,
+                                     model: option.model, showsAccounts: false, offersAuto: false) { _, _, model in
+                        if let model { picked[option.profile.id] = model }
                     }
                 }
             }
+            if used, let fraction = option.usedFraction {
+                Text("· " + tr("ws.limit.usedShort", Int((fraction * 100).rounded())))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
         }
+        .font(NookTheme.TextStyle.detail)
+        .lineLimit(1)
+        // The narrowest form cuts the account's name short instead of running past the row.
+        .fixedSize(horizontal: !truncates, vertical: false)
     }
 
     /// "Another model ⌄": the one model picker over every agent and account this session may move to. Another account
@@ -202,56 +260,6 @@ struct LimitOption {
     let badge: AccountTag?
 }
 
-/// One account in the usage limit card: its logo with the account's badge, the agent and account, the model it goes on
-/// with (a click opens the model picker for that account) and what goes along, its 5-hour and weekly windows
-/// (`LimitWindowMeters`), and "Go on". The best one is lifted and its button is the main one.
-struct LimitOptionRow: View {
-    let option: LimitOption
-    let best: Bool
-    let pickModel: (String) -> Void
-    let choose: () -> Void
-
-    var body: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            AgentLogo(agent: option.provider.displayName, size: 16)
-                .accountBadge(option.badge, size: 16, ring: best ? NookTheme.rowSelected : NookTheme.surface)
-                .padding(.trailing, option.badge == nil ? 0 : 3)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(option.title)
-                    .font(NookTheme.TextStyle.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(NookTheme.textStrong)
-                    .lineLimit(1)
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    ComposerDropdown(width: ModelPickerStyle.width) {
-                        LimitMenuLabel(text: option.modelName)
-                    } content: {
-                        AgentModelPicker(providers: [option.provider], provider: option.provider, profileID: option.profile.id,
-                                         model: option.model, showsAccounts: false, offersAuto: false) { _, _, model in
-                            if let model { pickModel(model) }
-                        }
-                    }
-                    Text("· " + tr(option.sameAgent ? "ws.limit.carrySame" : "ws.limit.carryOther"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            Spacer(minLength: NookTheme.Spacing.sm)
-            LimitWindowMeters(limits: option.limits)
-            if best {
-                SmallPrimaryButton(title: tr("ws.limit.goOn"), action: choose)
-            } else {
-                SmallGhostButton(title: tr("ws.limit.goOn"), action: choose)
-            }
-        }
-        .padding(.horizontal, NookTheme.Spacing.sm)
-        .padding(.vertical, NookTheme.Spacing.sm)
-        .roundedBackground(best ? NookTheme.rowSelected : Color.clear, radius: NookTheme.Radius.control)
-    }
-}
-
 /// A quiet menu in the usage limit card: an optional symbol, its text and a chevron, brighter under the pointer.
 struct LimitMenuLabel: View {
     let text: String
@@ -271,6 +279,21 @@ struct LimitMenuLabel: View {
         .roundedBackground(hovering ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+}
+
+/// The logo of a model: its maker's mark when its name says it (Claude, GPT, Kimi, …), else the agent's logo.
+struct ModelMark: View {
+    let model: String
+    let agent: String
+    var size: CGFloat = 16
+
+    var body: some View {
+        if let logo = BrandLogo.forName(model) {
+            BrandMark(logo: logo, size: size)
+        } else {
+            AgentLogo(agent: agent, size: size)
+        }
     }
 }
 
