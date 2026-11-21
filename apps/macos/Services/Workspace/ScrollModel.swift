@@ -60,8 +60,18 @@ struct ScrollModel: Equatable, Sendable {
     /// Nothing when nothing changes: the view calls this for every frame of a scroll, and writing its scroll state
     /// each time would draw the whole conversation again for each frame.
     func releases(movedFrom old: ScrollFrame, to new: ScrollFrame) -> Bool {
-        guard !new.resized(from: old), !isFreeAfterUserScroll else { return false }
+        guard !new.resized(from: old), !isFreeAfterUserScroll, !Self.movedBySelf(from: old, to: new) else { return false }
         return new.offset < old.offset - 0.5 && new.maxOffset - new.offset > 4
+    }
+
+    /// Whether a move of the view up while its sizes stayed the same was the scroll view's own: more than a page at
+    /// once, which no step of yours makes (the wheel and trackpad let go before the view moves, and Page Up moves less
+    /// than a page). A lazy stack that measures a row anew guesses the height of everything above it again, by thousands
+    /// of points; the scroll view keeps its end there in one report and then puts back its old offset in the next, with
+    /// no size change (measured offscreen on 2026-11-21). Taken for you, that stopped following and left the view
+    /// thousands of points up, a while after you had scrolled down to the end of a finished session.
+    static func movedBySelf(from old: ScrollFrame, to new: ScrollFrame) -> Bool {
+        !new.resized(from: old) && old.offset - new.offset > max(new.container, 1)
     }
 
     /// Whether a scroll-wheel or trackpad step of yours over the conversation, before the view moves by it, lets go of

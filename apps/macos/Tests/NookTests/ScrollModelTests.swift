@@ -37,6 +37,21 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertFalse(model.releases(movedFrom: frame(1200), to: frame(1100)), "already free: nothing to write")
     }
 
+    func testAJumpOfTheScrollViewsOwnIsNotYou() {
+        // A lazy stack guessed the rows above anew: the end held in one report, the old offset put back in the next.
+        let model = ScrollModel()
+        let atEnd = frame(5400, content: 6000)
+        let putBack = frame(1400, content: 6000)
+        XCTAssertTrue(ScrollModel.movedBySelf(from: atEnd, to: putBack))
+        XCTAssertFalse(model.releases(movedFrom: atEnd, to: putBack), "following goes on, back to the end")
+        // Page Up moves less than a page, an arrow key a line: those are still you.
+        XCTAssertFalse(ScrollModel.movedBySelf(from: atEnd, to: frame(4860, content: 6000)))
+        XCTAssertTrue(model.releases(movedFrom: atEnd, to: frame(4860, content: 6000)))
+        // A move with a size change, or down, is not one of these.
+        XCTAssertFalse(ScrollModel.movedBySelf(from: atEnd, to: frame(1400, content: 6100)))
+        XCTAssertFalse(ScrollModel.movedBySelf(from: putBack, to: atEnd))
+    }
+
     func testABounceBackToTheEndKeepsFollowing() {
         let model = ScrollModel()
         XCTAssertFalse(model.releases(movedFrom: frame(1420), to: frame(1400)))
