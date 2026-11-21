@@ -4,10 +4,10 @@
   import type { Snippet } from "svelte";
   import Orb, { type Mood } from "../Orb.svelte";
 
-  let { mood = "idle", tint, height = $bindable(0), children }: { mood?: Mood; tint?: string; height?: number; children: Snippet } = $props();
+  let { mood = "idle", tint, label, height = $bindable(0), children }: { mood?: Mood; tint?: string; label?: string; height?: number; children: Snippet } = $props();
 </script>
 
-<div class="barcard" bind:clientHeight={height}>
+<div class="barcard" role="region" aria-label={label} bind:clientHeight={height}>
   <div class="face"><Orb size={46} {mood} {tint} /></div>
   <div class="content">{@render children()}</div>
 </div>

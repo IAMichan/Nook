@@ -12,8 +12,27 @@ use super::ui_control::{self, Action, Modifier};
 
 /// Model rounds one task may take: a checkout or a booking is easily twenty read/act cycles.
 pub const ROUNDS: usize = 60;
+/// Maximum tool calls in one takeover run (matching macOS `TakeoverPolicy.calls`).
+pub const CALLS: usize = 180;
 pub const TOOL_NAME: &str = "take_over";
+pub const CONTROL_TOOL: &str = "control_ui";
+pub const READ_TOOL: &str = "read_ui";
+pub const LIST_MENU_TOOL: &str = "list_app_menu";
 pub const WAIT_TOOL: &str = "wait_for_user";
+
+/// JSON schema for `wait_for_user`: asks the user to complete a step Nook refuses or cannot do alone.
+pub fn wait_for_user_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": "Short, clear instruction in the user's language of what they should do right now (e.g. sign in, enter payment details, solve the captcha, or pick an option)."
+            }
+        },
+        "required": ["request"]
+    })
+}
 
 // MARK: The point of no return
 
@@ -288,18 +307,41 @@ fn luhn(digits: &[u32]) -> bool {
     sum % 10 == 0
 }
 
-/// Never run, also not with the user's yes: typing card or social security numbers (the user types those).
+/// Never run, also not with the user's yes: blocked apps (password managers, terminals, system admin, Nook),
+/// forbidden system shortcuts, and typing card or social security numbers (the user types those).
 pub fn refusal(tool: &str, input: &Value) -> Option<String> {
-    if tool != "control_ui" {
+    if tool == CONTROL_TOOL || tool == MENU_TOOL {
+        let app = input["app"].as_str().map(str::trim).unwrap_or("");
+        if !app.is_empty() && ui_control::is_blocked_app(app) {
+            return Some(format!(
+                "Not run: Nook does not control {app} with mouse and keyboard: it holds passwords, runs commands or is Nook itself."
+            ));
+        }
+    }
+    if tool != CONTROL_TOOL {
         return None;
     }
-    ui_control::steps(&input["steps"])
-        .iter()
-        .any(|s| s.action == Action::Type && contains_high_risk_number(s.text.as_deref().unwrap_or("")))
-        .then(|| format!("Not run: Nook never types card or social security numbers. Call {WAIT_TOOL} and ask the user to fill in that part."))
+    for step in ui_control::steps(&input["steps"]) {
+        if step.action == Action::Type && contains_high_risk_number(step.text.as_deref().unwrap_or("")) {
+            return Some(format!(
+                "Not run: Nook never types card or social security numbers. Call {WAIT_TOOL} and ask the user to fill in that part."
+            ));
+        }
+        if step.action == Action::Key {
+            if let Some(reason) = step.keys.as_deref().and_then(ui_control::parse_keys).as_ref().and_then(ui_control::forbidden) {
+                return Some(format!("Not run: {reason}."));
+            }
+        }
+    }
+    None
 }
 
 // MARK: Staying on track
+
+/// Canonical key for a tool call, stable regardless of JSON object key order.
+pub fn step_key(tool: &str, input: &Value) -> String {
+    format!("{tool}:{}", super::tool_loop::sorted(input))
+}
 
 /// The same control_ui call for the third time in a row: whatever it should do, it does not do it this way.
 pub fn is_repeat(key: &str, recent: &[String]) -> bool {
@@ -307,6 +349,112 @@ pub fn is_repeat(key: &str, recent: &[String]) -> bool {
 }
 
 pub const REPEAT_REFUSAL: &str = "Not run: you asked for exactly these steps twice already and they did not get you further. Read the window (read_ui), think about why, and try another way: another control, a keyboard shortcut, the menu (list_app_menu), scrolling to it, or a different page. If there is no other way, end with STATUS: COULD_NOT and the reason.";
+
+/// Tracks recent `control_ui` calls and the last window description across a session/takeover so identical calls are
+/// stopped on the 3rd attempt, unchanged windows are flagged, and cookie banners are recognized.
+#[derive(Clone, Debug, Default)]
+pub struct RepeatTracker {
+    recent: Vec<String>,
+    last_read: String,
+    cookie_banner: bool,
+}
+
+impl RepeatTracker {
+    const HISTORY_LIMIT: usize = 4;
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reset(&mut self) {
+        self.recent.clear();
+        self.last_read.clear();
+        self.cookie_banner = false;
+    }
+
+    pub fn cookie_banner(&self) -> bool {
+        self.cookie_banner
+    }
+
+    pub fn last_read(&self) -> &str {
+        &self.last_read
+    }
+
+    /// Updates cookie-banner state and last-read snapshot from a `read_ui` description.
+    pub fn note_read(&mut self, read: &str) {
+        let trimmed = read.trim();
+        self.cookie_banner = shows_cookie_banner(trimmed);
+        self.last_read = trimmed.to_string();
+    }
+
+    /// Whether this `control_ui` call would be the 3rd identical call in a row.
+    pub fn is_repeated(&self, tool: &str, input: &Value) -> bool {
+        if tool != CONTROL_TOOL {
+            return false;
+        }
+        let key = step_key(tool, input);
+        is_repeat(&key, &self.recent)
+    }
+
+    /// Records a `control_ui` call that is about to execute (keeps the last 4 keys).
+    pub fn record(&mut self, tool: &str, input: &Value) {
+        if tool != CONTROL_TOOL {
+            return;
+        }
+        let key = step_key(tool, input);
+        self.recent.push(key);
+        if self.recent.len() > Self::HISTORY_LIMIT {
+            let drain = self.recent.len() - Self::HISTORY_LIMIT;
+            self.recent.drain(..drain);
+        }
+    }
+
+    /// Checks for a 3rd identical `control_ui` call and records the call if allowed.
+    pub fn check_and_record(&mut self, tool: &str, input: &Value) -> Result<(), &'static str> {
+        if self.is_repeated(tool, input) {
+            return Err(REPEAT_REFUSAL);
+        }
+        self.record(tool, input);
+        Ok(())
+    }
+
+    /// Appends a fresh window read after an action, noting when the window did not change at all.
+    pub fn after_window(&mut self, result: &str, fresh_read: &str) -> String {
+        let trimmed = fresh_read.trim();
+        let unchanged = !trimmed.is_empty() && trimmed == self.last_read;
+        if !trimmed.is_empty() {
+            self.note_read(trimmed);
+        }
+        after_action(result, fresh_read, unchanged)
+    }
+}
+
+/// Decision of the takeover safety gate for a single tool call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GateDecision {
+    /// Safe to execute immediately (e.g. non-committing takeover step).
+    Allow,
+    /// Point of no return or ambiguous target: must wait for explicit user approval of this summary line.
+    Checkpoint(String),
+    /// Hard refusal (blocked app, card/SSN, forbidden shortcut, or 3rd consecutive repeat).
+    Refuse(String),
+}
+
+/// Evaluates hard refusals, 3rd-repeat protection, and point-of-no-return checkpoints in order.
+/// Only records the step in `tracker` when the call is allowed to run immediately.
+pub fn evaluate_gate(tool: &str, input: &Value, summary: &str, window: &Window, tracker: &mut RepeatTracker) -> GateDecision {
+    if let Some(reason) = refusal(tool, input) {
+        return GateDecision::Refuse(reason);
+    }
+    if tracker.is_repeated(tool, input) {
+        return GateDecision::Refuse(REPEAT_REFUSAL.into());
+    }
+    if let Some(line) = checkpoint(tool, input, summary, window) {
+        return GateDecision::Checkpoint(line);
+    }
+    tracker.record(tool, input);
+    GateDecision::Allow
+}
 
 /// The longest fresh read added to the result of control_ui.
 pub const AFTER_READ_LIMIT: usize = 6_000;
@@ -519,5 +667,78 @@ mod tests {
         let p = prompt("order filters", "Edge", "Shop", "Cart: 2", &["Lives in Utrecht".into()], "Today is Friday.", "Edge");
         assert!(p.starts_with("THE TASK: order filters"));
         assert!(p.contains("The user's browser: Edge") && p.contains("- Lives in Utrecht") && p.contains("Cart: 2"));
+    }
+
+    #[test]
+    fn refusal_blocks_blocked_apps_and_forbidden_keys() {
+        assert!(refusal(CONTROL_TOOL, &json!({"app": "1Password", "steps": [{"action": "click", "element": "Unlock"}]})).is_some());
+        assert!(refusal(CONTROL_TOOL, &json!({"app": "PowerShell", "steps": [{"action": "wait"}]})).is_some());
+        assert!(refusal(MENU_TOOL, &json!({"app": "Nook", "path": ["File", "Quit"]})).is_some());
+        assert!(refusal(CONTROL_TOOL, &json!({"app": "Edge", "steps": [{"action": "key", "keys": "win+l"}]})).is_some());
+        assert!(refusal(CONTROL_TOOL, &json!({"app": "Edge", "steps": [{"action": "key", "keys": "ctrl+alt+delete"}]})).is_some());
+        assert!(refusal(CONTROL_TOOL, &json!({"app": "Edge", "steps": [{"action": "key", "keys": "alt+tab"}]})).is_some());
+        assert!(refusal(CONTROL_TOOL, &json!({"app": "Edge", "steps": [{"action": "key", "keys": "ctrl+f"}]})).is_none());
+    }
+
+    #[test]
+    fn repeat_tracker_stops_third_identical_call_and_notes_unchanged_window() {
+        let mut tracker = RepeatTracker::new();
+        let call = json!({"app": "Edge", "steps": [{"action": "click", "element": "Next"}]});
+        // Order of JSON keys does not matter.
+        let reordered = json!({"steps": [{"element": "Next", "action": "click"}], "app": "Edge"});
+        assert!(tracker.check_and_record(CONTROL_TOOL, &call).is_ok());
+        assert!(tracker.check_and_record(CONTROL_TOOL, &reordered).is_ok());
+        assert_eq!(tracker.check_and_record(CONTROL_TOOL, &call), Err(REPEAT_REFUSAL));
+
+        // A different call breaks the streak.
+        let other = json!({"app": "Edge", "steps": [{"action": "scroll", "direction": "down"}]});
+        assert!(tracker.check_and_record(CONTROL_TOOL, &other).is_ok());
+        assert!(tracker.check_and_record(CONTROL_TOOL, &call).is_ok());
+
+        tracker.note_read("App: Edge\n- text \"We use cookies\" @ 10,10");
+        assert!(tracker.cookie_banner());
+        let same = tracker.after_window("Clicked Next", "App: Edge\n- text \"We use cookies\" @ 10,10");
+        assert!(same.contains("reads exactly as it did"));
+        let changed = tracker.after_window("Clicked Next", "App: Edge\n- button \"Cart\" @ 10,10");
+        assert!(!changed.contains("reads exactly as it did"));
+        assert!(!tracker.cookie_banner());
+    }
+
+    #[test]
+    fn evaluate_gate_enforces_refusal_repeat_and_checkpoint_order() {
+        let mut tracker = RepeatTracker::new();
+        let w = Window::default();
+
+        // Hard refusal wins over everything.
+        let card = json!({"app": "Edge", "steps": [{"action": "type", "element": "Card", "text": "4111 1111 1111 1111"}]});
+        assert!(matches!(evaluate_gate(CONTROL_TOOL, &card, "Type card", &w, &mut tracker), GateDecision::Refuse(_)));
+
+        // Checkpoint does not pollute repeat history.
+        let pay = json!({"app": "Edge", "steps": [{"action": "click", "element": "Pay now"}]});
+        assert_eq!(
+            evaluate_gate(CONTROL_TOOL, &pay, "Edge: Click “Pay now”", &w, &mut tracker),
+            GateDecision::Checkpoint("Edge: Click “Pay now”".into())
+        );
+        assert_eq!(
+            evaluate_gate(CONTROL_TOOL, &pay, "Edge: Click “Pay now”", &w, &mut tracker),
+            GateDecision::Checkpoint("Edge: Click “Pay now”".into())
+        );
+        assert_eq!(
+            evaluate_gate(CONTROL_TOOL, &pay, "Edge: Click “Pay now”", &w, &mut tracker),
+            GateDecision::Checkpoint("Edge: Click “Pay now”".into())
+        );
+
+        // Harmless call runs twice, then 3rd time is refused.
+        let next = json!({"app": "Edge", "steps": [{"action": "click", "element": "Next"}]});
+        assert_eq!(evaluate_gate(CONTROL_TOOL, &next, "Edge: Click “Next”", &w, &mut tracker), GateDecision::Allow);
+        assert_eq!(evaluate_gate(CONTROL_TOOL, &next, "Edge: Click “Next”", &w, &mut tracker), GateDecision::Allow);
+        assert_eq!(
+            evaluate_gate(CONTROL_TOOL, &next, "Edge: Click “Next”", &w, &mut tracker),
+            GateDecision::Refuse(REPEAT_REFUSAL.into())
+        );
+
+        let schema = wait_for_user_schema();
+        assert_eq!(schema["required"], json!(["request"]));
+        assert!(schema["properties"]["request"].is_object());
     }
 }

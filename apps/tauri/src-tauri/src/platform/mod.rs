@@ -96,7 +96,7 @@ pub fn services(app: &AppHandle) -> Platform {
 #[cfg(target_os = "windows")]
 pub fn services(app: &AppHandle) -> Platform {
     Platform {
-        screen: Arc::new(windows::WindowsScreen::new()),
+        screen: Arc::new(windows::WindowsUiScreen::new()),
         media: Arc::new(windows::WindowsMedia::new()),
         system: Arc::new(windows::WindowsSystem::new(app)),
         speech: Arc::new(windows::WindowsSpeech::new()),

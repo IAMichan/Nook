@@ -20,6 +20,7 @@
   import CategoryChips from "../connectors/CategoryChips.svelte";
   import GitLabRow from "../connectors/GitLabRow.svelte";
   import GitLabSheet from "../connectors/GitLabSheet.svelte";
+  import MailAccounts from "../connectors/MailAccounts.svelte";
   import { services, type ServicePrefs } from "../../lib/services";
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
@@ -195,6 +196,7 @@
     </div>
   {/if}
 
+  <MailAccounts {query} {category} onchange={load} />
 
   {#if local.length}
     <h3>{tr("Op dit apparaat", "On this device")}</h3>

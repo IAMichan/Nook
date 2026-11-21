@@ -39,6 +39,7 @@
   import AgentsSettings from "./settings/Agents.svelte";
   import AgentsUsage from "./settings/AgentsUsage.svelte";
   import AgentsWorkspace from "./settings/AgentsWorkspace.svelte";
+  import WorktreesSettings from "./settings/Worktrees.svelte";
   import AgentsAutomation from "./settings/AgentsAutomation.svelte";
   import AutocompleteSettings from "./settings/Autocomplete.svelte";
   import GamesSettings from "./settings/Games.svelte";
@@ -80,7 +81,7 @@
     agents: { component: AgentsSettings },
     usage: { component: AgentsUsage, when: localAgents },
     sessions: { component: AgentsWorkspace, props: { part: "sessions" }, when: localAgents },
-    worktrees: { component: AgentsWorkspace, props: { part: "worktrees" }, when: localAgents },
+    worktrees: { component: WorktreesSettings, when: localAgents },
     openIn: { component: AgentsWorkspace, props: { part: "openIn" }, when: localAgents },
     archive: { component: Archive },
     automation: { component: AgentsAutomation, when: localAgents },

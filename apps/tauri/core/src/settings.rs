@@ -7,6 +7,7 @@ use crate::provider::AIProvider;
 use crate::services::autocomplete::AutocompleteSettings;
 use crate::services::energy::EnergyMode;
 use crate::services::quiet::QuietBehavior;
+use crate::services::telemetry::TelemetrySettings;
 
 /// Waar het denken gebeurt. Op Windows, Linux en Android is er (nog) geen ingebouwd MLX-model:
 /// lokaal betekent Ollama of LM Studio.
@@ -213,6 +214,60 @@ pub struct Settings {
     pub answer_style: String,
     /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
     pub instructions: String,
+    /// Worktree creation and automatic cleanup rules (Settings › Worktrees, matching macOS `SourceControlGlobalRows`
+    /// and `WorktreeCleanup`).
+    #[serde(default)]
+    pub worktrees: WorktreeSettings,
+    /// OpenTelemetry OTLP/HTTP export configuration (Settings › Maintenance › OpenTelemetry export).
+    #[serde(default)]
+    pub telemetry: TelemetrySettings,
+    /// Skill file paths toggled off by the user in Settings › Coding agents › Skills (non-destructive).
+    #[serde(default)]
+    pub disabled_skills: BTreeSet<String>,
+}
+
+/// Worktree creation and automatic cleanup preferences (Settings › Worktrees, matching macOS).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorktreeSettings {
+    /// Use fast copy-on-write clones when supported by the filesystem.
+    pub fast_worktrees: bool,
+    /// Submodule checkout strategy for new worktrees: "recursive", "topLevel", or "skip".
+    pub submodules: String,
+    /// Fetch and fast-forward the default branch roughly every 15 minutes when clean and idle.
+    pub auto_pull_default_branch: bool,
+    /// Clone repositories into `host/owner/repo` under ~/Developer.
+    pub clone_host_layout: bool,
+    /// Remove a worktree once its session's pull request is merged.
+    pub cleanup_on_merge: bool,
+    /// Days after a settled session before removing its worktree (0 = never, 3, 7, 30).
+    pub cleanup_settled_days: u32,
+    /// Days of inactivity before removing a quiet session's worktree (0 = never, 3, 7, 30).
+    pub cleanup_inactive_days: u32,
+    /// Remove a worktree with no commits beyond its base branch.
+    pub cleanup_unchanged: bool,
+    /// Remove a worktree when its last session is deleted.
+    pub cleanup_on_delete: bool,
+    /// What local changes keep a worktree from being removed:
+    /// "uncommittedChanges", "anyLocalFiles", or "editedTrackedFiles".
+    pub keep_when: String,
+}
+
+impl Default for WorktreeSettings {
+    fn default() -> Self {
+        Self {
+            fast_worktrees: true,
+            submodules: "recursive".into(),
+            auto_pull_default_branch: false,
+            clone_host_layout: false,
+            cleanup_on_merge: true,
+            cleanup_settled_days: 7,
+            cleanup_inactive_days: 0,
+            cleanup_unchanged: false,
+            cleanup_on_delete: false,
+            keep_when: "uncommittedChanges".into(),
+        }
+    }
 }
 
 /// The main window's last place and size on the desktop.
@@ -317,6 +372,9 @@ impl Default for Settings {
             buddy_moments: true,
             answer_style: "standard".into(),
             instructions: String::new(),
+            worktrees: WorktreeSettings::default(),
+            telemetry: TelemetrySettings::default(),
+            disabled_skills: BTreeSet::new(),
         }
     }
 }
@@ -558,6 +616,19 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"theme":"light","instructions":"Call me Sam."}"#).unwrap();
         assert_eq!(s.theme, "light");
         assert_eq!(s.instructions, "Call me Sam.");
+    }
+
+    #[test]
+    fn old_settings_files_get_worktrees_and_telemetry_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert!(s.worktrees.fast_worktrees);
+        assert_eq!(s.worktrees.submodules, "recursive");
+        assert!(s.worktrees.cleanup_on_merge);
+        assert_eq!(s.worktrees.cleanup_settled_days, 7);
+        assert_eq!(s.worktrees.keep_when, "uncommittedChanges");
+        assert!(!s.telemetry.enabled);
+        assert!(s.telemetry.traces_endpoint.is_empty());
+        assert!(s.disabled_skills.is_empty());
     }
 
     #[test]

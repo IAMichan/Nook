@@ -34,6 +34,8 @@
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
   import ChatArrivedCard from "../components/ChatArrivedCard.svelte";
+  import BarCard from "../components/shell/BarCard.svelte";
+  import BarAgentCard from "../components/shell/BarAgentCard.svelte";
   import { arrivedChat, showChat } from "../lib/chat-arrived.svelte";
   import Home from "./home/Home.svelte";
   import type { Target } from "../lib/inbox";
@@ -59,23 +61,104 @@
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let inside = $state(false);
   let openedAt = 0;
-  // Agent notices: a compact one widens the closed bar (`strip`); a detailed one opens the panel. `noticeLeft` is what
-  // is left of its countdown, for the ring on OK.
+  // Agent notices and clicked chat chips: a compact notice widens the closed bar (`strip`), while a detailed notice or
+  // chat card turns the closed bar into a compact notch card (`BarAgentCard` / `BarCard`) sized to `cardHeight` instead
+  // of opening the whole tabbed panel. `noticeLeft` is what is left of the notice countdown, for the ring on OK.
+  type CardKind = "agent" | "chat";
   let strip = $state(false);
-  let openedForNotice = false;
+  let cardKind = $state<CardKind | null>(null);
+  let cardHeight = $state(0);
+  let savedPanelSize: { w: number; h: number } | null = null;
+  let cardAnchor: { centerX: number; topY: number } | null = null;
+  const cardOpen = $derived(!expanded && cardKind !== null);
   let noticeLeft = $state<number | null>(null);
   const noticeCompact = $derived(nook.settings?.agentNotice === "compact");
 
   const floating = $derived(nook.settings?.placement === "floating");
 
+  async function sizeCardWindow() {
+    if (!cardOpen) return;
+    const cardW = nook.settings?.panelLarge ? 680 : 600;
+    const cardH = Math.max(MIN.h, Math.ceil(cardHeight || 220));
+    try {
+      const win = getCurrentWindow();
+      await win.setSize(new LogicalSize(cardW, cardH));
+      if (cardAnchor) {
+        await win.setPosition(new LogicalPosition(Math.round(cardAnchor.centerX - cardW / 2), Math.round(cardAnchor.topY)));
+      }
+    } catch {
+      // Window sizing is best-effort outside desktop webviews.
+    }
+  }
+
+  $effect(() => {
+    const h = cardHeight;
+    if (!cardOpen || h <= 0) return;
+    untrack(() => {
+      void sizeCardWindow();
+    });
+  });
+
+  async function restorePanelSize() {
+    if (!savedPanelSize) return;
+    const { w, h } = savedPanelSize;
+    savedPanelSize = null;
+    cardAnchor = null;
+    try {
+      await getCurrentWindow().setSize(new LogicalSize(w, h));
+    } catch {
+      // Best-effort restore so Rust keeps the user's real panel size rather than the card size.
+    }
+  }
+
+  async function enterCard(kind: CardKind) {
+    clearTimeout(closeTimer);
+    if (expanded) return;
+    const alreadyCard = cardKind !== null;
+    strip = false;
+    cardKind = kind;
+    openedAt = Date.now();
+    if (!alreadyCard) {
+      await api.barExpand(true);
+      services.asideHide();
+      try {
+        const win = getCurrentWindow();
+        const [inner, pos, scale] = await Promise.all([win.innerSize(), win.outerPosition(), win.scaleFactor()]);
+        const s = scale || 1;
+        savedPanelSize = { w: inner.width / s, h: inner.height / s };
+        cardAnchor = { centerX: pos.x / s + savedPanelSize.w / 2, topY: pos.y / s };
+      } catch {
+        savedPanelSize = null;
+        cardAnchor = null;
+      }
+    }
+    await tick();
+    await sizeCardWindow();
+  }
+
+  async function exitCard() {
+    if (cardKind === null) return;
+    cardKind = null;
+    cardHeight = 0;
+    await restorePanelSize();
+    if (!expanded && !strip) {
+      await api.barExpand(false, false, chipVisible);
+      services.asideShow();
+    }
+  }
+
   async function open(focus?: string) {
     clearTimeout(closeTimer);
     const wasExpanded = expanded;
     if (!expanded) {
+      const wasCard = cardKind !== null;
       strip = false;
+      cardKind = null;
+      cardHeight = 0;
       expanded = true;
       // Resizing and focusing the window can fire a blur of its own; that must not close the panel that is opening.
       openedAt = Date.now();
+      if (wasCard) await restorePanelSize();
       await api.barExpand(true);
       // Het aanbod naast de balk zou het paneel bedekken; het staat ook in Vandaag.
       services.asideHide();
@@ -229,10 +312,11 @@
   const nextLanguage = $derived(APP_LANGUAGES[(APP_LANGUAGES.findIndex((l) => l.code === appLanguage()) + 1) % APP_LANGUAGES.length].name);
 
   // "Laat Nook antwoorden" on a WhatsApp card: the new Nook opens in the Nook tab.
-  function openNookFromCard(id: string) {
+  async function openNookFromCard(id: string) {
     select("nook");
     pinnedOpen = true;
-    nook.select(id);
+    await open();
+    await nook.select(id);
   }
 
   // The right-hand column of the Nook tab: the chat history (as on the Mac) or Today.
@@ -311,6 +395,12 @@
     const blurredAt = Date.now();
     setTimeout(() => {
       if (resizing || lastResize >= blurredAt - 100 || document.hasFocus()) return;
+      if (cardKind === "chat" && !whatsapp.enlarged) {
+        whatsapp.dismiss();
+        arrivedChat.dismiss();
+        void exitCard();
+        return;
+      }
       close();
     }, 250);
   }
@@ -370,19 +460,18 @@
     agents.start();
   });
   // A notice stays for its countdown with the pointer off the bar (hovering holds it), or until OK, View or Esc.
-  // Detailed opens the panel with a card; compact widens the closed bar into one line.
+  // Detailed turns the closed bar into a compact notch card (`BarAgentCard`); compact widens the closed bar into one line.
   $effect(() => {
     const card = agents.attention;
     // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, the bar does not pop open.
     if (!card || untrack(() => quiet.silent)) return;
     untrack(() => {
-      if (expanded) return;
+      if (expanded || cardKind === "chat") return;
       if (noticeCompact) {
         strip = true;
         api.barExpand(false, true);
       } else {
-        openedForNotice = true;
-        open();
+        void enterCard("agent");
       }
     });
     const clock = new Countdown();
@@ -400,12 +489,15 @@
       // A newer notice took its place: it carries on from here.
       if (agents.attention) return;
       noticeLeft = null;
-      openedForNotice = false;
       if (strip) {
         strip = false;
-        if (!expanded) api.barExpand(false);
+        if (!expanded && !cardOpen) api.barExpand(false);
       }
-      if (expanded && !inside) leave();
+      if (cardKind === "agent") {
+        void exitCard();
+      } else if (expanded && !inside) {
+        leave();
+      }
     };
   });
 
@@ -414,15 +506,15 @@
   }
 
   function viewNotice(id: string) {
-    agents.attention = null;
     agents.select(id);
     select("agents");
     pinnedOpen = true;
-    open();
+    agents.attention = null;
+    void open();
   }
 
   // WhatsApp: a new message never opens the bar by itself. The closed bar shows a chip under the round Nook ("Bericht
-  // van Peter"); once the panel is open (by the chip or any other way) the card of that chat shows in it.
+  // van Peter"); clicking the chip shows the chat in a BarCard, and opening the panel shows it in the panel.
   $effect(() => {
     whatsapp.start();
   });
@@ -437,6 +529,12 @@
   $effect(() => {
     if (arrivedChat.pending && expanded) untrack(() => arrivedChat.show());
   });
+  // When the user dismisses or replies in a standalone chat BarCard, collapse the bar back cleanly.
+  $effect(() => {
+    if (cardKind === "chat" && !whatsapp.chat && !arrivedChat.thread) {
+      untrack(() => void exitCard());
+    }
+  });
   const chipName = $derived(
     whatsapp.pending?.name ?? whatsapp.card?.conversation.name ?? arrivedChat.pending?.name ?? arrivedChat.thread?.name ?? "",
   );
@@ -444,11 +542,24 @@
     whatsapp.dismiss();
     arrivedChat.dismiss();
   }
+  async function openChatCard() {
+    if (whatsapp.pending) {
+      await whatsapp.show(whatsapp.pending.chat);
+    } else if (arrivedChat.pending) {
+      await arrivedChat.show();
+    }
+    if (whatsapp.chat || arrivedChat.thread) {
+      await enterCard("chat");
+    } else {
+      await openByClick();
+    }
+  }
   /// "Open in Nook" on a chat card: that chat in the bar's Chats tab.
   async function openArrived(key: string) {
     arrivedChat.dismiss();
     select("chats");
     pinnedOpen = true;
+    await open();
     await tick();
     showChat(key);
   }
@@ -467,11 +578,11 @@
     });
     return () => clearTimeout(timer);
   });
-  const chipVisible = $derived(!expanded && !strip && (!!chipName || !!trackStrip) && !quiet.silent);
-  // "Hide Nook when idle" (Settings › General › Bar & windows): closed, without a notice or chip and with nothing working
-  // or waiting, the bar hides; anything new shows it again, as do a shortcut and the tray.
+  const chipVisible = $derived(!expanded && !strip && !cardOpen && (!!chipName || !!trackStrip) && !quiet.silent);
+  // "Hide Nook when idle" (Settings › General › Bar & windows): closed, without a notice, card or chip and with nothing
+  // working or waiting, the bar hides; anything new shows it again, as do a shortcut and the tray.
   // "Nook on the bar" off (`showBar`): closed, he is out of sight altogether until a shortcut or the tray opens him.
-  const idleHidden = $derived(!expanded && (nook.settings?.showBar === false || (!!nook.settings?.hideWhenIdle && !strip && !chipVisible && mood === "idle")));
+  const idleHidden = $derived(!expanded && (nook.settings?.showBar === false || (!!nook.settings?.hideWhenIdle && !strip && !cardOpen && !chipVisible && mood === "idle")));
   $effect(() => {
     api.barVisible(!idleHidden).catch(() => {});
   });
@@ -485,16 +596,18 @@
         api.barExpand(false, false, true);
       } else if (!want && chipSized) {
         chipSized = false;
-        if (!expanded && !strip) api.barExpand(false);
+        if (!expanded && !strip && !cardOpen) api.barExpand(false);
       }
     });
   });
 
-  // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.
+  // Escape first shrinks an enlarged photo, then closes a chat card, then an agent notice card, then the bar.
   function escape() {
     if (whatsapp.enlarged) whatsapp.enlarged = null;
     else if (whatsapp.chat) whatsapp.dismiss();
     else if (arrivedChat.thread) arrivedChat.dismiss();
+    else if (cardKind === "agent" && agents.attention) dismissNotice();
+    else if (cardOpen) void exitCard();
     else {
       if (agents.attention) dismissNotice();
       close(true);
@@ -534,6 +647,36 @@
         <NoticeOk compact left={noticeLeft} onclick={dismissNotice} />
       </span>
     </div>
+  {:else if cardOpen && cardKind === "agent" && agents.attention}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="card-shell" onmousedown={drag}>
+      <BarAgentCard
+        card={agents.attention}
+        left={noticeLeft}
+        bind:height={cardHeight}
+        onview={viewNotice}
+        ondismiss={dismissNotice}
+      />
+    </div>
+  {:else if cardOpen && cardKind === "chat" && (whatsapp.chat || arrivedChat.thread)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="card-shell chat-card" onmousedown={drag}>
+      <BarCard
+        mood="waiting"
+        tint="var(--amber)"
+        label={whatsapp.card?.conversation.name ?? arrivedChat.thread?.name}
+        bind:height={cardHeight}
+      >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="card-inner" onmousedown={(e) => e.stopPropagation()}>
+          {#if whatsapp.chat}
+            <WhatsAppCard onnook={openNookFromCard} />
+          {:else if arrivedChat.thread}
+            <ChatArrivedCard onopen={openArrived} />
+          {/if}
+        </div>
+      </BarCard>
+    </div>
   {:else if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -566,7 +709,7 @@
       </div>
     {:else if chipVisible}
       <div class="chip">
-        <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openByClick}>
+        <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openChatCard}>
           <span class="chipico"><Ico name="message-circle" size={12} stroke={2.2} /></span><span class="chiplabel">{tr("Bericht van {name}", "Message from {name}", { name: chipName })}</span>
         </button>
         <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={dismissChip}><Ico name="x" size={12} stroke={2.4} /></button>
@@ -799,6 +942,29 @@
   .strip-action-bar { display: inline-flex; align-items: center; height: 26px; padding: 0 var(--space-2); background: var(--graphite); border: 1px solid var(--line2); border-radius: 999px; }
   .strip-action { height: 22px; padding: 0 var(--space-8); border: 0; border-radius: 999px; background: transparent; color: var(--paper); font: var(--text-detail); font-weight: 500; cursor: pointer; }
   .strip-action:hover { background: var(--smoke); }
+
+  /* Standalone bar card (`NotchRootView` `.card` + `BarCard`): true-black notch shape sized to its card content. */
+  .card-shell {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--notch);
+    border-radius: 0 0 var(--radius-pill) var(--radius-pill);
+    overflow: hidden;
+    animation: drop var(--motion-panel);
+    transform-origin: top center;
+    cursor: default;
+  }
+  .floating .card-shell {
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, var(--paper) 10%, transparent);
+    box-shadow: var(--shadow-popover);
+    cursor: grab;
+  }
+  .card-inner { cursor: default; }
+  /* Inside a BarCard, a chat card drops its outer panel margin/box so it sits directly beside Nook's orb. */
+  .card-shell.chat-card :global(.arrived) { margin: 0; padding: 0; background: transparent; border: 0; border-radius: 0; }
+  .card-shell.chat-card :global(.alert) { padding: 0; }
+  .card-shell.chat-card :global(.alert .card) { padding: 0; background: transparent; border: 0; border-radius: 0; }
 
   /* Open panel (`NotchRootView` + `PanelView`): true-black shape with notch corners, hairline edge when floating. */
   .panel {

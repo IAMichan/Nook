@@ -23,6 +23,7 @@ pub mod rewrite;
 pub mod screen;
 pub mod sounds;
 pub mod spoken;
+pub mod telemetry;
 pub mod think_along;
 pub mod toast;
 pub mod transcribe;

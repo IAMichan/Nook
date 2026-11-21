@@ -10,10 +10,11 @@ mod screen;
 mod speech;
 mod system;
 pub mod toast;
+mod ui_control;
 
 pub use autocomplete::WindowsTextInput;
 pub use media::WindowsMedia;
 pub use quiet::{WindowsPower, WindowsQuiet};
-pub use screen::WindowsScreen;
 pub use speech::{WindowsDictation, WindowsSpeech, WindowsWake};
 pub use system::WindowsSystem;
+pub use ui_control::WindowsUiScreen;

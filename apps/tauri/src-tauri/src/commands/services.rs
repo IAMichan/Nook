@@ -505,3 +505,112 @@ pub fn open_sounds_folder(app: AppHandle) -> Res<String> {
     app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
     Ok(folder.display().to_string())
 }
+
+// OpenTelemetry export (`TelemetrySettingsSection` on the Mac)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetrySignalStatus {
+    signal: nook_core::services::telemetry::OtlpSignal,
+    endpoint: Option<String>,
+    env_variable: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryStatusView {
+    signals: Vec<TelemetrySignalStatus>,
+    protocol: nook_core::services::telemetry::OtlpProtocol,
+    protocol_env: Option<String>,
+    headers_env: Option<String>,
+    headers_count: usize,
+    has_saved_headers: bool,
+    sdk_disabled: bool,
+}
+
+/// Effective OTLP configuration (Settings merged with `OTEL_EXPORTER_OTLP_*` environment variables) and whether
+/// headers are saved in the system keychain, without ever returning the raw header secrets to the UI.
+#[tauri::command]
+pub fn telemetry_status(app: AppHandle) -> TelemetryStatusView {
+    use nook_core::services::telemetry::{OtlpConfig, OtlpSignal, OtlpSource, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings().telemetry;
+    let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+    let has_saved_headers = !saved_headers.trim().is_empty();
+    let cfg = OtlpConfig::resolve_process(&settings, &saved_headers);
+    let env_name = |src: Option<&OtlpSource>| match src {
+        Some(OtlpSource::Environment(var)) => Some(var.clone()),
+        _ => None,
+    };
+    let signals = OtlpSignal::ALL
+        .into_iter()
+        .map(|signal| TelemetrySignalStatus {
+            signal,
+            endpoint: cfg.endpoint(signal).map(String::from),
+            env_variable: env_name(cfg.endpoint_sources.get(&signal)),
+        })
+        .collect();
+    TelemetryStatusView {
+        signals,
+        protocol: cfg.protocol,
+        protocol_env: env_name(Some(&cfg.protocol_source)),
+        headers_env: env_name(Some(&cfg.headers_source)),
+        headers_count: cfg.headers.len(),
+        has_saved_headers,
+        sdk_disabled: cfg.sdk_disabled,
+    }
+}
+
+/// Saves OTLP headers (`key=value,key2=value2`) in the system keychain; empty string removes them.
+#[tauri::command]
+pub fn telemetry_save_headers(app: AppHandle, headers: String) -> Res<bool> {
+    use nook_core::services::telemetry::{OtlpHeader, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let trimmed = headers.trim();
+    if trimmed.is_empty() {
+        state.secrets.remove(HEADERS_SECRET_ACCOUNT)?;
+        return Ok(false);
+    }
+    if OtlpHeader::parse(trimmed).is_empty() {
+        return Err(nook_core::i18n::tr(
+            "Schrijf de headers als sleutel=waarde, gescheiden door komma's.",
+            "Write the headers as key=value, separated by commas.",
+        )
+        .into());
+    }
+    state.secrets.write(HEADERS_SECRET_ACCOUNT, trimmed)?;
+    Ok(true)
+}
+
+/// Sends an empty OTLP/HTTP JSON export to test connectivity for one signal (`traces`, `metrics`, or `logs`).
+/// Saved keychain headers are only attached when `url` matches the effective configured endpoint (matching macOS).
+#[tauri::command]
+pub async fn telemetry_test(
+    app: AppHandle,
+    signal: nook_core::services::telemetry::OtlpSignal,
+    url: Option<String>,
+) -> Res<nook_core::services::telemetry::OtlpTestResult> {
+    use nook_core::services::telemetry::{validate_http_url, OtlpConfig, OtlpExporter, OtlpSource, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings().telemetry;
+    let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+    let cfg = OtlpConfig::resolve_process(&settings, &saved_headers);
+
+    let env_endpoint = matches!(cfg.endpoint_sources.get(&signal), Some(OtlpSource::Environment(_)))
+        .then(|| cfg.endpoint(signal).map(String::from))
+        .flatten();
+    let target = match env_endpoint {
+        Some(u) => u,
+        None => {
+            let candidate = url.unwrap_or_else(|| settings.endpoint_for(signal).to_string());
+            validate_http_url(&candidate).ok_or_else(|| {
+                nook_core::i18n::tr("Vul een http- of https-adres in.", "Enter an http or https address.").to_string()
+            })?
+        }
+    };
+    let configured_match = cfg.endpoint(signal).is_some_and(|e| e == target)
+        || validate_http_url(settings.endpoint_for(signal)).is_some_and(|e| e == target);
+    let headers = if configured_match { cfg.headers } else { Vec::new() };
+    Ok(OtlpExporter::new().test_connection(signal, &target, &headers).await)
+}
+

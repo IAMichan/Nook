@@ -8,11 +8,49 @@
   import { workspaceApi, type WorkspaceSettings } from "../../lib/workspace/api";
   import { api } from "../../lib/api";
   import { nook, relativeTime } from "../../lib/state.svelte";
+  import type { Settings } from "../../lib/types";
   import Segmented from "./Segmented.svelte";
   import { STEPS, startUpdates, updater, updates, type UpdateChannel, type UpdateStep } from "../../lib/updates.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import { toast } from "../../lib/toast.svelte";
   import { LINKS, maintenance, readableSize, type MaintenanceInfo } from "../../lib/maintenance";
+
+  type OtlpSignal = "traces" | "metrics" | "logs";
+  type OtlpProtocol = "http/protobuf" | "http/json";
+  interface TelemetrySettings {
+    enabled: boolean;
+    tracesEndpoint: string;
+    metricsEndpoint: string;
+    logsEndpoint: string;
+    protocol: OtlpProtocol;
+  }
+  interface TelemetrySignalStatus {
+    signal: OtlpSignal;
+    endpoint: string | null;
+    envVariable: string | null;
+  }
+  interface TelemetryStatusView {
+    signals: TelemetrySignalStatus[];
+    protocol: OtlpProtocol;
+    protocolEnv: string | null;
+    headersEnv: string | null;
+    headersCount: number;
+    hasSavedHeaders: boolean;
+    sdkDisabled: boolean;
+  }
+  type OtlpTestResult =
+    | { kind: "ok"; status: number }
+    | { kind: "rejected"; status: number }
+    | { kind: "unreachable"; message: string };
+
+  const SIGNALS: OtlpSignal[] = ["traces", "metrics", "logs"];
+  const DEFAULT_TELEMETRY: TelemetrySettings = {
+    enabled: false,
+    tracesEndpoint: "",
+    metricsEndpoint: "",
+    logsEndpoint: "",
+    protocol: "http/protobuf",
+  };
 
   const desktop = $derived(!!nook.info?.capabilities.desktop);
   let info = $state<MaintenanceInfo | null>(null);
@@ -73,6 +111,120 @@
   }
   async function showLogs() {
     await invoke("diagnostics_show_logs").catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e));
+  }
+
+  // OpenTelemetry export (`TelemetrySettingsSection` on the Mac)
+  const storedTelemetry = $derived<TelemetrySettings>({
+    ...DEFAULT_TELEMETRY,
+    ...((nook.settings as unknown as { telemetry?: Partial<TelemetrySettings> } | null)?.telemetry ?? {}),
+  });
+  let otlpStatus = $state<TelemetryStatusView | null>(null);
+  let otlpDrafts = $state<Record<OtlpSignal, string>>({ traces: "", metrics: "", logs: "" });
+  let otlpHeadersDraft = $state("");
+  let otlpTesting = $state<Record<OtlpSignal, boolean>>({ traces: false, metrics: false, logs: false });
+  let otlpResults = $state<Partial<Record<OtlpSignal, { ok: boolean; message: string }>>>({});
+  let otlpInitialized = false;
+
+  async function refreshTelemetryStatus() {
+    if (!desktop) return;
+    otlpStatus = await invoke<TelemetryStatusView>("telemetry_status").catch(() => null);
+  }
+
+  $effect(() => {
+    const t = storedTelemetry;
+    if (!otlpInitialized && nook.settings) {
+      otlpDrafts = { traces: t.tracesEndpoint, metrics: t.metricsEndpoint, logs: t.logsEndpoint };
+      otlpInitialized = true;
+    }
+  });
+  $effect(() => {
+    if (desktop) refreshTelemetryStatus();
+  });
+
+  function isHttpUrl(raw: string): boolean {
+    const trimmed = raw.trim();
+    if (!trimmed) return false;
+    try {
+      const u = new URL(trimmed);
+      return (u.protocol === "http:" || u.protocol === "https:") && !!u.hostname;
+    } catch {
+      return false;
+    }
+  }
+
+  function signalLabel(s: OtlpSignal): string {
+    return s === "traces" ? tr("Traces", "Traces") : s === "metrics" ? tr("Metrics", "Metrics") : tr("Logs", "Logs");
+  }
+
+  function signalStatus(s: OtlpSignal): TelemetrySignalStatus | undefined {
+    return otlpStatus?.signals.find((item) => item.signal === s);
+  }
+
+  async function saveTelemetry(patch: Partial<TelemetrySettings>) {
+    const next: TelemetrySettings = { ...storedTelemetry, ...patch };
+    await nook.saveSettings({ telemetry: next } as unknown as Partial<Settings>);
+    await refreshTelemetryStatus();
+  }
+
+  async function saveEndpoint(signal: OtlpSignal) {
+    const text = otlpDrafts[signal].trim();
+    if (text && !isHttpUrl(text)) {
+      otlpResults = { ...otlpResults, [signal]: { ok: false, message: tr("Vul een http- of https-adres in.", "Enter an http or https address.") } };
+      return;
+    }
+    const key = signal === "traces" ? "tracesEndpoint" : signal === "metrics" ? "metricsEndpoint" : "logsEndpoint";
+    otlpDrafts[signal] = text;
+    const enablePatch = text && !storedTelemetry.enabled ? { enabled: true } : {};
+    await saveTelemetry({ [key]: text, ...enablePatch });
+  }
+
+  async function saveOtlpHeaders() {
+    const text = otlpHeadersDraft.trim();
+    if (!text) return;
+    try {
+      await invoke<boolean>("telemetry_save_headers", { headers: text });
+      otlpHeadersDraft = "";
+      await refreshTelemetryStatus();
+    } catch (e) {
+      toast.error(tr("De headers konden niet in de sleutelhanger worden bewaard.", "The headers could not be saved in the Keychain."), e);
+    }
+  }
+
+  async function removeOtlpHeaders() {
+    try {
+      await invoke<boolean>("telemetry_save_headers", { headers: "" });
+      await refreshTelemetryStatus();
+    } catch (e) {
+      toast.error(tr("Kon het niet bewaren", "Could not save it"), e);
+    }
+  }
+
+  function canTestSignal(signal: OtlpSignal): boolean {
+    const sig = signalStatus(signal);
+    if (sig?.envVariable) return !!sig.endpoint;
+    return isHttpUrl(otlpDrafts[signal]);
+  }
+
+  async function testSignal(signal: OtlpSignal) {
+    if (otlpTesting[signal] || !canTestSignal(signal)) return;
+    const sig = signalStatus(signal);
+    const url = sig?.envVariable ? sig.endpoint : otlpDrafts[signal].trim();
+    if (!url) return;
+    otlpTesting[signal] = true;
+    try {
+      const res = await invoke<OtlpTestResult>("telemetry_test", { signal, url });
+      if (res.kind === "ok") {
+        otlpResults = { ...otlpResults, [signal]: { ok: true, message: tr("De ontvanger nam een lege export aan (HTTP {status}).", "The receiver took an empty export (HTTP {status}).", { status: res.status }) } };
+      } else if (res.kind === "rejected") {
+        otlpResults = { ...otlpResults, [signal]: { ok: false, message: tr("De ontvanger antwoordde HTTP {status}.", "The receiver answered HTTP {status}.", { status: res.status }) } };
+      } else {
+        otlpResults = { ...otlpResults, [signal]: { ok: false, message: tr("Geen antwoord: {message}", "No answer: {message}", { message: res.message }) } };
+      }
+    } catch (e) {
+      otlpResults = { ...otlpResults, [signal]: { ok: false, message: tr("Geen antwoord: {message}", "No answer: {message}", { message: String(e) }) } };
+    } finally {
+      otlpTesting[signal] = false;
+    }
   }
 
   async function openFolder() {
@@ -235,6 +387,93 @@
       <span class="inline"><button class="small" onclick={showLogs}>{tr("Logbestanden tonen", "Show log files")}</button><button class="small" onclick={copyDiagnostics}>{tr("Diagnose kopiëren", "Copy diagnostics")}</button></span>
     </div>
   </div>
+
+  <h3>{tr("OpenTelemetry-export", "OpenTelemetry export")}</h3>
+  <p class="section-info">{tr("Stuurt traces, metrics en logs naar een eigen OpenTelemetry-ontvanger (een collector, Grafana, Honeycomb…). Vul per signaal het OTLP HTTP-adres in, bijvoorbeeld http://localhost:4318/v1/traces; een leeg veld stuurt niets. Nook stuurt zijn agentbeurten, geplande taken en opstarttijd, zonder prompts, antwoorden of bestandsinhoud, en geeft de ontvanger door aan elke codeeragent die het start en zelf kan exporteren. Standaard OTEL_EXPORTER_OTLP_*-variabelen in de omgeving van Nook gaan voor deze velden.", "Sends traces, metrics and logs to an OpenTelemetry receiver of your own (a collector, Grafana, Honeycomb…). Enter each signal's OTLP HTTP endpoint, for example http://localhost:4318/v1/traces; an empty field sends nothing. Nook sends its agent turns, scheduled task runs and launch time, without prompts, answers or file contents, and passes the receiver on to every coding agent it starts that can export on its own. Standard OTEL_EXPORTER_OTLP_* variables in Nook's environment override these fields.")}</p>
+  <div class="group">
+    <label class="row">
+      <span>{tr("OpenTelemetry-export inschakelen", "Enable OpenTelemetry export")}<br /><small>{#if otlpStatus?.sdkDisabled}{tr("Ingesteld door de omgeving ({variable})", "Set by environment ({variable})", { variable: "OTEL_SDK_DISABLED" })}{:else}{tr("Staat standaard uit. Als dit uit staat stuurt Nook niets, tenzij OTEL_EXPORTER_OTLP_* in de omgeving staat.", "Off by default. When off, Nook sends nothing unless OTEL_EXPORTER_OTLP_* is set in the environment.")}{/if}</small></span>
+      <input type="checkbox" role="switch" checked={storedTelemetry.enabled} disabled={!!otlpStatus?.sdkDisabled} onchange={(e) => saveTelemetry({ enabled: e.currentTarget.checked })} />
+    </label>
+    {#each SIGNALS as signal (signal)}
+      {@const sig = signalStatus(signal)}
+      {@const envVar = sig?.envVariable ?? null}
+      {@const res = otlpResults[signal]}
+      <div class="row otlp-row">
+        <div class="otlp-main">
+          <span class="otlp-label">{signalLabel(signal)}</span>
+          <div class="otlp-controls">
+            {#if envVar}
+              <code class="path">{sig?.endpoint ?? ""}</code>
+            {:else}
+              <input
+                class="otlp-input"
+                type="url"
+                aria-label={signalLabel(signal)}
+                placeholder={`http://localhost:4318/v1/${signal}`}
+                value={otlpDrafts[signal]}
+                oninput={(e) => { otlpDrafts[signal] = e.currentTarget.value; const next = { ...otlpResults }; delete next[signal]; otlpResults = next; }}
+                onblur={() => saveEndpoint(signal)}
+                onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveEndpoint(signal); } }}
+              />
+            {/if}
+            <button class="small" disabled={otlpTesting[signal] || !canTestSignal(signal)} onclick={() => testSignal(signal)}>
+              {otlpTesting[signal] ? tr("Testen…", "Testing…") : tr("Testen", "Test")}
+            </button>
+          </div>
+        </div>
+        {#if envVar}
+          <small class="faint otlp-note">{tr("Ingesteld door de omgeving ({variable})", "Set by environment ({variable})", { variable: envVar })}</small>
+        {/if}
+        {#if res}
+          <small class="otlp-note" class:otlp-ok={res.ok} class:failure={!res.ok}>{res.message}</small>
+        {/if}
+      </div>
+    {/each}
+    <div class="row">
+      <span>{tr("Protocol voor agents", "Protocol for agents")}<br /><small>{#if otlpStatus?.protocolEnv}{tr("Ingesteld door de omgeving ({variable})", "Set by environment ({variable})", { variable: otlpStatus.protocolEnv })}{:else}{tr("Hoe agents coderen wat ze sturen. Kies http/json voor ontvangers die geen protobuf aannemen.", "How agents encode what they send. Pick http/json for receivers that do not accept protobuf.")}{/if}</small></span>
+      <select
+        aria-label={tr("Protocol voor agents", "Protocol for agents")}
+        disabled={!!otlpStatus?.protocolEnv}
+        value={otlpStatus?.protocolEnv ? otlpStatus.protocol : storedTelemetry.protocol}
+        onchange={(e) => saveTelemetry({ protocol: e.currentTarget.value as OtlpProtocol })}
+      >
+        <option value="http/protobuf">http/protobuf</option>
+        <option value="http/json">http/json</option>
+      </select>
+    </div>
+    <div class="row otlp-row">
+      {#if otlpStatus?.headersEnv}
+        <div class="otlp-main">
+          <span class="otlp-label">{tr("Headers", "Headers")}</span>
+          <span class="faint">{tr("{n} headers", "{n} headers", { n: otlpStatus.headersCount })}</span>
+        </div>
+        <small class="faint otlp-note">{tr("Ingesteld door de omgeving ({variable})", "Set by environment ({variable})", { variable: otlpStatus.headersEnv })}</small>
+      {:else if otlpStatus?.hasSavedHeaders}
+        <div class="otlp-main">
+          <span>{tr("Headers", "Headers")}<br /><small>{tr("Bewaard in de sleutelhanger; gaat mee met elke export.", "Saved in the Keychain; sent with every export.")}</small></span>
+          <button class="small" onclick={removeOtlpHeaders}>{tr("Verwijderen", "Remove")}</button>
+        </div>
+      {:else}
+        <div class="otlp-main">
+          <span class="otlp-label">{tr("Headers", "Headers")}</span>
+          <div class="otlp-controls">
+            <input
+              class="otlp-input"
+              type="password"
+              aria-label={tr("Headers", "Headers")}
+              placeholder="Authorization=Bearer …"
+              bind:value={otlpHeadersDraft}
+              onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveOtlpHeaders(); } }}
+            />
+            <button class="small" disabled={!otlpHeadersDraft.trim()} onclick={saveOtlpHeaders}>{tr("Bewaar", "Save")}</button>
+          </div>
+        </div>
+        <small class="faint otlp-note">{tr("Voor ontvangers die een sleutel vragen: sleutel=waarde, gescheiden door komma's. Bewaard in de sleutelhanger bij Return.", "For receivers that need a key: key=value, separated by commas. Saved in the Keychain on Return.")}</small>
+      {/if}
+    </div>
+    <p class="note">{tr("Nooks eigen export gebruikt OTLP/HTTP JSON. Agents gebruiken de ontvanger vanaf hun volgende start; sessies op een andere machine niet.", "Nook's own export uses OTLP/HTTP JSON. Agents use the receiver from their next start; sessions on another machine are left out.")}</p>
+  </div>
 {/if}
 <h3>{tr("Gegevens", "Data")}</h3>
 <div class="group">
@@ -284,4 +523,11 @@
   .step.now { color: var(--paper); }
   .failure { color: var(--coral); }
   .versions { font: var(--text-code); color: var(--text2); margin: 0; padding: var(--space-16) 0 var(--space-8); white-space: pre-wrap; user-select: text; }
+  .otlp-row { flex-direction: column; align-items: stretch; gap: var(--space-6); }
+  .otlp-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); width: 100%; }
+  .otlp-label { flex: none; color: var(--paper); font: var(--text-body); }
+  .otlp-controls { display: flex; align-items: center; gap: var(--space-8); flex: 1; justify-content: flex-end; min-width: 0; }
+  .otlp-input { flex: 1; max-width: 320px; min-width: 140px; font: var(--text-code); }
+  .otlp-note { margin: 0; }
+  .otlp-ok { color: var(--mint); }
 </style>

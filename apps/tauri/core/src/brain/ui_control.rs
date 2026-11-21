@@ -113,6 +113,8 @@ pub const MAX_STEPS: usize = 15;
 pub const MAX_TEXT: usize = 500;
 pub const MAX_WAIT: f64 = 10.0;
 pub const MAX_SCROLL: i64 = 30;
+pub const DEFAULT_DESCRIBE_LIMIT: usize = 9_000;
+pub const FEW_CONTROLS: usize = 3;
 
 fn list(raw: &Value) -> Vec<Value> {
     match raw {
@@ -298,17 +300,31 @@ pub const BLOCKED_NAMES: &[&str] = &[
     "cmd", "command prompt", "opdrachtprompt", "eingabeaufforderung", "invite de commandes", "símbolo del sistema",
     "powershell", "windows powershell", "pwsh", "terminal", "windows terminal", "windowsterminal", "wt", "conhost",
     "openconsole", "git bash", "mintty", "wsl", "bash", "ubuntu", "alacritty", "wezterm", "kitty", "hyper", "warp",
-    "regedit", "registry editor", "register-editor", "registrierungs-editor", "éditeur du registre", "editor del registro",
-    "credential manager", "referentiebeheer", "anmeldeinformationsverwaltung", "gestionnaire d'identification",
-    "administrador de credenciales", "1password", "bitwarden", "lastpass", "dashlane", "enpass", "keepass", "keepassxc",
-    "taskmgr", "task manager", "taakbeheer", "task-manager", "gestionnaire des tâches", "administrador de tareas",
-    "mmc", "consent", "logonui", "lockapp", "credentialuibroker", "nook",
+    "ghostty", "regedit", "registry editor", "register-editor", "registrierungs-editor", "éditeur du registre",
+    "editor del registro", "credential manager", "referentiebeheer", "anmeldeinformationsverwaltung",
+    "gestionnaire d'identification", "administrador de credenciales", "1password", "bitwarden", "lastpass",
+    "dashlane", "enpass", "keepass", "keepassxc", "taskmgr", "task manager", "taakbeheer", "task-manager",
+    "gestionnaire des tâches", "administrador de tareas", "mmc", "consent", "logonui", "lockapp",
+    "credentialuibroker", "nook",
 ];
 
 pub fn is_blocked(name: &str) -> bool {
     let lower = name.trim().to_lowercase();
     let clean = lower.strip_suffix(".exe").unwrap_or(&lower);
-    !clean.is_empty() && (BLOCKED_NAMES.contains(&clean) || clean.contains("password") || clean.contains("wachtwoord"))
+    !clean.is_empty()
+        && (BLOCKED_NAMES.contains(&clean)
+            || clean.contains("password")
+            || clean.contains("wachtwoord")
+            || clean.contains("passwort")
+            || clean.contains("mot de passe")
+            || clean.contains("contraseña")
+            || clean.contains("keychain")
+            || clean.contains("sleutelhanger"))
+}
+
+/// Alias for [`is_blocked`]: apps Nook never drives with mouse or keyboard.
+pub fn is_blocked_app(name: &str) -> bool {
+    is_blocked(name)
 }
 
 // MARK: Keys
@@ -808,6 +824,117 @@ pub fn step_summary(step: &Step) -> String {
     }
 }
 
+/// How an entire `control_ui` batch reads on a plan card ("Edge: Click “Search” → Type “coffee filters” in “Search”").
+pub fn batch_summary(app: &str, steps: &[Step]) -> String {
+    let name = app.trim();
+    let label = if name.is_empty() { "Front app" } else { name };
+    if steps.is_empty() {
+        return label.to_string();
+    }
+    let joined = steps.iter().map(step_summary).collect::<Vec<_>>().join(" → ");
+    format!("{label}: {joined}")
+}
+
+/// Validates an already-parsed slice of steps for `app` (re-checked right before execution).
+pub fn validate_steps(app: &str, parsed: &[Step]) -> Vec<String> {
+    let mut out = Vec::new();
+    let name = app.trim();
+    if !name.is_empty() && is_blocked_app(name) {
+        out.push(format!("Nook does not control {name} with mouse and keyboard: it holds passwords, runs commands or is Nook itself."));
+    }
+    if parsed.is_empty() {
+        out.push("There are no steps.".to_string());
+    }
+    if parsed.len() > MAX_STEPS {
+        out.push(format!("At most {MAX_STEPS} steps at a time."));
+    }
+    for (i, step) in parsed.iter().enumerate() {
+        out.extend(step_problems(step).into_iter().map(|p| format!("Step {}: {p}", i + 1)));
+    }
+    out
+}
+
+/// Human-readable state value for checkboxes, switches, radio buttons and value-bearing controls.
+pub fn state_text(role: &str, toggle_state: Option<i32>, value: Option<&str>) -> Option<String> {
+    if matches!(role, "checkbox" | "switch" | "toggle" | "radio") {
+        if let Some(state) = toggle_state {
+            return Some(
+                match state {
+                    0 => "off",
+                    1 => "on",
+                    _ => "mixed",
+                }
+                .to_string(),
+            );
+        }
+    }
+    value.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)
+}
+
+/// Fewer than [`FEW_CONTROLS`] interactive controls suggests an owner-drawn window where OCR fallback helps.
+pub fn needs_seen_text(elements: &[Element]) -> bool {
+    elements.iter().filter(|e| tier(&e.role) <= 1).count() < FEW_CONTROLS
+}
+
+/// JSON schema for the `read_ui` tool.
+pub fn read_ui_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "app": {
+                "type": "string",
+                "description": "Name of the app, e.g. \"Settings\", \"Edge\" or \"Notepad\". Without it: the app in front."
+            }
+        },
+        "required": []
+    })
+}
+
+/// JSON schema for the `control_ui` tool.
+pub fn control_ui_schema() -> Value {
+    let actions: Vec<&str> = Action::ALL.iter().map(|a| a.name()).collect();
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "app": {
+                "type": "string",
+                "description": "Name of the app to control, e.g. \"Settings\", \"Edge\" or \"Notepad\"."
+            },
+            "steps": {
+                "type": "array",
+                "description": format!("The steps, in order (at most {MAX_STEPS})."),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": actions,
+                            "description": "click, double_click, right_click, type (into the focused field, or into element), key (a key or shortcut), scroll, open (the app, or a Windows Settings page with url), wait, drag (press on element or x,y, move to to_element or to_x,to_y, release), hover (move the mouse over element or x,y without clicking)."
+                        },
+                        "element": {"type": "string", "description": "Label of the element exactly as read_ui shows it."},
+                        "role": {"type": "string", "description": "Role from read_ui to tell same labels apart: button, checkbox, switch, radio, popup, field, row, menuitem, tab…"},
+                        "index": {"type": "integer", "description": "Which of several matching elements, counted from the top left; 1 is the first."},
+                        "x": {"type": "number", "description": "Screen x of a point to click (from read_ui), only when the element has no label."},
+                        "y": {"type": "number", "description": "Screen y of that point."},
+                        "text": {"type": "string", "description": "For type: the text."},
+                        "replace": {"type": "boolean", "description": "For type: replace what is in the field."},
+                        "keys": {"type": "string", "description": "For key: e.g. \"enter\", \"escape\", \"tab\", \"down\", \"ctrl+f\", \"ctrl+shift+n\"."},
+                        "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "For scroll."},
+                        "amount": {"type": "integer", "description": format!("For scroll: lines (1–{MAX_SCROLL}).")},
+                        "url": {"type": "string", "description": "For open in Windows Settings: a page, e.g. ms-settings:bluetooth or ms-settings:display."},
+                        "seconds": {"type": "number", "description": format!("For wait: seconds (at most {}).", MAX_WAIT as i64)},
+                        "to_element": {"type": "string", "description": "For drag: label of the element to drop on, exactly as read_ui shows it."},
+                        "to_x": {"type": "number", "description": "For drag: screen x where it ends."},
+                        "to_y": {"type": "number", "description": "For drag: screen y where it ends."}
+                    },
+                    "required": ["action"]
+                }
+            }
+        },
+        "required": ["app", "steps"]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -951,7 +1078,69 @@ mod tests {
         assert!(is_blocked("PowerShell.exe"));
         assert!(is_blocked("KeePassXC"));
         assert!(is_blocked("My Password Safe"));
+        assert!(is_blocked_app("Ghostty"));
+        assert!(is_blocked_app("Passwort-Manager"));
+        assert!(is_blocked_app("Gestionnaire de mot de passe"));
+        assert!(is_blocked_app("Gestor de contraseñas"));
+        assert!(is_blocked_app("Sleutelhanger"));
+        assert!(is_blocked_app("Keychain Access"));
         assert!(!is_blocked("Notepad"));
+        assert!(!is_blocked_app("Microsoft Edge"));
         assert_eq!(rounds(&["a".into(), "go".into(), "go".into()], "go"), 2);
+    }
+
+    #[test]
+    fn batch_summary_and_validate_steps_work_together() {
+        let s = steps(&json!([
+            {"action": "click", "element": "Search"},
+            {"action": "type", "element": "Search", "text": "coffee filters"}
+        ]));
+        assert_eq!(batch_summary("Edge", &s), "Edge: Click “Search” → Type “coffee filters” in “Search”");
+        assert_eq!(batch_summary("", &s), "Front app: Click “Search” → Type “coffee filters” in “Search”");
+        assert_eq!(batch_summary("Edge", &[]), "Edge");
+
+        assert!(validate_steps("Edge", &s).is_empty());
+        assert!(validate_steps("PowerShell", &s).iter().any(|p| p.contains("does not control")));
+        assert!(validate_steps("Edge", &[]).iter().any(|p| p.contains("no steps")));
+        let mut wait = Step::new(Action::Wait);
+        wait.seconds = Some(1.0);
+        let too_many = vec![wait; MAX_STEPS + 1];
+        assert!(validate_steps("Edge", &too_many).iter().any(|p| p.contains("At most")));
+    }
+
+    #[test]
+    fn state_text_and_seen_text_threshold() {
+        assert_eq!(state_text("checkbox", Some(0), None).as_deref(), Some("off"));
+        assert_eq!(state_text("switch", Some(1), None).as_deref(), Some("on"));
+        assert_eq!(state_text("toggle", Some(2), None).as_deref(), Some("mixed"));
+        assert_eq!(state_text("field", None, Some("  hello  ")).as_deref(), Some("hello"));
+        assert_eq!(state_text("field", None, Some("   ")), None);
+
+        let few = vec![el("text", "Title", 0.0, 0.0), el("button", "OK", 10.0, 10.0), el("button", "Cancel", 60.0, 10.0)];
+        assert!(needs_seen_text(&few));
+        let enough = vec![
+            el("field", "Search", 0.0, 0.0),
+            el("button", "OK", 10.0, 10.0),
+            el("button", "Cancel", 60.0, 10.0),
+        ];
+        assert!(!needs_seen_text(&enough));
+    }
+
+    #[test]
+    fn tool_schemas_list_expected_fields_and_actions() {
+        let read = read_ui_schema();
+        assert!(read["properties"]["app"].is_object());
+        assert_eq!(read["required"], json!([]));
+
+        let control = control_ui_schema();
+        assert_eq!(control["required"], json!(["app", "steps"]));
+        let enum_values: Vec<&str> = control["properties"]["steps"]["items"]["properties"]["action"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        let all_names: Vec<&str> = Action::ALL.iter().map(|a| a.name()).collect();
+        assert_eq!(enum_values, all_names);
     }
 }

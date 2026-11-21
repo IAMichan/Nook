@@ -1132,3 +1132,561 @@ pub fn workspace_context_usage(
 ) -> Res<Option<nook_core::workspace::context_usage::ContextUsage>> {
     Ok(state.manager.context_usage(id(&run)?))
 }
+
+// MARK: Coding agent versions (`AgentUpdatesSection` on the Mac)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionInfo {
+    pub provider: RunProvider,
+    pub executable: Option<String>,
+    pub version: Option<String>,
+    pub install_command: &'static str,
+}
+
+fn read_cli_version(executable: &str) -> Option<String> {
+    let mut cmd = std::process::Command::new(executable);
+    cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let output = cmd.output().ok()?;
+    let combined = if !output.stdout.is_empty() {
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    } else {
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    let line = combined.lines().map(str::trim).find(|l| !l.is_empty())?;
+    // Extract semver-like token (e.g., "1.0.32" or "v2.1.0") if present, otherwise first line truncated.
+    for token in line.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| matches!(c, '(' | ')' | ',' | ';' | ':')).trim_start_matches('v');
+        let parts: Vec<&str> = cleaned.split('.').collect();
+        if parts.len() >= 2 && parts[0].chars().all(|c| c.is_ascii_digit()) && !parts[0].is_empty() {
+            return Some(cleaned.to_string());
+        }
+    }
+    Some(line.chars().take(40).collect())
+}
+
+/// Inspects each runnable coding agent's CLI binary and version (Settings › Coding agents).
+#[tauri::command]
+pub async fn workspace_agent_versions() -> Res<std::collections::BTreeMap<String, AgentVersionInfo>> {
+    blocking(move || {
+        let mut out = std::collections::BTreeMap::new();
+        for provider in RunProvider::ALL {
+            let kind = provider.kind();
+            let exe = nook_core::workspace::driver::session_executable(
+                provider,
+                nook_core::agents::find_executable(kind).map(|e| e.to_string_lossy().into_owned()),
+            );
+            let version = exe.as_deref().and_then(read_cli_version);
+            out.insert(
+                provider.id().to_string(),
+                AgentVersionInfo { provider, executable: exe, version, install_command: kind.install_command() },
+            );
+        }
+        out
+    })
+    .await
+}
+
+// MARK: Skills catalog, preview, toggle & folder opening (Settings › Coding agents › Skills)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCatalogEntry {
+    pub name: String,
+    pub description: String,
+    pub path: String,
+    pub folder: String,
+    pub source: String,
+    pub scope: &'static str,
+    pub providers: Vec<RunProvider>,
+    pub enabled: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFolderInfo {
+    pub path: String,
+    pub label: String,
+    pub scope: &'static str,
+    pub exists: bool,
+    pub count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsCatalogView {
+    pub skills: Vec<SkillCatalogEntry>,
+    pub folders: Vec<SkillFolderInfo>,
+}
+
+/// Discovers skills across global and optional project skill folders for the chosen agents.
+#[tauri::command]
+pub async fn workspace_skills_catalog(
+    app: AppHandle,
+    project: Option<String>,
+    providers: Option<Vec<RunProvider>>,
+) -> Res<SkillsCatalogView> {
+    let disabled = app.state::<crate::state::AppState>().settings().disabled_skills;
+    let chosen: Vec<RunProvider> = match providers {
+        Some(list) if !list.is_empty() => list,
+        _ => RunProvider::ALL.to_vec(),
+    };
+    blocking(move || {
+        use nook_core::workspace::skills;
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::path::{Path, PathBuf};
+
+        let home = dirs::home_dir().unwrap_or_default();
+        let project_dir = project
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| p.is_dir());
+
+        // Collect unique roots and track which providers read each root.
+        let mut root_providers: BTreeMap<PathBuf, BTreeSet<RunProvider>> = BTreeMap::new();
+        let mut ordered_roots: Vec<PathBuf> = Vec::new();
+        for &p in &chosen {
+            for r in skills::roots(p, &home, project_dir.as_deref()) {
+                if !root_providers.contains_key(&r) {
+                    ordered_roots.push(r.clone());
+                }
+                root_providers.entry(r).or_default().insert(p);
+            }
+        }
+
+        let mut folders = Vec::new();
+        let mut by_path: BTreeMap<String, SkillCatalogEntry> = BTreeMap::new();
+
+        for root in &ordered_roots {
+            let scope = if project_dir.as_ref().is_some_and(|pd| root.starts_with(pd)) { "project" } else { "user" };
+            let label = format!(
+                "{}/{}",
+                root.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+            );
+            let exists = root.is_dir();
+            let found = if exists { skills::scan(std::slice::from_ref(root)) } else { Vec::new() };
+            let count = found.len();
+            folders.push(SkillFolderInfo { path: root.to_string_lossy().into_owned(), label: label.clone(), scope, exists, count });
+
+            let root_provs: Vec<RunProvider> = root_providers.get(root).map(|s| s.iter().copied().collect()).unwrap_or_default();
+            for s in found {
+                let folder = Path::new(&s.path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| root.to_string_lossy().into_owned());
+                let enabled = !disabled.contains(&s.path);
+                by_path
+                    .entry(s.path.clone())
+                    .and_modify(|e| {
+                        for &p in &root_provs {
+                            if !e.providers.contains(&p) {
+                                e.providers.push(p);
+                            }
+                        }
+                    })
+                    .or_insert(SkillCatalogEntry {
+                        name: s.name,
+                        description: s.description,
+                        path: s.path,
+                        folder,
+                        source: s.source,
+                        scope,
+                        providers: root_provs.clone(),
+                        enabled,
+                    });
+            }
+        }
+
+        let mut skills: Vec<SkillCatalogEntry> = by_path.into_values().collect();
+        skills.sort_by(|a, b| a.scope.cmp(b.scope).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        SkillsCatalogView { skills, folders }
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDocument {
+    pub path: String,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub scripts: Vec<String>,
+}
+
+/// Reads a discovered skill's Markdown document (bounded to 128 KB) and lists any script files beside it.
+#[tauri::command]
+pub async fn workspace_read_skill(path: String) -> Res<SkillDocument> {
+    blocking(move || {
+        use std::io::Read;
+        use std::path::Path;
+        let file = Path::new(&path);
+        let lower = path.to_lowercase();
+        if !lower.ends_with(".md") || !file.is_file() {
+            return Err(tr("Nook kon deze skill niet lezen.", "Nook could not read this skill.").to_string());
+        }
+        let f = std::fs::File::open(file).map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        f.take(128 * 1024).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        let content = String::from_utf8_lossy(&bytes).into_owned();
+        let meta = nook_core::workspace::skills::front_matter(&content);
+        let fallback = file
+            .parent()
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        let name = meta.get("name").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).filter(|s| !s.is_empty()).unwrap_or(fallback);
+        let description = meta.get("description").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).unwrap_or_default();
+
+        // List scripts inside the skill directory (for folder skills with SKILL.md).
+        let mut scripts = Vec::new();
+        if file.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("SKILL.md")) {
+            if let Some(dir) = file.parent() {
+                collect_scripts(dir, dir, &mut scripts);
+            }
+        }
+        scripts.sort();
+        Ok(SkillDocument { path, name, description, content, scripts })
+    })
+    .await?
+}
+
+fn collect_scripts(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<String>) {
+    const EXTS: [&str; 9] = ["sh", "bash", "zsh", "ps1", "bat", "cmd", "py", "js", "ts"];
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        if out.len() >= 32 {
+            return;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            if !entry.file_name().to_string_lossy().starts_with('.') {
+                collect_scripts(base, &path, out);
+            }
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if EXTS.iter().any(|&e| e.eq_ignore_ascii_case(ext)) {
+                if let Ok(rel) = path.strip_prefix(base) {
+                    out.push(rel.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+}
+
+/// Toggles a skill on or off in Settings (non-destructive; stored in `Settings.disabled_skills`).
+#[tauri::command]
+pub fn workspace_toggle_skill(app: AppHandle, path: String, enabled: bool) -> bool {
+    let state = app.state::<crate::state::AppState>();
+    let saved = state.update_settings(|s| {
+        if enabled {
+            s.disabled_skills.remove(&path);
+        } else {
+            s.disabled_skills.insert(path.clone());
+        }
+    });
+    let _ = app.emit("settings-changed", saved);
+    enabled
+}
+
+/// Opens a skills folder in the system file manager (creating standard skills folders if missing).
+#[tauri::command]
+pub fn workspace_open_skills_folder(app: AppHandle, path: String) -> Res<String> {
+    use tauri_plugin_opener::OpenerExt;
+    let folder = std::path::PathBuf::from(&path);
+    if !folder.exists() {
+        std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    }
+    app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(folder.display().to_string())
+}
+
+// MARK: Worktree cleanup (`WorktreeCleanupReportView` on the Mac)
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupEntry {
+    pub path: String,
+    pub title: Option<String>,
+    /// "removed" | "kept" | "failed"
+    pub outcome: &'static str,
+    pub reason: String,
+    pub bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeOrphan {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupReport {
+    pub finished_at: DateTime<Utc>,
+    pub entries: Vec<WorktreeCleanupEntry>,
+    pub orphans: Vec<WorktreeOrphan>,
+    pub bytes_freed: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupStatus {
+    pub total_worktrees: usize,
+    pub stale_count: usize,
+    pub orphans: Vec<WorktreeOrphan>,
+    pub latest_report: Option<WorktreeCleanupReport>,
+}
+
+static LAST_CLEANUP_REPORT: std::sync::LazyLock<std::sync::Mutex<Option<WorktreeCleanupReport>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+fn dir_size_bounded(path: &std::path::Path, budget: &mut usize) -> u64 {
+    if *budget == 0 {
+        return 0;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        if *budget == 0 {
+            break;
+        }
+        *budget -= 1;
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            total = total.saturating_add(dir_size_bounded(&entry.path(), budget));
+        } else {
+            total = total.saturating_add(meta.len());
+        }
+    }
+    total
+}
+
+fn find_orphan_folders(root: &str, known_paths: &[String]) -> Vec<WorktreeOrphan> {
+    let root_path = std::path::Path::new(root);
+    let Ok(repos) = std::fs::read_dir(root_path) else { return Vec::new() };
+    let known: std::collections::HashSet<String> = known_paths.iter().map(|p| nook_core::workspace::paths::normalize(p)).collect();
+    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    let mut orphans = Vec::new();
+    for repo_entry in repos.flatten() {
+        let repo_dir = repo_entry.path();
+        if !repo_dir.is_dir() {
+            continue;
+        }
+        let Ok(children) = std::fs::read_dir(&repo_dir) else { continue };
+        for child in children.flatten() {
+            let child_path = child.path();
+            if !child_path.is_dir() {
+                continue;
+            }
+            let norm = nook_core::workspace::paths::normalize(&child_path.to_string_lossy());
+            if known.contains(&norm) {
+                continue;
+            }
+            let modified = child.metadata().and_then(|m| m.modified()).ok();
+            if modified.is_some_and(|m| m > cutoff) {
+                continue;
+            }
+            let mut budget = 4000;
+            let bytes = dir_size_bounded(&child_path, &mut budget);
+            orphans.push(WorktreeOrphan { path: child_path.to_string_lossy().into_owned(), bytes });
+        }
+    }
+    orphans.sort_by(|a, b| a.path.cmp(&b.path));
+    orphans
+}
+
+enum CleanupVerdict {
+    Skip,
+    Remove { reason: &'static str, title: Option<String> },
+    Keep { reason: &'static str, title: Option<String> },
+}
+
+fn evaluate_worktree(
+    row: &WorktreeRow,
+    runs: &[WorkspaceRun],
+    running: &std::collections::HashSet<Uuid>,
+    rules: &nook_core::settings::WorktreeSettings,
+    now: DateTime<Utc>,
+) -> CleanupVerdict {
+    if row.worktree.is_main {
+        return CleanupVerdict::Skip;
+    }
+    let linked: Vec<&WorkspaceRun> = runs.iter().filter(|r| row.run_ids.contains(&r.id)).collect();
+    let title = linked.first().map(|r| r.title.clone()).filter(|t| !t.is_empty());
+
+    // Determine whether any cleanup rule applies to this worktree.
+    let mut matched_reason: Option<&'static str> = None;
+    if linked.is_empty() && rules.cleanup_on_delete {
+        matched_reason = Some("deletedSession");
+    } else if !linked.is_empty() {
+        let all_archived = linked.iter().all(|r| r.archived);
+        let newest_update = linked.iter().map(|r| r.updated_at).max().unwrap_or(now);
+        let age_days = (now - newest_update).num_days().max(0) as u32;
+        if rules.cleanup_settled_days > 0 && all_archived && age_days >= rules.cleanup_settled_days {
+            matched_reason = Some("settled");
+        } else if rules.cleanup_inactive_days > 0 && age_days >= rules.cleanup_inactive_days {
+            matched_reason = Some("inactive");
+        } else if rules.cleanup_unchanged && row.ahead == Some(0) && row.changed_files == Some(0) {
+            matched_reason = Some("unchanged");
+        }
+    }
+    let Some(reason) = matched_reason else {
+        return CleanupVerdict::Skip;
+    };
+
+    // Safety guards: never remove active, shared, symlinked, or dirty worktrees.
+    if row.run_ids.iter().any(|id| running.contains(id)) || linked.iter().any(|r| r.status.is_active()) {
+        return CleanupVerdict::Keep { reason: "active", title };
+    }
+    if linked.len() > 1 {
+        return CleanupVerdict::Keep { reason: "shared", title };
+    }
+    if std::fs::symlink_metadata(&row.worktree.path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return CleanupVerdict::Keep { reason: "symlink", title };
+    }
+    if row.changed_files.unwrap_or(0) > 0 {
+        return CleanupVerdict::Keep { reason: "uncommittedChanges", title };
+    }
+    if rules.keep_when == "anyLocalFiles" && row.ahead.unwrap_or(0) > 0 {
+        return CleanupVerdict::Keep { reason: "unpushedCommits", title };
+    }
+
+    CleanupVerdict::Remove { reason, title }
+}
+
+/// Counts total & stale worktrees, orphan folders under the worktree root, and returns the latest cleanup report.
+#[tauri::command]
+pub async fn workspace_worktree_cleanup_status(app: AppHandle, state: State<'_, WorkspaceState>) -> Res<WorktreeCleanupStatus> {
+    let m = state.manager.clone();
+    let rules = app.state::<crate::state::AppState>().settings().worktrees;
+    let root = lock(&state.settings).worktree_root();
+    blocking(move || {
+        m.refresh_worktrees();
+        let rows = m.worktree_rows();
+        let runs = m.runs();
+        let running: std::collections::HashSet<Uuid> = runs.iter().filter(|r| m.is_running(r.id)).map(|r| r.id).collect();
+        let now = Utc::now();
+        let mut stale_count = 0usize;
+        let mut total_worktrees = 0usize;
+        let mut known_paths = Vec::new();
+        for row in &rows {
+            known_paths.push(row.worktree.path.clone());
+            if !row.worktree.is_main {
+                total_worktrees += 1;
+            }
+            if matches!(evaluate_worktree(row, &runs, &running, &rules, now), CleanupVerdict::Remove { .. }) {
+                stale_count += 1;
+            }
+        }
+        for r in &runs {
+            if let Some(ref p) = r.worktree_path {
+                known_paths.push(p.clone());
+            }
+        }
+        let orphans = find_orphan_folders(&root, &known_paths);
+        let latest_report = lock(&LAST_CLEANUP_REPORT).clone();
+        WorktreeCleanupStatus { total_worktrees, stale_count, orphans, latest_report }
+    })
+    .await
+}
+
+/// Runs worktree cleanup immediately using the saved `Settings.worktrees` rules and returns a full report.
+#[tauri::command]
+pub async fn workspace_worktree_cleanup_now(app: AppHandle, state: State<'_, WorkspaceState>) -> Res<WorktreeCleanupReport> {
+    let m = state.manager.clone();
+    let rules = app.state::<crate::state::AppState>().settings().worktrees;
+    let root = lock(&state.settings).worktree_root();
+    let report = blocking(move || {
+        m.refresh_worktrees();
+        let rows = m.worktree_rows();
+        let runs = m.runs();
+        let running: std::collections::HashSet<Uuid> = runs.iter().filter(|r| m.is_running(r.id)).map(|r| r.id).collect();
+        let now = Utc::now();
+        let mut entries = Vec::new();
+        let mut bytes_freed = 0u64;
+
+        for row in &rows {
+            match evaluate_worktree(row, &runs, &running, &rules, now) {
+                CleanupVerdict::Skip => {}
+                CleanupVerdict::Keep { reason, title } => {
+                    entries.push(WorktreeCleanupEntry {
+                        path: row.worktree.path.clone(),
+                        title,
+                        outcome: "kept",
+                        reason: reason.into(),
+                        bytes: None,
+                    });
+                }
+                CleanupVerdict::Remove { reason, title } => {
+                    let mut budget = 6000;
+                    let size = dir_size_bounded(std::path::Path::new(&row.worktree.path), &mut budget);
+                    match m.remove_worktree_at(&row.repo_root, &row.worktree.path, false) {
+                        Ok(()) => {
+                            bytes_freed = bytes_freed.saturating_add(size);
+                            entries.push(WorktreeCleanupEntry {
+                                path: row.worktree.path.clone(),
+                                title,
+                                outcome: "removed",
+                                reason: reason.into(),
+                                bytes: Some(size),
+                            });
+                        }
+                        Err(err) => {
+                            entries.push(WorktreeCleanupEntry {
+                                path: row.worktree.path.clone(),
+                                title,
+                                outcome: "failed",
+                                reason: err,
+                                bytes: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let after_rows = m.worktree_rows();
+        let mut known_paths: Vec<String> = after_rows.iter().map(|r| r.worktree.path.clone()).collect();
+        for r in &runs {
+            if let Some(ref p) = r.worktree_path {
+                known_paths.push(p.clone());
+            }
+        }
+        let orphans = find_orphan_folders(&root, &known_paths);
+        let report = WorktreeCleanupReport { finished_at: Utc::now(), entries, orphans, bytes_freed };
+        *lock(&LAST_CLEANUP_REPORT) = Some(report.clone());
+        report
+    })
+    .await?;
+    let _ = app.emit("workspace-changed", ());
+    Ok(report)
+}
+
+/// Opens an existing folder (or the parent folder of a file) in the system file manager.
+#[tauri::command]
+pub fn workspace_reveal_path(app: AppHandle, path: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = std::path::PathBuf::from(&path);
+    let target = if p.is_dir() {
+        p
+    } else if let Some(parent) = p.parent().filter(|d| d.is_dir()) {
+        parent.to_path_buf()
+    } else {
+        return Err(tr("Deze map bestaat niet meer.", "This folder no longer exists.").to_string());
+    };
+    app.opener().open_path(target.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(())
+}
+

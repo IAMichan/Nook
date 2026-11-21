@@ -66,6 +66,7 @@ pub fn setup(app: &AppHandle) {
     hub.register(N8n::new(env.clone()));
     hub.register(Resend::new(env.clone()));
     hub.register(CalendarFeeds::new(env.clone()));
+    hub.register(nook_core::connectors::mail::service::MailService::new(env.clone()));
     hub.register(CustomSources::new(env.clone()));
     hub.register(whatsapp.clone());
 

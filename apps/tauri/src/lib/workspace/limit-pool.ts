@@ -164,3 +164,223 @@ export function makePool(accounts: Account[], now: Date = new Date()): Pool | nu
 
 /** The first reset that gives anything back. */
 export const nextRefill = (w: Window) => w.resets.find((r) => r.restores > 0) ?? null;
+
+export const FIVE_HOURS = 5 * 3600;
+export const WEEK = 7 * 86_400;
+
+/** Used percentage rounded the same way as the pool (`100 - left(used)`), so 38.5% matches everywhere. */
+export const usedOf = (used: number): number => 100 - left(used);
+
+export type UsageToneLevel = "calm" | "warning" | "error";
+
+/** How full a limit is colored: calm while there is room, amber from 75% used, coral from 90% (`UsageTone`). */
+export function usageTone(used: number): UsageToneLevel {
+  const n = Math.round(used);
+  return n >= 90 ? "error" : n >= 75 ? "warning" : "calm";
+}
+
+/** Spending pace of a single window against its elapsed clock. */
+export function paceForLimit(limit: Limit, now: Date): Pace | null {
+  const share = elapsedShare(limit, now);
+  return share === null ? null : paceOf(limit.used, share);
+}
+
+/** A limit window as displayed in rows and pools, with an optional idle note ("Starts with your first message"). */
+export interface LimitDisplay extends Limit {
+  note: string | null;
+}
+
+/** Groups limits by model prefix ("Gemini 3 Pro · Week" → group "Gemini 3 Pro", window "Week"). */
+export function groupLimits(limits: LimitDisplay[]): { name: string; limits: (LimitDisplay & { window: string })[] }[] {
+  const groups: { name: string; limits: (LimitDisplay & { window: string })[] }[] = [];
+  for (const limit of limits) {
+    const at = limit.label.lastIndexOf(" · ");
+    const name = at >= 0 ? limit.label.slice(0, at) : "";
+    const window = at >= 0 ? limit.label.slice(at + 3) : limit.label;
+    let bucket = groups.find((g) => g.name === name);
+    if (!bucket) {
+      bucket = { name, limits: [] };
+      groups.push(bucket);
+    }
+    bucket.limits.push({ ...limit, window });
+  }
+  return groups;
+}
+
+/** Structural input matching `AccountLimits` without pulling in Tauri runtime dependencies. */
+export interface AccountLimitInput {
+  profileId: string;
+  kind: string;
+  name: string;
+  email: string | null;
+  plan: string;
+  apiKey: boolean;
+  usage: {
+    fiveHour: { usedPercent: number; resetsAt: string } | null;
+    sevenDay: { usedPercent: number; resetsAt: string } | null;
+  } | null;
+  codex: {
+    fiveHour: { usedPercent: number; resetsAt: string | null; windowMinutes: number | null } | null;
+    weekly: { usedPercent: number; resetsAt: string | null; windowMinutes: number | null } | null;
+    resetCredits: { available: number; nextExpiresAt: string | null } | null;
+  } | null;
+  antigravityLimits: {
+    label: string;
+    percent: number;
+    resetsAt: string | null;
+    note: string | null;
+    durationSecs: number | null;
+  }[];
+  antigravityNoLogin: boolean;
+}
+
+export interface LimitLabels {
+  fiveHours: string;
+  week: string;
+  startsFirst: string;
+}
+
+function parseDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function settleWindow(
+  label: string,
+  used: number,
+  resetsAt: Date | null,
+  duration: number | null,
+  note: string | null,
+  startsFirst: string,
+  now: Date,
+  checkUnstarted: boolean,
+): LimitDisplay {
+  const clamped = clamp(used);
+  if (resetsAt) {
+    const remainingSecs = (resetsAt.getTime() - now.getTime()) / 1000;
+    const passed = remainingSecs <= 0;
+    const unstarted = checkUnstarted && clamped < 0.5 && duration !== null && remainingSecs > duration - 15 * 60;
+    if (passed || unstarted) {
+      return { label, used: 0, resetsAt: null, duration, note: startsFirst };
+    }
+  }
+  return { label, used: clamped, resetsAt, duration, note };
+}
+
+/** Converts one account's raw backend limits into settled display/pool windows. */
+export function accountLimitsToPoolLimits(
+  account: AccountLimitInput,
+  labels: LimitLabels,
+  now: Date = new Date(),
+): LimitDisplay[] {
+  if (account.apiKey) return [];
+  if (account.kind === "antigravity") {
+    return account.antigravityLimits.map((l) =>
+      settleWindow(l.label, l.percent, parseDate(l.resetsAt), l.durationSecs, l.note, labels.startsFirst, now, true),
+    );
+  }
+  if (account.kind === "codex" && account.codex) {
+    const out: LimitDisplay[] = [];
+    if (account.codex.fiveHour) {
+      const w = account.codex.fiveHour;
+      const duration = w.windowMinutes && w.windowMinutes > 0 ? w.windowMinutes * 60 : FIVE_HOURS;
+      out.push(settleWindow(labels.fiveHours, w.usedPercent, parseDate(w.resetsAt), duration, null, labels.startsFirst, now, false));
+    }
+    if (account.codex.weekly) {
+      const w = account.codex.weekly;
+      const duration = w.windowMinutes && w.windowMinutes > 0 ? w.windowMinutes * 60 : WEEK;
+      out.push(settleWindow(labels.week, w.usedPercent, parseDate(w.resetsAt), duration, null, labels.startsFirst, now, false));
+    }
+    return out;
+  }
+  if (account.usage) {
+    const out: LimitDisplay[] = [];
+    if (account.usage.fiveHour) {
+      const w = account.usage.fiveHour;
+      out.push(settleWindow(labels.fiveHours, w.usedPercent, parseDate(w.resetsAt), FIVE_HOURS, null, labels.startsFirst, now, false));
+    }
+    if (account.usage.sevenDay) {
+      const w = account.usage.sevenDay;
+      out.push(settleWindow(labels.week, w.usedPercent, parseDate(w.resetsAt), WEEK, null, labels.startsFirst, now, false));
+    }
+    return out;
+  }
+  return [];
+}
+
+export interface LimitAccountDetails {
+  email: string | null;
+  plan: string | null;
+  credits: number;
+}
+
+export interface PoolSection {
+  kind: string;
+  pool: Pool;
+  details: Record<string, LimitAccountDetails>;
+}
+
+const AGENT_ORDER = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok"];
+
+/** Builds per-agent pooled sections and unavailable notices (`UsageLimitSection.make` on the Mac). */
+export function buildPoolSections(
+  accounts: AccountLimitInput[],
+  options: {
+    now?: Date;
+    hidden?: Set<string>;
+    labels: LimitLabels;
+    agentName: (kind: string) => string;
+    unavailableReason: (account: AccountLimitInput) => string;
+    formatNotice: (accountTitle: string, reason: string) => string;
+  },
+): { sections: PoolSection[]; notices: string[] } {
+  const now = options.now ?? new Date();
+  const hidden = options.hidden ?? new Set<string>();
+  const visible = accounts.filter((a) => !hidden.has(a.kind));
+  const byKind = new Map<string, AccountLimitInput[]>();
+  for (const a of visible) {
+    const list = byKind.get(a.kind) ?? [];
+    list.push(a);
+    byKind.set(a.kind, list);
+  }
+  const kinds = [...byKind.keys()].sort((a, b) => {
+    const ia = AGENT_ORDER.indexOf(a);
+    const ib = AGENT_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+
+  const sections: PoolSection[] = [];
+  const notices: string[] = [];
+
+  for (const kind of kinds) {
+    const groupAccounts = byKind.get(kind) ?? [];
+    const details: Record<string, LimitAccountDetails> = {};
+    const poolAccounts: Account[] = groupAccounts.map((a) => {
+      const limits = accountLimitsToPoolLimits(a, options.labels, now);
+      details[a.profileId] = {
+        email: a.email,
+        plan: a.plan || null,
+        credits: a.codex?.resetCredits?.available ?? 0,
+      };
+      if (!limits.length) {
+        const title = a.name && a.name !== options.agentName(kind) ? `${options.agentName(kind)} · ${a.name}` : options.agentName(kind);
+        notices.push(options.formatNotice(title, options.unavailableReason(a)));
+      }
+      const w = weights(kind, a.plan);
+      return {
+        id: a.profileId,
+        name: a.name,
+        limits,
+        sessionWeight: w.session,
+        weeklyWeight: w.weekly,
+      };
+    });
+    const pool = makePool(poolAccounts, now);
+    if (pool) {
+      sections.push({ kind, pool, details });
+    }
+  }
+  return { sections, notices };
+}
+

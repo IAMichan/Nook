@@ -9,6 +9,7 @@ use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
 
 use super::accounts::ServiceAccount;
+use super::mail::MailAccount;
 use super::mcp::McpServerConfig;
 use super::whatsapp::WhatsAppSettings;
 use crate::paths;
@@ -19,6 +20,9 @@ pub struct ConnectorConfig {
     /// `connector.<id>.on` op de Mac: aan zodra ingesteld, tenzij de gebruiker hem uitzette.
     pub toggles: BTreeMap<String, bool>,
     pub accounts: Vec<ServiceAccount>,
+    /// Linked Microsoft / Google mail & calendar accounts (refresh tokens live in the keychain only).
+    #[serde(default)]
+    pub mail_accounts: Vec<MailAccount>,
     /// GitLab-hosts met een token in de kluis.
     pub gitlab_hosts: Vec<String>,
     pub mcp_servers: Vec<McpServerConfig>,
@@ -145,6 +149,35 @@ mod tests {
         assert!(!whatsapp.enabled, "off until it is linked again");
         assert!(!whatsapp.notify);
         assert!(!file.with_extension("json.bak").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mail_accounts_default_and_persist() {
+        let dir = std::env::temp_dir().join(format!("nook-connectors-mail-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("connectors.json");
+        // Existing connectors.json without mailAccounts loads seamlessly.
+        std::fs::write(&file, br#"{"toggles":{"github":true}}"#).unwrap();
+        let store = ConnectorStore::open(file.clone());
+        assert!(store.read(|c| c.mail_accounts.is_empty()));
+        assert!(!file.with_extension("json.bak").exists());
+
+        // Persisting mail_accounts survives reload.
+        store.update(|c| {
+            c.mail_accounts.push(MailAccount {
+                id: "ms-work".into(),
+                provider: super::super::mail::Provider::Microsoft,
+                address: "work@example.com".into(),
+                name: "Work".into(),
+                calendar: true,
+            });
+        });
+        let again = ConnectorStore::open(file);
+        let accounts = again.read(|c| c.mail_accounts.clone());
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].address, "work@example.com");
+        assert!(accounts[0].calendar);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
