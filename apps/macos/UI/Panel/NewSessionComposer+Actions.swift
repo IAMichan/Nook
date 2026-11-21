@@ -421,6 +421,15 @@ extension NewSessionComposer {
         pick(url.path)
     }
 
+    /// "Add existing project…": a folder already on this Mac becomes a project, kept in the Agents list and the pickers
+    /// like one added there, and the box opens on it.
+    func addExistingProject() {
+        guard let path = ProjectFolderPanel.choose(near: project.map { $0.repoRoot ?? $0.path }) else { return }
+        settings.addProject(path)
+        settings.rememberProject(path)
+        pick(path)
+    }
+
     /// "New project…": a new folder where you choose, with an empty repository, then the offer to publish it on GitHub
     /// (Cancel keeps it on this Mac only).
     func chooseNewProject() {
@@ -436,6 +445,8 @@ extension NewSessionComposer {
         Task {
             do {
                 let plan = try await workspace.createProject(at: url.path)
+                // Kept as a project at once, as "Add project" in the Agents list does, not only as a recent folder.
+                settings.addProject(plan.folder)
                 settings.rememberProject(plan.folder)
                 pick(plan.folder)
                 newProjectPlan = plan
