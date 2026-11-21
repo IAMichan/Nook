@@ -10,11 +10,14 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+## [0.1.2-beta.2] - 2026-11-21
+
 ### Changed
 
 - When a usage limit stops a session, its end now looks like a stopped session: a quiet line with when the limit
   resets and Retry, and one row to go on now with the account that has room left, under the logo of the model it goes
   on with. "Another model" opens the model picker.
+
 - Building Nook now warns when the chat helper (`nook-chatd`) is older than the code in `apps/chatd`, with how many
   changes it misses, so a stale helper no longer quietly drops fixes such as the account an Instagram chat belongs to.
   Run `scripts/build-chatd.sh` to bring it up to date.
@@ -462,6 +465,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
+[0.1.2-beta.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.2
 [0.1.2-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.1
 [0.1.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1
 [0.1.0-beta.1]: https://github.com/IAMichan/nook/releases/tag/v0.1.0-beta.1
