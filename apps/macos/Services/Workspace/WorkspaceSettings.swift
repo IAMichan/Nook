@@ -240,6 +240,8 @@ final class WorkspaceSettings: ObservableObject {
     @Published var remoteMCPEnabled: Bool {
         didSet { defaults.set(remoteMCPEnabled, forKey: "ws.remoteMCPEnabled") }
     }
+    /// A session that quitting or restarting Nook cut off goes on by itself at the next launch (`RestartContinuation`).
+    /// On by default; configurable in Settings › Agents.
     @Published var continueAfterRelaunch: Bool {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
@@ -344,7 +346,7 @@ final class WorkspaceSettings: ObservableObject {
         autoCompactTokens = defaults.object(forKey: SizeCompaction.settingKey) as? Int ?? SizeCompaction.defaultTokens
         keepSessionsRunning = defaults.bool(forKey: "ws.keepSessionsRunning")
         remoteMCPEnabled = defaults.bool(forKey: "ws.remoteMCPEnabled")
-        continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
+        continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? RestartContinuation.enabledByDefault
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         watchNewPullRequests = defaults.object(forKey: "ws.watchNewPullRequests") as? Bool ?? true
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false

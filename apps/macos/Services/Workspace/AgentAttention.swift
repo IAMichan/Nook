@@ -267,6 +267,8 @@ struct SnoozeOption: Codable, Hashable, Identifiable, Sendable {
 /// Goes on with a session that a restart cut off: one "Continue where you left off.",
 /// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {
+    /// On unless you turned it off: a session Nook cut off goes on by itself instead of waiting for you to press Go on.
+    static let enabledByDefault = true
     static let limit = 3
     /// What the agent reads. A restart can cut a turn off after a command ran but before its result reached the agent
     /// (or Nook), so it is told to look before it repeats anything that changes state.
