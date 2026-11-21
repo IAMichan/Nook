@@ -11,6 +11,10 @@ final class RestartContinuationTests: XCTestCase {
         return run
     }
 
+    func testIsOnByDefault() {
+        XCTAssertTrue(RestartContinuation.enabledByDefault, "a session your quit cut off goes on without asking")
+    }
+
     func testSkipsSettledSnoozedAndWaitingSessions() {
         var run = interrupted()
         XCTAssertTrue(RestartContinuation.shouldContinue(run, enabled: true, now: now))
