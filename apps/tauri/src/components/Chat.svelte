@@ -16,9 +16,9 @@
   import HomeGlance from "./HomeGlance.svelte";
   import StarterGrid from "./StarterGrid.svelte";
   import NookTaskBar from "./NookTaskBar.svelte";
+  import { EndFollow } from "../lib/end-follow.svelte";
 
   let { compact = false, autofocus = false, onopen }: { compact?: boolean; autofocus?: boolean; onopen?: (target: Target) => void } = $props();
-  let scroller: HTMLDivElement;
   let starters = $state<string[]>([]);
   let onboarding = $state(false);
   /// A note a "For you" row opened, read right here.
@@ -41,22 +41,19 @@
     return () => inbox.stop();
   });
 
-  // Follow the answer down while it comes in, but only while the view is at the bottom: someone who scrolled up to
-  // read keeps their place. A new message of their own, or another Nook, always scrolls down.
-  let atEnd = true;
-  const onScroll = () => {
-    if (scroller) atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 48;
-  };
+  // Follow the answer down while it comes in (see `end-follow.ts`): only scrolling up yourself lets go, so someone
+  // reading back keeps their place. A new message of their own, or another Nook, always scrolls down. The home (no
+  // messages yet) is read from the top.
+  const follow = new EndFollow(".msg");
   let lastCount = 0;
   let lastNook: string | null = null;
   $effect(() => {
     const shown = nook.activeId;
     const count = nook.active?.messages.length ?? 0;
-    for (const id in nook.streaming) void nook.streaming[id]?.length;
-    if (count > lastCount || shown !== lastNook) atEnd = true;
+    if (empty) follow.release();
+    else if (count > lastCount || shown !== lastNook) follow.toEnd();
     lastCount = count;
     lastNook = shown;
-    if (atEnd) queueMicrotask(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
   });
 
   // "Monday 19 October", then a calm greeting with how many things wait for you.
@@ -92,7 +89,7 @@
 </script>
 
 <div class="chat" class:compact>
-  <div class="messages" bind:this={scroller} onscroll={onScroll}><div class="reading-column">
+  <div class="messages" {@attach follow.attach}><div class="reading-column">
     {#if empty}
       <div class="empty" class:home>
         {#if !compact}

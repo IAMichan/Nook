@@ -313,7 +313,7 @@
     <EmptyState icon="inbox" title={tr("Deze sessie is er niet meer.", "This session is gone.")} text={tr("Hij is op je Mac gesloten of gearchiveerd.", "It was closed or archived on your Mac.")} />
   {:else}
     <div class="body">
-      <ConversationScroll version={[entries.length, entries[entries.length - 1]?.text.length, session.attention, session.excerpt]} reserve={working ? 56 : 0}>
+      <ConversationScroll reserve={working ? 56 : 0}>
         {#if hasTimeline}
           {#if offline && !entries.length && !queued.length}
             <OfflineNote>{tr("Dit gesprek staat nog niet op deze telefoon. Het opent zodra je Mac verbonden is.", "This conversation is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>
