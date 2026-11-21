@@ -9,6 +9,15 @@ if [ ! -f "$HELPER" ]; then
   rm -f "$DEST/nook-chatd"
   exit 0
 fi
+# A helper built before later changes to apps/chatd quietly lacks them (Instagram chats without their account, for
+# one), and nothing else tells: say so in the build, with how many changes it misses.
+BUILT="$(cut -d' ' -f1 "$SRCROOT/Vendor/ChatHelper/VERSION" 2>/dev/null)"
+if [ -n "$BUILT" ] && git -C "$SRCROOT" cat-file -e "$BUILT^{commit}" 2>/dev/null; then
+  MISSED="$(git -C "$SRCROOT" rev-list --count "$BUILT..HEAD" -- ../chatd 2>/dev/null)"
+  if [ -n "$MISSED" ] && [ "$MISSED" -gt 0 ]; then
+    echo "warning: nook-chatd was built from $BUILT and misses $MISSED later change(s) to apps/chatd. Run scripts/build-chatd.sh."
+  fi
+fi
 # Already copied (and signed) since the helper was last built: touching the app again would make Xcode sign it on every build.
 if [ "$DEST/nook-chatd" -nt "$HELPER" ] && { [ "$CODE_SIGNING_ALLOWED" = "NO" ] || codesign --verify "$DEST/nook-chatd" 2>/dev/null; }; then
   exit 0
