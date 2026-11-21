@@ -45,32 +45,23 @@ struct UsageLimitCard: View {
     /// "⏳ Usage limit reached · Claude Code · Work · Resets at 20:10 (in 1h 16m)  Retry": the stopped marker's pill,
     /// the reset in amber. Without the account when the row is too narrow.
     private func marker(auto: Bool) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            NookDivider()
+        HairlineMarker(fixed: false) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "hourglass")
-                        .font(NookTheme.font(12, .semibold))
-                        .foregroundStyle(NookTheme.amber)
-                    TimelineView(.nookTicks(every: 30)) { context in
-                        let when = line(now: context.date, auto: auto)
-                        ViewThatFits(in: .horizontal) {
-                            markerText([tr("ws.limit.title"), accountWords(run.provider, profileID: run.profileID)], when: when)
-                            markerText([tr("ws.limit.title")], when: when)
-                            markerText([], when: when)
-                        }
+                Image(icon: "hourglass")
+                    .font(NookTheme.font(12, .semibold))
+                    .foregroundStyle(NookTheme.amber)
+                TimelineView(.nookTicks(every: 30)) { context in
+                    let when = line(now: context.date, auto: auto)
+                    ViewThatFits(in: .horizontal) {
+                        markerText([tr("ws.limit.title"), accountWords(run.provider, profileID: run.profileID)], when: when)
+                        markerText([tr("ws.limit.title")], when: when)
+                        markerText([], when: when)
                     }
                 }
-                .accessibilityElement(children: .combine)
-                // The limit may already be free (or the reset was early): try the turn again now.
-                NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(run.id) }
             }
-            .padding(.leading, NookTheme.Spacing.lg)
-            .padding(.trailing, NookTheme.Spacing.xs)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .cardBackground(NookTheme.well, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
-            .layoutPriority(1)
-            NookDivider()
+            .accessibilityElement(children: .combine)
+            // The limit may already be free (or the reset was early): try the turn again now.
+            NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(run.id) }
         }
     }
 
