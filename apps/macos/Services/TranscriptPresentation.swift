@@ -112,15 +112,24 @@ enum TranscriptPresentation {
 
     /// The rows of a conversation. `working`: the agent works on the last turn, which shows its progress. Once it is done,
     /// the last turn folds into "Worked for …" over its answer like every earlier one.
-    static func rows(_ messages: [AgentChatMessage], working: Bool) -> [TranscriptRow] {
+    /// `held`: the step that just ended which the live line still shows (`EndedStepHold`), kept out of the rows above it.
+    static func rows(_ messages: [AgentChatMessage], working: Bool, held: String? = nil) -> [TranscriptRow] {
         // Thinking the agent kept to itself says nothing in a timeline that already shows the work.
         let turns = split(messages.filter { !($0.isThinking && $0.text.isEmpty) })
         var rows: [TranscriptRow] = []
         for (index, turn) in turns.enumerated() {
             let isLast = index == turns.count - 1
-            rows += present(turn, open: working && isLast)
+            rows += present(turn, open: working && isLast, held: held)
         }
         return rows
+    }
+
+    /// The step a working conversation ends with, once it ended and nothing came after it: what the live line holds a
+    /// moment (`EndedStepHold`).
+    static func endedStep(_ messages: [AgentChatMessage]) -> String? {
+        guard let last = messages.last(where: { !($0.isThinking && $0.text.isEmpty) }), last.isTools,
+              let step = last.steps.last, !last.steps.contains(where: { $0.state == .running }) else { return nil }
+        return step.id
     }
 
     /// A turn starts at each message of yours; anything before the first one is a turn of its own. A message you sent
@@ -145,9 +154,9 @@ enum TranscriptPresentation {
         return end.timeIntervalSince(start)
     }
 
-    private static func present(_ turn: [AgentChatMessage], open: Bool) -> [TranscriptRow] {
+    private static func present(_ turn: [AgentChatMessage], open: Bool, held: String? = nil) -> [TranscriptRow] {
         guard turn.first != nil else { return [] }
-        if open { return presentOpen(turn) }
+        if open { return presentOpen(turn, held: held) }
         // A turn you stopped stays open, so it shows how far it got, and says at its end for how long it ran, so it does
         // not read as if the agent finished.
         guard let stop = turn.last(where: \.interrupted) else { return presentClosed(turn) }
@@ -204,7 +213,7 @@ enum TranscriptPresentation {
 
     /// The turn that runs: how long it has been going right under your message, the work so far, and at the end the step
     /// that runs now (taken out of its group) with what the agent thought right before it, or what it thinks now.
-    private static func presentOpen(_ turn: [AgentChatMessage]) -> [TranscriptRow] {
+    private static func presentOpen(_ turn: [AgentChatMessage], held: String?) -> [TranscriptRow] {
         var rows: [TranscriptRow] = []
         var work = turn
         if let first = turn.first, first.fromUser {
@@ -231,6 +240,10 @@ enum TranscriptPresentation {
         var current: AgentToolStep?
         if var last = work.last, last.isTools, let index = last.steps.lastIndex(where: { $0.state == .running }) {
             current = last.steps.remove(at: index)
+            if last.steps.isEmpty { work.removeLast() } else { work[work.count - 1] = last }
+        } else if let held, var last = work.last, last.isTools, last.steps.last?.id == held {
+            // The step that just ended, still on the live line for a moment: not also a row right above it.
+            current = last.steps.removeLast()
             if last.steps.isEmpty { work.removeLast() } else { work[work.count - 1] = last }
         }
         // The thought the work ends with goes with the live line: why the agent runs this step, or what it thinks now.

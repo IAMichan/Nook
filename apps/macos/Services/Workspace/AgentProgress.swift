@@ -190,12 +190,6 @@ enum AgentActivity: Equatable, Sendable {
     /// second through quick commands.
     static let stepDwell: TimeInterval = 0.8
 
-    /// Whether the live line keeps `shown` a while (`stepDwell`) before it says `next`: a step that ended gives way
-    /// right away to another step, never to the pause between two.
-    static func holds(_ shown: AgentActivity, before next: AgentActivity) -> Bool {
-        shown.isStep && !next.isStep && next != .compacting
-    }
-
     /// A tool call by name and input.
     static func of(tool: String, input: [String: Any], fallback: String = "") -> AgentActivity {
         let name = tool.lowercased()
@@ -316,4 +310,18 @@ enum TaskChecklist {
     static func activeStep(_ steps: [RunTaskStep]) -> String? {
         steps.first { $0.status == .active }?.text
     }
+}
+
+/// The step that just ended, held on the live line for `AgentActivity.stepDwell` while nothing came after it, so quick
+/// commands read as one steady line instead of "Running …", "Reviewing", "Running …". The timeline keeps the held step
+/// out of its rows for as long, exactly as it does with a step that runs: held by the live line alone, the step showed
+/// twice for a moment, as a row and right under it on the shimmering live line, like a shadow.
+struct EndedStepHold<ID: Hashable>: Equatable {
+    /// The last step whose moment on the live line is over.
+    private(set) var released: ID?
+
+    /// The step the live line holds now: `ended` (the step the turn ends with, done and nothing after it), until let go.
+    func held(_ ended: ID?) -> ID? { ended == released ? nil : ended }
+
+    mutating func release(_ id: ID) { released = id }
 }

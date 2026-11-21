@@ -342,6 +342,14 @@ enum TimelinePresentation {
         return split(Array(events[start...])).last ?? []
     }
 
+    /// The step a working session's events end with, once it ended and nothing came after it: what the live line holds a
+    /// moment (`EndedStepHold`). Not a command or subagent left running in the background: the live line never shows those.
+    static func endedStep(_ events: [RunEvent]) -> RunEvent? {
+        guard let last = events.last, last.kind == .tool, last.state != .running,
+              !Subagents.isBackground(last), !BackgroundCommands.isCommand(last) else { return nil }
+        return last
+    }
+
     /// The turn the agent runs, for its live line: from the last message that started a turn (or wake), across every
     /// message you steered into it since. A steer starts a turn of its own in the timeline, but the agent goes on with
     /// what it did and reads the steer only after the tool that runs returns: the live line keeps showing that tool

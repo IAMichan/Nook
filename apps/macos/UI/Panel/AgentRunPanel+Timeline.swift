@@ -112,6 +112,10 @@ extension AgentRunPanel {
         let liveStep = active ? events.last.flatMap {
             ($0.kind == .tool && $0.state == .running) || CompactionProgress.isRunning($0) ? $0.id : nil
         } : nil
+        // A step that just ended stays on the live line a moment (`EndedStepHold`), and out of the rows as long.
+        let ended = active && liveStep == nil ? TimelinePresentation.endedStep(events) : nil
+        let held = endedHold.held(ended?.id)
+        let hidden = liveStep ?? held
         // Only the latest turns of a long session are drawn, from the turn the window starts at.
         let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: memo.rowsPerTurn),
                                           turnCount: memo.rowsPerTurn.count)
@@ -152,8 +156,10 @@ extension AgentRunPanel {
                                      holdsSplit: !scroll.shouldFollowEnd) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
-                            TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
-                                if event.id == liveStep { return AnyView(EmptyView()) }
+                            // The held step is in the last block; its block is drawn again when it lets go of it.
+                            TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block),
+                                              hidden: block.id == shownBlocks.last?.id ? held : nil, toggle: toggleBlock) { event in
+                                if event.id == hidden { return AnyView(EmptyView()) }
                                 return AnyView(
                                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                                         // What the turn changed (its card): under the final answer, inside it, as in an
@@ -186,7 +192,7 @@ extension AgentRunPanel {
                         // The agent's task list, live, right above what it does now: the same live line as in an agent's
                         // own transcript.
                         let turn = TimelinePresentation.runningTurn(events)
-                        TranscriptLiveLine(activity: AgentActivity.current(turn),
+                        TranscriptLiveLine(activity: held != nil ? ended.map(AgentActivity.of) ?? .reviewing : AgentActivity.current(turn),
                                            tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
                                            waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
                                            asking: workspace.questions[runID] != nil,
@@ -319,6 +325,13 @@ extension AgentRunPanel {
                 }
             }
             .keyCommand("chat.find") { openFind() }
+            // The step that just ended goes back into the rows once its moment on the live line is over.
+            .task(id: ended?.id) {
+                guard let id = ended?.id else { return }
+                try? await Task.sleep(for: .seconds(AgentActivity.stepDwell))
+                guard !Task.isCancelled else { return }
+                endedHold.release(id)
+            }
             // From a background command's row in the bar: to its call in the conversation, lit up for a moment.
             .onChange(of: conversationFocus) { _, id in
                 guard let id else { return }
