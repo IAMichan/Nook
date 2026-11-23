@@ -15,6 +15,9 @@ struct AgentsTab: View {
     @ObservedObject private var visits = SessionVisits.shared
     /// The sessions open as tabs in the session's header (`SessionTabStrip`).
     @ObservedObject private var sessionTabs = SessionTabs.shared
+    /// The pull requests of the sessions, for the status on their tabs.
+    @ObservedObject private var pullRequestSync = PullRequestSync.shared
+    @ObservedObject private var pullRequestStatuses = PullRequestStatusStore.shared
     @State private var palette = false
     /// The palette opened by the new-session button, on the projects to start in.
     @State private var paletteOnProjects = false
@@ -170,6 +173,8 @@ struct AgentsTab: View {
         // The agent works in a chat you had marked as finished: it is not finished after all, unless you marked it
         // during this very busy spell. Also while the list is put away.
         .onChange(of: entries.busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
+        // A tab goes when its chat is settled, once you are not looking at it.
+        .onChange(of: finishedMarks.keys) { _, _ in closeSettledTabs(entries, current: selectedID(selection)) }
         .onAppear {
             finishedMarks.reconcile(busy: entries.busyKeys)
             if let openLive { viewModel.lastOpenLiveSession = openLive }
@@ -186,6 +191,7 @@ struct AgentsTab: View {
                 SessionHistory.shared.opened(new)
                 sessionTabs.open(new)
             }
+            closeSettledTabs(entries, current: new)
             // The session you left is marked seen by `PanelViewModel.selectedAgentID`. The one you open, and the reads
             // of its neighbours, wait until its first frame is drawn: each visit redraws the whole tab.
             Task { @MainActor in
@@ -344,7 +350,7 @@ struct AgentsTab: View {
             // A sub-thread has no row of its own: its tab looks like the row that stands in for it.
             let item = rows[id] ?? rows[entries.rowID(id)]
             guard item != nil || id == current else { return nil }
-            return SessionTabsContext.Tab(id: id, item: item)
+            return SessionTabsContext.Tab(id: id, item: item, pullRequest: item.flatMap(tabPullRequest))
         }
         return SessionTabsContext(
             tabs: tabs, current: current,
@@ -378,6 +384,26 @@ struct AgentsTab: View {
             },
             move: { sessionTabs.move($0, onto: $1) },
             newSession: { viewModel.requestNewSession() })
+    }
+
+    /// The pull request status for a session's tab: the badge of the requests the branch sync found for it.
+    private func tabPullRequest(_ item: AgentListItem) -> PullRequestBadge? {
+        var links: [PullRequestLink] = []
+        if item.id.hasPrefix("run:"), let id = UUID(uuidString: String(item.id.dropFirst(4))) {
+            links = pullRequestSync.links[id] ?? []
+        } else if let branch = item.branch {
+            links = pullRequestSync.folderLinks[PullRequestSync.folderKey(path: item.path, branch: branch)] ?? []
+        }
+        return PullRequestBadge.text(links: pullRequestStatuses.current(links))
+    }
+
+    /// Closes the tabs of chats you settled (not the open one, and not earlier sessions, which are settled by nature).
+    private func closeSettledTabs(_ entries: AgentListEntries, current: String) {
+        for id in sessionTabs.list.ids where id != current && !id.hasPrefix("past:") {
+            guard let item = (entries.running + entries.earlier).first(where: { $0.id == id }),
+                  !item.isBusy, finishedMarks.contains(item.finishKey) else { continue }
+            _ = sessionTabs.close(id, active: current)
+        }
     }
 
     // MARK: Keys for the open session

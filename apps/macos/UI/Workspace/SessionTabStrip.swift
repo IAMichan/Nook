@@ -7,6 +7,8 @@ struct SessionTabsContext {
         let id: String
         /// Its row in the Agents list; nil for the open session when the list has no row for it (yet).
         let item: AgentListItem?
+        /// The status of its pull request(s), if it has any.
+        var pullRequest: PullRequestBadge? = nil
     }
 
     let tabs: [Tab]
@@ -168,6 +170,9 @@ private struct SessionTabButton: View {
                     .revealOnHover(hovering || tab.item == nil)
             }
             .frame(width: 16, height: 16)
+            if let badge = tab.pullRequest {
+                PullRequestPill(badge: badge, compact: true)
+            }
             Text(name)
                 .font(active ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
                 .lineLimit(1)
