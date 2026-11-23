@@ -721,6 +721,8 @@ targets:
       - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/ConnectorSignIn.swift
+      - path: Services/Workspace/McpStatus.swift
+      - path: Services/Workspace/SessionCommands.swift
       - path: Services/Connectors/ConnectorDomains.swift
       - path: Services/Workspace/AgentTimeline.swift
       - path: Services/Workspace/GitService.swift

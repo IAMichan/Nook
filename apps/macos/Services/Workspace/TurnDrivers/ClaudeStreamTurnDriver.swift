@@ -96,6 +96,7 @@ extension WorkspaceManager {
                 if let model, !model.isEmpty { $0.resolvedModel = model }
             }
             noteConversationSession(id, session, keepsHistory: true)
+            loadClaudeCommands(id)
         case .chainEntry(let uuid):
             noteConversationHead(id, uuid)
         case .connectorsNeedingSignIn(let names):

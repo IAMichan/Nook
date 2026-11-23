@@ -547,6 +547,12 @@ enum ClaudeStreamParser {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_authenticate", "serverName": server]])
     }
 
+    /// Asks for what the session offers (`commands`, with `name`, `description` and `argumentHint`), as an SDK does when
+    /// it connects. Claude Code answers it at any point of a session.
+    static func initializeRequest(id: String) -> String {
+        line(["type": "control_request", "request_id": id, "request": ["subtype": "initialize"]])
+    }
+
     /// Asks how each connector is doing (`mcpServers`, rows with `name` and `status`).
     static func mcpStatusRequest(id: String) -> String {
         line(["type": "control_request", "request_id": id, "request": ["subtype": "mcp_status"]])
