@@ -79,10 +79,16 @@ enum SessionOutputs {
             case .tool where SharedFiles.isShare(event):
                 for path in SharedFiles.paths(AgentActivity.input(event.detail) ?? [:]) { add(path, at: event.date, shared: true) }
             case .tool:
+                // The input is read only for a call that can set the task list or write a file: a long session has
+                // thousands of commands and reads, and reading each one's input again on every event cost tens of ms.
+                let tool = event.tool ?? ""
+                let setsTasks = isTaskTool(tool)
+                let edits = event.state != .failed && ToolCategory.of(tool: tool) == .edit
+                guard setsTasks || edits else { continue }
                 let input = AgentActivity.input(event.detail) ?? [:]
-                if let steps = taskList(tool: event.tool ?? "", input: input) {
+                if setsTasks, let steps = taskList(tool: tool, input: input) {
                     latestTasks = (steps, event.date)
-                } else if ToolCategory.of(tool: event.tool ?? "") == .edit, event.state != .failed, let path = ToolSummary.path(input) {
+                } else if edits, let path = ToolSummary.path(input) {
                     add(path, at: event.date)
                 }
             case .fileChange where event.tool != "deleted":
@@ -104,9 +110,13 @@ enum SessionOutputs {
     /// A task list a tool call sets: Claude Code's TodoWrite (`todos`), Codex's update_plan (`plan`), or the same
     /// shapes from another agent's tool of that name.
     static func taskList(tool: String, input: [String: Any]) -> [RunTaskStep]? {
-        let name = tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool
-        guard taskTools.contains(name) else { return nil }
+        guard isTaskTool(tool) else { return nil }
         return RunTasks.claude(input) ?? RunTasks.codex(input)
+    }
+
+    /// Whether the tool sets the agent's task list (`taskTools`).
+    static func isTaskTool(_ tool: String) -> Bool {
+        taskTools.contains(tool.hasPrefix("mcp__") ? (tool.components(separatedBy: "__").last ?? tool) : tool)
     }
 
     /// Whether a new output of this turn (made at or after `turnStart`) opens the outputs tab by itself while the agent

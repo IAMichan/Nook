@@ -51,6 +51,8 @@ final class RunTimelineDerived {
     private var turnOfEvent: [UUID: Int]?
     /// The pull request the events before the last one link, so a streamed answer only has to look at itself.
     private var pullRequestBeforeLast: URL?
+    /// Reads only the events that may hold a newer link (`RunPullRequestLinks.Scan`), not the whole session per event.
+    private var pullRequestScan = RunPullRequestLinks.Scan()
     /// Each turn's blocks, so only the turn that changed is laid out again.
     private var blockCache = TimelineBlockCache()
     /// Each finished turn's changed files, so only a turn whose events changed is read again.
@@ -176,13 +178,14 @@ final class RunTimelineDerived {
         }
         allSubagents = Subagents.list(all).map(withProgress)
         allCommands = BackgroundCommands.list(all).map(withProgress)
+        // Taken from the lists above, not by reading the session again.
         subagentsSignature = Subagents.signature(allSubagents) + "|" + BackgroundCommands.signature(allCommands)
-        let current = Subagents.current(all).map(withProgress)
+        let current = Subagents.current(all, listed: allSubagents)
         subagents = active || current.contains(where: \.isRunning) ? current : []
-        let currentCommands = BackgroundCommands.current(all).map(withProgress)
+        let currentCommands = BackgroundCommands.current(all, listed: allCommands)
         commands = active || currentCommands.contains(where: \.isRunning) ? currentCommands : []
         marks = TranscriptPresentation.promptMarks(events: events)
-        pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
+        pullRequestBeforeLast = pullRequestScan.last(in: all, upTo: all.count - 1)
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
         return self
     }

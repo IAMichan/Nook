@@ -77,5 +77,39 @@ final class RunPullRequestLinksTests: XCTestCase {
             }
         }
     }
+
+    /// `Scan` reads only the events that may have changed, and answers as reading every event before the end does: also
+    /// when a call that ran prints its link later, when the last event grows, and when events are taken away.
+    func testScanMatchesReadingEveryEvent() {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<200 {
+            var scan = RunPullRequestLinks.Scan()
+            var events: [RunEvent] = []
+            for step in 0..<40 {
+                switch Int.random(in: 0...9, using: &generator) {
+                case 0...3:
+                    events.append(RunEvent(kind: .assistant, text: Bool.random(using: &generator) ? "See \(link(step))" : "ok"))
+                case 4...5:
+                    events.append(RunEvent(kind: .tool, text: "Bash · gh pr create", tool: "Bash",
+                                           detail: #"{"command":"gh pr create --fill"}"#, state: .running))
+                case 6:
+                    // A call that ran ends with its link, wherever it is.
+                    if let index = events.indices.filter({ events[$0].state == .running }).randomElement(using: &generator) {
+                        events[index].output = link(100 + step)
+                        events[index].state = .done
+                    }
+                case 7:
+                    if !events.isEmpty, events[events.count - 1].kind == .assistant { events[events.count - 1].text += " \(link(200 + step))" }
+                case 8:
+                    // Back to before a message: events go.
+                    if events.count > 3 { events.removeLast(Int.random(in: 1...3, using: &generator)) }
+                default:
+                    events.append(RunEvent(kind: .user, text: "next"))
+                }
+                let end = max(0, events.count - 1)
+                XCTAssertEqual(scan.last(in: events, upTo: end), RunPullRequestLinks.last(in: Array(events[..<end])))
+            }
+        }
+    }
 }
 #endif

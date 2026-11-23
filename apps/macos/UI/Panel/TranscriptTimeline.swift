@@ -431,10 +431,9 @@ struct TranscriptConversation: View {
         DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(match.rowID, anchor: .center) } }
     }
 
+    /// At once, as `AgentRunPanel.toggleBlock`: animated, every row of a long conversation moved for each frame of it.
     private func toggle(_ key: String) {
-        withAnimation(NookTheme.reveal) {
-            if open.contains(key) { open.remove(key) } else { open.insert(key) }
-        }
+        if open.contains(key) { open.remove(key) } else { open.insert(key) }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {

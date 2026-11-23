@@ -174,7 +174,7 @@ extension AgentRunPanel {
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             // The held step is in the last block; its block is drawn again when it lets go of it.
-                            TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block),
+                            TimelineBlockView(block: block, expanded: block.scopedOpen(openBlocks), context: context.scoped(to: block),
                                               hidden: block.id == shownBlocks.last?.id ? held : nil, toggle: toggleBlock) { event in
                                 if event.id == hidden { return AnyView(EmptyView()) }
                                 return AnyView(
@@ -617,10 +617,10 @@ extension AgentRunPanel {
         .opacity(event.rolledBack == true ? 0.45 : 1)
     }
 
+    /// Opens or closes a group or fold at once: animated, every row of a long conversation moved for each frame of it,
+    /// a third of a second of the main thread (more while the agent works) for one click.
     private func toggleBlock(_ key: String) {
-        withAnimation(NookTheme.reveal) {
-            if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
-        }
+        if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
     }
 
     private func toggle(_ id: UUID) {
