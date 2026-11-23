@@ -4,6 +4,110 @@ import XCTest
 final class BrowserMemoryTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    // MARK: Bookmarks
+
+    func testStarringAPageTwiceRemovesItAgain() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        let page = URL(string: "https://www.example.com/docs/")!
+        XCTAssertTrue(bookmarks.toggle(url: page, title: "Docs"))
+        XCTAssertTrue(bookmarks.contains(URL(string: "https://example.com/docs")!))
+        XCTAssertFalse(bookmarks.toggle(url: page, title: "Docs"))
+        XCTAssertTrue(bookmarks.all.isEmpty)
+    }
+
+    func testOnlyWebPagesCanBeStarred() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        XCTAssertFalse(bookmarks.toggle(url: URL(string: "about:blank")!, title: ""))
+        XCTAssertTrue(bookmarks.all.isEmpty)
+    }
+
+    func testBookmarksComeBeforeVisitedPagesWithoutDoubles() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        bookmarks.toggle(url: URL(string: "https://github.com/apple/swift")!, title: "Swift")
+        let history = BrowserHistory(file: nil)
+        history.record(url: URL(string: "https://github.com/")!, title: "GitHub", at: now)
+        history.record(url: URL(string: "https://github.com/apple/swift")!, title: "Swift", at: now)
+        let merged = BrowserBookmarks.merged(bookmarks: bookmarks.suggestions(for: "git", now: now),
+                                             history: history.suggestions(for: "git", now: now), limit: 6)
+        XCTAssertEqual(merged.map(\.url), ["https://github.com/apple/swift", "https://github.com/"])
+        XCTAssertEqual(merged.map(\.isBookmark), [true, false])
+    }
+
+    func testFoldersHoldBookmarksAndLetThemGoWhenRemoved() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        let page = URL(string: "https://example.com/a")!
+        bookmarks.toggle(url: page, title: "A")
+        let work = bookmarks.addFolder("Work")
+        XCTAssertEqual(bookmarks.addFolder("Work"), "Work 2")
+        bookmarks.move(url: page.absoluteString, to: work)
+        XCTAssertEqual(bookmarks.all.first?.folder, "Work")
+        bookmarks.renameFolder("Work", to: "Job")
+        XCTAssertEqual(bookmarks.folders, ["Job", "Work 2"])
+        XCTAssertEqual(bookmarks.all.first?.folder, "Job")
+        bookmarks.removeFolder("Job")
+        XCTAssertNil(bookmarks.all.first?.folder)
+        XCTAssertEqual(bookmarks.all.count, 1)
+    }
+
+    func testFoldersSurviveSaving() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("bookmarks-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let first = BrowserBookmarks(file: file)
+        first.toggle(url: URL(string: "https://example.com/")!, title: "Example")
+        first.move(url: "https://example.com/", to: first.addFolder("Reading"))
+        let again = BrowserBookmarks(file: file)
+        XCTAssertEqual(again.folders, ["Reading"])
+        XCTAssertEqual(again.all.map(\.folder), ["Reading"])
+    }
+
+    // MARK: History window
+
+    func testHistoryWindowListsNewestVisitFirstAndFilters() {
+        let entries = [
+            BrowserHistoryEntry(url: "https://a.example.com/", title: "Old news", visits: 9, lastVisit: now.addingTimeInterval(-3600)),
+            BrowserHistoryEntry(url: "https://b.example.com/", title: "Fresh news", visits: 1, lastVisit: now),
+            BrowserHistoryEntry(url: "https://c.example.com/", title: "Weather", visits: 1, lastVisit: now.addingTimeInterval(-60)),
+        ]
+        XCTAssertEqual(BrowserHistory.recent(entries, matching: "", limit: 10).map(\.title), ["Fresh news", "Weather", "Old news"])
+        XCTAssertEqual(BrowserHistory.recent(entries, matching: "news", limit: 10).map(\.title), ["Fresh news", "Old news"])
+        XCTAssertEqual(BrowserHistory.recent(entries, matching: "", limit: 1).count, 1)
+    }
+
+    // MARK: Site permissions
+
+    func testASiteAsksUntilEverythingItWantsWasAnswered() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "BrowserSitePermissionsTests-\(UUID().uuidString)"))
+        let permissions = BrowserSitePermissions(defaults: defaults)
+        XCTAssertNil(permissions.decision(host: "meet.example.com", kinds: [.camera]))
+        permissions.remember(host: "Meet.Example.com", kinds: [.camera], allowed: true)
+        XCTAssertEqual(permissions.decision(host: "meet.example.com", kinds: [.camera]), true)
+        XCTAssertNil(permissions.decision(host: "meet.example.com", kinds: [.camera, .microphone]))
+        permissions.remember(host: "meet.example.com", kinds: [.microphone], allowed: false)
+        XCTAssertNil(permissions.decision(host: "meet.example.com", kinds: [.camera, .microphone]))
+        XCTAssertEqual(permissions.entries.map(\.kind), [.camera, .microphone])
+        permissions.forget(permissions.entries[0])
+        XCTAssertNil(permissions.decision(host: "meet.example.com", kinds: [.camera]))
+    }
+
+    // MARK: Downloads
+
+    func testADownloadTakesTheNextFreeName() {
+        let folder = URL(fileURLWithPath: "/Users/me/Downloads")
+        let taken: Set<String> = ["report.pdf", "report 2.pdf"]
+        let file = BrowserDownloadName.destination(for: "report.pdf", in: folder) { taken.contains($0.lastPathComponent) }
+        XCTAssertEqual(file.lastPathComponent, "report 3.pdf")
+        let plain = BrowserDownloadName.destination(for: "notes", in: folder) { $0.lastPathComponent == "notes" }
+        XCTAssertEqual(plain.lastPathComponent, "notes 2")
+    }
+
+    func testADownloadStaysInTheDownloadsFolder() {
+        let folder = URL(fileURLWithPath: "/Users/me/Downloads")
+        let file = BrowserDownloadName.destination(for: "../../etc/passwd", in: folder) { _ in false }
+        XCTAssertEqual(file.deletingLastPathComponent().path, folder.path)
+        XCTAssertEqual(BrowserDownloadName.destination(for: "", in: folder) { _ in false }.lastPathComponent, "download")
+        XCTAssertEqual(BrowserDownloadName.destination(for: ".env", in: folder) { _ in false }.lastPathComponent, "download.env")
+    }
+
     // MARK: History
 
     func testTypingFindsVisitedPagesBySiteFirst() {

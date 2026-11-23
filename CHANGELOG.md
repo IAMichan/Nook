@@ -18,9 +18,25 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Switching to a session settles at once: the line counts on its turn cards now come in together, instead of one
   by one, each drawing the whole session again for seconds after the switch. Counts from an earlier visit show
   straight away.
+- Nook's browser works like a regular browser. It answers the usual keys while you are on a page: ⌘R reloads, ⌘⇧R
+  reloads past the cache (also Shift-click on the reload button), ⌘[ and ⌘] go back and forward, ⌘+, ⌘- and ⌘0 zoom,
+  ⌘L goes to the address bar, ⌘F finds on the page (⌘G for the next match), ⌘T opens a tab, ⌘W closes it, ⌘⇧T brings
+  the last closed tab back, ⌘P prints and ⌘. or Escape stops loading. ⌘-click or a middle click opens a link in a tab
+  behind the page, and the right-click menu has "Open Link in New Tab".
+- Downloads work in Nook's browser: files go to the Downloads folder and a button in the toolbar, there only once you
+  downloaded something, shows their progress and opens them. "Choose file" fields, a page's alerts and questions, and
+  full-screen video work too.
+- History and bookmarks in Nook's browser: ⌘Y shows every page you visited, newest first under Today, Yesterday and
+  so on, with a search; ⌥⌘B shows your bookmarks, which you can rename and sort into folders. The star at the end of
+  the address keeps a page, the book in the toolbar lists your newest bookmarks, and bookmarks come first under the
+  address bar.
+- Sites in Nook's browser can use your camera and microphone (a video call, for example) once you allow it; tick
+  "Remember for this site" to answer once for good, and take it back in Settings › Browser › Camera and microphone.
 
 ### Fixed
 
+- Signing in with Google in Nook's browser works again: Google answered "Couldn't sign you in, this browser or app may
+  not be secure", because the browser hid passkey support and wrapped the console on Google's sign-in page as well.
 - The model menu in the browser extension's side panel opens again (it collapsed to a bare search field under the
   composer) and now looks like the model picker in Nook's own composer: agent logos in a rail on the left, this Mac's
   models first, and the shown agent's models with their makers' marks, a search field and ↑/↓ and Return.

@@ -33,6 +33,35 @@ struct BrowserHistoryRow: View {
     }
 }
 
+/// Settings › Browser › Camera and microphone: the sites you answered "Remember for this site" for, with what you allowed
+/// or refused, each to take back so the site asks again (`BrowserSitePermissions`).
+struct BrowserSitePermissionsRow: View {
+    @State private var entries = BrowserSitePermissions.shared.entries
+
+    var body: some View {
+        SettingsFold(tr("settings.browser.sitePermissions"),
+                     summary: entries.isEmpty ? tr("settings.browser.sitePermissions.detail")
+                                              : tr("settings.browser.sitePermissions.count", Set(entries.map(\.host)).count)) {
+            if entries.isEmpty {
+                SettingNote(tr("settings.browser.sitePermissions.empty"))
+            }
+            ForEach(entries) { entry in
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    SiteIcon(domain: entry.host, fallback: entry.kind == .camera ? "video" : "mic", tint: NookTheme.textTertiary, size: 15)
+                    SettingLabel(entry.host, detail: tr(entry.kind == .camera
+                        ? (entry.allowed ? "settings.browser.sitePermissions.cameraAllowed" : "settings.browser.sitePermissions.cameraDenied")
+                        : (entry.allowed ? "settings.browser.sitePermissions.micAllowed" : "settings.browser.sitePermissions.micDenied")))
+                    Spacer()
+                    Button(tr("settings.browser.sitePermissions.reset")) { BrowserSitePermissions.shared.forget(entry) }
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BrowserSitePermissions.changed)) { _ in
+            entries = BrowserSitePermissions.shared.entries
+        }
+    }
+}
+
 /// Settings › Browser › Saved passwords: the sign-ins the browser saved, with their site and user name, to copy or
 /// remove, and the sites you said never to save for.
 struct BrowserPasswordsRow: View {
