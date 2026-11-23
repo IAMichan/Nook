@@ -338,6 +338,9 @@ struct FolderGitButton: View {
 extension EnvironmentValues {
     /// The session panel is docked beside the conversation, so the header's branch button is not needed.
     @Entry var sessionPanelDocked = false
+    /// The checkouts of other projects a session Nook only sees changed files in (`SessionProjects`), for their sections
+    /// in its session panel. A session Nook runs reads them from its run.
+    @Entry var sessionOtherProjects: [String] = []
 }
 
 /// The session panel as a card beside the conversation, as tall as what it holds, for a window with room for it, until

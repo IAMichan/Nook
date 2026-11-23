@@ -5,21 +5,22 @@ import Foundation
 /// agent alike: both learn of a changed file and ask here whether it lies in another project.
 ///
 /// A project is the repository's own folder (its main checkout): a file in a worktree of the same repository is the same
-/// project, and a file outside any repository (a scratch file, a config in the home folder) is none.
+/// project, and a file outside any repository (a scratch file, a config in the home folder) is none. What is remembered is
+/// the checkout the files were written in (the main checkout or one of its worktrees), so the session panel can show that
+/// checkout's branch, changes and git action beside the session's own (`SessionPanel`).
 enum SessionProjects {
     /// At most this many other projects are remembered for one session.
     static let limit = 6
 
-    /// `projects` with the project of `file` added when it is another project than the session's own folder `own`; nil
-    /// when nothing changes (the file is in its own project, in no project, or its project is already listed).
-    static func adding(file: String, own: String, to projects: [String],
-                       root: (String) -> String? = { SessionProjects.root(of: $0) }) -> [String]? {
+    /// `projects` with the checkout of `file` added when it is another project than the session's own folder `own`;
+    /// nil when nothing changes (the file is in its own project, in no project, or its checkout is already listed).
+    static func adding(file: String, own: String, to projects: [String]) -> [String]? {
         guard file.hasPrefix("/"), !own.isEmpty, projects.count < limit else { return nil }
         // Inside the session's own folder: nothing to look up.
         if file.hasPrefix(own.hasSuffix("/") ? own : own + "/") { return nil }
-        guard let project = root((file as NSString).deletingLastPathComponent) else { return nil }
-        if project == root(own) || projects.contains(project) { return nil }
-        return projects + [project]
+        guard let found = locate((file as NSString).deletingLastPathComponent) else { return nil }
+        if found.root == root(of: own) || projects.contains(found.checkout) { return nil }
+        return projects + [found.checkout]
     }
 
     /// The files a tool call wrote, absolute, as a hook reports it: the path of an edit or write (Claude Code, Gemini CLI,
@@ -90,11 +91,23 @@ enum SessionProjects {
     }
 
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var cache: [String: String?] = [:]
+    nonisolated(unsafe) private static var cache: [String: Location?] = [:]
+
+    /// Where a folder lies in git: the top of the working tree it is in (`checkout`, a main checkout or a linked
+    /// worktree) and the repository's main checkout (`root`, the project).
+    struct Location: Equatable, Sendable {
+        var checkout: String
+        var root: String
+    }
 
     /// The main checkout of the repository `folder` is in, read from `.git` without a git process; nil outside a
     /// repository, or for the home folder itself. Remembered per folder: a session changes many files in few folders.
-    static func root(of folder: String) -> String? {
+    static func root(of folder: String) -> String? { locate(folder)?.root }
+
+    /// The top of the working tree `folder` is in: the main checkout, or the linked worktree it lies in.
+    static func checkout(of folder: String) -> String? { locate(folder)?.checkout }
+
+    static func locate(_ folder: String) -> Location? {
         if let hit = lock.withLock({ cache[folder] }) { return hit }
         let found = read(folder)
         lock.withLock {
@@ -104,7 +117,7 @@ enum SessionProjects {
         return found
     }
 
-    private static func read(_ folder: String) -> String? {
+    private static func read(_ folder: String) -> Location? {
         let fm = FileManager.default
         let home = NSHomeDirectory()
         var url = URL(fileURLWithPath: folder, isDirectory: true).standardizedFileURL
@@ -114,14 +127,16 @@ enum SessionProjects {
             let dotGit = url.appendingPathComponent(".git")
             var isDirectory: ObjCBool = false
             if fm.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) {
-                if isDirectory.boolValue { return path }
+                if isDirectory.boolValue { return Location(checkout: path, root: path) }
                 // A linked worktree: ".git" is a file "gitdir: <repo>/.git/worktrees/<name>"; its project is <repo>.
                 guard let text = try? String(contentsOf: dotGit, encoding: .utf8),
-                      let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else { return path }
+                      let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else {
+                    return Location(checkout: path, root: path)
+                }
                 let target = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
                 let gitDir = target.hasPrefix("/") ? target : url.appendingPathComponent(target).standardizedFileURL.path
-                guard let range = gitDir.range(of: "/.git/worktrees/") else { return path }
-                return String(gitDir[..<range.lowerBound])
+                guard let range = gitDir.range(of: "/.git/worktrees/") else { return Location(checkout: path, root: path) }
+                return Location(checkout: path, root: String(gitDir[..<range.lowerBound]))
             }
             let parent = url.deletingLastPathComponent()
             if parent.path == path { return nil }
