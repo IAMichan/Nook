@@ -559,31 +559,11 @@ struct AgentInboxList: View {
 
     // MARK: A row's project
 
-    /// The project folders on this Mac by the name their sessions are listed under (`InboxProject.key`): the projects you
-    /// set something for, your favorites, the recent ones and the last one. Made once per redraw from settings only; a row
-    /// never touches the disk to find its project.
-    private var projectFolders: [String: String] {
-        let settings = app.workspace.settings
-        var folders: [String: String] = [:]
-        let known = settings.projectOverrides.projects + settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
-        for path in known where !path.isEmpty {
-            let key = InboxProject.key(folder: (path as NSString).lastPathComponent, path: path)
-            if key != InboxProject.none, folders[key] == nil { folders[key] = path }
-        }
-        return folders
-    }
+    /// The project folders on this Mac by the name their sessions are listed under (`RowProject.folders`).
+    private var projectFolders: [String: String] { RowProject.folders(app.workspace.settings) }
 
-    /// The project a row names: the name you gave it and its badge, for every session with a project. A session
-    /// in a folder not known yet goes by its folder's name; one without a project gets none.
     private func rowProject(_ item: AgentListItem, projects: [String: String]) -> RowProject? {
-        let key = InboxProject.key(folder: item.folder, path: item.path)
-        guard key != InboxProject.none else { return nil }
-        let settings = app.workspace.settings
-        let path = projects[key] ?? (item.machine == MachineName.local && (item.path as NSString).lastPathComponent == key ? item.path : nil)
-        let name = path.map(settings.projectDisplayName) ?? key
-        let own = path.flatMap(settings.projectIcon)
-        let icon = own ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
-        return RowProject(name: name, icon: icon, path: path, custom: own != nil)
+        RowProject.of(item, settings: app.workspace.settings, projects: projects)
     }
 
     /// The row's Project menu: what a project folder's menu does, from any of its sessions, so the list does not have to

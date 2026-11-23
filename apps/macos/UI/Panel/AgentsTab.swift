@@ -192,6 +192,7 @@ struct AgentsTab: View {
                 await Task.yield()
                 visits.visit(new)
                 prefetchNeighbours(of: new, in: entries)
+                prefetchTabNeighbours(of: new)
             }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
@@ -320,6 +321,14 @@ struct AgentsTab: View {
 
     // MARK: Session tabs
 
+    /// Reads the sessions of the tabs beside the one that opened, as the list does for its rows, so the next tab
+    /// you click is ready.
+    private func prefetchTabNeighbours(of id: String) {
+        let ids = sessionTabs.list.ids
+        guard let index = ids.firstIndex(of: id) else { return }
+        for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) { prefetch(ids[neighbour]) }
+    }
+
     /// The tabs for the open session's header: only beside a session (not a footer page or the new-session composer).
     /// A tab whose session is gone from the list is left out, except the open one, which the header names itself.
     private func tabsContext(_ entries: AgentListEntries, selection: Selection) -> SessionTabsContext? {
@@ -337,7 +346,12 @@ struct AgentsTab: View {
         }
         return SessionTabsContext(
             tabs: tabs, current: current,
-            select: { open($0) },
+            select: { id in
+                // A click faster than the hover's rest: the read starts now, before the session's first frame asks for it.
+                if id != current { prefetch(id) }
+                open(id)
+            },
+            prefetch: { prefetch($0) },
             close: { id in
                 if let next = sessionTabs.close(id, active: current) {
                     open(next)
@@ -511,21 +525,27 @@ struct AgentsTab: View {
         let ids = (entries.running + entries.earlier).map(\.id)
         guard !app.demoMode, let index = ids.firstIndex(of: id) else { return }
         for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) {
-            let next = ids[neighbour]
-            if next.hasPrefix("run:"), let run = UUID(uuidString: String(next.dropFirst(4))) {
-                app.workspace.prefetchTimeline(run)
-            } else if next.hasPrefix("past:") {
-                let key = String(next.dropFirst(5))
-                guard let session = app.history.sessions.first(where: { $0.id == key }) else { continue }
-                // One Nook took over opens as its session (see `resolve`): that timeline is what it shows.
-                if let taken = app.adoptedRun(for: session) {
-                    app.workspace.prefetchTimeline(taken)
-                } else {
-                    TranscriptPrefetch.warm(path: session.path)
-                }
-            } else if let session = app.agentSessions.first(where: { $0.id == next }) {
-                TranscriptPrefetch.warm(path: session.transcriptPath.isEmpty ? (transcript(of: session)?.path ?? "") : session.transcriptPath)
+            prefetch(ids[neighbour])
+        }
+    }
+
+    /// Reads what opening `id` shows, off the main thread: a session Nook runs its timeline, an earlier session the
+    /// session that took it over (else its transcript), a running session its transcript.
+    private func prefetch(_ id: String) {
+        guard !app.demoMode else { return }
+        if id.hasPrefix("run:"), let run = UUID(uuidString: String(id.dropFirst(4))) {
+            app.workspace.prefetchTimeline(run)
+        } else if id.hasPrefix("past:") {
+            let key = String(id.dropFirst(5))
+            guard let session = app.history.sessions.first(where: { $0.id == key }) else { return }
+            // One Nook took over opens as its session (see `resolve`): that timeline is what it shows.
+            if let taken = app.adoptedRun(for: session) {
+                app.workspace.prefetchTimeline(taken)
+            } else {
+                TranscriptPrefetch.warm(path: session.path)
             }
+        } else if let session = app.agentSessions.first(where: { $0.id == id }) {
+            TranscriptPrefetch.warm(path: session.transcriptPath.isEmpty ? (transcript(of: session)?.path ?? "") : session.transcriptPath)
         }
     }
 
@@ -649,6 +669,35 @@ struct RowProject: Equatable {
     var path: String?
     /// You set the icon yourself (Settings › Projects, or a color from the row's menu): it wins over the project's favicon.
     var custom = false
+}
+
+extension RowProject {
+    /// The project folders on this Mac by the name their sessions are listed under (`InboxProject.key`): the projects you
+    /// set something for, your favorites, the recent ones and the last one. Made from settings only; a row never touches
+    /// the disk to find its project.
+    @MainActor
+    static func folders(_ settings: WorkspaceSettings) -> [String: String] {
+        var folders: [String: String] = [:]
+        let known = settings.projectOverrides.projects + settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
+        for path in known where !path.isEmpty {
+            let key = InboxProject.key(folder: (path as NSString).lastPathComponent, path: path)
+            if key != InboxProject.none, folders[key] == nil { folders[key] = path }
+        }
+        return folders
+    }
+
+    /// The project a session names: the name you gave it and its badge, for every session with a project. A session in a
+    /// folder not known yet goes by its folder's name; one without a project gets none.
+    @MainActor
+    static func of(_ item: AgentListItem, settings: WorkspaceSettings, projects: [String: String]) -> RowProject? {
+        let key = InboxProject.key(folder: item.folder, path: item.path)
+        guard key != InboxProject.none else { return nil }
+        let path = projects[key] ?? (item.machine == MachineName.local && (item.path as NSString).lastPathComponent == key ? item.path : nil)
+        let name = path.map(settings.projectDisplayName) ?? key
+        let own = path.flatMap(settings.projectIcon)
+        let icon = own ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
+        return RowProject(name: name, icon: icon, path: path, custom: own != nil)
+    }
 }
 
 /// A project's badge in a session row (the row names the project beside it): the icon you set, else the

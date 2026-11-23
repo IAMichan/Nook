@@ -13,6 +13,8 @@ struct SessionTabsContext {
     /// The id of the session that is open.
     let current: String
     let select: (String) -> Void
+    /// Reads a tab's session ahead of the click (the pointer rests on it), so switching shows it at once.
+    let prefetch: (String) -> Void
     let close: (String) -> Void
     let closeOthers: (String) -> Void
     let closeRight: (String) -> Void
@@ -42,23 +44,38 @@ struct SessionTabStrip<Accessory: View>: View {
     var rename: (() -> Void)? = nil
     @ViewBuilder var accessory: () -> Accessory
     @State private var dragging: String?
+    /// Waits for the pointer to rest on a tab before reading its session, as the Agents list does for its rows.
+    @State private var hoverPrefetch = InboxHoverPrefetch()
     /// How wide the tabs are together: the row takes no more than that, so the header's controls after it stay beside
     /// the last tab and the tabs scroll only when they do not fit.
     @State private var contentWidth: CGFloat?
 
     var body: some View {
+        let projects = RowProject.folders(app.workspace.settings)
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: NookTheme.Spacing.xxs) {
                     ForEach(context.tabs) { tab in
                         let active = tab.id == context.current
                         HStack(spacing: 0) {
-                            SessionTabButton(tab: tab, active: active, folder: active ? folder : nil,
+                            SessionTabButton(tab: tab, project: tab.item.flatMap {
+                                                 RowProject.of($0, settings: app.workspace.settings, projects: projects)
+                                             }, active: active, folder: active ? folder : nil,
                                              title: active ? title : nil, select: { context.select(tab.id) },
                                              close: { context.close(tab.id) }, rename: active ? rename : nil)
                             if active { accessory() }
                         }
                         .id(tab.id)
+                        // `trackedHover`: in the main window the header can lie in the title bar's row, where
+                        // `onHover` hears nothing.
+                        .trackedHover { inside in
+                            guard !active else { return }
+                            if inside {
+                                hoverPrefetch.enter(tab.id, after: .milliseconds(50)) { context.prefetch(tab.id) }
+                            } else {
+                                hoverPrefetch.exit(tab.id)
+                            }
+                        }
                         .contextMenu { menu(for: tab) }
                         .onDrag {
                             dragging = tab.id
@@ -111,9 +128,12 @@ struct SessionTabStrip<Accessory: View>: View {
     }
 }
 
-/// One session tab: the agent's logo (the cross under the pointer) and the session's name, on a soft fill while open.
+/// One session tab: its project's icon (its favicon, the icon you set, else its initials) with the agent's logo as a
+/// badge on its corner, the cross in its place under the pointer, and the session's name, on a soft fill while open. A
+/// session without a project shows the agent's logo alone.
 private struct SessionTabButton: View {
     let tab: SessionTabsContext.Tab
+    let project: RowProject?
     let active: Bool
     /// The open tab's folder and title from its header; the list row's otherwise.
     let folder: String?
@@ -124,13 +144,13 @@ private struct SessionTabButton: View {
     @State private var hovering = false
 
     private var name: String { title ?? tab.item?.title ?? "" }
-    private var project: String { folder ?? tab.item?.folder ?? "" }
+    private var folderName: String { folder ?? tab.item?.folder ?? "" }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             ZStack {
                 if let item = tab.item {
-                    AgentMark(agent: item.agent, size: 14, quiet: !active && !hovering)
+                    icon(item)
                         .overlay(alignment: .topTrailing) {
                             if let dot = Self.dot(item.status) {
                                 Circle().fill(dot).frame(width: 5, height: 5).offset(x: 2, y: -2)
@@ -158,15 +178,36 @@ private struct SessionTabButton: View {
         .roundedBackground(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear), radius: NookTheme.Radius.chip)
         .contentShape(Rectangle())
         .nookClickable()
-        .onTapGesture(count: 2) { if let rename { rename() } else { select() } }
-        .onTapGesture(perform: select)
+        // Only the open tab listens for a double-click (rename): on the others a double-click recognizer would hold
+        // every click back until the double-click time had passed, and switching would lag behind the click.
+        .modifier(SessionTabTap(active: active, select: select, rename: rename))
         .trackedHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .nookTip(project.isEmpty ? name : project + " / " + name)
+        .nookTip(folderName.isEmpty ? name : folderName + " / " + name)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(project.isEmpty ? name : project + ", " + name)
+        .accessibilityLabel(folderName.isEmpty ? name : folderName + ", " + name)
         .accessibilityAddTraits(active ? [.isSelected, .isButton] : .isButton)
         .accessibilityAction { select() }
+    }
+
+    /// The project's icon with the agent as a badge on its bottom-right corner, ringed in the header's color so it
+    /// stands free of the icon; without a project the agent's logo (with its account badge) alone.
+    @ViewBuilder
+    private func icon(_ item: AgentListItem) -> some View {
+        if let project {
+            ProjectBadge(project: project, size: 16)
+                .opacity(active || hovering ? 1 : 0.85)
+                .overlay(alignment: .bottomTrailing) {
+                    AgentLogo(agent: item.agent, size: 8)
+                        .padding(1)
+                        .background(Circle().fill(NookTheme.canvas))
+                        .offset(x: 3, y: 3)
+                        .sharedTip(item.agent)
+                }
+        } else {
+            AgentMark(agent: item.agent, account: item.account, size: 14, ring: NookTheme.canvas,
+                      quiet: !active && !hovering)
+        }
     }
 
     /// A small dot for a session that works or waits for you; none for one at rest.
@@ -195,5 +236,21 @@ private struct SessionTabDrop: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         dragging = nil
         return true
+    }
+}
+
+/// The click on a tab: a tab that is not open switches on the first click, with no double-click to wait for; the open
+/// tab renames on a double-click.
+private struct SessionTabTap: ViewModifier {
+    let active: Bool
+    let select: () -> Void
+    let rename: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if active, let rename {
+            content.onTapGesture(count: 2, perform: rename)
+        } else {
+            content.onTapGesture(perform: select)
+        }
     }
 }
