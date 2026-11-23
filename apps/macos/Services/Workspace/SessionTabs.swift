@@ -89,7 +89,9 @@ final class SessionTabs: ObservableObject {
     static let shared = SessionTabs()
     private static let key = "agents.sessionTabs"
     private let defaults: UserDefaults
-    @Published private(set) var list: SessionTabList
+    /// Not `@Published`: opening a tab that is already there only changes which one was looked at last, and redrawing
+    /// the whole Agents page for that on every switch made switching slower. Only a change to the tabs announces itself.
+    private(set) var list: SessionTabList
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -113,6 +115,7 @@ final class SessionTabs: ObservableObject {
         var next = list
         change(&next)
         guard next != list else { return }
+        if next.ids != list.ids { objectWillChange.send() }
         list = next
         if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.key) }
     }
