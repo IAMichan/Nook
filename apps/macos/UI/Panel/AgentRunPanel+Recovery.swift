@@ -18,33 +18,24 @@ extension AgentRunPanel {
     /// stopped, with Retry and, when the agent kept its conversation, Go on as the main action.
     func stoppedMarker(_ run: WorkspaceRun) -> some View {
         let canGoOn = run.providerSessionID != nil
-        return HStack(spacing: NookTheme.Spacing.md) {
-            NookDivider()
+        return HairlineMarker {
             HStack(spacing: NookTheme.Spacing.sm) {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(icon: "pause.circle")
-                        .font(NookTheme.font(12, .semibold))
-                    Text(tr("ws.recovery.stoppedAt", NookDates.dayAndClock(run.updatedAt)))
-                        .font(NookTheme.TextStyle.caption)
-                        .fixedSize()
-                }
-                .foregroundStyle(NookTheme.textSecondary)
-                .accessibilityElement(children: .combine)
-                if canGoOn {
-                    NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(runID) }
-                    SmallPrimaryButton(title: tr("ws.action.goOn"), compact: true) {
-                        _ = workspace.send(runID, text: UsageLimits.resumeMessage)
-                    }
-                } else {
-                    SmallPrimaryButton(title: tr("ws.action.retry"), compact: true) { workspace.retry(runID) }
-                }
+                Image(icon: "pause.circle")
+                    .font(NookTheme.font(12, .semibold))
+                Text(tr("ws.recovery.stoppedAt", NookDates.dayAndClock(run.updatedAt)))
+                    .font(NookTheme.TextStyle.caption)
+                    .fixedSize()
             }
-            .padding(.leading, NookTheme.Spacing.lg)
-            .padding(.trailing, NookTheme.Spacing.xs)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .cardBackground(NookTheme.well, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
-            .fixedSize()
-            NookDivider()
+            .foregroundStyle(NookTheme.textSecondary)
+            .accessibilityElement(children: .combine)
+            if canGoOn {
+                NookGhostButton(title: tr("ws.action.retry"), compact: true, height: 24) { workspace.retry(runID) }
+                SmallPrimaryButton(title: tr("ws.action.goOn"), compact: true) {
+                    _ = workspace.send(runID, text: UsageLimits.resumeMessage)
+                }
+            } else {
+                SmallPrimaryButton(title: tr("ws.action.retry"), compact: true) { workspace.retry(runID) }
+            }
         }
         .padding(.vertical, NookTheme.Spacing.sm)
     }

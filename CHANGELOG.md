@@ -12,6 +12,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Changed
 
+- A request to allow something in a session's conversation now has the same calm shape as the usage limit card: a
+  small pill with what the agent wants between two hairlines, and under it one quiet card with why, the whole command
+  or change, what Always allows, and compact buttons with Allow as the one main action.
 - When a usage limit stops a session, its end now looks like a stopped session: a quiet line with when the limit
   resets and Retry, and one row to go on now with the account that has room left, under the logo of the model it goes
   on with. "Another model" opens the model picker.

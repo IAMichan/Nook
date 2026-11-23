@@ -304,3 +304,32 @@ extension NookShelfHeader where Accessory == EmptyView {
         self.init(title: title, count: count, open: open, action: action) { EmptyView() }
     }
 }
+
+/// A small pill between two hairlines across the conversation, in the place of a line of the timeline: "Stopped at
+/// 20:10", a usage limit, an approval's request. Its words and compact buttons go in `content`; the pill keeps its own
+/// width (`fixed`) or gives way to the hairlines first and then cuts its words short.
+struct HairlineMarker<Content: View>: View {
+    /// The pill at its own width. Off when the words inside choose a shorter form or cut themselves short.
+    var fixed = true
+    /// The room after the last item: small beside a compact button, the same as the leading room beside words.
+    var trailing: CGFloat = NookTheme.Spacing.xs
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider()
+            pill
+            NookDivider()
+        }
+    }
+
+    @ViewBuilder
+    private var pill: some View {
+        let shaped = HStack(spacing: NookTheme.Spacing.sm) { content }
+            .padding(.leading, NookTheme.Spacing.lg)
+            .padding(.trailing, trailing)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .cardBackground(NookTheme.well, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.card)
+        if fixed { shaped.fixedSize() } else { shaped.layoutPriority(1) }
+    }
+}
