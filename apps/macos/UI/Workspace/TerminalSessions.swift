@@ -32,6 +32,15 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     @Published private(set) var running = true
     let created = Date()
     let view: NookTerminalView
+    /// How the shell starts, kept until the terminal has its real size; nil once it started (or closed before that).
+    private var launch: (shell: String, args: [String], environment: [String])?
+    /// The shell runs. Before that there is no process to signal or write to.
+    private(set) var started = false
+    /// The size the last terminal on screen had: a terminal that starts before it is shown takes that size instead of
+    /// a made-up one, so a program that draws to the width it reads at launch (devenv, progress bars) draws to fit.
+    private static var lastShownSize: NSSize?
+    /// How long a terminal waits to be shown before its shell starts at the guessed size anyway.
+    private static let startDeadline: TimeInterval = 0.5
 
     init(title: String, directory: String, command: String?, shortID: String = "", owner: TerminalOwner? = nil,
          group: UUID? = nil) {
@@ -44,7 +53,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         self.owner = owner
         self.command = command
         origin = directory
-        view = NookTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        view = NookTerminalView(frame: NSRect(origin: .zero, size: Self.lastShownSize ?? NSSize(width: 800, height: 500)))
         super.init()
         view.processDelegate = self
         view.linkBase = { [weak self] in self?.directory }
@@ -63,11 +72,30 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         var script = "cd \(TerminalLauncher.shellQuote(directory)) 2>/dev/null; "
         if let command, !command.isEmpty { script += command + "; " }
         script += "exec \(TerminalLauncher.shellQuote(shell)) -l"
-        view.startProcess(executable: shell, args: ["-l", "-c", script], environment: environment.map { "\($0.key)=\($0.value)" })
+        launch = (shell, ["-l", "-c", script], environment.map { "\($0.key)=\($0.value)" })
+        // The shell starts once the terminal is laid out on screen (`shown`), so the program in it reads the real
+        // width. A terminal nobody shows (an agent's dev server in the background) starts shortly after anyway.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.startDeadline) { [weak self] in self?.start() }
+    }
+
+    /// The terminal got its size on screen: the shell starts now if it had not yet.
+    func shown(size: NSSize) {
+        // A container that is still being laid out can be a few points wide; that is not a size to start a program at.
+        guard size.width >= 100, size.height >= 40 else { return }
+        Self.lastShownSize = size
+        start()
+    }
+
+    private func start() {
+        guard let launch else { return }
+        self.launch = nil
+        started = true
+        view.startProcess(executable: launch.shell, args: launch.args, environment: launch.environment)
     }
 
     func close() {
-        if running { view.terminate() }
+        launch = nil
+        if running, started { view.terminate() }
         running = false
     }
 
@@ -117,7 +145,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
 
     /// Ctrl-C to whatever runs in the shell; the shell itself stays open so the output remains readable.
     func interrupt() {
-        guard running else { return }
+        guard running, started else { return }
         view.send(txt: "\u{03}")
     }
 
@@ -311,7 +339,15 @@ final class TerminalStore: ObservableObject {
 /// A container that never asks for a size of its own: the terminal fills whatever SwiftUI gives it. A terminal view that
 /// reports an intrinsic size makes the window re-run its layout again and again.
 private final class TerminalContainer: NSView {
+    /// Called with each new size, after the terminal inside was resized to it.
+    var resized: (NSSize) -> Void = { _ in }
+
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        resized(newSize)
+    }
 }
 
 extension TerminalStore {
@@ -379,6 +415,14 @@ private struct TerminalHost: NSViewRepresentable {
         session.view.frame = container.bounds
         session.view.autoresizingMask = [.width, .height]
         container.addSubview(session.view)
+        if let container = container as? TerminalContainer {
+            let session = session
+            // Only while the terminal still lives here: a tab switch moves it to another container.
+            container.resized = { [weak container] size in
+                if session.view.superview === container { session.shown(size: size) }
+            }
+        }
+        session.shown(size: container.bounds.size)
         if focus { DispatchQueue.main.async { container.window?.makeFirstResponder(session.view) } }
     }
 }
