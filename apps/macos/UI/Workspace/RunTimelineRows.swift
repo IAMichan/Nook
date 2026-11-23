@@ -126,6 +126,20 @@ struct EventRow: View {
                 }
             }
 
+        case .system where event.tool == SessionCommands.statusTool:
+            // `/status`: the agent and model, with the session's settings a click away.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                TranscriptWorkLine(symbol: "info.circle", label: event.text, open: expanded, action: toggle)
+                if expanded { SessionStatusList(rows: SessionCommands.statusRows(in: event)) }
+            }
+
+        case .system where event.tool == McpStatus.tool:
+            // `/mcp`: how many servers the agent has, and each one with how it is doing a click away.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                TranscriptWorkLine(symbol: "server.rack", label: event.text, open: expanded, action: toggle)
+                if expanded { McpStatusList(servers: McpStatus.servers(in: event)) }
+            }
+
         case .system where event.tool == "switch" && event.change != nil:
             // Another agent, model or effort from here on.
             ModelSwitchDivider(change: event.change!)
@@ -678,5 +692,76 @@ struct ApprovalRow: View {
         case .denied: return tr("ws.approval.denied")
         default: return tr("ws.approval.expired")
         }
+    }
+}
+
+/// The servers of a `/mcp` report, one per line: a dot in the color of its state, its name, the state, and what went
+/// wrong when something did.
+struct McpStatusList: View {
+    let servers: [McpServerState]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            ForEach(servers) { server in
+                HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+                    Circle().fill(Self.tint(server.status)).frame(width: 6, height: 6)
+                    Text(server.title)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper)
+                        .nookTip(server.name)
+                    Text(tr("ws.mcp.status." + server.status.rawValue))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    if let error = server.error {
+                        Text(error)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .nookTipWhenCut(error)
+                    }
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, TranscriptStyle.workIndent)
+        .padding(.bottom, NookTheme.Spacing.xs)
+    }
+
+    static func tint(_ status: McpServerState.Status) -> Color {
+        switch status {
+        case .connected: return NookTheme.mint
+        case .needsSignIn, .pending: return NookTheme.amber
+        case .failed: return NookTheme.coral
+        case .disabled: return NookTheme.textTertiary
+        }
+    }
+}
+
+/// The rows of a `/status` report: a label and its value per line.
+struct SessionStatusList: View {
+    let rows: [[String]]
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: NookTheme.Spacing.lg, verticalSpacing: NookTheme.Spacing.xxs) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    Text(row[0])
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                    Text(row[1])
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .nookTipWhenCut(row[1])
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, TranscriptStyle.workIndent)
+        .padding(.bottom, NookTheme.Spacing.xs)
     }
 }

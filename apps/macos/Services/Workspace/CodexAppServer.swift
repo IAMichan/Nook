@@ -473,6 +473,10 @@ enum CodexAppServerMapper {
             return [.plan(text)]
         case "contextCompaction":
             return finished ? [.notice("compact")] : [.compaction(.started)]
+        case "enteredReviewMode", "exitedReviewMode":
+            // `review/start`: Codex sends the reviewer's findings again as the turn's `agentMessage` (also "Review was
+            // interrupted" when it failed), so these show nothing of their own.
+            return []
         default:
             return []
         }

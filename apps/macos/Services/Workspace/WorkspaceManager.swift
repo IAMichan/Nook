@@ -280,7 +280,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var customAgentModels: [String: [AgentModel]] = [:]
     /// The thinking levels each ACP agent offers (its "thought_level" config option), by `effortKey`.
     @Published var agentEfforts: [String: [AgentModel]] = [:]
-    /// The `/` commands each ACP session announced (`available_commands_update`).
+    /// The `/` commands each session's agent offers itself: an ACP agent's `available_commands_update`, OpenCode's
+    /// commands, Claude Code's `initialize` reply.
     @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
     /// What fills each session's context window, as its agent last said it (`refreshContextUsage`), with the session's
     /// context size at that moment: an answer from before a later turn is not shown.
@@ -854,9 +855,17 @@ final class WorkspaceManager: ObservableObject {
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
         // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
         // other agent (Codex over `codex exec` too) ahead of the message.
-        let appContext = usesCodexServer(run, executable) ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        let codexServer = usesCodexServer(run, executable)
+        let appContext = codexServer ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        // `/init` and `/review` for an agent without them: the prompt its own would send; the timeline keeps your words.
+        var message = clean
+        if let prompt = SessionCommands.prompt(for: clean, provider: run.provider, offered: acpCommands[id] ?? [],
+                                               nativeReview: codexServer) {
+            message = prompt
+            displayPrompt[id] = visible
+        }
         turnPrompts[id] = clean
-        launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
+        launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: message), executable: executable,
                    showPrompt: !shown)
         return true
     }

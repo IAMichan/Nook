@@ -4,7 +4,11 @@ import Foundation
 // - plan, fork, clear, new, btw, side: Nook's own (btw and side open a side chat, see `SideChat`).
 // - compact: context compaction command for Claude and Codex.
 // - goal: Codex and Claude.
-// - the agent's own: what an ACP agent announces in `available_commands_update` (`offered`).
+// - mcp: Nook lists the agent's MCP servers itself for the agents that report them (`WorkspaceManager.showMcpStatus`).
+// - status, help, model, effort, permissions, resume, rename, diff, memory, login, init, review: Nook's own for every
+//   agent (`NookCommand`).
+// - the agent's own (`offered`): what an ACP agent announces in `available_commands_update`, OpenCode's `/api/command`,
+//   and Claude Code's `initialize` reply (its built-in commands, your skills and the project's commands).
 // Codex's `/feedback` is OpenAI-specific: left out.
 enum AgentCommands {
     enum Surface: Sendable { case agent, chat }
@@ -37,6 +41,19 @@ enum AgentCommands {
         if hasProject, hasBuiltInGoal(provider) {
             list.append(ComposerCommand(name: "goal", insertion: "/goal ", action: .insert))
         }
+        if hasProject, surface == .agent, reportsMcpStatus(provider) {
+            list.append(ComposerCommand(name: "mcp", insertion: "", action: .mcp))
+        }
+        // Nook's own for every agent (`NookCommand`): what an agent's terminal app does on its own screen. `/init`,
+        // `/review` and `/memory` only where the agent has no command of that name itself.
+        if hasProject, surface == .agent {
+            for command in NookCommand.allCases where !list.contains(where: { $0.name == command.name }) {
+                if command.yieldsToAgent, offered.contains(where: { $0.name == command.name }) { continue }
+                let insertion = "/" + command.name + (command.takesInput ? " " : "")
+                let action: ComposerCommand.Action = command.isPrompt || command == .rename ? .insert : .session(command)
+                list.append(ComposerCommand(name: command.name, insertion: insertion, action: action))
+            }
+        }
         // The agent's own commands go to it as the text of a prompt; one with Nook's name stays Nook's.
         if hasProject {
             for command in offered where !list.contains(where: { $0.name == command.name }) {
@@ -48,6 +65,15 @@ enum AgentCommands {
     }
 
     static func descriptionKey(for command: ComposerCommand) -> String { "composer.command.\(command.name).description" }
+
+    /// Whether Nook can ask the agent for its MCP servers (`WorkspaceManager.showMcpStatus`): Claude Code's `mcp_status`,
+    /// Codex's `mcpServerStatus/list`, OpenCode's `/api/mcp`. The others do not report them.
+    static func reportsMcpStatus(_ provider: RunProvider) -> Bool {
+        switch provider {
+        case .claude, .codex, .opencode: return true
+        case .gemini, .antigravity, .cursor, .grok, .pi, .acp: return false
+        }
+    }
 
     /// Claude Code and Codex always take `/compact` and `/goal`; an ACP agent has the commands it announces.
     static func hasBuiltInGoal(_ provider: RunProvider) -> Bool {
@@ -77,6 +103,26 @@ struct AgentSlashCommand: Equatable, Hashable, Sendable {
     var name: String
     var detail: String?
     var takesInput: Bool
+
+    /// Claude Code's own commands that Nook leaves out: the model, effort and speed are Nook's pickers (the agent would
+    /// change them behind the session's back), and `focus` and `color` only change Claude Code's own terminal screen
+    /// (headless it answers that focus "isn't available here yet").
+    static let claudeLeftOut: Set<String> = ["model", "effort", "fast", "focus", "color"]
+
+    /// The `commands` of Claude Code's `initialize` reply. Internal ones (`__name`) and removed ones are dropped.
+    static func claude(_ raw: Any?) -> [AgentSlashCommand] {
+        var seen = Set<String>()
+        return ((raw as? [[String: Any]]) ?? []).compactMap { entry -> AgentSlashCommand? in
+            guard var name = (entry["name"] as? String)?.trimmingCharacters(in: .whitespaces) else { return nil }
+            if name.hasPrefix("/") { name.removeFirst() }
+            let detail = (entry["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !name.hasPrefix("_"), name.count <= 64, !name.contains(where: { $0.isWhitespace }),
+                  !claudeLeftOut.contains(name), detail?.hasPrefix("(removed)") != true, seen.insert(name).inserted else { return nil }
+            let hint = (entry["argumentHint"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            return AgentSlashCommand(name: name, detail: detail?.isEmpty == false ? String(detail!.prefix(200)) : nil,
+                                     takesInput: !hint.isEmpty)
+        }
+    }
 
     /// The commands of an `availableCommands` list. A name is one word without the slash; anything else is dropped.
     static func acp(_ raw: Any?) -> [AgentSlashCommand] {
