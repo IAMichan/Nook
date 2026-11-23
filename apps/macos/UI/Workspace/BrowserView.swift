@@ -312,9 +312,11 @@ final class BrowserStore: ObservableObject {
 
     /// Without the entitlement passkeys cannot work here: sites like Google then ask for Bluetooth and a nearby phone
     /// and stop there. Hiding them makes such sites offer a password, a code or the phone prompt instead. Other
-    /// credential requests pass through.
+    /// credential requests pass through. Not on Google's sign-in pages: Google turns a page without passkey support away
+    /// as an unsafe browser ("Couldn't sign you in"), so there `WebSignInAgent.googlePasskeys` handles them instead.
     static let hidePasskeys = """
     (function () {
+      \(WebSignInAgent.skipOnGoogle)
       try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }); } catch (e) {}
       var credentials = navigator.credentials;
       if (!credentials) { return; }
@@ -403,9 +405,11 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     var pageTitle: String { parked?.title ?? webView.title ?? "" }
 
     /// Collects console errors and warnings (and uncaught errors) of each page, so an agent checking its dev server can
-    /// see what went wrong. The list lives in the page itself and starts empty on every load.
+    /// see what went wrong. The list lives in the page itself and starts empty on every load. Not on Google's sign-in
+    /// pages, which take a replaced `console` function for an app's own browser and refuse the sign-in.
     private static let consoleCapture = """
     (function () {
+      \(WebSignInAgent.skipOnGoogle)
       if (window.__nookConsole) { return; }
       var log = [];
       window.__nookConsole = log;
@@ -459,8 +463,10 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
         // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
+        let browserWebView = BrowserWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
+        webView = browserWebView
         super.init()
+        browserWebView.tabKey = { [weak self] newTab in self?.tabKey(newTab) ?? false }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -699,6 +705,21 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         if let url = question.pageURL { webView.load(URLRequest(url: url)) } else { webView.reload() }
     }
 
+    /// ⌘T on the page opens a tab with the cursor in its address bar; ⌘W closes this tab unless it is the last.
+    private func tabKey(_ newTab: Bool) -> Bool {
+        guard let store else { return false }
+        if newTab {
+            let made = store.newTab()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: BrowserWebView.focusAddress, object: made.webView)
+            }
+            return true
+        }
+        guard store.pages.count > 1 else { return false }
+        store.close(id)
+        return true
+    }
+
     /// "Not now": the page stays as it failed.
     func dismissCertificateQuestion() {
         certificateQuestion = nil
@@ -768,6 +789,64 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
         BrowserExtensions.shared.changed(self)
+    }
+}
+
+/// The web view of Nook's browser and the windows its pages open: it answers the keys every browser has while you are on
+/// the page. ⌘R loads the page again and ⌘⇧R does so without the cache; ⌘[ and ⌘] go back and forward; ⌘+, ⌘- and ⌘0
+/// zoom; ⌘L goes to the address bar; ⌘. and Escape stop a page that is loading; ⌘T opens a tab and ⌘W closes this one
+/// (the last tab stays, so ⌘W then does what it does elsewhere).
+final class BrowserWebView: WKWebView {
+    /// What the browser's tabs do with ⌘T (true) and ⌘W (false); true when it handled the key. Nil in a page's own window.
+    var tabKey: ((_ newTab: Bool) -> Bool)?
+    /// Asks the browser showing this web view to put the cursor in its address bar (`BrowserView`).
+    static let focusAddress = Notification.Name("BrowserWebView.focusAddress")
+    private static let zoomSteps: [CGFloat] = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Only for the page you are on: elsewhere in the window (the composer, another panel) these keys are theirs.
+        if let responder = window?.firstResponder as? NSView, responder === self || responder.isDescendant(of: self),
+           handle(event) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Escape stops a page that is loading, as in Safari; otherwise the page gets it.
+        if event.keyCode == 53, isLoading, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+            stopLoading()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private func handle(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard flags.contains(.command), !flags.contains(.control), !flags.contains(.option),
+              let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        let shift = flags.contains(.shift)
+        switch key {
+        case "r":
+            if shift { reloadFromOrigin() } else { reload() }
+        case "[": if canGoBack { goBack() }
+        case "]": if canGoForward { goForward() }
+        case "=", "+": zoom(by: 1)
+        case "-": zoom(by: -1)
+        case "0" where !shift: pageZoom = 1
+        case "l" where !shift: NotificationCenter.default.post(name: Self.focusAddress, object: self)
+        case "." where !shift: stopLoading()
+        case "t" where !shift: return tabKey?(true) ?? false
+        case "w" where !shift: return tabKey?(false) ?? false
+        default: return false
+        }
+        return true
+    }
+
+    private func zoom(by step: Int) {
+        let steps = Self.zoomSteps
+        let current = steps.enumerated().min { abs($0.element - pageZoom) < abs($1.element - pageZoom) }?.offset ?? 5
+        pageZoom = steps[min(max(current + step, 0), steps.count - 1)]
     }
 }
 
@@ -943,7 +1022,14 @@ struct BrowserView: View {
                     ToolbarIconButton("chevron.left", tr("a11y.back"), enabled: store.canGoBack) { store.webView.goBack() }
                     ToolbarIconButton("chevron.right", tr("a11y.forward"), enabled: store.canGoForward) { store.webView.goForward() }
                     ToolbarIconButton(store.loading ? "xmark" : "arrow.clockwise", tr(store.loading ? "a11y.stopLoading" : "a11y.reload")) {
-                        if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
+                        if store.loading {
+                            store.webView.stopLoading()
+                        } else if NSEvent.modifierFlags.contains(.shift) || NSEvent.modifierFlags.contains(.option) {
+                            // Shift- or Option-click, as in Safari: past the cache.
+                            _ = store.webView.reloadFromOrigin()
+                        } else {
+                            _ = store.webView.reload()
+                        }
                     }
                 }
                 HStack(spacing: NookTheme.Spacing.xs) {
@@ -1037,6 +1123,12 @@ struct BrowserView: View {
                     .padding(.top, SidePanelMetrics.toolbar + NookTheme.Spacing.xxs)
                     .padding(.horizontal, NookTheme.Spacing.xl * 3)
             }
+        }
+        // ⌘L on the page: the cursor goes to the address, all of it selected so you can type over it.
+        .onReceive(NotificationCenter.default.publisher(for: BrowserWebView.focusAddress)) { note in
+            guard (note.object as? WKWebView) === store.webView else { return }
+            addressFocused = true
+            DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
         }
         // In view: whatever an agent opens here is seen, also while you watch.
         .onAppear {

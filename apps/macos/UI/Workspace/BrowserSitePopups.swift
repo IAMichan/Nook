@@ -35,7 +35,7 @@ final class BrowserSitePopup: NSObject, NSWindowDelegate, WKNavigationDelegate, 
     private init(configuration: WKWebViewConfiguration, features: WKWindowFeatures, over parent: NSWindow?) {
         let size = NSSize(width: min(max(features.width?.doubleValue ?? 500, 360), 1200),
                           height: min(max(features.height?.doubleValue ?? 640, 420), 1000))
-        webView = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: configuration)
+        webView = BrowserWebView(frame: NSRect(origin: .zero, size: size), configuration: configuration)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered, defer: false)

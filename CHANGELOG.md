@@ -18,9 +18,14 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Switching to a session settles at once: the line counts on its turn cards now come in together, instead of one
   by one, each drawing the whole session again for seconds after the switch. Counts from an earlier visit show
   straight away.
+- Nook's browser answers the keys every browser has while you are on a page: ⌘R reloads, ⌘⇧R reloads past the cache
+  (also Shift-click on the reload button), ⌘[ and ⌘] go back and forward, ⌘+, ⌘- and ⌘0 zoom, ⌘L goes to the address
+  bar, ⌘T opens a tab, ⌘W closes the tab and ⌘. or Escape stops loading.
 
 ### Fixed
 
+- Signing in with Google in Nook's browser works again: Google answered "Couldn't sign you in, this browser or app may
+  not be secure", because the browser hid passkey support and wrapped the console on Google's sign-in page as well.
 - The model menu in the browser extension's side panel opens again (it collapsed to a bare search field under the
   composer) and now looks like the model picker in Nook's own composer: agent logos in a rail on the left, this Mac's
   models first, and the shown agent's models with their makers' marks, a search field and ↑/↓ and Return.
