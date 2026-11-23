@@ -575,7 +575,7 @@ struct ChatsTab: View {
                                                 senders: app.mailSenders, onSend: sendComposed, onOpenInMail: openComposed,
                                                 onClose: discardComposed)
                             } else if let current {
-                                ChatsDetail(entry: current, capture: capture,
+                                ChatsDetail(entry: current, capture: capture, readsWhileOpen: readsWhileOpen(current),
                                             onMarkUnread: { markUnread(current) }, onClose: closeChat,
                                             onBack: stacked ? closeChat : nil,
                                             onCompose: { draft in withAnimation(NookTheme.reveal) { composing = draft } })
@@ -691,6 +691,14 @@ struct ChatsTab: View {
         .onChange(of: viewModel.isShowing(.inbox, inWindow: inWindow, ownWindow: ownWindow)) { _, showing in
             if showing { readOpenChat() }
         }
+    }
+
+    /// Whether what comes into the open chat is read in Nook a moment later (`readOpenChat`): the chat then shows it as
+    /// read already, so a new message does not bring the "new" strip above the field for that moment and take it away again.
+    private func readsWhileOpen(_ entry: ChatsEntry) -> Bool {
+        guard readOnOpen, app.viewModel.isShowing(.inbox, inWindow: inWindow, ownWindow: ownWindow) else { return false }
+        if let marked = capture.markedUnread(entry.id), marked > openedAt { return false }
+        return true
     }
 
     /// Reads the open chat in Nook, only while you can be looking at this one: in the open notch, or in the main window
@@ -1728,6 +1736,8 @@ final class ChatReplyState: ObservableObject {
 private struct ChatsDetail: View, Equatable {
     let entry: ChatsEntry
     @ObservedObject var capture: ChatCaptureService
+    /// The tab reads what comes in here in a moment (`ChatsTab.readsWhileOpen`): the chat shows it read already.
+    var readsWhileOpen = false
     /// What a linked WhatsApp account can do now (edit, pin, vote…) is part of what this chat offers.
     @ObservedObject private var whatsApp = WhatsAppAccounts.shared
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
@@ -1795,10 +1805,11 @@ private struct ChatsDetail: View, Equatable {
     @State private var unreadAtOpen: Int
     @State private var newFrom: String?
 
-    init(entry: ChatsEntry, capture: ChatCaptureService,
+    init(entry: ChatsEntry, capture: ChatCaptureService, readsWhileOpen: Bool = false,
          onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}, onBack: (() -> Void)? = nil,
          onCompose: @escaping (MailDraft) -> Void = { _ in }) {
         self.entry = entry
+        self.readsWhileOpen = readsWhileOpen
         self.onCompose = onCompose
         self.newWhenOpened = entry.unread
         self.capture = capture
@@ -1814,7 +1825,13 @@ private struct ChatsDetail: View, Equatable {
     /// a redraw of the tab around it (the list scrolling, a picture in a row, a typing line in another chat) leaves it
     /// alone. The closures do the same for the same chat.
     static func == (lhs: ChatsDetail, rhs: ChatsDetail) -> Bool {
-        lhs.entry == rhs.entry && (lhs.onBack == nil) == (rhs.onBack == nil)
+        lhs.entry == rhs.entry && (lhs.onBack == nil) == (rhs.onBack == nil) && lhs.readsWhileOpen == rhs.readsWhileOpen
+    }
+
+    /// Where the chat stands as it shows here: what is about to be read in Nook (`readsWhileOpen`) shows as read in Nook,
+    /// so the strip above the field and the mark in the header stay put while a message comes in.
+    private var shownRead: ChatReadState {
+        readsWhileOpen && entry.read.isUnread ? .readInNook : entry.read
     }
 
     /// Places "New messages" above the first of what was new, once the chat shows it.
@@ -2314,9 +2331,9 @@ private struct ChatsDetail: View, Equatable {
             }
         }
         // Read but not new: where it stands, small, instead of a strip above the answer field.
-        if !entry.read.isUnread && !entry.lastIsMine && hasMessages {
+        if !shownRead.isUnread && !entry.lastIsMine && hasMessages {
             headerDot
-            ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+            ChatReadStatus(state: shownRead, appName: appName, handoff: app.chatReadHandoff(entry),
                            markReadInApp: { app.markChatReadInApp(entry) })
         }
     }
@@ -2425,8 +2442,8 @@ private struct ChatsDetail: View, Equatable {
                              place: .chat(app: appName, name: entry.name)) {
                 ChatActionSuggestion.lines(bubbles, contact: entry.name)
             }
-            .tray(entry.read.isUnread
-                ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+            .tray(shownRead.isUnread
+                ? AnyView(ChatReadLine(state: shownRead, appName: appName, handoff: app.chatReadHandoff(entry),
                                        markReadInNook: { app.markChatReadInNook(entry) },
                                        markReadInApp: { app.markChatReadInApp(entry) }))
                 : limitsLine(route: route))
