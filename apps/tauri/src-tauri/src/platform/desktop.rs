@@ -519,11 +519,12 @@ pub fn jump_list_tasks(language: &str) -> [JumpListTask; 4] {
 /// `Agents`, and `Chats` (UI-49). Safe no-op on non-Windows platforms.
 #[cfg(windows)]
 pub fn refresh_jump_list(language: &str) {
-    use windows::core::{Interface, HSTRING, PROPVARIANT};
-    use windows::Win32::System::Com::StructuredStorage::IPropertyStore;
+    use windows::core::{Interface, HSTRING};
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
     use windows::Win32::UI::Shell::Common::{IObjectArray, IObjectCollection};
-    use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
+    use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
     use windows::Win32::UI::Shell::{DestinationList, EnumerableObjectCollection, ICustomDestinationList, IShellLinkW, ShellLink};
 
     let Some(exe) = std::env::current_exe().ok() else { return };
