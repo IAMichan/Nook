@@ -58,6 +58,20 @@ final class SessionProjectsTests: XCTestCase {
         XCTAssertEqual(P.adding(file: mono + "/src/b.ts", own: tree, to: []), [mono])
     }
 
+    /// A file in a worktree of another project remembers that worktree, so the session panel shows the checkout the work
+    /// is in; the list still names the project.
+    func testFileInAnotherProjectsWorktreeRemembersThatCheckout() throws {
+        let nook = try repo("nook")
+        let mono = try repo("monorepo")
+        let tree = try worktree(of: mono, "monorepo-feature")
+        XCTAssertEqual(P.adding(file: tree + "/src/b.ts", own: nook, to: []), [tree])
+        XCTAssertEqual(P.checkout(of: tree + "/src"), tree)
+        XCTAssertEqual(P.root(of: tree), mono)
+        // Its main checkout is another place to commit, so it gets its own entry.
+        XCTAssertEqual(P.adding(file: mono + "/src/c.ts", own: nook, to: [tree]), [tree, mono])
+        XCTAssertNil(P.adding(file: tree + "/README.md", own: nook, to: [tree]))
+    }
+
     func testWrittenFilesFromHookInput() {
         XCTAssertEqual(P.writtenFiles(tool: "Edit", input: ["file_path": "/a/b.swift"], cwd: "/x"), ["/a/b.swift"])
         XCTAssertEqual(P.writtenFiles(tool: "write_file", input: ["file_path": "c.txt"], cwd: "/x"), ["/x/c.txt"])

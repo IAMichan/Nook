@@ -105,6 +105,9 @@ struct SessionPanel: View {
     let close: () -> Void
     /// Beside the conversation: flat on the canvas like the tool panels, instead of the popover's own card.
     var docked = false
+    /// The name of another project the session changed files in: the panel is then a section inside the session's own
+    /// (`SessionProjectSection`), with only that checkout's branch, git action, changes and pull requests.
+    var project: String? = nil
 
     @AppStorage("agents.panel.openIn") private var openInID = OpenInTarget.finder
     @State private var targets: [OpenInTarget] = []
@@ -121,6 +124,8 @@ struct SessionPanel: View {
     /// "Turn into project" with `git init`: asked first, since it writes a repository into the folder.
     @State private var askingGitInit = false
     @State private var registered = false
+    /// The other projects a session Nook only sees changed files in (a session Nook runs keeps its own).
+    @Environment(\.sessionOtherProjects) private var seenOtherProjects
     @ObservedObject private var pullRequestSync = PullRequestSync.shared
     /// The newest state of each pull request, so a merged one shows as merged before the next sync round.
     @ObservedObject private var pullRequestStatus = PullRequestStatusStore.shared
@@ -131,13 +136,14 @@ struct SessionPanel: View {
     @AppStorage("agents.panel.pullRequestsOpen") private var pullRequestsOpen = false
 
     init(model: FolderGitModel, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void,
-         close: @escaping () -> Void, docked: Bool = false) {
+         close: @escaping () -> Void, docked: Bool = false, project: String? = nil) {
         self.model = model
         self.runID = runID
         self.agentWorking = agentWorking
         self.showChanges = showChanges
         self.close = close
         self.docked = docked
+        self.project = project
         // What this panel showed last time, so switching sessions shows it at once and keeps its height while it is read again.
         let known = SessionPanelMemory.shared.panel(model.directory, runID: runID)
         _targets = State(initialValue: SessionPanelMemory.shared.targets)
@@ -155,6 +161,15 @@ struct SessionPanel: View {
         return workspace.quickGitProgress(folder: model.root ?? directory)?.step
     }
     private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
+
+    /// The checkouts of the other projects the session changed files in, that still exist: an agent in one project's
+    /// worktree that edits another repository leaves its changes there, and they get their own section here, so the
+    /// git action is offered where the work is.
+    private var otherProjects: [String] {
+        guard project == nil else { return [] }
+        let found = runID == nil ? seenOtherProjects : (run?.otherProjects ?? [])
+        return found.filter { $0 != directory && FileManager.default.fileExists(atPath: $0) }
+    }
 
     /// The pull requests always in view; the rest wait behind a fold.
     private static let shownPullRequests = 2
@@ -223,6 +238,16 @@ struct SessionPanel: View {
     @ViewBuilder
     private func rows(compact: Bool) -> some View {
         let hidden = hiddenRows
+        if let project {
+            projectRow(project)
+            if model.isRepository { gitRows(hidden) }
+        } else {
+            sessionRows(compact: compact, hidden: hidden)
+        }
+    }
+
+    @ViewBuilder
+    private func sessionRows(compact: Bool, hidden: Set<String>) -> some View {
         if !compact {
             if !hidden.contains("machine") { machineRow }
             if !hidden.contains("openIn") { openInRow }
@@ -231,17 +256,39 @@ struct SessionPanel: View {
         if !compact, !hidden.contains("scripts") { scriptRows }
         if model.isRepository {
             DropdownDivider()
-            if !hidden.contains("branch") { branchRow }
-            if !hidden.contains("commit") { commitRow }
-            if !hidden.contains("changes") { changesRow }
-            if !hidden.contains("pullRequests") { pullRequestRows }
+            gitRows(hidden)
+        }
+        ForEach(otherProjects, id: \.self) { folder in
+            SessionProjectSection(directory: folder, agentWorking: agentWorking, close: close)
         }
     }
 
-    var body: some View {
+    @ViewBuilder
+    private func gitRows(_ hidden: Set<String>) -> some View {
+        if !hidden.contains("branch") { branchRow }
+        if !hidden.contains("commit") { commitRow }
+        if !hidden.contains("changes") { changesRow }
+        if !hidden.contains("pullRequests") { pullRequestRows }
+    }
+
+    /// The heading of another project's section: its name, and where its checkout is.
+    private func projectRow(_ name: String) -> some View {
+        VStack(spacing: 0) {
+            DropdownDivider()
+            PanelRow(icon: symbol("folder"), title: name, detail: tr("agents.panel.otherProject"),
+                     help: AgentPathFormat.tilde(directory),
+                     menu: AnyView(Group {
+                         Button(tr("button.openTerminalHere")) { done { app.openTerminal(in: directory) } }
+                         Button(tr("agents.panel.copyPath")) { Pasteboard.copy(directory) }
+                     }))
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Beside the conversation the column can be short: the panel then keeps to the session's own work.
-            if docked {
+            if docked && project == nil {
                 ViewThatFits(in: .vertical) {
                     VStack(alignment: .leading, spacing: 0) { rows(compact: false) }
                     VStack(alignment: .leading, spacing: 0) { rows(compact: true) }
@@ -257,17 +304,32 @@ struct SessionPanel: View {
                     .padding(.vertical, NookTheme.Spacing.sm)
             }
         }
-        .padding(NookTheme.Spacing.md)
-        .frame(width: docked ? nil : 300, alignment: .leading)
-        .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
-        .background(docked ? Color.clear : DropdownStyle.panel)
-        .contextMenu {
-            ForEach(Self.optionalRows, id: \.self) { row in
-                Button { toggle(row: row) } label: {
-                    if hiddenRows.contains(row) { Text(tr("agents.panel.row." + row)) } else { Label(tr("agents.panel.row." + row), icon: "checkmark") }
+    }
+
+    /// The panel with its own padding, card and menu of rows; a section for another project sits inside the session's
+    /// panel and takes those from it.
+    @ViewBuilder
+    private var framed: some View {
+        if project != nil {
+            content
+        } else {
+            content
+                .padding(NookTheme.Spacing.md)
+                .frame(width: docked ? nil : 300, alignment: .leading)
+                .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
+                .background(docked ? Color.clear : DropdownStyle.panel)
+                .contextMenu {
+                    ForEach(Self.optionalRows, id: \.self) { row in
+                        Button { toggle(row: row) } label: {
+                            if hiddenRows.contains(row) { Text(tr("agents.panel.row." + row)) } else { Label(tr("agents.panel.row." + row), icon: "checkmark") }
+                        }
+                    }
                 }
-            }
         }
+    }
+
+    var body: some View {
+        framed
         .task(id: directory) {
             let folder = directory
             // Git first: it decides most of the panel. The rest reads alongside it.
@@ -780,5 +842,31 @@ private struct PanelRow: View {
         Image(icon: menuSymbol)
             .font(NookTheme.font(menuSymbol == "chevron.down" ? 10 : 12, menuSymbol == "chevron.down" ? .semibold : .medium))
             .foregroundStyle(NookTheme.textSecondary)
+    }
+}
+
+/// Another project the session changed files in, as a section of its panel: that checkout's branch, the git action it
+/// needs, its changes and pull requests, read from its own folder. An agent started in one project's worktree that edits
+/// another repository would otherwise leave work that no panel offers to commit, push or propose.
+struct SessionProjectSection: View {
+    @EnvironmentObject private var app: AppModel
+    @EnvironmentObject private var workspace: WorkspaceManager
+    @StateObject private var model: FolderGitModel
+    let agentWorking: Bool
+    let close: () -> Void
+
+    init(directory: String, agentWorking: Bool, close: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: FolderGitModel.make(directory: directory))
+        self.agentWorking = agentWorking
+        self.close = close
+    }
+
+    var body: some View {
+        let folder = model.directory
+        let settings = workspace.settings
+        SessionPanel(model: model, runID: nil, agentWorking: agentWorking,
+                     showChanges: { app.viewModel.open(.folderChanges(model.root ?? folder)) }, close: close, docked: true,
+                     project: settings.projectDisplayName(SessionProjects.root(of: folder) ?? folder))
+            .task(id: "\(folder)|\(agentWorking)") { await model.follow(agentWorking: agentWorking) }
     }
 }

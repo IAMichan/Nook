@@ -95,6 +95,7 @@ struct AgentsTab: View {
                                              usageProfileID: app.profile(for: session)?.id) { tools in
                                 AgentSessionDetail(selection: .live(session), headerAccessory: tools)
                             }
+                            .environment(\.sessionOtherProjects, session.otherProjects)
                             .id(session.id)
                         case .past(let session):
                             SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,

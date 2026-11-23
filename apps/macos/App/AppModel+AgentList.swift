@@ -292,7 +292,10 @@ private struct AgentListBuilder {
     private func projectNames(_ projects: [String], own: String) -> [String] {
         guard !projects.isEmpty else { return [] }
         let settings = app.workspace.settings
-        return SessionProjects.names(projects, own: settings.projectDisplayName(own), name: settings.projectDisplayName)
+        // A worktree of another project is named after that project, like its main checkout.
+        return SessionProjects.names(projects, own: settings.projectDisplayName(own)) {
+            settings.projectDisplayName(SessionProjects.root(of: $0) ?? $0)
+        }
     }
 
     private func item(_ session: PastSession) -> AgentListItem {

@@ -10,6 +10,12 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+### Fixed
+
+- When an agent changes files in another repository than its session's own, the session panel now shows that
+  repository too, with its branch, changes and the commit, push and pull request button, instead of saying there is
+  nothing to commit.
+
 ## [0.1.2-beta.2] - 2026-11-21
 
 ### Changed
