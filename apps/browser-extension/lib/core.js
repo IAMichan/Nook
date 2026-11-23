@@ -709,3 +709,21 @@ export function pdfCrop(point, imageWidth, imageHeight, size = { width: 560, hei
   const top = Math.round(Math.min(Math.max(0, y - height / 2), imageHeight - height));
   return { left, top, width, height, scale, spot: { x: x - left, y: y - top } };
 }
+
+// MARK: - The agent that drives the page
+
+/** At most this many logo colors go round the glow (Antigravity has three). */
+export const DRIVER_COLORS = 4;
+
+/**
+ * The coding agent that takes a step (`command.by`, from `BrowserExtensionConnector.driver` on the Mac): its name for
+ * the strip and its logo's colors for the glow, as Nook's own browser draws it. Only `#RRGGBB` colors pass, so nothing
+ * else reaches the page's style. null for Nook itself, which keeps its own violet.
+ */
+export function driverOf(by) {
+  if (!by || typeof by !== 'object') return null;
+  const name = typeof by.name === 'string' ? by.name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  const colors = Array.isArray(by.colors) ? by.colors.filter((color) => typeof color === 'string' && HEX.test(color)).slice(0, DRIVER_COLORS) : [];
+  if (!name && !colors.length) return null;
+  return { name, colors };
+}

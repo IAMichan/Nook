@@ -273,19 +273,22 @@ final class BrowserExtensionHub: @unchecked Sendable {
     /// they let Nook act on that site without asking. With `trusted: true` in it the extension never asks there: a step
     /// on such a site runs, any other comes back with `approval` and Nook asks the user itself.
     /// `trust`: the user chose "Always on <site>" in Nook's approval card for this step; the extension remembers it.
+    /// `by`: the coding agent that takes the step (`name`, and its logo's `colors` as `#RRGGBB`): the page glows in
+    /// those colors and its strip names the agent, as Nook's own browser does. nil for Nook itself.
     func call(_ method: String, params: [String: Any] = [:], browser: String? = nil, timeout: TimeInterval = 30,
-              ask: [String: Any]? = nil, trust: String? = nil) async -> BrowserExtensionOutcome {
+              ask: [String: Any]? = nil, trust: String? = nil, by: [String: Any]? = nil) async -> BrowserExtensionOutcome {
         await withCheckedContinuation { continuation in
-            send(method, params: params, browser: browser, timeout: timeout, ask: ask, trust: trust) { continuation.resume(returning: $0) }
+            send(method, params: params, browser: browser, timeout: timeout, ask: ask, trust: trust, by: by) { continuation.resume(returning: $0) }
         }
     }
 
     /// The same as `call`, with a completion handler that runs exactly once.
     func send(_ method: String, params: [String: Any], browser: String?, timeout: TimeInterval, ask: [String: Any]? = nil,
-              trust: String? = nil, completion: @escaping (BrowserExtensionOutcome) -> Void) {
+              trust: String? = nil, by: [String: Any]? = nil, completion: @escaping (BrowserExtensionOutcome) -> Void) {
         let id = UUID().uuidString
         var command: [String: Any] = ["kind": "command", "id": id, "method": method, "params": params]
         if let ask { command["ask"] = ask }
+        if let by { command["by"] = by }
         if let trust, !trust.isEmpty { command["trust"] = trust }
         let line = Self.encode(command)
         lock.lock()

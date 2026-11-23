@@ -82,6 +82,32 @@ final class BrowserExtensionConnector: ContextSource {
     /// "Always on <site>" chosen in Nook's approval card for the step that runs now: the extension remembers the site.
     @TaskLocal static var trust: String?
 
+    /// The coding agent whose step runs now (`driver(_:)`), so the page glows in its logo's colors; nil for Nook itself.
+    @TaskLocal static var driver: Driver?
+
+    struct Driver: Sendable, Equatable {
+        let name: String
+        let colors: [String]
+        var payload: [String: Any] { ["name": name, "colors": colors] }
+    }
+
+    /// What the extension gets about the agent that drives the page: its name and the colors of its logo
+    /// (`AgentLogo.colors`, as Nook's own browser glows in them), as `#RRGGBB` the way a dark surface shows them.
+    static func driver(_ agent: String) -> Driver {
+        let dark = NSAppearance(named: .darkAqua)
+        let colors: [String] = AgentLogo.colors(of: agent).compactMap { color in
+            var hex: String?
+            let resolve = {
+                guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
+                let channel = { (value: CGFloat) in UInt32((min(max(value, 0), 1) * 255).rounded()) }
+                hex = NookColor.string(channel(rgb.redComponent) << 16 | channel(rgb.greenComponent) << 8 | channel(rgb.blueComponent))
+            }
+            if let dark { dark.performAsCurrentDrawingAppearance(resolve) } else { resolve() }
+            return hex
+        }
+        return Driver(name: agent, colors: colors)
+    }
+
     /// Sends a coding agent's step so that it runs at once on a site the user lets Nook act on without asking (the
     /// switch in the side panel, or "Always" on an earlier card), and comes back for Nook's own approval card
     /// otherwise. nil when this is no browser action or the browser's extension is too old to know `ask.trusted`: Nook
@@ -111,7 +137,7 @@ final class BrowserExtensionConnector: ContextSource {
         }
         let browser = BridgeArgs.string(input["browser"])
         let outcome = await BrowserExtensionService.shared.hub.call(definition.method, params: params, browser: browser, timeout: definition.timeout,
-                                                                     ask: ask, trust: ask == nil ? trust : nil)
+                                                                     ask: ask, trust: ask == nil ? trust : nil, by: driver?.payload)
         if !outcome.ok, let approval = outcome.approval { throw WaitsForApproval(approval: approval) }
         guard outcome.ok else { throw NookError(outcome.error.isEmpty ? "The browser could not do that." : outcome.error) }
         switch definition.method {

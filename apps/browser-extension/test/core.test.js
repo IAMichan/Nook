@@ -6,7 +6,7 @@ import {
   activityLine, browserName, cleanLook, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked,
   isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError,
   WATCH_LEASE, WATCH_RENEW, watchRenewalDue, questionImages, MAX_QUESTION_IMAGES, MAX_IMAGE_BASE64, pointOfNoReturn, mustAsk,
-  approvalCard, approvalDecision
+  approvalCard, approvalDecision, driverOf, DRIVER_COLORS
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -264,4 +264,17 @@ test('the side panel can only answer a waiting step as it may', () => {
   assert.equal(approvalDecision('site', card), 'site');
   assert.equal(approvalDecision('site', { ...card, final: true }), 'deny');
   assert.equal(approvalDecision('anything', card), 'deny');
+});
+
+test('the agent that drives a page brings its name and only plain colors', () => {
+  assert.deepEqual(driverOf({ name: 'Claude Code', colors: ['#D97757', '#F0A07C'] }), { name: 'Claude Code', colors: ['#D97757', '#F0A07C'] });
+  // Nothing but #RRGGBB reaches the page's style.
+  assert.deepEqual(driverOf({ name: 'Codex', colors: ['red', '#fff', '#123456; background: url(x)', 7, '#8E8E98'] }).colors, ['#8E8E98']);
+  assert.equal(driverOf({ name: 'Antigravity', colors: Array(9).fill('#4F8BF7') }).colors.length, DRIVER_COLORS);
+  assert.equal(driverOf({ name: '  Gemini\n CLI ' }).name, 'Gemini CLI');
+  assert.equal(driverOf({ name: 'x'.repeat(200) }).name.length, 60);
+  // Nook's own steps carry no agent: the glow keeps Nook's violet.
+  assert.equal(driverOf(undefined), null);
+  assert.equal(driverOf('Claude'), null);
+  assert.equal(driverOf({ name: '', colors: [] }), null);
 });
