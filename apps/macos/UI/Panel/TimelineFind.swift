@@ -235,6 +235,11 @@ final class DrawnRows {
     fileprivate private(set) var spans: [AnyHashable: RowsInView.Span] = [:]
     /// Rows that appeared but were not laid out yet: drawn, but not known to be anywhere.
     fileprivate private(set) var pending: Set<AnyHashable> = []
+    /// Where each row last said it stands, also once it is no longer drawn. A row that scrolls back into view is often
+    /// the lazy stack's own row again, and its `onGeometryChange` only reports a place that differs from the one it
+    /// reported last: without this, a row you scrolled back to stayed "not known to be anywhere", the view counted as
+    /// blank with rows on screen, and the guard pulled it to the end while you read.
+    private var known: [AnyHashable: RowsInView.Span] = [:]
     /// How many copies of each row are drawn. A scroll view made again (`RowsInView.rebuilds`) draws its rows before the
     /// old one lets go of the same rows; without the count, the old row's `onDisappear` struck the new one off, and the
     /// conversation counted as blank (and was made again) for good.
@@ -243,14 +248,20 @@ final class DrawnRows {
 
     var count: Int { spans.count + pending.count }
 
-    fileprivate func appeared(_ id: AnyHashable) {
+    /// The row is drawn; returns where it stands when that is known already (it was laid out before and did not move).
+    @discardableResult
+    fileprivate func appeared(_ id: AnyHashable) -> RowsInView.Span? {
         copies[id, default: 0] += 1
-        if spans[id] == nil { pending.insert(id) }
+        if spans[id] == nil {
+            if let span = known[id] { spans[id] = span } else { pending.insert(id) }
+        }
         changed?()
+        return spans[id]
     }
 
     fileprivate func placed(_ id: AnyHashable, _ span: RowsInView.Span) {
         pending.remove(id)
+        known[id] = span
         guard spans[id] != span else { return }
         spans[id] = span
         changed?()
@@ -279,7 +290,9 @@ extension View {
             drawn.placed(key, $0)
             reading?.place(key, top: $0.top)
         }
-        .onAppear { drawn.appeared(key) }
+        .onAppear {
+            if let span = drawn.appeared(key) { reading?.place(key, top: span.top) }
+        }
         .onDisappear {
             drawn.disappeared(key)
             reading?.place(key, top: nil)

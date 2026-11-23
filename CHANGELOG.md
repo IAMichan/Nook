@@ -12,6 +12,8 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Fixed
 
+- Scrolling back through a long agent conversation no longer jumps: rows that scrolled back into view were taken for
+  a blank conversation, and the view was pulled back to an earlier row or to the end (and rebuilt) while you read.
 - When an agent changes files in another repository than its session's own, the session panel now shows that
   repository too, with its branch, changes and the commit, push and pull request button, instead of saying there is
   nothing to commit.
