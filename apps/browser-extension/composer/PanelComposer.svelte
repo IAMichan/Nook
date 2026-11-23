@@ -77,6 +77,7 @@
     --nc-line-focus: var(--line2);
     --nc-radius: var(--radius-composer);
     --nc-control-radius: var(--radius-control);
+    --nc-chip-radius: var(--radius-chip);
     --nc-menu: var(--surface);
     --nc-menu-radius: var(--radius-panel);
     --nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);

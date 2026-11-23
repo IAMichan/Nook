@@ -106,7 +106,7 @@ import Foundation
 // Combine's names for the few core files that mention them (Linux has no Combine).
 #if !canImport(Combine)
 public protocol ObservableObject: AnyObject {}
-/// Announces a change by hand (`objectWillChange.send()`); nothing listens without SwiftUI.
+/// Nothing observes a core object on Linux: announcing a change does nothing.
 public struct ObservableObjectPublisher {
     public init() {}
     public func send() {}
