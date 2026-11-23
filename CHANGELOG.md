@@ -26,8 +26,12 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Downloads work in Nook's browser: files go to the Downloads folder and a button in the toolbar, there only once you
   downloaded something, shows their progress and opens them. "Choose file" fields, a page's alerts and questions, and
   full-screen video work too.
-- Bookmarks in Nook's browser: the star at the end of the address keeps a page, an empty tab lists your bookmarks, and
-  they come first under the address bar.
+- History and bookmarks in Nook's browser: ⌘Y shows every page you visited, newest first under Today, Yesterday and
+  so on, with a search; ⌥⌘B shows your bookmarks, which you can rename and sort into folders. The star at the end of
+  the address keeps a page, the book in the toolbar lists your newest bookmarks, and bookmarks come first under the
+  address bar.
+- Sites in Nook's browser can use your camera and microphone (a video call, for example) once you allow it; tick
+  "Remember for this site" to answer once for good, and take it back in Settings › Browser › Camera and microphone.
 
 ### Fixed
 

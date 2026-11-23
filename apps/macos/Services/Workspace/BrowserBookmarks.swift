@@ -1,13 +1,21 @@
 import Foundation
 
-/// The pages you starred in Nook's browser: the star in the address bar adds or removes the page, an empty tab lists
-/// them, and they come first under the address bar when they fit what you type. Newest first. Foundation only, so tests
-/// can use it.
+/// The pages you starred in Nook's browser: the star in the address bar adds or removes the page, an empty tab and the
+/// bookmarks menu list them, and they come first under the address bar when they fit what you type. A bookmark sits at
+/// the top or in one of your folders (⌥⌘B arranges them). Newest first. Foundation only, so tests can use it.
 final class BrowserBookmarks: @unchecked Sendable {
     struct Bookmark: Codable, Equatable, Identifiable, Sendable {
         var url: String
         var title: String
+        /// The folder it is in; nil at the top.
+        var folder: String?
         var id: String { url }
+    }
+
+    /// What is saved: the bookmarks, and the folders in your order (also empty ones).
+    private struct Library: Codable {
+        var bookmarks: [Bookmark] = []
+        var folders: [String] = []
     }
 
     static let shared = BrowserBookmarks(file: NookPaths.supportDirectory.appendingPathComponent("browser-bookmarks.json"))
@@ -17,6 +25,7 @@ final class BrowserBookmarks: @unchecked Sendable {
     private let file: URL?
     private let lock = NSLock()
     private var items: [Bookmark] = []
+    private var folderNames: [String] = []
     private var loaded = false
 
     /// `file` nil keeps everything in memory (tests).
@@ -29,6 +38,13 @@ final class BrowserBookmarks: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         loadIfNeeded()
         return items
+    }
+
+    /// Your folders, in your order.
+    var folders: [String] {
+        lock.lock(); defer { lock.unlock() }
+        loadIfNeeded()
+        return folderNames
     }
 
     func contains(_ url: URL?) -> Bool {
@@ -64,6 +80,77 @@ final class BrowserBookmarks: @unchecked Sendable {
         saveAndAnnounce()
     }
 
+    /// Gives a bookmark another name; an empty name shows its address instead.
+    func rename(url: String, to title: String) {
+        change { library in
+            let key = BrowserHistory.key(url)
+            for index in library.items.indices where BrowserHistory.key(library.items[index].url) == key {
+                library.items[index].title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+    }
+
+    /// Puts a bookmark in a folder, or at the top for nil.
+    func move(url: String, to folder: String?) {
+        change { library in
+            let key = BrowserHistory.key(url)
+            for index in library.items.indices where BrowserHistory.key(library.items[index].url) == key {
+                library.items[index].folder = folder
+            }
+        }
+    }
+
+    /// Adds a folder under a name not taken yet ("Work", "Work 2", …) and returns that name.
+    @discardableResult
+    func addFolder(_ name: String) -> String {
+        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var made = ""
+        change { library in
+            made = Self.freeName(wanted.isEmpty ? "Folder" : wanted, taken: library.folderNames)
+            library.folderNames.append(made)
+        }
+        return made
+    }
+
+    /// Gives a folder another name; its bookmarks go along. A name already taken gets a number.
+    func renameFolder(_ old: String, to name: String) {
+        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty, wanted != old else { return }
+        change { library in
+            guard let index = library.folderNames.firstIndex(of: old) else { return }
+            let new = Self.freeName(wanted, taken: library.folderNames.filter { $0 != old })
+            library.folderNames[index] = new
+            for item in library.items.indices where library.items[item].folder == old { library.items[item].folder = new }
+        }
+    }
+
+    /// Removes a folder; its bookmarks stay, at the top.
+    func removeFolder(_ name: String) {
+        change { library in
+            library.folderNames.removeAll { $0 == name }
+            for item in library.items.indices where library.items[item].folder == name { library.items[item].folder = nil }
+        }
+    }
+
+    /// `name`, or `name 2`, `name 3`, … when it is taken.
+    static func freeName(_ name: String, taken: [String]) -> String {
+        guard taken.contains(name) else { return name }
+        var number = 2
+        while taken.contains("\(name) \(number)") { number += 1 }
+        return "\(name) \(number)"
+    }
+
+    private func change(_ body: (inout (items: [Bookmark], folderNames: [String])) -> Void) {
+        lock.lock()
+        loadIfNeeded()
+        var library = (items: items, folderNames: folderNames)
+        body(&library)
+        items = library.items
+        folderNames = library.folderNames
+        lock.unlock()
+        saveAndAnnounce()
+    }
+
     /// The bookmarks that fit what you typed, ranked as the history ranks pages (`BrowserHistory.rank`).
     func suggestions(for input: String, limit: Int = 3, now: Date = Date()) -> [BrowserSuggestion] {
         let entries = all.map { BrowserHistoryEntry(url: $0.url, title: $0.title, visits: 1, lastVisit: now) }
@@ -86,16 +173,18 @@ final class BrowserBookmarks: @unchecked Sendable {
         guard !loaded else { return }
         loaded = true
         guard let file, let data = try? Data(contentsOf: file),
-              let list = try? JSONDecoder().decode([Bookmark].self, from: data) else { return }
-        items = list
+              let library = try? JSONDecoder().decode(Library.self, from: data) else { return }
+        items = library.bookmarks
+        // A folder a bookmark names that went missing from the list still shows.
+        folderNames = library.folders + Set(library.bookmarks.compactMap(\.folder)).subtracting(library.folders).sorted()
     }
 
     private func saveAndAnnounce() {
         if let file {
             lock.lock()
-            let list = items
+            let library = Library(bookmarks: items, folders: folderNames)
             lock.unlock()
-            if let data = try? JSONEncoder().encode(list) {
+            if let data = try? JSONEncoder().encode(library) {
                 try? data.write(to: file, options: [.atomic])
                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
             }

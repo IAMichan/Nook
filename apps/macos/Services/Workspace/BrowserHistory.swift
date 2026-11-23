@@ -114,6 +114,25 @@ final class BrowserHistory: @unchecked Sendable {
         return Self.rank(all, for: input, limit: limit, now: now)
     }
 
+    /// The history window (⌘Y): pages newest visit first, only those whose address or title holds every word of
+    /// `query` (all of them for an empty query).
+    func recent(matching query: String = "", limit: Int = 500) -> [BrowserHistoryEntry] {
+        lock.lock()
+        loadIfNeeded()
+        let all = Array(entries.values)
+        lock.unlock()
+        return Self.recent(all, matching: query, limit: limit)
+    }
+
+    static func recent(_ entries: [BrowserHistoryEntry], matching query: String, limit: Int) -> [BrowserHistoryEntry] {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let fitting = words.isEmpty ? entries : entries.filter { entry in
+            let address = bare(entry.url).lowercased(), title = entry.title.lowercased()
+            return words.allSatisfy { address.contains($0) || title.contains($0) }
+        }
+        return Array(fitting.sorted { $0.lastVisit > $1.lastVisit }.prefix(limit))
+    }
+
     // MARK: Ranking
 
     /// The pages that fit `input`, best first. Every word must appear in the address or the title. A page whose address

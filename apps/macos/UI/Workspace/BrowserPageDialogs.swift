@@ -3,7 +3,8 @@ import SwiftUI
 import WebKit
 
 /// What a page asks of you in Nook's browser, answered as in Safari: its `alert`, `confirm` and `prompt` as a sheet on the
-/// window with the site's name, and its "Choose file" as the open panel. Shared by the tabs (`BrowserPage`) and the
+/// window with the site's name, its "Choose file" as the open panel, and its wish for your camera or microphone as a
+/// question you can answer once for the site. Shared by the tabs (`BrowserPage`) and the
 /// windows pages open (`BrowserSitePopup`). Without these WebKit answered for you: no message, "Cancel" to every
 /// question, and no file.
 @MainActor
@@ -44,6 +45,53 @@ enum BrowserPageDialogs {
             }
         }
         return panel.runModal() == .OK ? panel.urls : nil
+    }
+
+    /// A name for a bookmark or folder, asked over the key window; nil when you cancel.
+    static func askName(_ title: String, value: String) async -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: tr("button.ok"))
+        alert.addButton(withTitle: tr("button.cancel"))
+        let field = NSTextField(string: value)
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.keyWindow {
+            response = await withCheckedContinuation { done in alert.beginSheetModal(for: window) { done.resume(returning: $0) } }
+        } else {
+            response = alert.runModal()
+        }
+        return response == .alertFirstButtonReturn ? field.stringValue : nil
+    }
+
+    /// A site asks for your camera or microphone: the answer you saved for it (`BrowserSitePermissions`), or else a
+    /// question naming the site and what it wants, with "Remember for this site". macOS asks Nook for the device itself
+    /// the first time on top of this.
+    static func media(_ type: WKMediaCaptureType, origin: WKSecurityOrigin, in webView: WKWebView) async -> WKPermissionDecision {
+        let kinds: [BrowserSitePermissions.Kind]
+        let questionKey: String
+        switch type {
+        case .camera: (kinds, questionKey) = ([.camera], "browser.permission.camera")
+        case .microphone: (kinds, questionKey) = ([.microphone], "browser.permission.microphone")
+        case .cameraAndMicrophone: (kinds, questionKey) = ([.camera, .microphone], "browser.permission.cameraAndMicrophone")
+        @unknown default: return .prompt
+        }
+        let host = origin.host
+        if let saved = BrowserSitePermissions.shared.decision(host: host, kinds: kinds) { return saved ? .grant : .deny }
+        let alert = NSAlert()
+        alert.messageText = tr(questionKey, host)
+        alert.informativeText = tr("browser.permission.detail")
+        alert.addButton(withTitle: tr("browser.permission.allow"))
+        alert.addButton(withTitle: tr("browser.permission.deny"))
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = tr("browser.permission.remember")
+        let allowed = await run(alert, in: webView) == .alertFirstButtonReturn
+        if alert.suppressionButton?.state == .on {
+            BrowserSitePermissions.shared.remember(host: host, kinds: kinds, allowed: allowed)
+        }
+        return allowed ? .grant : .deny
     }
 
     private static func make(_ message: String, frame: WKFrameInfo) -> NSAlert {

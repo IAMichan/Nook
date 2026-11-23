@@ -737,7 +737,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
             return true
         case .reopenTab:
             return store.reopenClosedTab()
-        case .focusAddress, .find:
+        case .focusAddress, .find, .history, .bookmarks:
             return false
         }
     }
@@ -826,6 +826,11 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
                  initiatedByFrame frame: WKFrameInfo) async -> [URL]? {
         await BrowserPageDialogs.chooseFiles(parameters, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+        await BrowserPageDialogs.media(type, origin: origin, in: webView)
     }
 
     /// A page that opens a window of its own (`window.open`, such as "Continue with Google") gets one, tied to this
@@ -1013,6 +1018,8 @@ struct BrowserView: View {
     @State private var finding = false
     @State private var findText = ""
     @State private var findRequest = BrowserFindBar.Request()
+    /// Your history or bookmarks over the page (⌘Y, ⌥⌘B), until you open one or go back.
+    @State private var library: BrowserLibraryView.Section?
     /// Your bookmarks, read again when one is added or removed.
     @State private var bookmarks: [BrowserBookmarks.Bookmark] = BrowserBookmarks.shared.all
     /// Selecting elements on the page: each one you click goes to the composer as a snippet until you stop.
@@ -1082,6 +1089,7 @@ struct BrowserView: View {
                 ToolbarIconButton("cursorarrow", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
                                   enabled: store.webView.url != nil, selected: picking) { annotate() }
                 BrowserExtensionButtons(store: store)
+                BrowserLibraryButton(store: store) { library = $0 }
                 BrowserDownloadsButton()
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
@@ -1134,10 +1142,20 @@ struct BrowserView: View {
                                          message: tr("workbench.browser.emptyMessage"), action: nil)
                             if !servers.isEmpty { serverList }
                             if !bookmarks.isEmpty { bookmarkList }
+                            libraryLinks
                         }
                         // Clicks on the note stay on it, not on the hidden page under it.
                         .contentShape(Rectangle())
                     }
+                }
+                // Your history or bookmarks, over the page until you open one or go back to it.
+                .overlay {
+                    if library != nil {
+                        BrowserLibraryView(store: store, section: $library)
+                    }
+                }
+                .onChange(of: library) { _, shown in
+                    if shown == nil { store.webView.window?.makeFirstResponder(store.webView) }
                 }
         }
         // Over the page, under the address bar: the pages you visited that fit what you type.
@@ -1161,6 +1179,10 @@ struct BrowserView: View {
             case .find(let step):
                 finding = true
                 findRequest = BrowserFindBar.Request(count: findRequest.count + 1, step: step)
+            case .history:
+                library = library == .history ? nil : .history
+            case .bookmarks:
+                library = library == .bookmarks ? nil : .bookmarks
             case .newTab, .closeTab, .reopenTab:
                 break
             }
@@ -1363,6 +1385,15 @@ struct BrowserView: View {
             }
         }
         .frame(maxWidth: 320)
+        .padding(.bottom, NookTheme.Spacing.xl)
+    }
+
+    /// The way to all your history and bookmarks from an empty tab.
+    private var libraryLinks: some View {
+        HStack(spacing: NookTheme.Spacing.lg) {
+            NookGhostButton(title: tr("browser.history.title"), symbol: "clock", compact: true, height: 24) { library = .history }
+            NookGhostButton(title: tr("browser.bookmarks.all"), symbol: "star", compact: true, height: 24) { library = .bookmarks }
+        }
         .padding(.bottom, NookTheme.Spacing.xl)
     }
 

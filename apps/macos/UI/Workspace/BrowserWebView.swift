@@ -11,12 +11,13 @@ import WebKit
 /// - ⌘T opens a tab, ⌘W closes this one (the last tab stays, so ⌘W then does what it does elsewhere), ⌘⇧T opens the tab
 ///   you closed last
 /// - ⌘P prints the page
+/// - ⌘Y shows your history, ⌥⌘B your bookmarks (`BrowserLibraryView`)
 ///
 /// Its right-click menu opens a link in a new tab instead of a new window.
 final class BrowserWebView: WKWebView {
     /// What the browser around the page does for a key; nil in a page's own window, where these keys do nothing.
     enum Request {
-        case newTab, closeTab, reopenTab, focusAddress
+        case newTab, closeTab, reopenTab, focusAddress, history, bookmarks
         /// Finds on the page: 0 opens the find bar, 1 and -1 go to the next and previous match.
         case find(Int)
     }
@@ -56,9 +57,11 @@ final class BrowserWebView: WKWebView {
 
     private func handle(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard flags.contains(.command), !flags.contains(.control), !flags.contains(.option),
+        guard flags.contains(.command), !flags.contains(.control),
               let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
         let shift = flags.contains(.shift)
+        // ⌥⌘B is the one key with Option: the bookmarks, as in Safari and Chrome.
+        if flags.contains(.option) { return key == "b" && !shift ? ask(.bookmarks) : false }
         switch (key, shift) {
         case ("r", false): reload()
         case ("r", true): reloadFromOrigin()
@@ -71,6 +74,7 @@ final class BrowserWebView: WKWebView {
         case ("p", false): printPage()
         case ("l", false): return ask(.focusAddress)
         case ("f", false): return ask(.find(0))
+        case ("y", false): return ask(.history)
         case ("g", let back): return ask(.find(back ? -1 : 1))
         case ("t", false): return tabKey?(.newTab) ?? false
         case ("t", true): return tabKey?(.reopenTab) ?? false

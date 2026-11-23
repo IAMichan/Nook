@@ -119,6 +119,11 @@ final class BrowserSitePopup: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         await BrowserPageDialogs.chooseFiles(parameters, in: webView)
     }
 
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+        await BrowserPageDialogs.media(type, origin: origin, in: webView)
+    }
+
     /// A window this window opens in turn (a second step of a sign-in) opens in this one.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
