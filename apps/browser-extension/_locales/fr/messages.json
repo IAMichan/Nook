@@ -110,6 +110,9 @@
   "presenceWorking": {
     "message": "Nook travaille dans cet onglet"
   },
+  "presenceAgentWorking": {
+    "message": "$1 travaille dans cet onglet"
+  },
   "presenceStop": {
     "message": "Arrêter"
   },

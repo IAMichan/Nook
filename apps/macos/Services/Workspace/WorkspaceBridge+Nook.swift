@@ -135,7 +135,11 @@ extension WorkspaceBridge {
         // switch per site, or "Always" on an earlier card), unless it pays, sends or deletes; any other comes back here
         // for the card below, which then also offers "Always on <site>".
         var alwaysSite: String?
-        if let step = await BrowserExtensionConnector.runIfTrusted(name, input, summary: spec.summarize(input)) {
+        // The page glows in the colors of the agent that drives it, as Nook's own browser does.
+        let driver = BrowserExtensionConnector.driver(caller.agent)
+        if let step = await BrowserExtensionConnector.$driver.withValue(driver, operation: {
+            await BrowserExtensionConnector.runIfTrusted(name, input, summary: spec.summarize(input))
+        }) {
             switch step {
             case .ran(let text):
                 app.store.audit(tool: name, args: AppModel.json(input), result: text)
@@ -169,9 +173,11 @@ extension WorkspaceBridge {
                 return .error(Self.refusal(.action))
             }
         }
-        let outcome = await BrowserExtensionConnector.$trust.withValue(trust) {
-            await BridgeChats.$withheldApps.withValue(keptOnMac(app)) {
-                await app.perform([PlannedAction(tool: name, input: input)])
+        let outcome = await BrowserExtensionConnector.$driver.withValue(driver) {
+            await BrowserExtensionConnector.$trust.withValue(trust) {
+                await BridgeChats.$withheldApps.withValue(keptOnMac(app)) {
+                    await app.perform([PlannedAction(tool: name, input: input)])
+                }
             }
         }
         if let failure = outcome.failure {

@@ -5,7 +5,7 @@
 import {
   ACT_METHODS, GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, approvalCard, approvalDecision, browserName,
   approvalNeeded, cleanLook, commandError, consoleText, mustAsk, pointOfNoReturn,
-  describeTabs, elementsCopy, isAnswering, isBlocked, isRestricted, looksLikePdf, mayPick, normalizeURL, panelMessageAllowed,
+  describeTabs, driverOf, elementsCopy, isAnswering, isBlocked, isRestricted, looksLikePdf, mayPick, normalizeURL, panelMessageAllowed,
   pdfCrop, pdfPointCopy, questionImages, reconnectDelay, serial, siteOf
 } from './lib/core.js';
 
@@ -267,7 +267,7 @@ async function perform(method, params, tab, command) {
       return agent(tab.id, method, params);
     case 'scroll': {
       await use(tab);
-      const [, result] = await Promise.all([presence(tab.id, 'busy'), agent(tab.id, method, { ...params, _from: cursors.get(tab.id) })]);
+      const [, result] = await Promise.all([presence(tab.id, 'busy', command?.by), agent(tab.id, method, { ...params, _from: cursors.get(tab.id) })]);
       keepCursor(tab.id, result);
       return result;
     }
@@ -288,7 +288,7 @@ async function perform(method, params, tab, command) {
       let after;
       try {
         // The strip goes up while the cursor already moves: the hold on the user's input is there long before the click.
-        [, result] = await Promise.all([presence(tab.id, 'busy'), agent(tab.id, method, { ...params, _from: cursors.get(tab.id) })]);
+        [, result] = await Promise.all([presence(tab.id, 'busy', command?.by), agent(tab.id, method, { ...params, _from: cursors.get(tab.id) })]);
         keepCursor(tab.id, result);
         // Typing a password or a sign-in code is the user's: Nook waits for them to sign in, then goes on.
         if (!result.ok && result.signIn) return waitForSignIn(tab.id, command, '');
@@ -353,7 +353,7 @@ async function open(params, tab, command) {
   }
   await use(tab);
   const loaded = await waitForLoad(tab.id, LOAD_TIMEOUT, since);
-  const [, state] = await Promise.all([presence(tab.id, 'busy'), afterLook(tab.id)]);
+  const [, state] = await Promise.all([presence(tab.id, 'busy', command?.by), afterLook(tab.id)]);
   const login = await signInWait(tab.id, command, `Opened ${loaded.url} in tab ${tab.id}.`, state);
   if (login) return login;
   // What can be used on it goes along, so the next step needs no chrome_find first.
@@ -595,20 +595,21 @@ async function pageForQuestion(tab) {
 /**
  * The strip on the page (page/presence.js): `busy` while Nook acts there (with a Stop button, and the user's own clicks
  * and keys on that page held back for a while), `signIn` while the user signs in, `release` when Nook is done.
+ * `by`: the coding agent that takes the step (`command.by`): the glow takes its logo's colors and the strip its name.
  */
-async function presence(tabId, mode = 'busy') {
+async function presence(tabId, mode = 'busy', by = null) {
   // A page on a site the user switched off (or that the tab was sent on to since) is never touched: no strip there,
   // and the user's input there is never held.
   if (mode !== 'release' && !(await mayRead(tabId))) return;
   try {
     const call = () => chrome.scripting.executeScript({
       target: { tabId },
-      func: (name, hold) => {
+      func: (name, hold, driver) => {
         if (!globalThis.__nookPresence) return 'missing';
-        globalThis.__nookPresence[name]?.(hold);
+        globalThis.__nookPresence[name]?.(hold, driver);
         return 'done';
       },
-      args: [mode, BUSY_HOLD]
+      args: [mode, BUSY_HOLD, driverOf(by)]
     });
     // The strip stays in the page until it reloads: injected only when it is not there yet (one trip instead of two).
     // Releasing needs nothing new on a page that never had the strip.
@@ -695,7 +696,7 @@ async function waitForSignIn(tabId, command, before = '', site = '') {
     await presence(tabId, 'release');
     return { ok: false, error: `The page asked to sign in and the user did not within ${SIGN_IN_WAIT / 60_000} minutes. Ask them to sign in, then try again.` };
   }
-  await presence(tabId, 'busy');
+  await presence(tabId, 'busy', command?.by);
   const look = await glance(tabId);
   return {
     ok: true,

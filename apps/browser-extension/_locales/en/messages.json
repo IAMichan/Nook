@@ -110,6 +110,9 @@
   "presenceWorking": {
     "message": "Nook is working in this tab"
   },
+  "presenceAgentWorking": {
+    "message": "$1 is working in this tab"
+  },
   "presenceStop": {
     "message": "Stop"
   },
