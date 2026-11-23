@@ -96,6 +96,8 @@ struct AgentRunPanel: View {
     @Environment(\.sessionOutputs) var outputsLink
     @Environment(\.sessionSide) var sideLink
     @Environment(\.sessionHeaderInset) var headerInset
+    /// The sessions open as tabs: the header shows them where the folder and title were.
+    @Environment(\.sessionTabs) var sessionTabs
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State var seenOutputs: Set<String>?
     /// The subagents (`Subagents.signature`) you have seen, for the dot on the Subagents tab; nil until the session shows.
