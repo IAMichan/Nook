@@ -38,6 +38,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Fixed
 
+- A long agent session opens about twice as fast: recognising its tests and builds, finding its pull request link
+  and reading the files each turn changed no longer go through every command and output character by character, and
+  the changed-files cards are no longer worked out again on every redraw.
 - A long agent session in which the agent read, ran and edited a lot no longer turns slow and choppy: each new step no
   longer reads the whole conversation again, and opening or closing what the agent did while it worked ("Worked for …",
   "Ran 3 commands") is instant instead of freezing Nook for a moment.

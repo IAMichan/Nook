@@ -57,6 +57,10 @@ final class RunTimelineDerived {
     private var blockCache = TimelineBlockCache()
     /// Each finished turn's changed files, so only a turn whose events changed is read again.
     private var turnCache = TurnDiffCache()
+    /// The turns with what git counted for them (`countedTurns`), made again only when the turns, the counts or the
+    /// folder changed.
+    private var counted: (revision: Int, lines: [String: TurnLines], directory: String?,
+                          all: [TurnDiff], byID: [String: TurnDiff])?
     /// The last search in the find bar, keyed by query + timeline version + detail filter.
     private var found: (query: String, version: UInt64, detail: TimelineDetail?, result: TimelineSearchResult)?
 
@@ -84,6 +88,23 @@ final class RunTimelineDerived {
         let result = TimelineSearch.search(events, query: query)
         found = (query, version, detail, result)
         return result
+    }
+
+    /// The finished turns with the lines git counted (`lines`, by turn id) in place of those read from the agent's edits:
+    /// every turn (`all`, the empty ones left out) and by id, for the cards. The panel asks on every redraw, for the
+    /// outputs tab and for each card it draws; counting a long session's turns again each time (every file's path made
+    /// relative, for every turn) was a steady cost of scrolling and hovering.
+    func countedTurns(_ lines: [String: TurnLines], directory: String?) -> (all: [TurnDiff], byID: [String: TurnDiff]) {
+        if let counted, counted.revision == revision, counted.directory == directory, counted.lines == lines {
+            return (counted.all, counted.byID)
+        }
+        var byID: [String: TurnDiff] = [:]
+        for turn in turns {
+            byID[turn.id] = lines[turn.id].map { turn.counted($0, relativeTo: directory) } ?? turn
+        }
+        let all = turns.compactMap { byID[$0.id] }.filter { !$0.isEmpty }
+        counted = (revision, lines, directory, all, byID)
+        return (all, byID)
     }
 
     /// The turn an event is in (by `TimelinePresentation.split` of the shown events), for revealing it in the window.

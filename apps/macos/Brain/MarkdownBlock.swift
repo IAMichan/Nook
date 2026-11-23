@@ -160,10 +160,23 @@ enum MarkdownBlock: Equatable {
 
     /// The last GitHub pull request link in a text, tagged with `<pr-created>` or written out.
     static func lastGitHubPullRequest(in text: String) -> URL? {
-        guard text.contains("/pull/"), let rx = gitHubPullRequestRegex,
+        guard containsBytes(text, "/pull/"), let rx = gitHubPullRequestRegex,
               let match = rx.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
               let range = Range(match.range, in: text) else { return nil }
         return URL(string: String(text[range]))
+    }
+
+    /// Whether a text holds a needle, compared as bytes (`memmem`): `String.contains` walked megabytes of tool output
+    /// character by character. Its own, not `SearchText.contains`: this file is part of the iPhone app too, which has no
+    /// search.
+    private static func containsBytes(_ haystack: String, _ needle: String) -> Bool {
+        var haystack = haystack, needle = needle
+        return haystack.withUTF8 { text in
+            needle.withUTF8 { wanted in
+                guard let base = text.baseAddress, let pattern = wanted.baseAddress, wanted.count <= text.count else { return false }
+                return memmem(base, text.count, pattern, wanted.count) != nil
+            }
+        }
     }
 
     /// "owner/repo" and the number of a GitHub pull request or GitLab merge request link.

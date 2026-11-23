@@ -43,17 +43,23 @@ enum Verification {
     private static let separators = CharacterSet(charactersIn: ";|&\n")
 
     private static func segmentKind(_ segment: String) -> VerificationCheck.Kind? {
+        // Its first word alone rules out nearly every segment (a line of a script the agent runs): only then is it
+        // split into words, which for a long script was most of the time a long session took to open.
+        let firstWord = segment.drop { $0 == " " || $0 == "\t" }.prefix { $0 != " " && $0 != "\t" }
+        if !firstWord.contains("="), !wrappers.contains(String(firstWord)), !mayCheck(firstWord) { return nil }
         var words = segment.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
         // Leading environment assignments ("CI=1 npm test") and wrappers say nothing about the command.
-        while let first = words.first, first.contains("=") && !first.hasPrefix("-") || ["sudo", "env", "time", "exec", "nice"].contains(first) {
+        while let first = words.first, first.contains("=") && !first.hasPrefix("-") || wrappers.contains(first) {
             words.removeFirst()
         }
         guard let first = words.first else { return nil }
         // Not through URL: this runs for every command of a timeline, on the main thread, each time a turn changes.
         let head = (first.split(separator: "/").last.map(String.init) ?? first).lowercased()
+        guard mayCheck(Substring(first)) else { return nil }
+        let shell = shells.contains(head)
         let rest = words.dropFirst().map { $0.lowercased() }
         // "bash scripts/core-tests.sh": the script is the command.
-        if ["bash", "sh", "zsh"].contains(head), let script = rest.first, script.hasSuffix(".sh") {
+        if shell, let script = rest.first, script.hasSuffix(".sh") {
             return segmentKind(rest.joined(separator: " "))
         }
         if let kind = tool(head) { return head == "prettier" && !rest.contains("--check") ? nil : kind }
@@ -83,6 +89,16 @@ enum Verification {
         return nil
     }
 
+    private static let wrappers: Set<String> = ["sudo", "env", "time", "exec", "nice"]
+    private static let shells: Set<String> = ["bash", "sh", "zsh"]
+
+    /// Whether a command that starts with `word` can be a check at all: a shell running a script, a checking tool, a
+    /// build tool, or a script of the project's own.
+    private static func mayCheck(_ word: Substring) -> Bool {
+        let head = (word.split(separator: "/").last ?? word).lowercased()
+        return shells.contains(head) || tool(head) != nil || runners.contains(head) || head.hasSuffix(".sh") || word.hasPrefix("./")
+    }
+
     /// A tool that does one kind of check by its name.
     private static func tool(_ name: String) -> VerificationCheck.Kind? {
         if testRunners.contains(name) { return .tests }
@@ -101,10 +117,25 @@ enum Verification {
 
     /// A shell command in the timeline that checks the agent's work, and how it went.
     static func check(_ event: RunEvent) -> VerificationCheck? {
-        guard event.kind == .tool, ToolCategory.of(tool: event.tool ?? "") == .command,
-              let command = AgentActivity.command(event), let kind = kind(command: command) else { return nil }
+        guard event.kind == .tool, ToolCategory.of(tool: event.tool ?? "") == .command else { return nil }
+        // Worked out once per call (its input does not change once sent; its size says when it does): each call is asked
+        // again for its group's tally, its turn's fold and its row, and a long session lays out thousands of them as it
+        // opens. Keyed by the call, not its command: hashing a long script costs as much as reading it.
+        let key = event.id.uuidString + "|" + String(event.detail?.utf8.count ?? -1)
+        let found: KnownCheck
+        if let known = known.value(key) {
+            found = known
+        } else {
+            let command = AgentActivity.command(event)
+            found = KnownCheck(command: command, kind: command.flatMap { kind(command: $0) })
+            known.store(key, found)
+        }
+        guard let command = found.command, let kind = found.kind else { return nil }
         return VerificationCheck(kind: kind, outcome: outcome(event.state), command: command)
     }
+
+    private struct KnownCheck { var command: String?; var kind: VerificationCheck.Kind? }
+    private static let known = KindMemo<KnownCheck>(limit: 16_384)
 
     /// One check per kind, the latest of each (a test run that failed and then passed passed), most important first.
     static func latest(_ checks: [VerificationCheck]) -> [VerificationCheck] {
@@ -115,6 +146,26 @@ enum Verification {
 
     static func checks(_ events: [RunEvent]) -> [VerificationCheck] {
         latest(events.compactMap(check))
+    }
+}
+
+/// A small memo from text to what was worked out from it, safe from any thread; it forgets everything once full.
+final class KindMemo<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: Value] = [:]
+    private let limit: Int
+
+    init(limit: Int) { self.limit = limit }
+
+    func value(_ key: String) -> Value? {
+        lock.lock(); defer { lock.unlock() }
+        return values[key]
+    }
+
+    func store(_ key: String, _ value: Value) {
+        lock.lock(); defer { lock.unlock() }
+        if values.count >= limit { values.removeAll(keepingCapacity: true) }
+        values[key] = value
     }
 }
 

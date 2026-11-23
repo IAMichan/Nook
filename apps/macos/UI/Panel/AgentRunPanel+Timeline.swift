@@ -23,14 +23,12 @@ extension AgentRunPanel {
 
     /// The finished turns that changed files, with the files and lines git counted where it did.
     func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
-        currentDerived(run).turns
-            .map { counted($0, run: run) }
-            .filter { !$0.isEmpty }
+        currentDerived(run).countedTurns(countedLines, directory: run.workingDirectory).all
     }
 
     /// The turn with what git counted for it, when it did.
     private func counted(_ turn: TurnDiff, run: WorkspaceRun) -> TurnDiff {
-        countedLines[turn.id].map { turn.counted($0, relativeTo: run.workingDirectory) } ?? turn
+        currentDerived(run).countedTurns(countedLines, directory: run.workingDirectory).byID[turn.id] ?? turn
     }
 
     /// Counts the finished turns with git, between the snapshots around them; a turn counted between both of its

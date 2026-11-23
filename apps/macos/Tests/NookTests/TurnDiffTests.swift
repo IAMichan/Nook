@@ -165,4 +165,24 @@ final class TurnDiffTests: XCTestCase {
         XCTAssertFalse(TurnDiff(id: "e", number: 2).counted(TurnLines(counts: counts, complete: true), relativeTo: "/p").isEmpty,
                        "a turn that only ran commands gets its files from git")
     }
+
+    /// Merging goes by the file's path, also after the files changed in another way (git's count adds files).
+    func testMergingFindsEachFileByItsPath() {
+        var turn = TurnDiff(id: "t", number: 1)
+        for round in 0..<3 {
+            for name in ["A", "B", "C"] {
+                turn.merge(TurnDiff.File(path: "/p/\(name).swift", lines: EditLines(added: 1, removed: round)))
+            }
+        }
+        XCTAssertEqual(turn.files.map(\.path), ["/p/A.swift", "/p/B.swift", "/p/C.swift"])
+        XCTAssertEqual(turn.files.map(\.lines.added), [3, 3, 3])
+        turn.files.insert(TurnDiff.File(path: "/p/Z.swift"), at: 0)
+        turn.merge(TurnDiff.File(path: "/p/B.swift", lines: EditLines(added: 2, removed: 0)))
+        turn.merge(TurnDiff.File(path: "/p/Z.swift", lines: EditLines(added: 5, removed: 0)))
+        XCTAssertEqual(turn.files.map(\.path), ["/p/Z.swift", "/p/A.swift", "/p/B.swift", "/p/C.swift"])
+        XCTAssertEqual(turn.files.map(\.lines.added), [5, 3, 5, 3])
+        var same = TurnDiff(id: "t", number: 1)
+        same.files = turn.files
+        XCTAssertEqual(same, turn, "how the files were made does not make two turns different")
+    }
 }
