@@ -791,6 +791,8 @@ final class WorkspaceManager: ObservableObject {
         if events[id] == nil, !shown {
             timelineStore.readingToSend.insert(id)
             let continues = QueuedMessage.Origin.continuesWork(origin)
+            // Shown now, while the timeline is read (the bubble joins it once it is here).
+            let early = showWhilePreparing(id, clean)
             whenTimelineLoaded(id) { [weak self] in
                 guard let self, self.timelineStore.readingToSend.remove(id) != nil, let run = self.run(id) else { return }
                 // A turn started meanwhile: the message goes after it, as it would have had it come a moment later.
@@ -798,13 +800,27 @@ final class WorkspaceManager: ObservableObject {
                     self.enqueue(id, text: clean, origin: origin)
                     return
                 }
+                // Stopped while it was read: the message stays in the conversation, unsent.
+                if early, run.status != .preparing { return }
                 if continues { self.continuingTurns.insert(id) }
                 defer { self.continuingTurns.remove(id) }
-                self.startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+                self.startTurn(id, sending: clean, shown: shown || early, run: run, executable: executable)
             }
             return true
         }
         return startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+    }
+
+    /// Your message shows in the conversation at once and the session reads as working while Nook gets it ready for the
+    /// turn (its removed worktree made again, its released timeline read back), as it does while the last snapshot is
+    /// made: it never sits unseen for seconds. A chat you settled comes back right away. False for a goal command, which
+    /// Codex shows its own way (`codexGoalTurn`): that one waits unseen as before.
+    func showWhilePreparing(_ id: UUID, _ clean: String) -> Bool {
+        guard let run = run(id), run.canContinue, SessionGoals.command(in: clean) == nil else { return false }
+        append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
+        update(id) { $0.move(to: .preparing) }
+        FinishedSessions.shared.reopen(FinishedSessions.key(run: run))
+        return true
     }
 
     /// The end of `send`, once the timeline is in memory: the turn for the message `clean` starts.
