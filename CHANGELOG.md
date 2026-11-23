@@ -10,6 +10,15 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+### Changed
+
+- A session tab whose agent is working now shows a grey dot that gently pulses, instead of a still blue one.
+- The session tabs also show above a new session, so the sessions you have open stay a click away while you start
+  another.
+- Switching to a session settles at once: the line counts on its turn cards now come in together, instead of one
+  by one, each drawing the whole session again for seconds after the switch. Counts from an earlier visit show
+  straight away.
+
 ### Fixed
 
 - Scrolling back through a long agent conversation no longer jumps: rows that scrolled back into view were taken for
