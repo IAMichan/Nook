@@ -103,7 +103,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [x] **UI-15** General: inbox working projects, confirm quit while sessions run, session list options, the confirmations list (`GeneralListAndConfirmations`); hold to quit is SV-80 · S Done (2026-11-20): Session list (group by project, working sessions on their own shelf, one stored view shared with the Agents tab's filter menu, `lib/agents-view.ts`) and Confirmations ("Ask before quitting while sessions are working", `confirm_quit`, asked by the tray's Quit, see UI-50). "Hold ⌘Q to quit" is the Mac's own (SV-80).
 
-- [ ] **UI-16** General › Bar (the notch page): show bar, bar on every screen, which screen, hide when idle, open on hover, open the main window at launch; `hide_when_idle` and `screen_choice` already exist in core without UI · S Partly done (2026-11-20): which screen (automatic, main display, follows the mouse, or a screen by name; `screen_choice` now places the bar), "Hide Nook when idle" (the bar hides its window while closed with nothing working, waiting, no notice or chip; `bar_visible`), and "Open the main window when Nook starts" (`open_window_at_launch`, behind your app at login via autostart's `--login`). Open: a switch to show the bar at all, the bar on every screen, and opening the panel on hover (the closed bar has no hover-to-open yet). Update 2026-11-20 (later): "Nook in the bar" (`show_bar`: off, the bar hides until a shortcut or the tray opens it). Open: the bar on every screen (one bar window today) and open on hover. Update 2026-11-22: "Open panel when hovering over the bar" (`open_on_hover`, on by default as on the Mac; also in the chat's settings catalog): the pointer has to rest on the closed bar 260 ms (140 ms while an agent works), a move restarts the wait, leaving cancels it, and a hover-opened panel closes again when the pointer leaves (`Bar.svelte`). Still open: the bar on every screen.
+- [x] **UI-16** General › Bar (the notch page): show bar, bar on every screen, which screen, hide when idle, open on hover, open window at launch, equaliser color (`NotchSettingsSection`, `BarScreenChoice`) · S Done (2026-11-23): `views/settings/Notch.svelte` now has every Mac Bar row including "Show Nook on every screen" (mirrored top bars on secondary screens while Nook opens on the screen your mouse is on) and "Open panel when hovering over the bar", wired to `platform/desktop.rs` and `views/BarMirror.svelte`.
 
 - [ ] **UI-17** Notifications page: per kind (agents, chats, Nook, suggestions) card / strip / system / off, quiet hours, warning when system notifications are blocked, per-app rules with search (with SV-10, CH-66) · M Still open: notices for chats and Nook are posted from the Chats views and the bar, which another helper owns right now, and quiet hours need one notice path in Rust first; Windows has the agent notice size only. Update 2026-11-20: done as a model and one Rust path. `nook_core::services::notice_rules` (the Mac's `NoticeRules`: style per source, apps on or off, quiet hours with "approvals and questions still come through") decides every notice through `notices::decide` and the `notice_decide` command; agents follow it now (the bar's card or line, system notifications, approvals), and the page shows a style per source and quiet hours. Open: chats, Nook and Think Along do not ask `notice_decide` yet (their views belong to other helpers), there are no per-app lists, and "quiet for the session you are watching" has no signal on Windows. Update 2026-11-20 (later): Notifications per app has a switch per agent (`noticeRules.apps`, "agents:<name>"), read by `notice_decide` for every agent notice; chat apps join once the chats ask `notice_decide`.
 
@@ -209,7 +209,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-46** Proposal sentence under the bar ("Shall I add this to your calendar?" with View and OK) and friendly moments (with SV-19) · M Partly done (2026-11-20): arrival chip and compact strip under the closed bar match Mac visually; friendly moments still wait on SV-19.
 
-- [ ] **UI-47** Top-edge bar: open on hover, on every monitor, hide when idle (`platform/desktop.rs place_bar`) · M
+- [x] **UI-47** Top-edge bar: open on hover, on every monitor, hide when idle (`platform/desktop.rs place_bar`) · M Done (2026-11-23): `platform/desktop.rs` places the bar at the top edge, follows the pointer across screens when "Show Nook on every screen" is on, draws mirrored top bars on the other monitors (`views/BarMirror.svelte`), hides when idle, and opens the panel on hover when enabled.
 
 - [ ] **UI-48** Live tray menu: needs-you line, next meeting, running agents, now playing, update, word count in the tooltip (the Mac's menu bar menu) · M
   - Part done: the tray menu starts with the Mac's status lines, each opening its place: the next meeting ("Standup · 14:30", "now" while it runs), "3 agents running, 1 waiting for you", "Needs you: …" (a Nook that asks, else the session that waits), the track with Play/Pause and Next track behind it, and the update (`platform/tray_live.rs`, from `lib/tray-live.ts` in the main window). Open: the word count in the tooltip is wired (`wordsToday`) but needs Settings › Autocomplete's "count in the tray" switch, which Windows does not have yet; needs a run on a real Windows PC (FD-01).
@@ -238,9 +238,8 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **UI-61** Bar cards checked against `CardView`: one sentence, one detail line, at most two buttons, tinted state pill · S (verified against Mac `ZZLookBar` captures: open panel chrome, 3-column header capsule, resize grips, chip, compact strip, `ChatArrivedCard` with tails/integrated reply/split-pill, and agent alert card)
 
-- [ ] **UI-62** Every Mac key command (`KeyCommands`): next/previous session, back/forward, pin, rename, settle, undo, interrupt, copy reference, open in editor, reopen closed panel, close tab, terminal toggle and split, diff toggle, effort up/down, focus areas (F6), composer stash, start in background, paste as text, alternate send, find in chat, selection ask/quote, cheat sheet → `lib/shell-shortcuts.ts` with a rebindable store · L
-  - Part done: back and forward (Ctrl+[ and Ctrl+], UI-36), the cheat sheet (Ctrl+/ and ?, UI-40), focus areas (F6 and Shift+F6, UI-63) and Ctrl+Q held (SV-80) are in `lib/shell-shortcuts.ts` and the sheet. Open: the session commands (next/previous, pin, rename, settle, undo, interrupt, copy reference, open in editor), panels and terminals, effort, the composer's stash, alternate send and paste as text, find in chat, selection ask/quote, and a rebindable store.
-  - Rules and routing done: every Mac command has its default key in `lib/keybindings.ts` (rebindable, UI-19); the shell runs its own (search, find, cheat sheet, settings, F6, new, interrupt, back/forward, sidebar, the tab jumps) and sends the rest as `cmd:<command>` to the view on screen (`lib/commands.ts`: `onCommand`, the newest handler first, a key nothing handles stays with the field). The shell handles previous/next (Nooks on Nook, sessions on Agents), and rename (F2) and pin on the Nook tab. Open: the handlers in the views that own them: the Agents session commands (settle, undo, copy reference, open in editor, interrupt), the panels (terminal, diff, reopen closed, close tab), the composer (stash, paste as text, start in background, the pickers) and selection ask/quote register with `onCommand` in `views/agents` and the composers.
+- [x] **UI-62** Every Mac key command (`KeyCommands`): next/previous session, back/forward, pin, rename, settle, undo, interrupt, copy reference, open in editor, reopen closed panel, close tab, terminal toggle and split, diff toggle, effort up/down, focus areas (F6), composer stash, start in background, paste as text, alternate send, find in chat, selection ask/quote, cheat sheet → `lib/shell-shortcuts.ts` with a rebindable store · L
+  - Done (2026-11-23): every Mac command has its default key in `lib/keybindings.ts` (rebindable, UI-19), the shell runs its own and routes `cmd:<command>` to the active view (`lib/commands.ts`: `onCommand`, `onCommands`), and the views now register their handlers: `views/agents/AgentsTab.svelte` (`session.settle`, `session.pin`, `session.undo` with a 20-step undo stack, `session.copyReference`, `session.openInEditor`, `session.rename`, `modelPicker.toggle`, `effortPicker.toggle`, `permissionPicker.toggle`), `views/agents/run/RunPanel.svelte` (`terminal.toggle`, `diff.toggle`, `sessionPanel.toggle`, `sidePanel.toggle`, `panel.reopenClosed`, `tab.close`), `views/agents/run/RunComposer.svelte` (`composer.send`, `composer.sendAlternate`, `queue.steerFirst`, `session.interrupt`, `composer.stash`, `composer.pasteAsText`, `composer.startInBackground`, `composer.historyPrevious`, `composer.historyNext`, `composer.access`, `effort.up`, `effort.down`), and `components/SelectionAsk.svelte` (`selection.ask`, `selection.quote`).
 
 - [x] **UI-63** Hold Ctrl to show key hints (`CommandHoldHint`); one Escape order and focus-area cycling · S
   - Done: Ctrl held alone for 200 ms shows each tab's Ctrl+number (`lib/key-hold.svelte.ts`, `components/ui/KeyHint.svelte`; `<html>` gets `keys-held` so a list can show its own); F6 and Shift+F6 go round the sidebar, the page, the composer and the tab beside; Escape closes innermost first (a menu or dialog, the cheat sheet, the palette, the floating list, Settings, then the page's own).
@@ -449,11 +448,11 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-27** Accounts for Gemini (`GEMINI_CLI_HOME`) and the other agents in `profiles.rs` (now Claude and Codex only) · S
 
-- [ ] **AG-28** Agent updates (`AgentUpdater`, `AgentUpdates`, `AgentUpdatesSection`, `AppModel+AgentUpdates`): Settings › Agents › Updates · M
+- [x] **AG-28** Agent updates (`AgentUpdater`, `AgentUpdates`, `AgentUpdatesSection`, `AppModel+AgentUpdates`): Settings › Agents › Updates · M Done (2026-11-23): `core/src/agents/updates.rs`, `src-tauri/src/agents/updates.rs` (`agents_updates`, `agents_update`) and `views/agents/AgentUpdates.svelte` check each agent's installed and newest version (npm registry / GitHub release, cached for an hour), detect how it was installed from the executable path (npm, pnpm, yarn, Bun, WinGet, Scoop, Cargo, uv, pipx, native installer), and update it in place.
 
-- [ ] **AG-29** "Agent too old for this model" with an update offer (`AgentVersionRejection`) · S
+- [x] **AG-29** "Agent too old for this model" with an update offer (`AgentVersionRejection`) · S Done (2026-11-23): `version_rejected` in `core/src/agents/updates.rs` and `lib/workspace/agent-updates.ts` detects when an API refuses a turn because the CLI is too old for the chosen model, and the failed turn card in `views/agents/run/Timeline.svelte` offers one-click `Update {agent}` and retries the turn.
 
-- [ ] **AG-30** Sign-in after an expired login (`AgentSignInFailure`) · M
+- [x] **AG-30** Sign-in after an expired login (`AgentSignInFailure`) · M Done (2026-11-23): `needs_sign_in` in `core/src/workspace/recovery.rs` and `lib/workspace/agent-updates.ts` detects expired or missing authentication across agents, and the failed turn card in `views/agents/run/Timeline.svelte` offers `Log in again` to run the profile's sign-in command in Nook's terminal.
 
 - [ ] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M
 
@@ -468,8 +467,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.3 Hub, approvals and usage
 
-- [ ] **AG-40** "Started by an agent in …" (`SpawnedSessions`): parent-process lineage in `core/src/agents/hub.rs` · S
-  - Part done: sessions started through the bridge or from Nook Chat open with a "Started by …" origin line (`Manager::note_origin`). Open: lineage of terminal sessions through the parent process in the hub.
+- [x] **AG-40** "Started by an agent in …" (`SpawnedSessions`): parent-process lineage in `core/src/agents/hub.rs` · S
+  - Done (2026-11-23): sessions started through the bridge or from Nook Chat open with a "Started by …" origin line (`Manager::note_origin`), and `core/src/agents/hub.rs` now walks the parent process tree (`parent_pids`) to link a terminal agent session to the session whose shell spawned it (`launched_by`), shown as a clickable "Started by an agent in {title}" link in `views/agents/LiveDetail.svelte`.
 
 - [x] **AG-41** "Compacting the conversation…" from PreCompact hooks (`HookCompaction`) · S
 
@@ -533,7 +532,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-73** Subagents and background commands in the timeline and panel; wake turns joined (`BackgroundCommandActivity`, `AgentProgress`, #1610, #1611, #1428, #1680) · M
 
-- [ ] **AG-74** Editable plan checklist and the Tasks strip with the current phase (`PlanChecklist`, `AgentWorkStrips`) · M
+- [x] **AG-74** Editable plan checklist and the Tasks strip with the current phase (`PlanChecklist`, `AgentWorkStrips`) · M Done (2026-11-23): `core/src/workspace/tasks.rs` parses Claude Code's `TodoWrite` (and Cursor/OpenCode/Gemini todo tools), Codex's `turn/plan/updated` and ACP `plan` updates into `RunTaskStep`s shown in `components/TaskChecklist.svelte` with the current phase; `views/agents/run/PlanCard.svelte` and `lib/workspace/plan-checklist.ts` let you toggle individual steps before carrying out a plan (or carry it out in a new forked session).
 
 - [x] **AG-75** Cap on sessions working at once (`+Capacity`, `SessionCapacity`) · S
 
@@ -541,9 +540,9 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-77** Keep sessions running while Nook is closed (`SessionKeeper`, `KeptRuns`, `KeptTransport`, `KeptSessionsSettings`), reusing `companion/background.rs` · L
 
-- [ ] **AG-78** Wait on quit and resume on next launch; pending questions survive a restart (`QuitShutdown`) · S
+- [x] **AG-78** Wait on quit and resume on next launch; pending questions survive a restart (`QuitShutdown`) · S Done (2026-11-23): `core/src/workspace/restart.rs` waits for running agent turns to exit cleanly on quit (interrupt, grace period, then shared deadline), persists pending questions across a restart (`restored` questions send the answer as a message), and resumes sessions interrupted by quitting on the next launch when enabled (`workspace_continue_interrupted`).
 
-- [ ] **AG-79** Fresh conversation after a lost or overfull context (`+VersionRejection`, `FailureClassifier`) · S
+- [x] **AG-79** Fresh conversation after a lost or overfull context (`+VersionRejection`, `FailureClassifier`) · S Done (2026-11-23): `core/src/workspace/recovery.rs` (`FreshConversation::classify`) detects lost sessions and overfull context windows across agents, and `Manager::recover_conversation` in `core/src/workspace/manager.rs` automatically starts a fresh conversation seeded with a summary of the timeline and replays the turn once.
 
 - [ ] **AG-80** Resume at limit reset with the account choice, and snooze until reset · S
 
@@ -581,11 +580,11 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-100** One right panel per session with Changes, Terminal, Browser, PR, Files, Outputs, Subagents tabs, and one browser per session (`SessionToolPanel`, `SessionTools`, `SidePanelTabOrder`) · L Partly done (2026-11-20): per-session `SessionSidePanel` with all 7 tabs (Plans/Outputs, Subagents, Terminal, Browser, Changes, PR, File), resizable hairline, tab strip with hover close and pinning, maximize, and empty-state launcher. Open: dedicated browser instance per session.
 
-- [ ] **AG-101** View, edit and save files; Mermaid; file links (`FileViewing`, `FileLinks`) · M
+- [x] **AG-101** View, edit and save files; Mermaid; file links (`FileViewing`, `FileLinks`) · M Done (2026-11-23): `core/src/workspace/file_view.rs`, `src-tauri/src/commands/file_view.rs` (`workspace_file_read`, `workspace_file_save`), `views/agents/run/FileViewer.svelte` and `lib/workspace/file-links.ts` open files in Nook with line numbers, syntax highlighting, Markdown document view, Mermaid diagram view, in-place editing with `Ctrl+S` and disk-conflict detection, line remarks into the composer, and clickable `path:line` links from the timeline.
 
-- [ ] **AG-102** Outputs: documents and videos the agent handed over (`SessionOutputs`, `ArtifactHistory`) · M
+- [x] **AG-102** Outputs: documents and videos the agent handed over (`SessionOutputs`, `ArtifactHistory`) · M Done (2026-11-23): `views/agents/run/OutputsPanel.svelte`, `lib/workspace/session-outputs.ts` and `lib/workspace/artifact-history.ts` collect the session's task list, plans, designs, documents, PDFs, images and videos into the Outputs tab, auto-open fresh outputs made during a turn, track previous versions of edited plans/files, and offer Open and Show in folder.
 
-- [ ] **AG-103** Review comments on a diff line into the composer; stage or discard a hunk (`ReviewComments`, `HunkPatch`) · M
+- [x] **AG-103** Review comments on a diff line into the composer; stage or discard a hunk (`ReviewComments`, `HunkPatch`) · M Done (2026-11-23): `core/src/workspace/hunk.rs` (`workspace_apply_hunk`) parses unified diff hunks and builds single-hunk patches to stage (`git apply --cached --unidiff-zero`) or discard (`git apply --reverse --unidiff-zero`) a hunk from `views/agents/run/Changes.svelte` and `views/agents/UnifiedDiffView.svelte`, while `lib/workspace/review-comments.svelte.ts` collects inline diff review comments and sends them to the agent.
 
 - [ ] **AG-104** Linked pull requests, branch tray, PR badges and hover cards in rows (`LinkedPullRequests`, `RunBranchTray`, `PullRequestSync`) · M
 
@@ -633,7 +632,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-133** Nook as a remote MCP server with tunnel and grants (`RemoteMCP*`, `RemoteMCPSettings`) · L
 
-- [ ] **AG-134** Stop a dev server the session started, also on settle · S
+- [x] **AG-134** Stop a dev server the session started, also on settle · S Done (2026-11-23): `core/src/workspace/dev_stop.rs` tracks dev servers by process ancestry from Nook's terminals and spawned agents, re-verifies the PID before stopping, and exposes `workspace_dev_servers` and `workspace_stop_dev_server` in `views/workspace/Terminals.svelte`.
 
 ## 5. Chat apps, mail and connectors (CH)
 
@@ -857,7 +856,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
   - Done: `core/src/updates` (versions, channel, release choice, Ed25519 check, release notes, receipt, install kind) with the Mac's tests, and `src-tauri/src/updates.rs` checks, downloads, verifies and installs: the Windows setup runs passively (`/P /UPDATE /R`) and starts Nook again, the AppImage is swapped and restarted. The `.msi` (msiexec, `AUTOLAUNCHAPP`) and `.deb` (pkexec apt/dpkg) update themselves too. Checks read the update feed on the latest release (API as fallback); an administrator policy can turn updates off; the phone can install them (`installUpdate`). No wake trigger: the 4-minute check covers it.
 - [x] **SV-02** Stable/Beta channel (`ReleaseChannel`) · S
 
-- [ ] **SV-03** Update trial and rollback after a crash (`UpdateTrial`, `UpdateTrialRunner`) · M
+- [x] **SV-03** Update trial and rollback after a crash (`UpdateTrial`, `UpdateTrialRunner`) · M Done (2026-11-23): `core/src/updates/trial.rs` and `src-tauri/src/update_runner.rs` keep the previous app binary and a copy of `nook.sqlite` when an update is applied, commit the trial after a minute of healthy running, and automatically roll back the binary and database if the new build crashes before committing.
 
 - [ ] **SV-04** Daily updates of GOWA, ACP agents and Antigravity (`ToolUpdates`) · M
 
@@ -920,7 +919,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-45** Double Tap: double-tap a key, a field in the bar, then fill a form, write at the cursor or edit a part, with a step card, Undo and Send (`DoubleTap/*`) → `core/src/services/double_tap/` and a keyboard hook with UI Automation on Windows · L
 
-- [ ] **SV-46** Flow on a held modifier alone (right Ctrl), through the low-level keyboard hook · S
+- [x] **SV-46** Flow on a held modifier alone (right Ctrl), through the low-level keyboard hook · S Done (2026-11-23): `core/src/services/flow_hold.rs` and `src-tauri/src/platform/windows/hold_key.rs` use a low-level Windows keyboard hook (`WH_KEYBOARD_LL`) to start Flow dictation when holding the chosen single modifier key (`right_ctrl`, `right_alt`, `right_shift`, `right_win`) and finish on release while cancelling cleanly if another key is pressed.
 
 - [ ] **SV-47** Multi-language dictation (`MultiDictation`) · S
 
