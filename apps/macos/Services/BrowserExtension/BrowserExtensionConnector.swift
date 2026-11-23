@@ -70,6 +70,39 @@ final class BrowserExtensionConnector: ContextSource {
         }
     }
 
+    /// A coding agent's step (`nook_use`): what happened when it was sent with `ask.trusted`.
+    enum TrustedStep: Equatable {
+        /// The site acts without asking and nothing about the step is final: it ran, with this result.
+        case ran(String)
+        case failed(String)
+        /// It did not run: Nook's approval card asks, with "Always on <site>" unless the step is final.
+        case needsApproval(BrowserExtensionApproval)
+    }
+
+    /// "Always on <site>" chosen in Nook's approval card for the step that runs now: the extension remembers the site.
+    @TaskLocal static var trust: String?
+
+    /// Sends a coding agent's step so that it runs at once on a site the user lets Nook act on without asking (the
+    /// switch in the side panel, or "Always" on an earlier card), and comes back for Nook's own approval card
+    /// otherwise. nil when this is no browser action or the browser's extension is too old to know `ask.trusted`: Nook
+    /// asks as it always did.
+    static func runIfTrusted(_ name: String, _ input: [String: Any], summary: String) async -> TrustedStep? {
+        guard let definition = BrowserExtensionTools.definition(name), definition.isAction,
+              let client = BrowserExtensionService.shared.hub.client(BridgeArgs.string(input["browser"])),
+              BrowserTask.asksOnlyIfTrusted(extensionVersion: client.version) else { return nil }
+        do {
+            return .ran(try await run(definition, input, ask: BrowserTask.ask(definition, input, summary: summary, trusted: true)))
+        } catch let waiting as WaitsForApproval {
+            return .needsApproval(waiting.approval)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private struct WaitsForApproval: Error {
+        let approval: BrowserExtensionApproval
+    }
+
     private static func run(_ definition: BrowserExtensionTools.Definition, _ input: [String: Any], ask: [String: Any]? = nil) async throws -> String {
         let params: [String: Any]
         switch BrowserExtensionTools.params(for: definition, input) {
@@ -77,7 +110,9 @@ final class BrowserExtensionConnector: ContextSource {
         case .failure(let error): throw NookError(error.message)
         }
         let browser = BridgeArgs.string(input["browser"])
-        let outcome = await BrowserExtensionService.shared.hub.call(definition.method, params: params, browser: browser, timeout: definition.timeout, ask: ask)
+        let outcome = await BrowserExtensionService.shared.hub.call(definition.method, params: params, browser: browser, timeout: definition.timeout,
+                                                                     ask: ask, trust: ask == nil ? trust : nil)
+        if !outcome.ok, let approval = outcome.approval { throw WaitsForApproval(approval: approval) }
         guard outcome.ok else { throw NookError(outcome.error.isEmpty ? "The browser could not do that." : outcome.error) }
         switch definition.method {
         case "find":

@@ -13,6 +13,8 @@ struct BrowserExtensionOutcome: Equatable, Sendable {
     var error: String = ""
     /// A screenshot as a data URL (`data:image/jpeg;base64,…`), only from `screenshot`.
     var image: String = ""
+    /// A step sent with `ask.trusted` that did not run: it waits for the user's approval in Nook.
+    var approval: BrowserExtensionApproval? = nil
 
     /// What a tool hands back: the text, or what went wrong.
     var message: String { ok ? text : error }
@@ -24,6 +26,24 @@ struct BrowserExtensionOutcome: Equatable, Sendable {
 
     static func timedOut(after seconds: Int) -> BrowserExtensionOutcome {
         BrowserExtensionOutcome(ok: false, error: "The browser did not answer within \(seconds) s (it may be busy or asleep). Try again, or ask the user to look at the browser.")
+    }
+}
+
+/// A step the extension did not run because its site does not act without asking (`approvalNeeded` in lib/core.js).
+struct BrowserExtensionApproval: Equatable, Sendable {
+    /// The step's site ("shop.example"), for "Always on <site>"; empty when it has none.
+    let site: String
+    /// It cannot be undone (it pays, sends, deletes…): never "Always".
+    let final: Bool
+
+    init(site: String, final: Bool) {
+        self.site = site
+        self.final = final
+    }
+
+    init?(_ value: Any?) {
+        guard let object = value as? [String: Any] else { return nil }
+        self.init(site: String(((object["site"] as? String) ?? "").prefix(120)), final: (object["final"] as? Bool) ?? true)
     }
 }
 
@@ -108,6 +128,13 @@ final class BrowserExtensionHub: @unchecked Sendable {
         return clients.values
             .filter { now.timeIntervalSince($0.lastSeen) < Self.staleAfter }
             .sorted { $0.lastActive > $1.lastActive }
+    }
+
+    /// The browser a command for `preferred` goes to (see `target`), nil when none is connected.
+    func client(_ preferred: String?) -> BrowserExtensionClient? {
+        lock.lock()
+        defer { lock.unlock() }
+        return target(preferred)
     }
 
     /// The browser a command goes to: the one named (by name, or part of it, or its id), else the one used last.
@@ -234,7 +261,8 @@ final class BrowserExtensionHub: @unchecked Sendable {
         deadlines[id] = nil
         lock.unlock()
         completion?(BrowserExtensionOutcome(ok: (message["ok"] as? Bool) ?? false, text: (message["text"] as? String) ?? "",
-                                            error: (message["error"] as? String) ?? "", image: (message["image"] as? String) ?? ""))
+                                            error: (message["error"] as? String) ?? "", image: (message["image"] as? String) ?? "",
+                                            approval: BrowserExtensionApproval(message["approval"])))
     }
 
     // MARK: - Commands to a browser
@@ -242,20 +270,23 @@ final class BrowserExtensionHub: @unchecked Sendable {
     /// Sends a command to a browser's extension and waits for its result. `browser`: a browser's name or id; nil for
     /// the one the user used last.
     /// `ask`: a live step of a task from the side panel (`BrowserTask`): the extension asks the user there first, unless
-    /// they let Nook act on that site without asking.
+    /// they let Nook act on that site without asking. With `trusted: true` in it the extension never asks there: a step
+    /// on such a site runs, any other comes back with `approval` and Nook asks the user itself.
+    /// `trust`: the user chose "Always on <site>" in Nook's approval card for this step; the extension remembers it.
     func call(_ method: String, params: [String: Any] = [:], browser: String? = nil, timeout: TimeInterval = 30,
-              ask: [String: Any]? = nil) async -> BrowserExtensionOutcome {
+              ask: [String: Any]? = nil, trust: String? = nil) async -> BrowserExtensionOutcome {
         await withCheckedContinuation { continuation in
-            send(method, params: params, browser: browser, timeout: timeout, ask: ask) { continuation.resume(returning: $0) }
+            send(method, params: params, browser: browser, timeout: timeout, ask: ask, trust: trust) { continuation.resume(returning: $0) }
         }
     }
 
     /// The same as `call`, with a completion handler that runs exactly once.
     func send(_ method: String, params: [String: Any], browser: String?, timeout: TimeInterval, ask: [String: Any]? = nil,
-              completion: @escaping (BrowserExtensionOutcome) -> Void) {
+              trust: String? = nil, completion: @escaping (BrowserExtensionOutcome) -> Void) {
         let id = UUID().uuidString
         var command: [String: Any] = ["kind": "command", "id": id, "method": method, "params": params]
         if let ask { command["ask"] = ask }
+        if let trust, !trust.isEmpty { command["trust"] = trust }
         let line = Self.encode(command)
         lock.lock()
         guard let client = target(browser) else {

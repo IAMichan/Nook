@@ -9,8 +9,9 @@ Arc, Vivaldi or Chromium. You get two things:
   memory. Nook knows which page you have in front.
 - **Nook can read and act in your tabs.** Nook Chat and every coding agent (through `nook_tools`/`nook_use`) can list
   your tabs, read a page as you see it (signed in), find the buttons and fields on it, and open, click, type and press
-  keys there. Reading runs directly. Every action waits for your approval first (in Nook, or in the side panel for a task
-  you gave there) and is written to the audit log, like every other side effect.
+  keys there. Reading runs directly. An action waits for your approval first (in Nook, or in the side panel for a task
+  you gave there) unless you let Nook act on that site without asking, and is written to the audit log, like every
+  other side effect. Paying, sending and deleting always ask.
 
 The extension is a thin pair of hands. Nook decides what may happen, and the extension carries it out. Nothing runs on
 a page until Nook is asked, and the extension sends nothing anywhere but to Nook on your Mac.
@@ -174,8 +175,17 @@ Nook does, and every step lands in the audit log.
   button's own words before the step runs (`intent`), and `pointOfNoReturn` in `lib/core.js` decides.
 - **Your brakes.** **Pause**, the strip's **Stop** and stopping Nook's answer refuse every waiting step. A page cannot
   answer a card: only the side panel may send `decide`.
-- **Only from the side panel, only a new extension.** Steps from anywhere else (Nook Chat on the Mac, Think Along, a
-  coding agent) come without `ask`; they passed Nook's own approval card already. An extension older than 1.4 does not
+- **A coding agent's steps.** A `chrome_*` action through `nook_use` (also `browser_click`/`browser_type`/`browser_open`
+  with `in: "user"`) goes to the extension first with `ask.trusted` (`BrowserExtensionConnector.runIfTrusted`). On a
+  site that acts without asking it runs at once, with no card anywhere; a final step, or any step elsewhere, does not
+  run and comes back with `approval` (its site, and whether it is final). Nook then shows its own approval card, which
+  also offers **Always** (*steps in your browser on <site>*) unless the step is final. **Always** sends the step again
+  with `trust: <site>`: the extension puts the site in `trusted` (only when it is the step's own site and the step is
+  not final) and runs it. So one "Always" per site is enough, and the side panel's switch and Nook's card share one
+  list. Only an extension of 1.5 or newer gets `ask.trusted` (`BrowserTask.firstTrustedVersion`); with an older one
+  every step asks in Nook as before.
+- **Only from the side panel, only a new extension.** Steps from anywhere else (Nook Chat on the Mac, Think Along)
+  come without `ask`; they passed Nook's own approval card already. An extension older than 1.4 does not
   know `ask` and would run a step without asking, so its side panel's requests go the old way: a plan to run on the Mac
   (`BrowserTask.supported`). Other actions of the same answer (a mail, an event) stay proposals for a click as always
   (`ToolRunner.performs`).
@@ -212,8 +222,9 @@ Nook does, and every step lands in the audit log.
 
 - **Approval for every action.** Opening, clicking, typing, pressing keys and closing tabs are actions
   (`ToolSpec.Kind.action`). They go through Nook's approval card and the audit log, whoever asks: Nook Chat, a
-  Think-Along card or a coding agent. A task you give in the side panel asks there instead, step by step, unless you
-  let Nook act on that site without asking; paying, sending and deleting always ask (see "A task from the side panel").
+  Think-Along card or a coding agent. A task you give in the side panel asks there instead, step by step. On a site you
+  let Nook act on without asking (the side panel's switch, or **Always** on a card), a side panel task's and a coding
+  agent's steps run without a card; paying, sending and deleting always ask (see "A task from the side panel").
 - **Your brakes in the browser.** The side panel has a switch per site ("Nook on github.com"). A site you switch off is
   never read or touched, including its subdomains. **Pause** stops Nook in the whole browser until you resume, and the
   toolbar icon shows a badge while it is paused. While Nook acts on a page, a violet glow and a strip with **Stop** show

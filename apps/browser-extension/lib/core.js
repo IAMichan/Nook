@@ -100,6 +100,18 @@ export function mustAsk({ url, trusted, submits = false, words = '' }) {
   return { ask: !siteOf(url) || !isBlocked(url, trusted), final: false };
 }
 
+/**
+ * A step Nook only asked about (`ask.trusted`) that must wait for the user: it did not run, and Nook asks in its own
+ * approval card. `site` names the step's site for "Always on <site>" there, never offered for a `final` step.
+ */
+export function approvalNeeded(site, final) {
+  return {
+    ok: false,
+    error: 'This step waits for the user\'s approval in Nook; it did not run.',
+    approval: { site: typeof site === 'string' ? site.slice(0, 120) : '', final: !!final }
+  };
+}
+
 /** A step waiting for the user, as the side panel's card shows it: only plain, clipped text. */
 export function approvalCard(id, ask, site, final) {
   if (typeof id !== 'string' || !id) return null;
