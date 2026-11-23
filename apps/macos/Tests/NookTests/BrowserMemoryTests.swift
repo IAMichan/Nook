@@ -4,6 +4,54 @@ import XCTest
 final class BrowserMemoryTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    // MARK: Bookmarks
+
+    func testStarringAPageTwiceRemovesItAgain() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        let page = URL(string: "https://www.example.com/docs/")!
+        XCTAssertTrue(bookmarks.toggle(url: page, title: "Docs"))
+        XCTAssertTrue(bookmarks.contains(URL(string: "https://example.com/docs")!))
+        XCTAssertFalse(bookmarks.toggle(url: page, title: "Docs"))
+        XCTAssertTrue(bookmarks.all.isEmpty)
+    }
+
+    func testOnlyWebPagesCanBeStarred() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        XCTAssertFalse(bookmarks.toggle(url: URL(string: "about:blank")!, title: ""))
+        XCTAssertTrue(bookmarks.all.isEmpty)
+    }
+
+    func testBookmarksComeBeforeVisitedPagesWithoutDoubles() {
+        let bookmarks = BrowserBookmarks(file: nil)
+        bookmarks.toggle(url: URL(string: "https://github.com/apple/swift")!, title: "Swift")
+        let history = BrowserHistory(file: nil)
+        history.record(url: URL(string: "https://github.com/")!, title: "GitHub", at: now)
+        history.record(url: URL(string: "https://github.com/apple/swift")!, title: "Swift", at: now)
+        let merged = BrowserBookmarks.merged(bookmarks: bookmarks.suggestions(for: "git", now: now),
+                                             history: history.suggestions(for: "git", now: now), limit: 6)
+        XCTAssertEqual(merged.map(\.url), ["https://github.com/apple/swift", "https://github.com/"])
+        XCTAssertEqual(merged.map(\.isBookmark), [true, false])
+    }
+
+    // MARK: Downloads
+
+    func testADownloadTakesTheNextFreeName() {
+        let folder = URL(fileURLWithPath: "/Users/me/Downloads")
+        let taken: Set<String> = ["report.pdf", "report 2.pdf"]
+        let file = BrowserDownloadName.destination(for: "report.pdf", in: folder) { taken.contains($0.lastPathComponent) }
+        XCTAssertEqual(file.lastPathComponent, "report 3.pdf")
+        let plain = BrowserDownloadName.destination(for: "notes", in: folder) { $0.lastPathComponent == "notes" }
+        XCTAssertEqual(plain.lastPathComponent, "notes 2")
+    }
+
+    func testADownloadStaysInTheDownloadsFolder() {
+        let folder = URL(fileURLWithPath: "/Users/me/Downloads")
+        let file = BrowserDownloadName.destination(for: "../../etc/passwd", in: folder) { _ in false }
+        XCTAssertEqual(file.deletingLastPathComponent().path, folder.path)
+        XCTAssertEqual(BrowserDownloadName.destination(for: "", in: folder) { _ in false }.lastPathComponent, "download")
+        XCTAssertEqual(BrowserDownloadName.destination(for: ".env", in: folder) { _ in false }.lastPathComponent, "download.env")
+    }
+
     // MARK: History
 
     func testTypingFindsVisitedPagesBySiteFirst() {

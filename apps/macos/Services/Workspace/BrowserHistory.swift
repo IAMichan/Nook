@@ -11,10 +11,12 @@ struct BrowserHistoryEntry: Codable, Equatable, Sendable {
     var lastVisit: Date
 }
 
-/// One line under the address bar: a page you visited before.
+/// One line under the address bar: a page you visited before, or one you starred.
 struct BrowserSuggestion: Equatable, Identifiable, Sendable {
     let url: String
     let title: String
+    /// A page you starred (`BrowserBookmarks`) rather than one you only visited.
+    var isBookmark = false
     var id: String { url }
 
     /// The address as the bar shows it: without `https://` and `www.`, and without a lone trailing slash.

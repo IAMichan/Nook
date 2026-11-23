@@ -673,6 +673,7 @@ targets:
       - path: Services/Workspace/CustomAgents.swift
       - path: Services/Workspace/BrowserSearch.swift
       - path: Services/Workspace/BrowserHistory.swift
+      - path: Services/Workspace/BrowserBookmarks.swift
       - path: Services/Workspace/BrowserPasswordBook.swift
       - path: Services/Workspace/ChromeWebStore.swift
       - path: Services/Workspace/McpUI.swift

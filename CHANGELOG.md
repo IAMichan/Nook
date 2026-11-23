@@ -18,9 +18,16 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Switching to a session settles at once: the line counts on its turn cards now come in together, instead of one
   by one, each drawing the whole session again for seconds after the switch. Counts from an earlier visit show
   straight away.
-- Nook's browser answers the keys every browser has while you are on a page: ⌘R reloads, ⌘⇧R reloads past the cache
-  (also Shift-click on the reload button), ⌘[ and ⌘] go back and forward, ⌘+, ⌘- and ⌘0 zoom, ⌘L goes to the address
-  bar, ⌘T opens a tab, ⌘W closes the tab and ⌘. or Escape stops loading.
+- Nook's browser works like a regular browser. It answers the usual keys while you are on a page: ⌘R reloads, ⌘⇧R
+  reloads past the cache (also Shift-click on the reload button), ⌘[ and ⌘] go back and forward, ⌘+, ⌘- and ⌘0 zoom,
+  ⌘L goes to the address bar, ⌘F finds on the page (⌘G for the next match), ⌘T opens a tab, ⌘W closes it, ⌘⇧T brings
+  the last closed tab back, ⌘P prints and ⌘. or Escape stops loading. ⌘-click or a middle click opens a link in a tab
+  behind the page, and the right-click menu has "Open Link in New Tab".
+- Downloads work in Nook's browser: files go to the Downloads folder and a button in the toolbar, there only once you
+  downloaded something, shows their progress and opens them. "Choose file" fields, a page's alerts and questions, and
+  full-screen video work too.
+- Bookmarks in Nook's browser: the star at the end of the address keeps a page, an empty tab lists your bookmarks, and
+  they come first under the address bar.
 
 ### Fixed
 

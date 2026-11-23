@@ -40,6 +40,8 @@ final class BrowserStore: ObservableObject {
     /// How many chats show the page in their corner now.
     var shownInChat = 0
     private var watchers: [UUID: AnyCancellable] = [:]
+    /// The pages of the tabs you closed, last closed at the end, for ⌘⇧T.
+    private var closedTabs: [URL] = []
     /// The session this browser belongs to; nil for Nook's own browser.
     let session: BrowserSession.Key?
     /// The site you just signed in to while this browser still asks whether to keep sign-ins (`BrowserProfiles`): the
@@ -124,6 +126,9 @@ final class BrowserStore: ObservableObject {
     func close(_ id: UUID) {
         guard pages.count > 1, let index = pages.firstIndex(where: { $0.id == id }) else { return }
         let closing = pages.remove(at: index)
+        if let url = closing.pageURL, ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") {
+            closedTabs = Array((closedTabs + [url]).suffix(20))
+        }
         watchers[closing.id] = nil
         BrowserExtensions.shared.closedTab(closing)
         closing.discard()
@@ -133,6 +138,13 @@ final class BrowserStore: ObservableObject {
             BrowserExtensions.shared.activated(page, previous: nil)
         }
         updateTabs()
+    }
+
+    /// Opens the tab you closed last again, with its page (⌘⇧T); false when none was closed.
+    func reopenClosedTab() -> Bool {
+        guard let url = closedTabs.popLast() else { return false }
+        newTab().open(url)
+        return true
     }
 
     private func watch(_ page: BrowserPage) {
@@ -462,11 +474,13 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         configuration.userContentController.addGoogleSignInHelp()
         // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+        // A video's own full-screen button (YouTube, Vimeo) works, as in other browsers.
+        configuration.preferences.isElementFullscreenEnabled = true
         // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
         let browserWebView = BrowserWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
         webView = browserWebView
         super.init()
-        browserWebView.tabKey = { [weak self] newTab in self?.tabKey(newTab) ?? false }
+        browserWebView.tabKey = { [weak self] request in self?.tabKey(request) ?? false }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -705,19 +719,27 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         if let url = question.pageURL { webView.load(URLRequest(url: url)) } else { webView.reload() }
     }
 
-    /// ⌘T on the page opens a tab with the cursor in its address bar; ⌘W closes this tab unless it is the last.
-    private func tabKey(_ newTab: Bool) -> Bool {
+    /// The tab keys on the page (`BrowserWebView`): ⌘T opens a tab with the cursor in its address bar, ⌘W closes this
+    /// tab unless it is the last, ⌘⇧T opens the tab closed last.
+    private func tabKey(_ request: BrowserWebView.Request) -> Bool {
         guard let store else { return false }
-        if newTab {
+        switch request {
+        case .newTab:
             let made = store.newTab()
             DispatchQueue.main.async {
-                NotificationCenter.default.post(name: BrowserWebView.focusAddress, object: made.webView)
+                NotificationCenter.default.post(name: BrowserWebView.request, object: made.webView,
+                                                userInfo: [BrowserWebView.requestKey: BrowserWebView.Request.focusAddress])
             }
             return true
+        case .closeTab:
+            guard store.pages.count > 1 else { return false }
+            store.close(id)
+            return true
+        case .reopenTab:
+            return store.reopenClosedTab()
+        case .focusAddress, .find:
+            return false
         }
-        guard store.pages.count > 1 else { return false }
-        store.close(id)
-        return true
     }
 
     /// "Not now": the page stays as it failed.
@@ -750,6 +772,13 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     /// sign-in pages turn this browser away as an app's own, so there it calls itself Firefox (`WebSignInAgent`).
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         let scheme = navigationAction.request.url?.scheme?.lowercased() ?? ""
+        if navigationAction.shouldPerformDownload { return .download }
+        // ⌘-click or a middle click on a link opens it in a tab behind this one, as in every browser.
+        if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url, let store,
+           navigationAction.modifierFlags.contains(.command) || navigationAction.buttonNumber == 2 {
+            store.newBackgroundTab().open(url)
+            return .cancel
+        }
         if ["http", "https", "about", "blob", "data"].contains(scheme) {
             return webView.presentsItself(for: navigationAction, otherwise: nil) ? .cancel : .allow
         }
@@ -757,18 +786,60 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         return .cancel
     }
 
+    /// A file the browser cannot show, or one sent as an attachment, downloads (`BrowserDownloads`).
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        BrowserDownloads.policy(for: navigationResponse)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        BrowserDownloads.shared.track(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        BrowserDownloads.shared.track(download)
+    }
+
+    /// "Download Linked File" and "Download Image" in the right-click menu. WebKit only reports those downloads to this
+    /// method of its private delegate protocol; without it they started and went nowhere.
+    @objc(_webView:contextMenuDidCreateDownload:)
+    func contextMenuDidCreate(_ webView: WKWebView, download: WKDownload) {
+        BrowserDownloads.shared.track(download)
+    }
+
     // MARK: WKUIDelegate
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async {
+        await BrowserPageDialogs.alert(message, frame: frame, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async -> Bool {
+        await BrowserPageDialogs.confirm(message, frame: frame, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo) async -> String? {
+        await BrowserPageDialogs.prompt(prompt, defaultText: defaultText, frame: frame, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo) async -> [URL]? {
+        await BrowserPageDialogs.chooseFiles(parameters, in: webView)
+    }
 
     /// A page that opens a window of its own (`window.open`, such as "Continue with Google") gets one, tied to this
     /// page so the sign-in can answer it (`BrowserSitePopup`); a link that asks for a new tab opens in a new tab.
     /// Without this WebKit opened nothing, and those buttons did nothing.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if BrowserSitePopup.isWindow(navigationAction, features: windowFeatures) {
+        let asTab = (webView as? BrowserWebView)?.takeTabWindowRequest() == true
+        if !asTab, BrowserSitePopup.isWindow(navigationAction, features: windowFeatures) {
             return BrowserSitePopup.open(configuration: configuration, features: windowFeatures, over: webView.window)
         }
         if let url = navigationAction.request.url, let store {
-            store.newTab().open(url)
+            // "Open Link in New Tab" leaves you on this page, as in Safari.
+            if asTab { store.newBackgroundTab().open(url) } else { store.newTab().open(url) }
         } else if let url = navigationAction.request.url {
             webView.load(URLRequest(url: url))
         }
@@ -789,64 +860,6 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
         BrowserExtensions.shared.changed(self)
-    }
-}
-
-/// The web view of Nook's browser and the windows its pages open: it answers the keys every browser has while you are on
-/// the page. ⌘R loads the page again and ⌘⇧R does so without the cache; ⌘[ and ⌘] go back and forward; ⌘+, ⌘- and ⌘0
-/// zoom; ⌘L goes to the address bar; ⌘. and Escape stop a page that is loading; ⌘T opens a tab and ⌘W closes this one
-/// (the last tab stays, so ⌘W then does what it does elsewhere).
-final class BrowserWebView: WKWebView {
-    /// What the browser's tabs do with ⌘T (true) and ⌘W (false); true when it handled the key. Nil in a page's own window.
-    var tabKey: ((_ newTab: Bool) -> Bool)?
-    /// Asks the browser showing this web view to put the cursor in its address bar (`BrowserView`).
-    static let focusAddress = Notification.Name("BrowserWebView.focusAddress")
-    private static let zoomSteps: [CGFloat] = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        // Only for the page you are on: elsewhere in the window (the composer, another panel) these keys are theirs.
-        if let responder = window?.firstResponder as? NSView, responder === self || responder.isDescendant(of: self),
-           handle(event) {
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        // Escape stops a page that is loading, as in Safari; otherwise the page gets it.
-        if event.keyCode == 53, isLoading, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
-            stopLoading()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    private func handle(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard flags.contains(.command), !flags.contains(.control), !flags.contains(.option),
-              let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
-        let shift = flags.contains(.shift)
-        switch key {
-        case "r":
-            if shift { reloadFromOrigin() } else { reload() }
-        case "[": if canGoBack { goBack() }
-        case "]": if canGoForward { goForward() }
-        case "=", "+": zoom(by: 1)
-        case "-": zoom(by: -1)
-        case "0" where !shift: pageZoom = 1
-        case "l" where !shift: NotificationCenter.default.post(name: Self.focusAddress, object: self)
-        case "." where !shift: stopLoading()
-        case "t" where !shift: return tabKey?(true) ?? false
-        case "w" where !shift: return tabKey?(false) ?? false
-        default: return false
-        }
-        return true
-    }
-
-    private func zoom(by step: Int) {
-        let steps = Self.zoomSteps
-        let current = steps.enumerated().min { abs($0.element - pageZoom) < abs($1.element - pageZoom) }?.offset ?? 5
-        pageZoom = steps[min(max(current + step, 0), steps.count - 1)]
     }
 }
 
@@ -996,6 +1009,12 @@ struct BrowserView: View {
     @ObservedObject var store: BrowserStore
     @Environment(\.sessionContextTarget) private var session
     @State private var asking = false
+    /// Finding on the page (⌘F): the bar shows while this is on (`BrowserFindBar`).
+    @State private var finding = false
+    @State private var findText = ""
+    @State private var findRequest = BrowserFindBar.Request()
+    /// Your bookmarks, read again when one is added or removed.
+    @State private var bookmarks: [BrowserBookmarks.Bookmark] = BrowserBookmarks.shared.all
     /// Selecting elements on the page: each one you click goes to the composer as a snippet until you stop.
     @State private var picking = false
     /// Outside a session the selected elements go to the chat, which holds one attachment: all of this round's under
@@ -1052,6 +1071,7 @@ struct BrowserView: View {
                         .onChange(of: addressFocused) { _, focused in
                             if !focused { suggestions.close() }
                         }
+                    bookmarkStar
                 }
                 .padding(.horizontal, NookTheme.Spacing.sm)
                 .frame(height: SidePanelMetrics.toolbar)
@@ -1062,6 +1082,7 @@ struct BrowserView: View {
                 ToolbarIconButton("cursorarrow", tr(picking ? "browser.annotate.cancel" : "browser.annotate"),
                                   enabled: store.webView.url != nil, selected: picking) { annotate() }
                 BrowserExtensionButtons(store: store)
+                BrowserDownloadsButton()
                 ToolbarIconButton("arrow.up.forward.app", DefaultBrowser.openOutsideTitle, enabled: store.webView.url != nil) {
                     store.openInDefaultBrowser()
                 }
@@ -1093,6 +1114,9 @@ struct BrowserView: View {
             if let question = store.passwordQuestion { passwordQuestion(question) }
             if let id = storeExtensionID { addExtensionBar(id) }
             if picking { pickHint }
+            if finding {
+                BrowserFindBar(webView: store.webView, text: $findText, request: findRequest) { closeFind() }
+            }
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
@@ -1109,6 +1133,7 @@ struct BrowserView: View {
                             WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"),
                                          message: tr("workbench.browser.emptyMessage"), action: nil)
                             if !servers.isEmpty { serverList }
+                            if !bookmarks.isEmpty { bookmarkList }
                         }
                         // Clicks on the note stay on it, not on the hidden page under it.
                         .contentShape(Rectangle())
@@ -1124,12 +1149,27 @@ struct BrowserView: View {
                     .padding(.horizontal, NookTheme.Spacing.xl * 3)
             }
         }
-        // ⌘L on the page: the cursor goes to the address, all of it selected so you can type over it.
-        .onReceive(NotificationCenter.default.publisher(for: BrowserWebView.focusAddress)) { note in
-            guard (note.object as? WKWebView) === store.webView else { return }
-            addressFocused = true
-            DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+        // What the page asks of the browser around it (`BrowserWebView.Request`): ⌘L, ⌘F, ⌘G.
+        .onReceive(NotificationCenter.default.publisher(for: BrowserWebView.request)) { note in
+            guard (note.object as? WKWebView) === store.webView,
+                  let request = note.userInfo?[BrowserWebView.requestKey] as? BrowserWebView.Request else { return }
+            switch request {
+            case .focusAddress:
+                // The cursor goes to the address, all of it selected so you can type over it.
+                addressFocused = true
+                DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+            case .find(let step):
+                finding = true
+                findRequest = BrowserFindBar.Request(count: findRequest.count + 1, step: step)
+            case .newTab, .closeTab, .reopenTab:
+                break
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(for: BrowserBookmarks.changed)) { _ in
+            bookmarks = BrowserBookmarks.shared.all
+        }
+        // Another tab: the find bar belongs to the page it searched.
+        .onChange(of: store.page.id) { _, _ in finding = false }
         // In view: whatever an agent opens here is seen, also while you watch.
         .onAppear {
             store.shownInWorkbench += 1
@@ -1276,6 +1316,61 @@ struct BrowserView: View {
         }
         .frame(maxWidth: 320)
         .padding(.bottom, NookTheme.Spacing.xl)
+    }
+
+    /// The star at the end of the address: filled on a page you bookmarked; on another web page only while the pointer
+    /// is on the address, so the bar stays quiet.
+    @ViewBuilder
+    private var bookmarkStar: some View {
+        if let url = store.webView.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            let starred = bookmarks.contains { BrowserHistory.key($0.url) == BrowserHistory.key(url.absoluteString) }
+            if starred || addressHovering {
+                ToolbarIconButton(starred ? "star.fill" : "star",
+                                  tr(starred ? "browser.bookmarks.remove" : "browser.bookmarks.add"),
+                                  height: 20, width: 20, selected: starred, symbolSize: 10) {
+                    BrowserBookmarks.shared.toggle(url: url, title: store.title)
+                }
+            }
+        }
+    }
+
+    /// Your bookmarks on an empty tab, newest first.
+    private var bookmarkList: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Text(tr("browser.bookmarks.title"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+            ForEach(bookmarks.prefix(12)) { bookmark in
+                Button { if let url = URL(string: bookmark.url) { store.open(url) } } label: {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        SiteIcon(domain: URL(string: bookmark.url)?.host ?? "", fallback: "star",
+                                 tint: NookTheme.textTertiary, size: 14)
+                        Text(verbatim: bookmark.title.isEmpty ? BrowserHistory.bare(bookmark.url) : bookmark.title)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.paper)
+                            .lineLimit(1)
+                        Spacer(minLength: NookTheme.Spacing.sm)
+                    }
+                    .frame(height: SidePanelMetrics.toolbar)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.nookPlain)
+                .contextMenu {
+                    Button(role: .destructive) { BrowserBookmarks.shared.remove(url: bookmark.url) } label: {
+                        Label(tr("browser.bookmarks.remove"), icon: "star.slash")
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 320)
+        .padding(.bottom, NookTheme.Spacing.xl)
+    }
+
+    /// Closes the find bar; the match stays lit no longer and the page gets the keys again.
+    private func closeFind() {
+        finding = false
+        store.webView.evaluateJavaScript("window.getSelection && window.getSelection().removeAllRanges()", completionHandler: nil)
+        store.webView.window?.makeFirstResponder(store.webView)
     }
 
     /// The whole page for the session's agent, in its composer.
