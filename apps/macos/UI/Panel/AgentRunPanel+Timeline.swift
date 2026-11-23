@@ -36,17 +36,34 @@ extension AgentRunPanel {
     /// Counts the finished turns with git, between the snapshots around them; a turn counted between both of its
     /// snapshots stays as it is, the others are counted again once their snapshot is made. The newest turn first: its
     /// card is the one in view when a session opens, and a long session has many turns before it (two git runs each).
+    ///
+    /// Each change to `countedLines` draws the whole session again, so the counts come in together: the newest turn's
+    /// at once, the rest in batches of `countBatch`, and a count that is what the card already shows changes nothing.
+    /// Without that, opening a session whose turns had no snapshot after them yet redrew it once per turn, for seconds
+    /// after the switch.
     private func countTurns(_ turns: [TurnDiff], run: WorkspaceRun) async {
         guard !run.isRemote else { return }
+        var pending: [String: TurnLines] = [:]
+        var shownNewest = false
         for turn in turns.reversed() where countedLines[turn.id]?.complete != true {
             guard let start = turn.start, let end = turn.end else { continue }
             if let lines = try? await workspace.turnLines(runID, paths: turn.files.map(\.path), start: start, end: end) {
                 guard !Task.isCancelled else { return }
-                countedLines[turn.id] = lines
-                if lines.complete { CountedTurnLines.keep(lines, turn: turn.id, run: runID) }
+                CountedTurnLines.keep(lines, turn: turn.id, run: runID)
+                guard countedLines[turn.id] != lines else { continue }
+                pending[turn.id] = lines
+                if !shownNewest || pending.count >= Self.countBatch {
+                    shownNewest = true
+                    countedLines.merge(pending) { $1 }
+                    pending = [:]
+                }
             }
         }
+        if !pending.isEmpty { countedLines.merge(pending) { $1 } }
     }
+
+    /// How many counted turns `countTurns` hands to the cards at once.
+    private static let countBatch = 16
 
     // MARK: Timeline
 
@@ -611,9 +628,10 @@ extension AgentRunPanel {
     }
 }
 
-/// The turns git counted completely (between the snapshots on both sides), per session, kept across visits: those
-/// snapshots never change, so opening a session again shows its cards whole at once instead of waiting for git to
-/// count every turn again. Only the most recently counted sessions are kept.
+/// The turns git counted, per session, kept across visits, so opening a session again shows its cards counted at once
+/// instead of waiting for git. A turn counted completely (between the snapshots on both sides) stays as it is: those
+/// snapshots never change. One counted without its later snapshot is shown as last counted and counted again
+/// (`countTurns`). Only the most recently counted sessions are kept.
 @MainActor
 enum CountedTurnLines {
     private static var byRun: [UUID: [String: TurnLines]] = [:]
@@ -623,7 +641,6 @@ enum CountedTurnLines {
     static func forRun(_ id: UUID) -> [String: TurnLines] { byRun[id] ?? [:] }
 
     static func keep(_ lines: TurnLines, turn: String, run id: UUID) {
-        guard lines.complete else { return }
         byRun[id, default: [:]][turn] = lines
         if order.last != id {
             order.removeAll { $0 == id }

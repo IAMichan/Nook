@@ -329,15 +329,17 @@ struct AgentsTab: View {
         for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) { prefetch(ids[neighbour]) }
     }
 
-    /// The tabs for the open session's header: only beside a session (not a footer page or the new-session composer).
-    /// A tab whose session is gone from the list is left out, except the open one, which the header names itself.
+    /// The tabs for the open session's header, and for the new-session composer's (there none of them is open, so the
+    /// sessions you have open stay a click away while you start another); not on a footer page. A tab whose session
+    /// is gone from the list is left out, except the open one, which the header names itself.
     private func tabsContext(_ entries: AgentListEntries, selection: Selection) -> SessionTabsContext? {
         let current = selectedID(selection)
-        guard !app.demoMode, Self.isSession(current) else { return nil }
+        let composing = current == "new"
+        guard !app.demoMode, Self.isSession(current) || composing else { return nil }
         var rows: [String: AgentListItem] = [:]
         for item in entries.running + entries.earlier { rows[item.id] = item }
         var ids = sessionTabs.list.ids
-        if !ids.contains(current) { ids.append(current) }
+        if !composing, !ids.contains(current) { ids.append(current) }
         let tabs = ids.compactMap { id -> SessionTabsContext.Tab? in
             // A sub-thread has no row of its own: its tab looks like the row that stands in for it.
             let item = rows[id] ?? rows[entries.rowID(id)]

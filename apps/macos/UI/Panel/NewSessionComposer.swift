@@ -65,6 +65,10 @@ struct NewSessionComposer: View {
     @FocusState var focused: Bool
     /// The limits are in the docked column beside the box (`SessionWorkbench.usageOnlyPanel`), not in the box.
     @Environment(\.sessionPanelDocked) var panelDocked
+    /// The sessions open as tabs (`SessionTabStrip`), shown in the header with none of them open.
+    @Environment(\.sessionTabs) var sessionTabs
+    /// Room on the left for the sidebar's button when the list is put away, as a session's header leaves.
+    @Environment(\.sessionHeaderInset) var headerInset
 
     /// Where this draft's words are kept in `ComposerDraftStore`: one draft per folder, or per machine over SSH, so what
     /// you typed for one project waits there (and in the list's unsent rows) while you start something in another.
@@ -75,12 +79,17 @@ struct NewSessionComposer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let headerAccessory {
+            if headerAccessory != nil || sessionTabs?.tabs.isEmpty == false {
                 HStack(spacing: NookTheme.Spacing.md) {
+                    if let sessionTabs, !sessionTabs.tabs.isEmpty {
+                        SessionTabStrip(context: sessionTabs, folder: "", title: "", directory: "") { EmptyView() }
+                    }
                     Spacer(minLength: 8)
                     headerAccessory
                 }
+                .font(NookTheme.TextStyle.body)
                 .frame(height: 30)
+                .padding(.leading, headerInset)
             }
             content
         }

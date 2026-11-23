@@ -152,7 +152,11 @@ private struct SessionTabButton: View {
                 if let item = tab.item {
                     icon(item)
                         .overlay(alignment: .topTrailing) {
-                            if let dot = Self.dot(item.status) {
+                            if item.status == .working {
+                                // Working: a quiet grey dot that breathes, so a busy tab reads at a glance
+                                // without a color competing with the project's icon.
+                                SteppedPulseDot(color: NookTheme.textSecondary, size: 5).offset(x: 2, y: -2)
+                            } else if let dot = Self.dot(item.status) {
                                 Circle().fill(dot).frame(width: 5, height: 5).offset(x: 2, y: -2)
                             }
                         }
@@ -210,10 +214,11 @@ private struct SessionTabButton: View {
         }
     }
 
-    /// A small dot for a session that works or waits for you; none for one at rest.
+    /// A small dot for a session that waits for you or failed; none for one at rest. A working one gets the grey
+    /// pulsing dot instead.
     private static func dot(_ status: AgentListItem.Status) -> Color? {
         switch status {
-        case .working: return NookTheme.blue
+        case .working: return nil
         case .waiting, .input: return NookTheme.amber
         case .failed, .limited: return NookTheme.coral
         case .idle, .finished: return nil
