@@ -122,6 +122,7 @@ struct SelectableProse: NSViewRepresentable {
         (view as? ProseTextView)?.endCitationHover()
         let selection = view.selectedRanges
         storage.setAttributedString(text)
+        (view as? ProseTextView)?.textDidChange()
         context.coordinator.setMeasured(text)
         let kept = selection.filter { NSMaxRange($0.rangeValue) <= text.length }
         view.selectedRanges = kept.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : kept
@@ -603,8 +604,8 @@ final class ProseTextView: NSTextView {
         super.updateTrackingAreas()
         if let citationTracking { removeTrackingArea(citationTracking) }
         citationTracking = nil
-        // Only an answer with sources follows the pointer: an agent's long transcript pays nothing.
-        guard !citationReferences.isEmpty else { return }
+        // Only an answer with sources or inline code follows the pointer: other text pays nothing.
+        guard !citationReferences.isEmpty || hasInlineCode else { return }
         let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
                                   owner: self, userInfo: nil)
         addTrackingArea(area)
@@ -613,18 +614,95 @@ final class ProseTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        if hasInlineCode { hoverCode(at: point) }
         guard !citationReferences.isEmpty else { return }
-        setHovered(label(at: convert(event.locationInWindow, from: nil)))
+        setHovered(label(at: point))
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         setHovered(nil)
+        hideCodeCopy()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
         if newWindow == nil { endCitationHover() }
+    }
+
+    // MARK: Copying inline code
+
+    /// Whether the text has an inline code span: only then does the view follow the pointer for its copy button.
+    private var hasInlineCode = false
+    /// The copy button beside the code chip under the pointer, the span it copies, and the area (chip and button) that
+    /// keeps it in sight while the pointer moves from the chip onto the button.
+    private var codeCopy: NSHostingView<InlineCodeCopyButton>?
+    private var codeCopyRange: NSRange?
+    private var codeCopyZone: NSRect = .zero
+
+    /// Call after the text changed: notes whether it has inline code and lets go of a copy button on the old text.
+    func textDidChange() {
+        hideCodeCopy()
+        var found = false
+        if let storage = textStorage, storage.length > 0 {
+            storage.enumerateAttribute(.inlineCode, in: NSRange(location: 0, length: storage.length)) { value, _, stop in
+                if value != nil { found = true; stop.pointee = true }
+            }
+        }
+        if found != hasInlineCode {
+            hasInlineCode = found
+            updateTrackingAreas()
+        }
+    }
+
+    /// Shows a copy button beside the inline code under `point`, so a value the agent gives (an address, a password, a
+    /// command) copies in one click instead of a careful selection.
+    private func hoverCode(at point: NSPoint) {
+        if codeCopy != nil, codeCopyZone.contains(point) { return }
+        guard let (range, chip) = codeChip(at: point) else { hideCodeCopy(); return }
+        let side = max(16, round(chip.height))
+        let gap: CGFloat = 2
+        var x = chip.maxX + gap
+        // At the end of a line there is no room after the chip: the button covers the chip's end instead.
+        if x + side > bounds.maxX { x = max(chip.minX, bounds.maxX - side) }
+        let frame = NSRect(x: x, y: round(chip.midY - side / 2), width: side, height: side)
+        let text = Self.plain((string as NSString).substring(with: range)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let button = InlineCodeCopyButton(side: side, text: text)
+        if let codeCopy, codeCopyRange == range {
+            codeCopy.frame = frame
+        } else {
+            codeCopy?.removeFromSuperview()
+            let host = NSHostingView(rootView: button)
+            host.frame = frame
+            addSubview(host)
+            codeCopy = host
+        }
+        codeCopyRange = range
+        codeCopyZone = chip.union(frame).insetBy(dx: -gap, dy: -gap)
+    }
+
+    private func hideCodeCopy() {
+        codeCopy?.removeFromSuperview()
+        codeCopy = nil
+        codeCopyRange = nil
+        codeCopyZone = .zero
+    }
+
+    /// The inline code span under `point` and the chip of the line the pointer is on, in the view's coordinates.
+    private func codeChip(at point: NSPoint) -> (NSRange, NSRect)? {
+        guard let layoutManager = layoutManager as? InlineCodeLayoutManager, let textContainer, let storage = textStorage,
+              storage.length > 0 else { return nil }
+        let inner = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(for: inner, in: textContainer, fractionOfDistanceThroughGlyph: &fraction)
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        guard index < storage.length else { return nil }
+        var range = NSRange()
+        guard storage.attribute(.inlineCode, at: index, longestEffectiveRange: &range,
+                                in: NSRange(location: 0, length: storage.length)) != nil else { return nil }
+        guard let chip = layoutManager.codeChipRects(for: range).first(where: { $0.contains(inner) }) else { return nil }
+        return (range, chip.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y))
     }
 
     /// The sources the citation at `index` names.
@@ -650,6 +728,7 @@ final class ProseTextView: NSTextView {
 
     /// Lets go of a hovered citation and closes its preview: the text is about to change or the view leaves.
     func endCitationHover() {
+        hideCodeCopy()
         pendingShow?.cancel()
         pendingShow = nil
         setHovered(nil, closing: false)
@@ -789,6 +868,20 @@ final class ProseTextView: NSTextView {
     }
 }
 
+/// The copy button beside an inline code chip under the pointer: the chip's own fill around the shared copy button,
+/// which turns into a checkmark for a moment after the click.
+struct InlineCodeCopyButton: View {
+    let side: CGFloat
+    let text: String
+
+    var body: some View {
+        CopyIconButton(tr("button.copy"), height: side, width: side) { text }
+            .roundedBackground(NookTheme.graphite, radius: NookTheme.Radius.chip)
+            .roundedStrokeBorder(NookTheme.line2, radius: NookTheme.Radius.chip)
+            .id(text)
+    }
+}
+
 extension NSAttributedString.Key {
     /// Marks an inline code span in an answer's text view; `InlineCodeLayoutManager` draws its chip.
     static let inlineCode = NSAttributedString.Key("NookInlineCode")
@@ -851,29 +944,10 @@ final class InlineCodeLayoutManager: NSLayoutManager {
     private func drawCodeChips(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let storage = textStorage else { return }
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        let text = storage.string as NSString
         storage.enumerateAttribute(.inlineCode, in: characters) { value, range, _ in
-            guard value != nil, let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return }
-            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
-                var part = NSIntersectionRange(glyphs, lineGlyphs)
-                // A span that wraps leaves its space at the end of the line: the chip stops at the last glyph.
-                while part.length > 0 {
-                    let index = self.characterIndexForGlyph(at: NSMaxRange(part) - 1)
-                    guard index < text.length, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(text.character(at: index)) ?? " ") else { break }
-                    part.length -= 1
-                }
-                guard part.length > 0 else { return }
-                let first = self.location(forGlyphAt: part.location)
-                let lastIndex = NSMaxRange(part) - 1
-                let last = self.location(forGlyphAt: lastIndex)
-                let lastWidth = font.advancement(forCGGlyph: self.cgGlyph(at: lastIndex)).width
-                let baseline = lineRect.minY + first.y
-                let left = max(lineRect.minX, lineRect.minX + first.x - Self.padding)
-                let right = lineRect.minX + last.x + lastWidth + Self.padding
-                let top = baseline - font.ascender - 1.5
-                let bottom = baseline - font.descender + 1.5
-                let chip = NSRect(x: left + origin.x, y: top + origin.y, width: right - left, height: bottom - top)
+            guard value != nil else { return }
+            for rect in codeChipRects(for: range) {
+                let chip = rect.offsetBy(dx: origin.x, dy: origin.y)
                 let radius = min(NookTheme.Radius.chip, chip.height / 3)
                 let path = NSBezierPath(roundedRect: chip.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
                 Self.fill.setFill()
@@ -883,5 +957,35 @@ final class InlineCodeLayoutManager: NSLayoutManager {
                 path.stroke()
             }
         }
+    }
+
+    /// The chips of the inline code span at `range`, one per line it runs over, in the text container's coordinates.
+    func codeChipRects(for range: NSRange) -> [NSRect] {
+        guard let storage = textStorage, range.length > 0, NSMaxRange(range) <= storage.length,
+              let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont else { return [] }
+        let text = storage.string as NSString
+        let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rects: [NSRect] = []
+        enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
+            var part = NSIntersectionRange(glyphs, lineGlyphs)
+            // A span that wraps leaves its space at the end of the line: the chip stops at the last glyph.
+            while part.length > 0 {
+                let index = self.characterIndexForGlyph(at: NSMaxRange(part) - 1)
+                guard index < text.length, CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(text.character(at: index)) ?? " ") else { break }
+                part.length -= 1
+            }
+            guard part.length > 0 else { return }
+            let first = self.location(forGlyphAt: part.location)
+            let lastIndex = NSMaxRange(part) - 1
+            let last = self.location(forGlyphAt: lastIndex)
+            let lastWidth = font.advancement(forCGGlyph: self.cgGlyph(at: lastIndex)).width
+            let baseline = lineRect.minY + first.y
+            let left = max(lineRect.minX, lineRect.minX + first.x - Self.padding)
+            let right = lineRect.minX + last.x + lastWidth + Self.padding
+            let top = baseline - font.ascender - 1.5
+            let bottom = baseline - font.descender + 1.5
+            rects.append(NSRect(x: left, y: top, width: right - left, height: bottom - top))
+        }
+        return rects
     }
 }
