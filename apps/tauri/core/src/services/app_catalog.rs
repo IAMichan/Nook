@@ -22,12 +22,27 @@ pub fn program(name: &str) -> String {
 }
 
 /// Browsers by the start of their program name (after "google-" or "ms"): "chrome", "msedge", "firefox".
-pub const BROWSERS: [&str; 12] = ["chrome", "chromium", "edge", "brave", "arc", "vivaldi", "opera", "firefox", "librewolf", "floorp", "zen", "epiphany"];
+pub const BROWSERS: [&str; 12] =
+    ["chrome", "chromium", "edge", "brave", "arc", "vivaldi", "opera", "firefox", "librewolf", "floorp", "zen", "epiphany"];
 
 /// Apps you hold calls in; helpers and Store packages share the name as a prefix ("ms-teams", "MSTeams_8wekyb3d8bbwe").
 pub const CALLS: [&str; 16] = [
-    "zoom", "ms-teams", "msteams", "teams", "microsoft.teams", "webex", "ciscocollabhost", "atmgr", "discord", "slack", "skype", "whatsapp",
-    "telegram", "signal", "gather", "around",
+    "zoom",
+    "ms-teams",
+    "msteams",
+    "teams",
+    "microsoft.teams",
+    "webex",
+    "ciscocollabhost",
+    "atmgr",
+    "discord",
+    "slack",
+    "skype",
+    "whatsapp",
+    "telegram",
+    "signal",
+    "gather",
+    "around",
 ];
 
 /// Chat apps: where people write to you.
@@ -36,13 +51,46 @@ pub const CHATS: [&str; 12] =
 
 /// Terminals.
 pub const TERMINALS: [&str; 20] = [
-    "windowsterminal", "wt", "cmd", "powershell", "pwsh", "conhost", "gnome-terminal", "kgx", "konsole", "xterm", "alacritty", "kitty",
-    "wezterm", "wezterm-gui", "ghostty", "tilix", "terminator", "xfce4-terminal", "warp", "tabby",
+    "windowsterminal",
+    "wt",
+    "cmd",
+    "powershell",
+    "pwsh",
+    "conhost",
+    "gnome-terminal",
+    "kgx",
+    "konsole",
+    "xterm",
+    "alacritty",
+    "kitty",
+    "wezterm",
+    "wezterm-gui",
+    "ghostty",
+    "tilix",
+    "terminator",
+    "xfce4-terminal",
+    "warp",
+    "tabby",
 ];
 
 /// Code editors.
-pub const EDITORS: [&str; 15] =
-    ["code", "code-insiders", "cursor", "windsurf", "zed", "idea", "idea64", "pycharm", "pycharm64", "webstorm", "rider", "clion", "sublime_text", "notepad++", "devenv"];
+pub const EDITORS: [&str; 15] = [
+    "code",
+    "code-insiders",
+    "cursor",
+    "windsurf",
+    "zed",
+    "idea",
+    "idea64",
+    "pycharm",
+    "pycharm64",
+    "webstorm",
+    "rider",
+    "clion",
+    "sublime_text",
+    "notepad++",
+    "devenv",
+];
 
 /// Mail apps ("olk" is the new Outlook).
 pub const MAIL: [&str; 7] = ["outlook", "olk", "thunderbird", "evolution", "geary", "mailspring", "hxoutlook"];

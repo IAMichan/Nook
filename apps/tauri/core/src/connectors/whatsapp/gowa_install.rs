@@ -172,12 +172,7 @@ pub async fn install(installed: Option<&str>, progress: impl Fn(Step)) -> Result
     let (os, arch) = platform().ok_or_else(no_build)?;
     let http = client();
     // 1. Which build: GOWA's latest release, the zip for this computer.
-    let meta = http
-        .get(LATEST_URL)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|_| download_failed())?;
+    let meta = http.get(LATEST_URL).header("Accept", "application/vnd.github+json").send().await.map_err(|_| download_failed())?;
     if !meta.status().is_success() {
         return Err(download_failed());
     }
@@ -271,12 +266,10 @@ pub fn unpack(archive: &Path, binary: &str, dest: &Path) -> Result<(), String> {
     let file = std::fs::File::open(archive).map_err(|_| failed())?;
     let mut zip = zip::ZipArchive::new(file).map_err(|_| failed())?;
     let index = (0..zip.len())
-        .find(|&i| {
-            zip.by_index(i).ok().is_some_and(|f| {
-                f.is_file() && f.name().ok().is_some_and(|n| n.rsplit('/').next() == Some(binary))
-            })
-        })
-        .ok_or_else(|| tr("Er is geen GOWA-versie voor deze computer gevonden.", "No GOWA build for this computer was found.").to_string())?;
+        .find(|&i| zip.by_index(i).ok().is_some_and(|f| f.is_file() && f.name().ok().is_some_and(|n| n.rsplit('/').next() == Some(binary))))
+        .ok_or_else(|| {
+            tr("Er is geen GOWA-versie voor deze computer gevonden.", "No GOWA build for this computer was found.").to_string()
+        })?;
     let mut entry = zip.by_index(index).map_err(|_| failed())?;
     let temporary = dest.with_extension("new");
     {

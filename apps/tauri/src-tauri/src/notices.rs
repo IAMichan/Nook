@@ -99,11 +99,7 @@ pub fn setup(app: &AppHandle) {
         .and_then(|path| std::fs::read_to_string(path).ok())
         .map(|raw| InterruptionBudget::from_json(Some(&raw)))
         .unwrap_or_default();
-    app.manage(Toasts {
-        pacer: Mutex::new(NoticePacer::new(budget)),
-        budget_path,
-        ..Toasts::default()
-    });
+    app.manage(Toasts { pacer: Mutex::new(NoticePacer::new(budget)), budget_path, ..Toasts::default() });
     crate::platform::toast::setup(app);
     let args: Vec<String> = std::env::args().collect();
     if let Some(link) = ToastLink::from_args(&args) {
@@ -228,7 +224,12 @@ pub fn respond(app: &AppHandle, link: ToastLink, text: Option<String>) {
 /// The one place that decides what a notice does (Settings › Notifications): its source's style (the agents' from
 /// `agent_notice`), the app's switch, quiet hours, and quiet while you share your screen or sit in a meeting. Every
 /// notice asks here first; the bar and the chats ask through `notice_decide`.
-pub fn decide(app: &AppHandle, source: nook_core::services::notice_rules::NoticeSource, app_name: &str, urgent: bool) -> nook_core::services::notice_rules::NoticeDecision {
+pub fn decide(
+    app: &AppHandle,
+    source: nook_core::services::notice_rules::NoticeSource,
+    app_name: &str,
+    urgent: bool,
+) -> nook_core::services::notice_rules::NoticeDecision {
     use chrono::Timelike;
     use nook_core::services::notice_rules::{NoticeDecision, NoticeRules, NoticeSource, NoticeStyle};
     let settings = app.state::<crate::state::AppState>().settings();
@@ -271,11 +272,7 @@ pub fn notice_decide(app: AppHandle, source: String, app_name: Option<String>, u
             // here. Suggestions were already paced in `decide`.
             if source != NoticeSource::Suggestions {
                 if let Some(state) = app.try_state::<Toasts>() {
-                    let key = if name.is_empty() {
-                        source.id().to_string()
-                    } else {
-                        format!("{}:{name}", source.id())
-                    };
+                    let key = if name.is_empty() { source.id().to_string() } else { format!("{}:{name}", source.id()) };
                     let class = InterruptionClass::from_notice_source(source);
                     if !allow_popup(&state, class, &key, urgent, 0.0) {
                         return "history".into();

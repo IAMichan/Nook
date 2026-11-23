@@ -10,10 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::music::{
-    self, Failure, LoadState, MusicOutput, MusicPlayerStats, MusicPlaylist, MusicSearchResult, MusicTrack,
-    OutputKind,
-};
+use super::music::{self, Failure, LoadState, MusicOutput, MusicPlayerStats, MusicPlaylist, MusicSearchResult, MusicTrack, OutputKind};
 use super::music_history::MusicPlay;
 use crate::brain::LoopTool;
 
@@ -101,10 +98,7 @@ impl SpotifyConfig {
     }
 
     pub fn load() -> Self {
-        let mut cfg: Self = std::fs::read(Self::file())
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
+        let mut cfg: Self = std::fs::read(Self::file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         if cfg.redirect_uri.trim().is_empty() {
             cfg.redirect_uri = REDIRECT_URI.to_string();
         }
@@ -162,10 +156,12 @@ pub fn parse_callback_code(input: &str, expected_state: Option<&str>) -> Result<
         return Err(Failure::Failed("Empty authorization code.".into()));
     }
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") || trimmed.contains("code=") {
-        let parsed = url::Url::parse(trimmed).or_else(|_| {
-            let query = trimmed.trim_start_matches('?');
-            url::Url::parse(&format!("{REDIRECT_URI}?{query}"))
-        }).map_err(|e| Failure::Failed(format!("Invalid callback URL: {e}")))?;
+        let parsed = url::Url::parse(trimmed)
+            .or_else(|_| {
+                let query = trimmed.trim_start_matches('?');
+                url::Url::parse(&format!("{REDIRECT_URI}?{query}"))
+            })
+            .map_err(|e| Failure::Failed(format!("Invalid callback URL: {e}")))?;
 
         let mut code = None;
         let mut state = None;
@@ -202,18 +198,8 @@ pub fn parse_token_response(
         let desc = json.get("error_description").and_then(Value::as_str).unwrap_or(err);
         return Err(Failure::Failed(format!("Spotify token error: {desc}")));
     }
-    let access_token = json
-        .get("access_token")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or(Failure::NotSignedIn)?
-        .to_string();
-    let refresh_token = json
-        .get("refresh_token")
-        .and_then(Value::as_str)
-        .or(fallback_refresh)
-        .unwrap_or("")
-        .to_string();
+    let access_token = json.get("access_token").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or(Failure::NotSignedIn)?.to_string();
+    let refresh_token = json.get("refresh_token").and_then(Value::as_str).or(fallback_refresh).unwrap_or("").to_string();
     let expires_in = json.get("expires_in").and_then(Value::as_i64).unwrap_or(3600);
     let scope = json.get("scope").and_then(Value::as_str).unwrap_or(SCOPES).to_string();
     Ok(SpotifySession {
@@ -238,13 +224,7 @@ pub fn begin_pkce(client_id: &str, redirect_uri: Option<&str>) -> Result<Spotify
     let challenge = code_challenge_s256(&verifier);
     let state = uuid::Uuid::new_v4().simple().to_string();
     let authorize_url = authorization_url(cid, redirect, &challenge, &state);
-    let pending = SpotifyPendingAuth {
-        client_id: cid.to_string(),
-        redirect_uri: redirect.to_string(),
-        verifier,
-        state,
-        authorize_url,
-    };
+    let pending = SpotifyPendingAuth { client_id: cid.to_string(), redirect_uri: redirect.to_string(), verifier, state, authorize_url };
     let mut cfg = SpotifyConfig::load();
     cfg.client_id = cid.to_string();
     cfg.redirect_uri = redirect.to_string();
@@ -319,11 +299,8 @@ pub async fn refresh_token(session: &SpotifySession) -> Result<SpotifySession, F
     if session.refresh_token.trim().is_empty() || session.client_id.trim().is_empty() {
         return Err(Failure::NotSignedIn);
     }
-    let form = [
-        ("client_id", session.client_id.as_str()),
-        ("grant_type", "refresh_token"),
-        ("refresh_token", session.refresh_token.as_str()),
-    ];
+    let form =
+        [("client_id", session.client_id.as_str()), ("grant_type", "refresh_token"), ("refresh_token", session.refresh_token.as_str())];
     let resp = reqwest::Client::new()
         .post(TOKEN_URL)
         .form(&form)
@@ -362,11 +339,7 @@ pub fn disconnect() {
 // ── Low-Level HTTP Helpers ──
 
 async fn api_get_with_token(token: &str, path_and_query: &str) -> Result<Value, Failure> {
-    let url = if path_and_query.starts_with("http") {
-        path_and_query.to_string()
-    } else {
-        format!("{API_BASE}{path_and_query}")
-    };
+    let url = if path_and_query.starts_with("http") { path_and_query.to_string() } else { format!("{API_BASE}{path_and_query}") };
     let resp = reqwest::Client::new()
         .get(&url)
         .bearer_auth(token)
@@ -384,15 +357,9 @@ async fn api_get_with_token(token: &str, path_and_query: &str) -> Result<Value, 
 
 async fn api_request(method: reqwest::Method, path_and_query: &str, body: Option<Value>) -> Result<Value, Failure> {
     let session = active_session().await?;
-    let url = if path_and_query.starts_with("http") {
-        path_and_query.to_string()
-    } else {
-        format!("{API_BASE}{path_and_query}")
-    };
-    let mut req = reqwest::Client::new()
-        .request(method, &url)
-        .bearer_auth(&session.access_token)
-        .timeout(std::time::Duration::from_secs(15));
+    let url = if path_and_query.starts_with("http") { path_and_query.to_string() } else { format!("{API_BASE}{path_and_query}") };
+    let mut req =
+        reqwest::Client::new().request(method, &url).bearer_auth(&session.access_token).timeout(std::time::Duration::from_secs(15));
     if let Some(json_body) = body {
         req = req.json(&json_body);
     }
@@ -432,12 +399,8 @@ pub fn search_albums(v: &Value) -> Vec<MusicAlbum> {
                         .and_then(|imgs| imgs.first())
                         .and_then(|i| i.get("url").and_then(Value::as_str))
                         .map(str::to_string);
-                    let release_year = item
-                        .get("release_date")
-                        .and_then(Value::as_str)
-                        .and_then(|d| d.split('-').next())
-                        .unwrap_or("")
-                        .to_string();
+                    let release_year =
+                        item.get("release_date").and_then(Value::as_str).and_then(|d| d.split('-').next()).unwrap_or("").to_string();
                     let total_tracks = item.get("total_tracks").and_then(Value::as_u64).unwrap_or(0) as u32;
                     Some(MusicAlbum {
                         id: uri.to_string(),
@@ -455,9 +418,7 @@ pub fn search_albums(v: &Value) -> Vec<MusicAlbum> {
 
 /// Parses playlists from `GET /v1/search?type=track,album,playlist` (`SV-32`).
 pub fn search_playlists(v: &Value, user_id: Option<&str>) -> Vec<MusicPlaylist> {
-    v.get("playlists")
-        .map(|p| music::playlists(p, user_id))
-        .unwrap_or_default()
+    v.get("playlists").map(|p| music::playlists(p, user_id)).unwrap_or_default()
 }
 
 /// Parses recent play items from `GET /v1/me/player/recently-played` into [`MusicPlay`] records (`SV-36`).
@@ -499,13 +460,7 @@ pub async fn search_catalog(query: &str, limit: u32) -> SpotifySearchCatalog {
     }
     let session = match active_session().await {
         Ok(s) => s,
-        Err(f) => {
-            return SpotifySearchCatalog {
-                query: clean.to_string(),
-                state: LoadState::from_failure(&f),
-                ..Default::default()
-            }
-        }
+        Err(f) => return SpotifySearchCatalog { query: clean.to_string(), state: LoadState::from_failure(&f), ..Default::default() },
     };
     let encoded: String = url::form_urlencoded::byte_serialize(clean.as_bytes()).collect();
     let lim = limit.clamp(1, 50);
@@ -518,21 +473,13 @@ pub async fn search_catalog(query: &str, limit: u32) -> SpotifySearchCatalog {
             albums: search_albums(&v),
             playlists: search_playlists(&v, session.user_id.as_deref()),
         },
-        Err(f) => SpotifySearchCatalog {
-            query: clean.to_string(),
-            state: LoadState::from_failure(&f),
-            ..Default::default()
-        },
+        Err(f) => SpotifySearchCatalog { query: clean.to_string(), state: LoadState::from_failure(&f), ..Default::default() },
     }
 }
 
 /// Converts a catalog search into `MusicSearchResult` for track-focused callers.
 pub fn to_track_search_result(catalog: &SpotifySearchCatalog) -> MusicSearchResult {
-    MusicSearchResult {
-        query: catalog.query.clone(),
-        state: catalog.state.clone(),
-        tracks: catalog.tracks.clone(),
-    }
+    MusicSearchResult { query: catalog.query.clone(), state: catalog.state.clone(), tracks: catalog.tracks.clone() }
 }
 
 /// Reads Spotify's live player queue (`GET /v1/me/player/queue`, `SV-33`).
@@ -652,12 +599,8 @@ pub async fn add_tracks_to_playlist(playlist_uri_or_id: &str, track_uris: &[Stri
 /// Removes tracks from a Spotify playlist (`DELETE /v1/playlists/{id}/tracks`, `SV-34`).
 pub async fn remove_tracks_from_playlist(playlist_uri_or_id: &str, track_uris: &[String]) -> Result<(), Failure> {
     let id = normalize_playlist_id(playlist_uri_or_id)?;
-    let tracks: Vec<Value> = track_uris
-        .iter()
-        .map(String::as_str)
-        .filter(|u| music::is_spotify_uri(u))
-        .map(|u| json!({ "uri": u }))
-        .collect();
+    let tracks: Vec<Value> =
+        track_uris.iter().map(String::as_str).filter(|u| music::is_spotify_uri(u)).map(|u| json!({ "uri": u })).collect();
     if tracks.is_empty() {
         return Err(Failure::Failed("No valid Spotify track URIs to remove.".into()));
     }
@@ -673,11 +616,7 @@ pub async fn top_stats(time_range: Option<&str>) -> Result<MusicPlayerStats, Fai
     };
     let tracks_val = api_request(reqwest::Method::GET, &format!("/me/top/tracks?time_range={range}&limit=20"), None).await?;
     let artists_val = api_request(reqwest::Method::GET, &format!("/me/top/artists?time_range={range}&limit=20"), None).await?;
-    Ok(MusicPlayerStats {
-        app: "Spotify".into(),
-        tracks: music::top_tracks(&tracks_val),
-        artists: music::top_artists(&artists_val),
-    })
+    Ok(MusicPlayerStats { app: "Spotify".into(), tracks: music::top_tracks(&tracks_val), artists: music::top_artists(&artists_val) })
 }
 
 /// Fetches the user's recently played tracks from Spotify (`GET /v1/me/player/recently-played`, `SV-36`).
@@ -700,12 +639,7 @@ pub async fn select_connect_device(device_id: &str, play: bool) -> Result<(), Fa
     if clean.is_empty() {
         return Err(Failure::Failed("No device ID specified.".into()));
     }
-    let _ = api_request(
-        reqwest::Method::PUT,
-        "/me/player",
-        Some(json!({ "device_ids": [clean], "play": play })),
-    )
-    .await?;
+    let _ = api_request(reqwest::Method::PUT, "/me/player", Some(json!({ "device_ids": [clean], "play": play }))).await?;
     Ok(())
 }
 
@@ -730,16 +664,8 @@ pub fn merge_outputs(local_endpoints: Vec<MusicOutput>, connect_devices: Vec<Mus
 
 /// Default local audio output entry for the current computer when platform audio enumeration is combined with Spotify Connect.
 pub fn local_computer_output(system_volume: Option<u8>) -> MusicOutput {
-    let host = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "This Computer".into());
-    MusicOutput {
-        id: "local:default".into(),
-        name: host,
-        kind: OutputKind::Computer,
-        active: true,
-        volume: system_volume,
-    }
+    let host = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "This Computer".into());
+    MusicOutput { id: "local:default".into(), name: host, kind: OutputKind::Computer, active: true, volume: system_volume }
 }
 
 // ── BR-28: Brain Tools (`search_music` & `play_music`) ──
@@ -936,7 +862,10 @@ mod tests {
         });
         let albums = search_albums(&search_json);
         assert_eq!(albums.len(), 1);
-        assert_eq!((albums[0].name.as_str(), albums[0].artist.as_str(), albums[0].release_year.as_str()), ("Random Access Memories", "Daft Punk", "2013"));
+        assert_eq!(
+            (albums[0].name.as_str(), albums[0].artist.as_str(), albums[0].release_year.as_str()),
+            ("Random Access Memories", "Daft Punk", "2013")
+        );
 
         let recent_json = json!({
             "items": [{

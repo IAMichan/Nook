@@ -114,10 +114,7 @@ async fn find_github_branch_pr(app: &AppHandle, repo: &str, branch: &str) -> Res
         match pulls::branch_pulls(&env, &token, repo, branch).await {
             Ok(list) => {
                 // Prefer an open PR; fall back to the most recent closed/merged PR for this branch.
-                let picked = list
-                    .iter()
-                    .find(|p| p["state"].as_str() == Some("open"))
-                    .or_else(|| list.first());
+                let picked = list.iter().find(|p| p["state"].as_str() == Some("open")).or_else(|| list.first());
                 if let Some(pr) = picked {
                     if let Some(number) = pr["number"].as_i64() {
                         let url = pr["html_url"]
@@ -150,10 +147,7 @@ async fn find_gitlab_branch_mr(app: &AppHandle, host: &str, repo: &str, branch: 
         return Err(format!("No merge request found on {host}/{repo} for branch \"{branch}\"."));
     };
     let number = mr["iid"].as_i64().ok_or("GitLab returned a merge request without an iid.")?;
-    let web_url = mr["web_url"]
-        .as_str()
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("https://{host}/{repo}/-/merge_requests/{number}"));
+    let web_url = mr["web_url"].as_str().map(str::to_string).unwrap_or_else(|| format!("https://{host}/{repo}/-/merge_requests/{number}"));
     Ok(PullRequestRef { host: PrHost::GitLab(host.to_string()), repo: repo.to_string(), number, url: web_url })
 }
 
@@ -247,12 +241,8 @@ async fn fetch_gitlab_snapshot(app: &AppHandle, host: &str, reference: &PullRequ
     let base = format!("https://{host}/api/v4/projects/{project}/merge_requests/{}", reference.number);
     let headers = [("PRIVATE-TOKEN", token)];
     let mr = connectors.env.http.json("GET", &base, &headers, None, "GitLab").await.map_err(|e| e.message)?;
-    let notes = connectors
-        .env
-        .http
-        .json("GET", &format!("{base}/notes?per_page=50"), &headers, None, "GitLab")
-        .await
-        .unwrap_or(Value::Null);
+    let notes =
+        connectors.env.http.json("GET", &format!("{base}/notes?per_page=50"), &headers, None, "GitLab").await.unwrap_or(Value::Null);
 
     let draft = mr["draft"].as_bool().or_else(|| mr["work_in_progress"].as_bool()).unwrap_or(false);
     let state = match mr["state"].as_str().unwrap_or("opened") {
@@ -263,11 +253,7 @@ async fn fetch_gitlab_snapshot(app: &AppHandle, host: &str, reference: &PullRequ
     }
     .to_string();
     let conflicted = mr["has_conflicts"].as_bool().unwrap_or(false);
-    let merge_state = mr["detailed_merge_status"]
-        .as_str()
-        .or_else(|| mr["merge_status"].as_str())
-        .unwrap_or("unknown")
-        .to_string();
+    let merge_state = mr["detailed_merge_status"].as_str().or_else(|| mr["merge_status"].as_str()).unwrap_or("unknown").to_string();
 
     let mut checks = Vec::new();
     if let Some(pipeline) = mr.get("head_pipeline").filter(|v| v.is_object()) {
@@ -310,11 +296,7 @@ async fn fetch_gitlab_snapshot(app: &AppHandle, host: &str, reference: &PullRequ
     })
 }
 
-pub(super) async fn get_pull_request_status(
-    app: &AppHandle,
-    a: &Map<String, Value>,
-    caller: &BridgeCaller,
-) -> Result<ToolResult, String> {
+pub(super) async fn get_pull_request_status(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
     if let Verdict::Refuse(reason) = check(app, BridgeTool::GetPullRequestStatus, caller, None) {
         return Err(refusal(reason).into());
     }
@@ -421,9 +403,7 @@ pub(super) async fn watch_pull_request(
         }
     });
 
-    lock(&WATCHES)
-        .get_or_insert_with(HashMap::new)
-        .insert(run_id, ActiveWatch { reference: reference.clone(), handle });
+    lock(&WATCHES).get_or_insert_with(HashMap::new).insert(run_id, ActiveWatch { reference: reference.clone(), handle });
 
     audit(app, BridgeTool::WatchPullRequest, caller, &reference.url, "gestart");
     note_run(app, caller, &format!("Volgt PR {}#{} ({})", reference.repo, reference.number, reference.url));

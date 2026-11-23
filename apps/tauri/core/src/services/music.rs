@@ -114,7 +114,13 @@ pub struct MusicSearchResult {
 pub fn playlist_id(uri: &str) -> Option<&str> {
     let mut parts = uri.split(':');
     let (a, b, c, rest) = (parts.next()?, parts.next()?, parts.next()?, parts.next());
-    (a == "spotify" && b == "playlist" && rest.is_none() && !c.is_empty() && c.len() <= 64 && c.chars().all(|ch| ch.is_ascii_alphanumeric())).then_some(c)
+    (a == "spotify"
+        && b == "playlist"
+        && rest.is_none()
+        && !c.is_empty()
+        && c.len() <= 64
+        && c.chars().all(|ch| ch.is_ascii_alphanumeric()))
+    .then_some(c)
 }
 
 /// `spotify:track:…` or `spotify:episode:…`: what Spotify can play and queue.
@@ -142,7 +148,8 @@ fn image(images: Option<&Value>, min_width: u64) -> Option<String> {
 pub fn track(item: &Value) -> Option<MusicTrack> {
     let uri = str_of(item, "uri")?;
     let name = str_of(item, "name").filter(|n| !n.is_empty())?;
-    let artists: Vec<&str> = item.get("artists").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| str_of(x, "name")).collect()).unwrap_or_default();
+    let artists: Vec<&str> =
+        item.get("artists").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| str_of(x, "name")).collect()).unwrap_or_default();
     let show = item.get("show").and_then(|s| str_of(s, "name"));
     let album = item.get("album");
     let images = album.and_then(|a| a.get("images")).or_else(|| item.get("images"));
@@ -237,7 +244,11 @@ pub fn failure(status: u16, body: &str) -> Option<Failure> {
     match status {
         200..=299 => None,
         401 => Some(Failure::NotSignedIn),
-        403 => Some(if message().is_some_and(|m| m.to_lowercase().contains("scope")) { Failure::MissingScope } else { Failure::PremiumRequired }),
+        403 => Some(if message().is_some_and(|m| m.to_lowercase().contains("scope")) {
+            Failure::MissingScope
+        } else {
+            Failure::PremiumRequired
+        }),
         404 => Some(Failure::NoActiveDevice),
         _ => Some(Failure::Failed(message().unwrap_or_else(|| format!("HTTP {status}")))),
     }
@@ -403,7 +414,10 @@ pub fn sort_outputs(outputs: &mut [MusicOutput]) {
 /// What a Windows audio endpoint is, from its name (the name tells headphones from a speaker).
 pub fn endpoint_kind(name: &str) -> OutputKind {
     let lower = name.to_lowercase();
-    if ["headphone", "airpods", "buds", "beats", "koptelefoon", "kopfhörer", "casque", "auriculares", "headset"].iter().any(|s| lower.contains(s)) {
+    if ["headphone", "airpods", "buds", "beats", "koptelefoon", "kopfhörer", "casque", "auriculares", "headset"]
+        .iter()
+        .any(|s| lower.contains(s))
+    {
         OutputKind::Headphones
     } else if lower.contains("bluetooth") {
         OutputKind::Bluetooth
@@ -426,12 +440,17 @@ mod tests {
             "album": {"name": "Album", "images": [{"url": "big", "width": 640}, {"url": "mid", "width": 300}, {"url": "tiny", "width": 64}]}}]}});
         let tracks = search_tracks(&v);
         assert_eq!(tracks.len(), 1);
-        assert_eq!((tracks[0].artist.as_str(), tracks[0].duration, tracks[0].artwork_url.as_deref(), tracks[0].album.as_str()), ("A, B", 201, Some("mid"), "Album"));
+        assert_eq!(
+            (tracks[0].artist.as_str(), tracks[0].duration, tracks[0].artwork_url.as_deref(), tracks[0].album.as_str()),
+            ("A, B", 201, Some("mid"), "Album")
+        );
     }
 
     #[test]
     fn episodes_use_the_show() {
-        let t = track(&json!({"uri": "spotify:episode:e", "name": "Ep", "show": {"name": "The Show"}, "images": [{"url": "u", "width": 300}]})).unwrap();
+        let t =
+            track(&json!({"uri": "spotify:episode:e", "name": "Ep", "show": {"name": "The Show"}, "images": [{"url": "u", "width": 300}]}))
+                .unwrap();
         assert_eq!((t.artist.as_str(), t.album.as_str(), t.artwork_url.as_deref()), ("The Show", "The Show", Some("u")));
     }
 

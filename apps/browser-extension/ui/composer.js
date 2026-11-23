@@ -4887,6 +4887,138 @@ var Recall = class {
 };
 // node_modules/svelte/src/internal/disclose-version.js
 if (typeof window !== "undefined") ((window.__svelte ??= {}).v ??= /* @__PURE__ */ new Set()).add("5");
+// src/rich.ts
+/** Inline Markdown in one line: `code`, **bold**, __bold__, *italic*, _italic_, ~~strike~~, [link](url). */
+function inline$1(line, base) {
+	const out = [];
+	const pattern = /(`+)([^`]+?)\1|(\*\*|__)(?=\S)(.+?)(?<=\S)\3|(\*|_)(?=\S)(.+?)(?<=\S)\5(?![*_\w])|(~~)(?=\S)(.+?)(?<=\S)~~|\[([^\]\n]+)\]\(([^)\s]+)\)/g;
+	let at = 0;
+	const push = (text, styles) => {
+		if (text) out.push({
+			text,
+			styles
+		});
+	};
+	for (const m of line.matchAll(pattern)) {
+		const start = m.index;
+		push(line.slice(at, start), base);
+		if (m[1]) {
+			push(m[1], [
+				...base,
+				"code",
+				"marker"
+			]);
+			push(m[2], [...base, "code"]);
+			push(m[1], [
+				...base,
+				"code",
+				"marker"
+			]);
+		} else if (m[3]) {
+			push(m[3], [
+				...base,
+				"bold",
+				"marker"
+			]);
+			for (const run of inline$1(m[4], [...base, "bold"])) out.push(run);
+			push(m[3], [
+				...base,
+				"bold",
+				"marker"
+			]);
+		} else if (m[5]) {
+			push(m[5], [
+				...base,
+				"italic",
+				"marker"
+			]);
+			for (const run of inline$1(m[6], [...base, "italic"])) out.push(run);
+			push(m[5], [
+				...base,
+				"italic",
+				"marker"
+			]);
+		} else if (m[7]) {
+			push("~~", [
+				...base,
+				"strike",
+				"marker"
+			]);
+			push(m[8], [...base, "strike"]);
+			push("~~", [
+				...base,
+				"strike",
+				"marker"
+			]);
+		} else {
+			push("[", [
+				...base,
+				"link",
+				"marker"
+			]);
+			push(m[9], [...base, "link"]);
+			push(`](${m[10]})`, [
+				...base,
+				"link",
+				"marker"
+			]);
+		}
+		at = start + m[0].length;
+	}
+	push(line.slice(at), base);
+	return out;
+}
+/** The whole text as runs, line by line: headings, list items, quotes and fenced code blocks, then inline styles. */
+function richRuns(text) {
+	const out = [];
+	let fence = null;
+	const lines = text.split("\n");
+	lines.forEach((line, i) => {
+		const end = i < lines.length - 1 ? "\n" : "";
+		const fenceMark = /^\s*(```+|~~~+)/.exec(line);
+		if (fence !== null || fenceMark) {
+			const open = fence;
+			if (open === null) fence = fenceMark[1];
+			else if (fenceMark && fenceMark[1].startsWith(open[0]) && fenceMark[1].length >= open.length) fence = null;
+			out.push({
+				text: line + end,
+				styles: fenceMark ? ["codeBlock", "marker"] : ["codeBlock"]
+			});
+			return;
+		}
+		const heading = /^(#{1,6} )(.*)$/.exec(line);
+		const list = /^(\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)(.*)$/.exec(line);
+		const quote = /^(\s*> ?)(.*)$/.exec(line);
+		if (heading) {
+			out.push({
+				text: heading[1],
+				styles: ["heading", "marker"]
+			});
+			out.push(...inline$1(heading[2], ["heading"]));
+		} else if (list) {
+			out.push({
+				text: list[1],
+				styles: ["list", "marker"]
+			});
+			out.push(...inline$1(list[2], []));
+		} else if (quote) {
+			out.push({
+				text: quote[1],
+				styles: ["quote", "marker"]
+			});
+			out.push(...inline$1(quote[2], ["quote"]));
+		} else out.push(...inline$1(line, []));
+		if (end) out.push({
+			text: end,
+			styles: []
+		});
+	});
+	return out;
+}
+/** Whether the text has any Markdown worth drawing differently: plain text skips the layer. */
+function hasMarkdown(text) {
+	return richRuns(text).some((run) => run.styles.length > 0);
+}
 // src/Composer.svelte
 var root$4 = /* @__PURE__ */ from_html(`<button type="button" class="thumb svelte-r7ttdz"><img alt="" class="svelte-r7ttdz"/></button>`);
 var root_1$3 = /* @__PURE__ */ from_html(`<span class="file faint svelte-r7ttdz"> </span>`);
@@ -4894,18 +5026,21 @@ var root_2$3 = /* @__PURE__ */ from_html(`<button type="button" class="file svel
 var root_3$3 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
 var root_4$3 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
 var root_5$3 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
-var root_6$2 = /* @__PURE__ */ from_html(`<button type="button" class="round queue svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4"></path></svg></button>`);
-var root_7$2 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
-var root_8$2 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
-var root_9$1 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <textarea rows="1" class="svelte-r7ttdz"></textarea> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3"></path></svg></button> <!> <span class="grow svelte-r7ttdz"></span> <!> <!> <!></div></div> <!></div>`);
+var root_6$2 = /* @__PURE__ */ from_html(`<span> </span>`);
+var root_7$2 = /* @__PURE__ */ from_html(`<div class="layer svelte-r7ttdz" aria-hidden="true"><!> </div>`);
+var root_8$2 = /* @__PURE__ */ from_html(`<button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="M12 5v14M5 12h14"></path></svg></button>`);
+var root_9$1 = /* @__PURE__ */ from_html(`<button type="button" class="round queue svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4"></path></svg></button>`);
+var root_10$1 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
+var root_11$1 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
+var root_12$1 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <div><!> <textarea rows="1" class="svelte-r7ttdz"></textarea></div> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <!> <!> <span class="grow svelte-r7ttdz"></span> <!> <!> <!></div></div> <!></div>`);
 var $$css$5 = {
 	hash: "svelte-r7ttdz",
-	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:24px;max-height:160px;field-sizing:content;resize:none;margin:0;padding:2px 2px 0;border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:1.5;}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:6px;margin:6px 0 0 -4px;min-width:0;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz, button.queue.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled), button.queue.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
+	code: "\n  /* Every color comes from the surface (`--nc-*`); the fallbacks are Nook's own light theme. */.nook-composer.svelte-r7ttdz {display:flex;flex-direction:column;gap:8px;min-width:0;}.box.svelte-r7ttdz {display:flex;flex-direction:column;padding:var(--nc-pad, 10px 12px);border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-radius, 16px);background:var(--nc-surface, #ffffff);box-shadow:var(--nc-shadow, none);transition:background-color 0.2s ease, border-color 0.2s ease;}.box.svelte-r7ttdz:focus-within {background:var(--nc-surface-focus, var(--nc-surface, #ffffff));border-color:var(--nc-line-focus, #d4d4d8);}.dragging.svelte-r7ttdz .box:where(.svelte-r7ttdz) {outline:2px dashed var(--nc-accent, #1e1e22);outline-offset:-4px;}.compact.svelte-r7ttdz .box:where(.svelte-r7ttdz) {padding:6px 8px;}textarea.svelte-r7ttdz {width:100%;box-sizing:border-box;min-height:var(--nc-field-min, 20px);max-height:160px;field-sizing:content;resize:none;margin:0;padding:var(--nc-field-pad, 2px 2px 0);border:0;outline:none;box-shadow:none;background:transparent;color:var(--nc-text, #27272a);font:inherit;line-height:var(--nc-line-height, 1.25);}textarea.svelte-r7ttdz::placeholder {color:var(--nc-faint, #62626c);}\n  /* The rich composer: the layer and the field share one box, font and wrapping, so every character sits in the same\n     place; widths never change (bold is drawn with a shadow, code with a tint), so the caret stays on its character. */.field.svelte-r7ttdz {position:relative;display:flex;min-width:0;}.layer.svelte-r7ttdz {position:absolute;inset:0;overflow:hidden;padding:var(--nc-field-pad, 2px 2px 0);white-space:pre-wrap;overflow-wrap:break-word;color:var(--nc-text, #27272a);font:inherit;line-height:var(--nc-line-height, 1.25);pointer-events:none;}.styled.svelte-r7ttdz textarea:where(.svelte-r7ttdz) {color:transparent;caret-color:var(--nc-text, #27272a);position:relative;}.styled.svelte-r7ttdz textarea:where(.svelte-r7ttdz)::selection {color:transparent;}.layer.svelte-r7ttdz .marker:where(.svelte-r7ttdz) {color:var(--nc-faint, #62626c);}.layer.svelte-r7ttdz .bold:where(.svelte-r7ttdz), .layer.svelte-r7ttdz .heading:where(.svelte-r7ttdz) {text-shadow:0.35px 0 0 currentColor, -0.35px 0 0 currentColor;}.layer.svelte-r7ttdz .heading:where(.svelte-r7ttdz) {color:var(--nc-text-strong, var(--nc-text, #27272a));}.layer.svelte-r7ttdz .italic:where(.svelte-r7ttdz) {color:var(--nc-text-soft, color-mix(in srgb, var(--nc-text, #27272a) 82%, transparent));}.layer.svelte-r7ttdz .strike:where(.svelte-r7ttdz) {text-decoration:line-through;}.layer.svelte-r7ttdz .code:where(.svelte-r7ttdz), .layer.svelte-r7ttdz .codeBlock:where(.svelte-r7ttdz) {background:var(--nc-code, color-mix(in srgb, var(--nc-text, #27272a) 10%, transparent));border-radius:3px;}.layer.svelte-r7ttdz .link:where(.svelte-r7ttdz) {color:var(--nc-accent, #1e1e22);text-decoration:underline;text-decoration-color:color-mix(in srgb, currentColor 40%, transparent);}.layer.svelte-r7ttdz .list.marker:where(.svelte-r7ttdz), .layer.svelte-r7ttdz .quote.marker:where(.svelte-r7ttdz) {color:var(--nc-accent, #1e1e22);}.layer.svelte-r7ttdz .quote:where(.svelte-r7ttdz) {color:var(--nc-faint, #62626c);}textarea.svelte-r7ttdz:focus-visible {box-shadow:none;outline:none;}textarea.svelte-r7ttdz:disabled {cursor:default;}.row.svelte-r7ttdz {display:flex;align-items:center;gap:var(--nc-row-gap, 6px);margin:var(--nc-row-margin, 6px 0 0 -4px);min-width:0;min-height:32px;}\n  /* Match macOS `ComposerDictationButton` (30pt) inside the 32pt control row so the composer stays 84pt tall. */.row.svelte-r7ttdz button.mic {width:30px;height:30px;}.grow.svelte-r7ttdz {flex:1;}.file-input.svelte-r7ttdz {display:none;}button.icon.svelte-r7ttdz, button.round.svelte-r7ttdz {flex-shrink:0;display:grid;place-items:center;margin:0;padding:0;border:0;cursor:pointer;}button.icon.svelte-r7ttdz {width:32px;height:32px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);}button.icon.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}button.icon.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;}button.round.svelte-r7ttdz {width:32px;height:32px;border-radius:999px;}button.round.svelte-r7ttdz svg:where(.svelte-r7ttdz) {width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}button.send.svelte-r7ttdz, button.queue.svelte-r7ttdz {background:var(--nc-accent, #1e1e22);color:var(--nc-on-accent, #ffffff);}button.send.svelte-r7ttdz:hover:not(:disabled), button.queue.svelte-r7ttdz:hover:not(:disabled) {background:var(--nc-accent-hover, var(--nc-accent, #3b3b3f));}button.send.svelte-r7ttdz:disabled {background:var(--nc-disabled, #e4e4e7);color:var(--nc-faint, #62626c);cursor:default;}button.stop.svelte-r7ttdz {background:var(--nc-stop, #18181b);color:var(--nc-on-stop, #fcfcfc);}button.stop.svelte-r7ttdz svg:where(.svelte-r7ttdz) {fill:currentColor;stroke:none;}button.svelte-r7ttdz:disabled {cursor:default;opacity:0.6;}button.send.svelte-r7ttdz:disabled {opacity:1;}button.svelte-r7ttdz:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.thumbs.svelte-r7ttdz {display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}.thumb.svelte-r7ttdz {width:46px;height:46px;padding:0;overflow:hidden;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;cursor:pointer;}.thumb.svelte-r7ttdz img:where(.svelte-r7ttdz) {width:100%;height:100%;object-fit:cover;display:block;}.slot.svelte-r7ttdz {display:grid;place-items:center;width:46px;height:46px;box-sizing:border-box;border:1.5px dashed var(--nc-accent, #1e1e22);border-radius:8px;color:var(--nc-accent, #1e1e22);background:color-mix(in srgb, var(--nc-accent, #1e1e22) 12%, transparent);font-size:18px;pointer-events:none;}.file.svelte-r7ttdz {max-width:100%;overflow-wrap:anywhere;text-align:left;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--nc-line, #e4e4e7);border-radius:8px;background:none;color:var(--nc-text, #27272a);}.faint.svelte-r7ttdz {color:var(--nc-faint, #62626c);}.err.svelte-r7ttdz {color:var(--nc-error, #c10007);font-size:12px;margin:0 0 6px;}"
 };
 function Composer($$anchor, $$props) {
 	push($$props, true);
 	append_styles$1($$anchor, $$css$5);
-	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), queues = prop($$props, "queues", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false);
+	let draft = prop($$props, "draft", 7), busy = prop($$props, "busy", 3, false), queues = prop($$props, "queues", 3, false), disabled = prop($$props, "disabled", 3, false), history = prop($$props, "history", 19, () => []), historyKey = prop($$props, "historyKey", 3, null), escapeStops = prop($$props, "escapeStops", 3, false), compact = prop($$props, "compact", 3, false), autofocus = prop($$props, "autofocus", 3, false), rich = prop($$props, "rich", 3, false);
 	/** Stops Nook's answer. Without it, a busy composer only waits. */
 	/** Nook is answering: send waits (or becomes stop when `onstop` is given). */
 	/** While busy, Return and the queue button still send: the message waits in line for after this answer. */
@@ -4913,7 +5048,12 @@ function Composer($$anchor, $$props) {
 	/** Your earlier questions in this conversation, newest first (`askedBefore`). */
 	/** The conversation the history belongs to: a new one starts Up from the newest question again. */
 	/** Escape stops the answer (in a window; in a bar Escape closes the bar). */
+	/** Replaces the attach button with a menu of its own (the Mac's `ComposerMoreMenu`); `pickFile` opens the file picker. */
+	/** Markdown shows its style as you type (the Mac's rich composer); what is sent stays plain Markdown. */
 	let field = /* @__PURE__ */ state(void 0);
+	let layer = /* @__PURE__ */ state(void 0);
+	const styled = /* @__PURE__ */ user_derived(() => rich() && hasMarkdown(draft().text));
+	const runs = /* @__PURE__ */ user_derived(() => get(styled) ? richRuns(draft().text) : []);
 	let fileInput = /* @__PURE__ */ state(void 0);
 	let dragging = /* @__PURE__ */ state(false);
 	const recall = new Recall();
@@ -4985,7 +5125,7 @@ function Composer($$anchor, $$props) {
 	const accept = /* @__PURE__ */ user_derived(() => draft().readsDocuments ? "image/*,.txt,.md,.csv,.json,.pdf,.docx,.odt,.pptx,.zip" : "image/*");
 	const placeholder = /* @__PURE__ */ user_derived(() => draft().attachment && $$props.texts.placeholderFor ? $$props.texts.placeholderFor(draft().attachment.name) : $$props.texts.placeholder);
 	var $$exports = { focus };
-	var div = root_9$1();
+	var div = root_12$1();
 	let classes;
 	var node = child(div);
 	snippet(node, () => $$props.top ?? noop);
@@ -5055,20 +5195,67 @@ function Composer($$anchor, $$props) {
 	if_block(node_6, ($$render) => {
 		if (draft().fileError) $$render(consequent_4);
 	});
-	var textarea = sibling(node_6, 2);
+	var div_3 = sibling(node_6, 2);
+	let classes_1;
+	var node_7 = child(div_3);
+	var consequent_5 = ($$anchor) => {
+		var div_4 = root_7$2();
+		var node_8 = child(div_4);
+		each(node_8, 17, () => get(runs), index, ($$anchor, run) => {
+			var span_3 = root_6$2();
+			var text_5 = only_child(span_3, true);
+			template_effect(($0) => {
+				set_class(span_3, 1, $0, "svelte-r7ttdz");
+				set_text(text_5, get(run).text);
+			}, [() => clsx(get(run).styles.join(" "))]);
+			append($$anchor, span_3);
+		});
+		var text_6 = sibling(node_8, 1, true);
+		text_6.nodeValue = "​";
+		reset(div_4);
+		bind_this(div_4, ($$value) => set(layer, $$value), () => get(layer));
+		append($$anchor, div_4);
+	};
+	if_block(node_7, ($$render) => {
+		if (get(styled)) $$render(consequent_5);
+	});
+	var textarea = sibling(node_7, 2);
 	remove_textarea_child(textarea);
 	bind_this(textarea, ($$value) => set(field, $$value), () => get(field));
-	var div_3 = sibling(textarea, 2);
-	var input = child(div_3);
+	reset(div_3);
+	var div_5 = sibling(div_3, 2);
+	var input = child(div_5);
 	bind_this(input, ($$value) => set(fileInput, $$value), () => get(fileInput));
-	var button_2 = sibling(input, 2);
-	var node_7 = sibling(button_2, 2);
-	snippet(node_7, () => $$props.controls ?? noop);
-	var node_8 = sibling(node_7, 4);
-	snippet(node_8, () => $$props.extras ?? noop);
-	var node_9 = sibling(node_8, 2);
-	var consequent_5 = ($$anchor) => {
-		var button_3 = root_6$2();
+	var node_9 = sibling(input, 2);
+	var consequent_6 = ($$anchor) => {
+		var fragment = comment();
+		snippet(first_child(fragment), () => $$props.plus, () => ({
+			pickFile,
+			disabled: disabled() || draft().reading
+		}));
+		append($$anchor, fragment);
+	};
+	var alternate = ($$anchor) => {
+		var button_2 = root_8$2();
+		template_effect(() => {
+			set_attribute(button_2, "title", $$props.texts.attach);
+			set_attribute(button_2, "aria-label", $$props.texts.attach);
+			button_2.disabled = disabled() || draft().reading;
+		});
+		delegated("click", button_2, pickFile);
+		append($$anchor, button_2);
+	};
+	if_block(node_9, ($$render) => {
+		if ($$props.plus) $$render(consequent_6);
+		else $$render(alternate, -1);
+	});
+	var node_11 = sibling(node_9, 2);
+	snippet(node_11, () => $$props.controls ?? noop);
+	var node_12 = sibling(node_11, 4);
+	snippet(node_12, () => $$props.extras ?? noop);
+	var node_13 = sibling(node_12, 2);
+	var consequent_7 = ($$anchor) => {
+		var button_3 = root_9$1();
 		template_effect(() => {
 			button_3.disabled = !get(canSend);
 			set_attribute(button_3, "title", $$props.texts.queue);
@@ -5077,12 +5264,12 @@ function Composer($$anchor, $$props) {
 		delegated("click", button_3, send);
 		append($$anchor, button_3);
 	};
-	if_block(node_9, ($$render) => {
-		if (get(stoppable) && queues() && !draft().empty) $$render(consequent_5);
+	if_block(node_13, ($$render) => {
+		if (get(stoppable) && queues() && !draft().empty) $$render(consequent_7);
 	});
-	var node_10 = sibling(node_9, 2);
-	var consequent_6 = ($$anchor) => {
-		var button_4 = root_7$2();
+	var node_14 = sibling(node_13, 2);
+	var consequent_8 = ($$anchor) => {
+		var button_4 = root_10$1();
 		template_effect(() => {
 			set_attribute(button_4, "title", $$props.texts.stop);
 			set_attribute(button_4, "aria-label", $$props.texts.stop);
@@ -5090,8 +5277,8 @@ function Composer($$anchor, $$props) {
 		delegated("click", button_4, () => $$props.onstop?.());
 		append($$anchor, button_4);
 	};
-	var alternate = ($$anchor) => {
-		var button_5 = root_8$2();
+	var alternate_1 = ($$anchor) => {
+		var button_5 = root_11$1();
 		template_effect(() => {
 			button_5.disabled = !get(canSend);
 			set_attribute(button_5, "title", $$props.texts.send);
@@ -5100,11 +5287,11 @@ function Composer($$anchor, $$props) {
 		delegated("click", button_5, send);
 		append($$anchor, button_5);
 	};
-	if_block(node_10, ($$render) => {
-		if (get(stoppable)) $$render(consequent_6);
-		else $$render(alternate, -1);
+	if_block(node_14, ($$render) => {
+		if (get(stoppable)) $$render(consequent_8);
+		else $$render(alternate_1, -1);
 	});
-	reset(div_3);
+	reset(div_5);
 	reset(div_1);
 	snippet(sibling(div_1, 2), () => $$props.under ?? noop);
 	reset(div);
@@ -5113,14 +5300,12 @@ function Composer($$anchor, $$props) {
 			compact: compact(),
 			dragging: get(dragging)
 		});
+		classes_1 = set_class(div_3, 1, "field svelte-r7ttdz", null, classes_1, { styled: get(styled) });
 		textarea.disabled = disabled();
 		set_attribute(textarea, "aria-label", $$props.texts.field);
 		set_attribute(textarea, "placeholder", get(placeholder));
 		set_attribute(input, "accept", get(accept));
 		set_attribute(input, "aria-label", $$props.texts.attach);
-		set_attribute(button_2, "title", $$props.texts.attach);
-		set_attribute(button_2, "aria-label", $$props.texts.attach);
-		button_2.disabled = disabled() || draft().reading;
 	});
 	event("dragover", div, (e) => {
 		if (disabled()) return;
@@ -5138,10 +5323,12 @@ function Composer($$anchor, $$props) {
 	delegated("keydown", textarea, key);
 	event("paste", textarea, paste);
 	delegated("input", textarea, () => recall.reset());
+	event("scroll", textarea, () => {
+		if (get(layer) && get(field)) get(layer).scrollTop = get(field).scrollTop;
+	});
 	bind_value(textarea, () => draft().text, ($$value) => draft().text = $$value);
 	delegated("change", input, picked);
 	event("cancel", input, () => draft().picking = false);
-	delegated("click", button_2, pickFile);
 	append($$anchor, div);
 	return pop($$exports);
 }

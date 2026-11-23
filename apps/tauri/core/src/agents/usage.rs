@@ -83,7 +83,8 @@ pub struct CodexUsage {
 impl CodexUsage {
     /// The same windows in the shape the rest of Nook shows (`PlanUsage`); a window without a reset time is left out.
     pub fn plan_usage(&self) -> PlanUsage {
-        let w = |w: &Option<CodexWindow>| w.as_ref().and_then(|w| Some(PlanWindow { used_percent: w.used_percent, resets_at: w.resets_at? }));
+        let w =
+            |w: &Option<CodexWindow>| w.as_ref().and_then(|w| Some(PlanWindow { used_percent: w.used_percent, resets_at: w.resets_at? }));
         PlanUsage { five_hour: w(&self.five_hour), seven_day: w(&self.weekly), updated: self.updated }
     }
 
@@ -107,7 +108,9 @@ fn codex_window(value: Option<&Value>, at: DateTime<Utc>) -> Option<CodexWindow>
         .or_else(|| number(raw.get("resets_at")))
         .and_then(|s| Utc.timestamp_opt(s as i64, 0).single())
         .or_else(|| {
-            number(raw.get("resetsInSeconds")).or_else(|| number(raw.get("resets_in_seconds"))).map(|s| at + chrono::Duration::seconds(s as i64))
+            number(raw.get("resetsInSeconds"))
+                .or_else(|| number(raw.get("resets_in_seconds")))
+                .map(|s| at + chrono::Duration::seconds(s as i64))
         });
     Some(CodexWindow { used_percent: percent.clamp(0.0, 100.0), resets_at: reset, window_minutes: minutes })
 }
@@ -240,7 +243,12 @@ fn exchange(
     });
     let written = stdin.write_all(input.as_bytes()).and_then(|_| stdin.flush()).is_ok();
     // Codex's app-server ends when its input does: keep it open until the answer is in.
-    let keep = if close_input { drop(stdin); None } else { Some(stdin) };
+    let keep = if close_input {
+        drop(stdin);
+        None
+    } else {
+        Some(stdin)
+    };
     let answer = if written { rx.recv_timeout(timeout).ok() } else { None };
     drop(keep);
     let _ = child.kill();
@@ -257,13 +265,27 @@ pub fn claude_control(executable: &str, extra: &BTreeMap<String, String>, reques
     env.insert("NOOK_INTERNAL".into(), "1".into());
     let folder = crate::paths::brain_scratch_directory();
     let _ = std::fs::create_dir_all(&folder);
-    let args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--setting-sources", "project"];
+    let args = [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--no-session-persistence",
+        "--setting-sources",
+        "project",
+    ];
     let answer = exchange(executable, &args, &env, Some(&folder), line, true, timeout, move |object| {
         let response = object.get("response").filter(|_| object.get("type").and_then(Value::as_str) == Some("control_response"))?;
         if response.get("request_id").and_then(Value::as_str) != Some(request_id.as_str()) {
             return None;
         }
-        Some(if response.get("subtype").and_then(Value::as_str) == Some("success") { response.get("response").cloned().unwrap_or(Value::Null) } else { Value::Null })
+        Some(if response.get("subtype").and_then(Value::as_str) == Some("success") {
+            response.get("response").cloned().unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        })
     })?;
     (!answer.is_null()).then_some(answer)
 }
@@ -383,7 +405,7 @@ pub fn read_codex_session_log(home: Option<&str>) -> Option<CodexUsage> {
             break;
         }
     }
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|b| std::cmp::Reverse(b.1));
     for (path, mtime) in files.into_iter().take(3) {
         let at: DateTime<Utc> = mtime.into();
         if let Some(usage) = read_codex_log_file(&path, at) {
@@ -436,8 +458,7 @@ impl QuotaLimit {
     pub fn settled(&self, now: DateTime<Utc>) -> Self {
         let Some(resets_at) = self.resets_at else { return self.clone() };
         let passed = resets_at <= now;
-        let unstarted = self.percent < 0.5
-            && self.duration_secs.is_some_and(|d| (resets_at - now).num_seconds() > d - 15 * 60);
+        let unstarted = self.percent < 0.5 && self.duration_secs.is_some_and(|d| (resets_at - now).num_seconds() > d - 15 * 60);
         if passed || unstarted {
             Self {
                 label: self.label.clone(),
@@ -478,10 +499,7 @@ pub struct AntigravityReading {
     pub no_login: bool,
 }
 
-const ANTIGRAVITY_ENDPOINTS: [&str; 2] = [
-    "https://daily-cloudcode-pa.googleapis.com",
-    "https://cloudcode-pa.googleapis.com",
-];
+const ANTIGRAVITY_ENDPOINTS: [&str; 2] = ["https://daily-cloudcode-pa.googleapis.com", "https://cloudcode-pa.googleapis.com"];
 
 /// Whether a model or bucket belongs to a third-party provider (Claude, GPT, etc.) not counted under Antigravity.
 pub fn antigravity_is_third_party(text: &str) -> bool {
@@ -503,11 +521,24 @@ pub fn antigravity_is_helper(id: &str) -> bool {
 /// A readable model name from an id: `"gemini-4-pro-high"` → `"Gemini 4 Pro"`, `"claude-sonnet-4-5"` → `"Claude Sonnet 4.5"`.
 pub fn antigravity_model_name(id: &str) -> String {
     const DROPPED: &[&str] = &[
-        "3p", "5h", "weekly", "week", "daily", "quota", "bucket", "high", "low", "medium",
-        "thinking", "preview", "latest", "exp", "experimental",
+        "3p",
+        "5h",
+        "weekly",
+        "week",
+        "daily",
+        "quota",
+        "bucket",
+        "high",
+        "low",
+        "medium",
+        "thinking",
+        "preview",
+        "latest",
+        "exp",
+        "experimental",
     ];
     let mut parts: Vec<String> = Vec::new();
-    for word in id.to_lowercase().split(|c| matches!(c, '-' | '_' | ' ')).filter(|w| !w.is_empty()) {
+    for word in id.to_lowercase().split(['-', '_', ' ']).filter(|w| !w.is_empty()) {
         if DROPPED.contains(&word) || (word.len() > 2 && word.chars().all(|c| c.is_ascii_digit())) {
             continue;
         }
@@ -616,9 +647,8 @@ pub fn antigravity_summary_windows(object: &Value) -> Vec<QuotaLimit> {
         .or_else(|| object.get("command").and_then(|c| c.get("data")))
         .unwrap_or(object);
     let groups = root.get("groups").and_then(Value::as_array);
-    let has_group_buckets = groups.is_some_and(|gs| {
-        gs.iter().any(|g| g.get("buckets").and_then(Value::as_array).is_some_and(|b| !b.is_empty()))
-    });
+    let has_group_buckets =
+        groups.is_some_and(|gs| gs.iter().any(|g| g.get("buckets").and_then(Value::as_array).is_some_and(|b| !b.is_empty())));
     let sources: Vec<(String, Vec<&Value>)> = if has_group_buckets {
         groups
             .unwrap()
@@ -657,13 +687,23 @@ pub fn antigravity_summary_windows(object: &Value) -> Vec<QuotaLimit> {
                     "Gemini".to_string()
                 } else {
                     let t = source_name.trim();
-                    if t.is_empty() { id.to_string() } else { t.to_string() }
+                    if t.is_empty() {
+                        id.to_string()
+                    } else {
+                        t.to_string()
+                    }
                 }
             };
             let kind = match span {
                 Some(FIVE_HOURS_SECS) => five_h_label,
                 Some(WEEK_SECS) => week_label,
-                _ => if name.is_empty() { quota_label } else { name },
+                _ => {
+                    if name.is_empty() {
+                        quota_label
+                    } else {
+                        name
+                    }
+                }
             };
             let model = antigravity_model_name(id);
             let group_name = strip_models_suffix(&source_name);
@@ -740,14 +780,20 @@ pub fn antigravity_model_windows(object: &Value) -> Vec<QuotaLimit> {
             })
             .unwrap_or_default();
         let derived = antigravity_model_name(id);
-        let name = if !display.is_empty() { display } else if !derived.is_empty() { derived } else { "Gemini".to_string() };
+        let name = if !display.is_empty() {
+            display
+        } else if !derived.is_empty() {
+            derived
+        } else {
+            "Gemini".to_string()
+        };
         for (key, suffix, span) in [("quotaInfo", quota_label, None), ("weeklyQuotaInfo", week_label, Some(WEEK_SECS))] {
             let Some(quota) = model.get(key) else { continue };
             let Some(entry) = antigravity_limit(format!("{name} · {suffix}"), quota, span) else { continue };
             antigravity_merge(vec![entry], &mut result);
         }
     }
-    result.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    result.sort_by_key(|a| a.label.to_lowercase());
     result
 }
 
@@ -760,11 +806,8 @@ pub fn antigravity_credentials(homes: &[PathBuf]) -> Option<AntigravityCreds> {
         for folder in ["antigravity-acp", "antigravity", "antigravity-cli", "config"] {
             let dir = home.join(folder);
             let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-            let mut names: Vec<PathBuf> = entries
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
-                .collect();
+            let mut names: Vec<PathBuf> =
+                entries.flatten().map(|e| e.path()).filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json")).collect();
             names.sort();
             candidates.extend(names);
         }
@@ -790,8 +833,10 @@ pub fn antigravity_credentials(homes: &[PathBuf]) -> Option<AntigravityCreds> {
     None
 }
 
-fn antigravity_token_cache() -> &'static Mutex<BTreeMap<String, (String, DateTime<Utc>)>> {
-    static CACHE: OnceLock<Mutex<BTreeMap<String, (String, DateTime<Utc>)>>> = OnceLock::new();
+type AntigravityTokenCache = Mutex<BTreeMap<String, (String, DateTime<Utc>)>>;
+
+fn antigravity_token_cache() -> &'static AntigravityTokenCache {
+    static CACHE: OnceLock<AntigravityTokenCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
@@ -815,12 +860,8 @@ pub async fn read_antigravity(homes: &[PathBuf]) -> AntigravityReading {
             }
         }
         if access.is_none() {
-            let form = [
-                ("client_id", client_id),
-                ("client_secret", client_secret),
-                ("refresh_token", refresh),
-                ("grant_type", "refresh_token"),
-            ];
+            let form =
+                [("client_id", client_id), ("client_secret", client_secret), ("refresh_token", refresh), ("grant_type", "refresh_token")];
             if let Ok(resp) = client.post("https://oauth2.googleapis.com/token").form(&form).send().await {
                 if resp.status().is_success() {
                     if let Ok(body) = resp.json::<Value>().await {
@@ -865,14 +906,7 @@ pub async fn read_antigravity(homes: &[PathBuf]) -> AntigravityReading {
             let mut answers = Vec::new();
             for endpoint in ANTIGRAVITY_ENDPOINTS {
                 let url = format!("{endpoint}/v1internal:{op}");
-                if let Ok(resp) = client
-                    .post(url)
-                    .bearer_auth(&access)
-                    .header("User-Agent", &user_agent)
-                    .json(&body)
-                    .send()
-                    .await
-                {
+                if let Ok(resp) = client.post(url).bearer_auth(&access).header("User-Agent", &user_agent).json(&body).send().await {
                     if resp.status().is_success() {
                         if let Ok(v) = resp.json::<Value>().await {
                             answers.push(v);
@@ -925,10 +959,7 @@ impl CliProxyHub {
         if !trimmed.is_empty() {
             return trimmed.to_string();
         }
-        url::Url::parse(&self.url)
-            .ok()
-            .and_then(|u| u.host_str().map(str::to_string))
-            .unwrap_or_else(|| self.url.clone())
+        url::Url::parse(&self.url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_else(|| self.url.clone())
     }
 
     pub fn secret_account(&self) -> String {
@@ -1028,8 +1059,8 @@ impl CliProxyAccount {
         for (key, token, dur) in [("five_hour", "5h", FIVE_HOURS_SECS), ("seven_day", "7d", WEEK_SECS)] {
             if let Some(u) = num(&format!("anthropic-ratelimit-unified-{token}-utilization")) {
                 let pct = if u <= 1.0 { u * 100.0 } else { u };
-                let reset = num(&format!("anthropic-ratelimit-unified-{token}-reset"))
-                    .and_then(|s| Utc.timestamp_opt(s as i64, 0).single());
+                let reset =
+                    num(&format!("anthropic-ratelimit-unified-{token}-reset")).and_then(|s| Utc.timestamp_opt(s as i64, 0).single());
                 out.push(CliProxyWindow {
                     key: key.to_string(),
                     used_percent: pct.clamp(0.0, 100.0),
@@ -1041,19 +1072,13 @@ impl CliProxyAccount {
         for name in ["primary", "secondary"] {
             if let Some(used) = num(&format!("x-codex-{name}-used-percent")) {
                 let duration_secs = num(&format!("x-codex-{name}-window-minutes")).map(|m| (m * 60.0) as i64);
-                let resets_at = num(&format!("x-codex-{name}-reset-after-seconds"))
-                    .map(|s| base + chrono::Duration::seconds(s as i64));
+                let resets_at = num(&format!("x-codex-{name}-reset-after-seconds")).map(|s| base + chrono::Duration::seconds(s as i64));
                 let key = match duration_secs {
                     Some(d) if d <= 6 * 3600 => "five_hour",
                     Some(d) if d >= 6 * 24 * 3600 => "seven_day",
                     _ => "other",
                 };
-                out.push(CliProxyWindow {
-                    key: key.to_string(),
-                    used_percent: used.clamp(0.0, 100.0),
-                    resets_at,
-                    duration_secs,
-                });
+                out.push(CliProxyWindow { key: key.to_string(), used_percent: used.clamp(0.0, 100.0), resets_at, duration_secs });
             }
         }
         out
@@ -1083,26 +1108,16 @@ pub fn cliproxy_accounts(data: &[u8]) -> Option<Vec<CliProxyAccount>> {
         let signals: BTreeMap<String, String> = quota
             .and_then(|q| q.get("signals"))
             .and_then(Value::as_object)
-            .map(|m| {
-                m.iter()
-                    .filter_map(|(k, v)| str_val(Some(v)).map(|val| (k.to_lowercase(), val)))
-                    .collect()
-            })
+            .map(|m| m.iter().filter_map(|(k, v)| str_val(Some(v)).map(|val| (k.to_lowercase(), val))).collect())
             .unwrap_or_default();
         let mut retry = date_val(file.get("next_retry_after"));
-        let cooldowns: Vec<DateTime<Utc>> = file
-            .get("cooldowns")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|c| date_val(c.get("retry_at")))
-            .collect();
+        let cooldowns: Vec<DateTime<Utc>> =
+            file.get("cooldowns").and_then(Value::as_array).into_iter().flatten().filter_map(|c| date_val(c.get("retry_at"))).collect();
         if let Some(latest) = cooldowns.iter().copied().max() {
             retry = Some(retry.map_or(latest, |r| r.max(latest)));
         }
         let unavailable = file.get("unavailable").and_then(Value::as_bool).unwrap_or(false);
-        let email = str_val(file.get("email"))
-            .or_else(|| str_val(file.get("account")).filter(|s| s.contains('@')));
+        let email = str_val(file.get("email")).or_else(|| str_val(file.get("account")).filter(|s| s.contains('@')));
         accounts.push(CliProxyAccount {
             label: str_val(file.get("label")).or_else(|| str_val(file.get("name"))).unwrap_or_else(|| id.clone()),
             provider: str_val(file.get("provider")).or_else(|| str_val(file.get("type"))).unwrap_or_default().to_lowercase(),

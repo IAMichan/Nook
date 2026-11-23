@@ -911,7 +911,13 @@ fn finish(app: &AppHandle, nook_id: &str) {
         use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
         if crate::notices::decide(app, NoticeSource::Nook, "", false) == NoticeDecision::Show(NoticeStyle::System) {
             if let Ok(id) = uuid::Uuid::parse_str(nook_id) {
-                crate::notices::notice(app, &format!("nook-{nook_id}"), &title, &preview, nook_core::services::toast::NoticeTarget::Conversation(id));
+                crate::notices::notice(
+                    app,
+                    &format!("nook-{nook_id}"),
+                    &title,
+                    &preview,
+                    nook_core::services::toast::NoticeTarget::Conversation(id),
+                );
             }
         }
     }

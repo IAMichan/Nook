@@ -217,8 +217,7 @@ fn approx_tokens(text: &str) -> u64 {
 fn active_window_events(events: &[RunEvent]) -> &[RunEvent] {
     let boundary = events.iter().rposition(|e| {
         e.kind == EventKind::System
-            && (e.tool.as_deref() == Some("clear")
-                || (e.tool.as_deref() == Some(COMPACTION_TOOL) && e.state == Some(EventState::Done)))
+            && (e.tool.as_deref() == Some("clear") || (e.tool.as_deref() == Some(COMPACTION_TOOL) && e.state == Some(EventState::Done)))
     });
     match boundary {
         Some(idx) => &events[idx + 1..],
@@ -377,9 +376,7 @@ mod tests {
         run.usage.context_window = Some(200_000);
         run.usage.context_tokens = Some(136_000);
 
-        let mut tool = RunEvent::new(EventKind::Tool, "Read manager.rs")
-            .with_tool("Read")
-            .with_detail("{\"path\":\"manager.rs\"}");
+        let mut tool = RunEvent::new(EventKind::Tool, "Read manager.rs").with_tool("Read").with_detail("{\"path\":\"manager.rs\"}");
         tool.output = Some("fn main() {}\n".repeat(400));
 
         let events = vec![

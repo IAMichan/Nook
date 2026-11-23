@@ -294,8 +294,10 @@ mod tests {
 
     #[test]
     fn each_added_account_listens_one_port_up() {
-        let mut s = super::super::WhatsAppSettings::default();
-        s.accounts = vec![WaAccount { id: "nook-a".into(), name: String::new() }, WaAccount { id: "nook-b".into(), name: String::new() }];
+        let s = super::super::WhatsAppSettings {
+            accounts: vec![WaAccount { id: "nook-a".into(), name: String::new() }, WaAccount { id: "nook-b".into(), name: String::new() }],
+            ..Default::default()
+        };
         assert_eq!(s.webhook_port_of(""), Some(super::super::DEFAULT_PORT));
         assert_eq!(s.webhook_port_of("nook-b"), Some(super::super::DEFAULT_PORT + 2));
         assert_eq!(s.webhook_port_of("gone"), None);

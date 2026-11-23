@@ -188,7 +188,8 @@ pub fn mime(mail: &Outgoing, from: &str, in_reply_to: Option<&str>, boundary: &s
         head.push(format!("References: {id}"));
     }
     head.push("MIME-Version: 1.0".into());
-    let text = format!("Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{}", wrapped(mail.body.as_bytes()));
+    let text =
+        format!("Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{}", wrapped(mail.body.as_bytes()));
     if mail.attachments.is_empty() {
         return format!("{}\r\n{text}\r\n", head.join("\r\n"));
     }
@@ -317,7 +318,11 @@ mod tests {
             to: vec!["anna@example.com".into()],
             subject: "Re: Lunch – morgen".into(),
             body: "Ja!".into(),
-            attachments: vec![super::super::Attachment { name: "invite.ics".into(), mime: "text/calendar".into(), bytes: b"BEGIN:VCALENDAR".to_vec() }],
+            attachments: vec![super::super::Attachment {
+                name: "invite.ics".into(),
+                mime: "text/calendar".into(),
+                bytes: b"BEGIN:VCALENDAR".to_vec(),
+            }],
             ..Default::default()
         };
         let raw = mime(&mail, "me@example.com", Some("<m1@x>"), "B");

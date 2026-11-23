@@ -4,7 +4,7 @@
 //! and capability filtering per target chat) are tested independently of any chat bridge.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::abilities::OutgoingKind;
 use super::ChatMedia;
@@ -63,12 +63,8 @@ impl ChatForward {
     }
 
     /// Infers an [`OutgoingKind`] from a file extension when `kind` was not provided explicitly.
-    pub fn infer_kind(file: &PathBuf) -> OutgoingKind {
-        let ext = file
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(str::to_ascii_lowercase)
-            .unwrap_or_default();
+    pub fn infer_kind(file: &Path) -> OutgoingKind {
+        let ext = file.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
         match ext.as_str() {
             "gif" => OutgoingKind::Gif,
             "jpg" | "jpeg" | "png" | "webp" | "heic" | "bmp" => OutgoingKind::Photo,
@@ -109,9 +105,7 @@ impl ChatForward {
 }
 
 fn is_gif(file: Option<&PathBuf>) -> bool {
-    file.and_then(|p| p.extension())
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("gif"))
+    file.and_then(|p| p.extension()).and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("gif"))
 }
 
 #[cfg(test)]

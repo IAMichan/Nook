@@ -27,14 +27,8 @@ pub const SDK_DISABLED_ENV: &str = "OTEL_SDK_DISABLED";
 pub const SCOPE_NAME: &str = "nook";
 
 /// Characters percent-encoded when serializing `OTEL_EXPORTER_OTLP_HEADERS` (`key=value,key2=value2`).
-const HEADER_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'~')
-    .remove(b':')
-    .remove(b'/')
-    .remove(b'+');
+const HEADER_ENCODE_SET: &AsciiSet =
+    &NON_ALPHANUMERIC.remove(b'-').remove(b'_').remove(b'.').remove(b'~').remove(b':').remove(b'/').remove(b'+');
 
 /// One OpenTelemetry signal, each with its own OTLP/HTTP endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -252,16 +246,8 @@ impl OtlpConfig {
     /// 2. `OTEL_EXPORTER_OTLP_<SIGNAL>_ENDPOINT` (exact URL).
     /// 3. `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/<signal>`.
     /// 4. Saved setting endpoint (active when `saved.enabled` is true).
-    pub fn resolve<S: AsRef<str>>(
-        saved: &TelemetrySettings,
-        saved_headers: &str,
-        env: &BTreeMap<String, S>,
-    ) -> Self {
-        let env_val = |key: &str| -> Option<String> {
-            env.get(key)
-                .map(|v| v.as_ref().trim().to_string())
-                .filter(|v| !v.is_empty())
-        };
+    pub fn resolve<S: AsRef<str>>(saved: &TelemetrySettings, saved_headers: &str, env: &BTreeMap<String, S>) -> Self {
+        let env_val = |key: &str| -> Option<String> { env.get(key).map(|v| v.as_ref().trim().to_string()).filter(|v| !v.is_empty()) };
 
         let mut config = Self { enabled: saved.enabled, ..Self::default() };
         let base = env_val(BASE_ENDPOINT_ENV).and_then(|v| validate_http_url(&v));
@@ -584,13 +570,7 @@ impl OtlpPayload {
     }
 }
 
-fn wrap(
-    signal: OtlpSignal,
-    resource: &BTreeMap<String, OtlpValue>,
-    version: &str,
-    records_key: &str,
-    records: Vec<Value>,
-) -> Vec<u8> {
+fn wrap(signal: OtlpSignal, resource: &BTreeMap<String, OtlpValue>, version: &str, records_key: &str, records: Vec<Value>) -> Vec<u8> {
     let mut scope_obj = serde_json::Map::new();
     scope_obj.insert("scope".into(), json!({ "name": SCOPE_NAME, "version": version }));
     scope_obj.insert(records_key.into(), Value::Array(records));
@@ -605,10 +585,7 @@ fn wrap(
 }
 
 fn attributes_json(values: &BTreeMap<String, OtlpValue>) -> Vec<Value> {
-    values
-        .iter()
-        .map(|(k, v)| json!({ "key": k, "value": v.to_json() }))
-        .collect()
+    values.iter().map(|(k, v)| json!({ "key": k, "value": v.to_json() })).collect()
 }
 
 pub fn nanos(time: DateTime<Utc>) -> String {
@@ -723,12 +700,7 @@ impl OtlpExporter {
         for h in headers {
             req = req.header(&h.name, &h.value);
         }
-        let resp = req
-            .header("Content-Type", "application/json")
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let resp = req.header("Content-Type", "application/json").body(body).send().await.map_err(|e| e.to_string())?;
         Ok(resp.status().as_u16())
     }
 }
@@ -753,13 +725,7 @@ mod tests {
     #[test]
     fn parses_and_formats_otlp_headers() {
         let parsed = OtlpHeader::parse("Authorization=Bearer%20secret%2Ctoken, x-api-key = abc=123 , badentry, =noname");
-        assert_eq!(
-            parsed,
-            vec![
-                OtlpHeader::new("Authorization", "Bearer secret,token"),
-                OtlpHeader::new("x-api-key", "abc=123"),
-            ]
-        );
+        assert_eq!(parsed, vec![OtlpHeader::new("Authorization", "Bearer secret,token"), OtlpHeader::new("x-api-key", "abc=123"),]);
         let formatted = OtlpHeader::format(&parsed);
         assert_eq!(OtlpHeader::parse(&formatted), parsed);
         assert_eq!(OtlpHeader::bearer("  tok_123 "), OtlpHeader::new("Authorization", "Bearer tok_123"));

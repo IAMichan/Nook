@@ -135,7 +135,10 @@ pub async fn workspace_folder_tools(folder: String) -> Res<FolderTools> {
 
 /// The dev servers in a folder, each marked with whether Nook started it (AG-134): only those get a working Stop.
 #[tauri::command]
-pub async fn workspace_dev_servers(state: State<'_, WorkspaceState>, folder: String) -> Res<Vec<nook_core::workspace::dev_stop::DevServerView>> {
+pub async fn workspace_dev_servers(
+    state: State<'_, WorkspaceState>,
+    folder: String,
+) -> Res<Vec<nook_core::workspace::dev_stop::DevServerView>> {
     #[cfg(desktop)]
     {
         let (shells, agents) = roots_of(&state);
@@ -440,12 +443,7 @@ pub async fn browser_elements(app: AppHandle) -> Res<Vec<serde_json::Value>> {
 // MARK: Pull Request Checkout ("Work on this PR", AG-125)
 
 #[cfg(desktop)]
-fn resolve_pr_local_folder(
-    app: &AppHandle,
-    ws: &WorkspaceState,
-    repo: &str,
-    preferred: Option<String>,
-) -> Option<String> {
+fn resolve_pr_local_folder(app: &AppHandle, ws: &WorkspaceState, repo: &str, preferred: Option<String>) -> Option<String> {
     let git = nook_core::workspace::git::Git::locate()?;
     let ws_settings = ws.settings.lock().unwrap_or_else(|e| e.into_inner());
     let mut folders = Vec::new();
@@ -494,7 +492,7 @@ pub async fn workspace_pr_local_folder(
             }
         }
         tauri::async_runtime::spawn_blocking(move || {
-            let Some(git) = git else { return None };
+            let git = git?;
             nook_core::workspace::pr_checkout::local_folder(&git, &repo, &folders)
         })
         .await
@@ -532,12 +530,7 @@ pub async fn workspace_pr_checkout(
             )
         })?;
         let worktree_root = state.settings.lock().unwrap_or_else(|e| e.into_inner()).worktree_root();
-        let mut reserved: Vec<String> = state
-            .manager
-            .worktree_rows()
-            .into_iter()
-            .map(|r| r.worktree.path)
-            .collect();
+        let mut reserved: Vec<String> = state.manager.worktree_rows().into_iter().map(|r| r.worktree.path).collect();
         for r in state.manager.runs() {
             if let Some(wt) = r.worktree_path {
                 reserved.push(wt);
@@ -591,11 +584,7 @@ fn build_leftover_roots(state: &WorkspaceState) -> nook_core::workspace::pr_chec
 
     let rows = state.manager.worktree_rows();
     let runs = state.manager.runs();
-    let running: std::collections::HashSet<uuid::Uuid> = runs
-        .iter()
-        .filter(|r| state.manager.is_running(r.id))
-        .map(|r| r.id)
-        .collect();
+    let running: std::collections::HashSet<uuid::Uuid> = runs.iter().filter(|r| state.manager.is_running(r.id)).map(|r| r.id).collect();
 
     let mut busy_dirs = Vec::new();
     for r in &runs {
@@ -607,11 +596,7 @@ fn build_leftover_roots(state: &WorkspaceState) -> nook_core::workspace::pr_chec
         }
     }
     let held = held_folders(&busy_dirs);
-    let main_checkouts: Vec<String> = rows
-        .iter()
-        .filter(|r| r.worktree.is_main)
-        .map(|r| r.worktree.path.clone())
-        .collect();
+    let main_checkouts: Vec<String> = rows.iter().filter(|r| r.worktree.is_main).map(|r| r.worktree.path.clone()).collect();
 
     let mut worktrees = Vec::new();
     let mut settled_worktrees = std::collections::HashSet::new();
@@ -649,14 +634,7 @@ fn build_leftover_roots(state: &WorkspaceState) -> nook_core::workspace::pr_chec
         dd.is_dir().then_some(dd)
     };
 
-    Roots {
-        temporary,
-        scratchpad_parents,
-        derived_data,
-        worktrees,
-        settled_worktrees,
-        idle_worktrees,
-    }
+    Roots { temporary, scratchpad_parents, derived_data, worktrees, settled_worktrees, idle_worktrees }
 }
 
 /// Scans worktrees, build leftovers, archive size, and available disk space (`BuildLeftovers.swift`, AG-121).
@@ -847,4 +825,3 @@ pub async fn workspace_worktree_move(
         Err(DESKTOP_ONLY.into())
     }
 }
-

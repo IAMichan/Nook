@@ -275,7 +275,9 @@ impl ChatIntent {
         if has(rx!(r"^(open|start|launch|öffne|starte)\s+\S+(\s+\S+)?$|\b(open|start) (de |het |the )?app\b")) {
             kinds.push(Kind::OpenApp);
         }
-        if has(rx!(r"shortcut|kurzbefehl|opdracht(en)? (uitvoeren|draaien)|\b(run|draai|start) (my |mijn |het |the )?script|\bscript\b.*\b(uitvoeren|draaien|runnen)")) {
+        if has(rx!(
+            r"shortcut|kurzbefehl|opdracht(en)? (uitvoeren|draaien)|\b(run|draai|start) (my |mijn |het |the )?script|\bscript\b.*\b(uitvoeren|draaien|runnen)"
+        )) {
             kinds.push(Kind::Shortcut);
         }
         if has(rx!(r"grafiek|diagram|\bchart|\bplot\b|visualiseer|visualize|staafdiagram|taartdiagram")) {

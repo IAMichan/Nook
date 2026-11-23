@@ -131,12 +131,18 @@ pub(super) async fn session_start(
             let accounts = account_choices(app, *provider);
             let Some(id) = args::start_account(&session.account, &accounts) else {
                 let list: Vec<String> = accounts.iter().map(|(id, label)| format!("{id} ({label})")).collect();
-                return Err(format!("Unknown {} account \"{}\"{which}; its accounts: {}.", provider.display_name(), session.account, list.join(", ")));
+                return Err(format!(
+                    "Unknown {} account \"{}\"{which}; its accounts: {}.",
+                    provider.display_name(),
+                    session.account,
+                    list.join(", ")
+                ));
             };
             account_label = accounts.iter().find(|(i, _)| *i == id).map(|(_, l)| l.clone()).unwrap_or_default();
             profile_id = id;
         }
-        let permission = args::start_rights(session.rights, caller.permission, &provider.capabilities().policies).map_err(|e| e + &which)?;
+        let permission =
+            args::start_rights(session.rights, caller.permission, &provider.capabilities().policies).map_err(|e| e + &which)?;
         choices.push(StartChoice { profile_id, permission, account_label });
     }
     if let Verdict::Refuse(reason) = check(app, BridgeTool::SessionStart, caller, None) {
@@ -163,7 +169,8 @@ pub(super) async fn session_start(
                 &[("agent", &caller.agent), ("n", &plan.sessions.len()), ("providers", &names.join(", "))],
             )
         };
-        let items: Vec<String> = plan.sessions.iter().zip(&choices).map(|(s, c)| format!("- {}{}", s.task, account_rights_note(s, c))).collect();
+        let items: Vec<String> =
+            plan.sessions.iter().zip(&choices).map(|(s, c)| format!("- {}{}", s.task, account_rights_note(s, c))).collect();
         let detail = format!("{}\n\n{}", place_line(&plan.place, &folder), items.join("\n"));
         let note = tr(
             "De agent krijgt alleen deze opdracht te zien, nooit je gesprek, en heeft nooit meer rechten dan de sessie die hem start.",
@@ -198,10 +205,13 @@ struct StartChoice {
 fn account_choices(app: &AppHandle, provider: RunProvider) -> Vec<(String, String)> {
     let Some(agents) = app.try_state::<AgentsState>() else { return vec![(provider.id().into(), provider.display_name().into())] };
     let profiles = lock(&agents.profiles).profiles(provider.kind());
-    profiles.into_iter().map(|p| {
-        let label = if p.label.is_empty() { provider.display_name().to_string() } else { p.label.clone() };
-        (p.id, label)
-    }).collect()
+    profiles
+        .into_iter()
+        .map(|p| {
+            let label = if p.label.is_empty() { provider.display_name().to_string() } else { p.label.clone() };
+            (p.id, label)
+        })
+        .collect()
 }
 
 /// " · Account Work · Allow edits" on the approval card, for what the caller chose itself (`accountRightsNote`).
@@ -217,7 +227,11 @@ fn account_rights_note(session: &StartSession, choice: &StartChoice) -> String {
             PermissionPolicy::Bypass => tr("Alles toestaan", "Allow everything").to_string(),
         });
     }
-    if parts.is_empty() { String::new() } else { format!(" · {}", parts.join(" · ")) }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", parts.join(" · "))
+    }
 }
 
 /// One session of a `session_start` call: its answer with the id, or why it did not start.
@@ -411,11 +425,7 @@ pub(super) async fn session_search(app: &AppHandle, a: &Map<String, Value>, call
     let query = args::parse_search(a)?;
     let manager = ws.manager.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut runs = if let Some(id) = query.session_id {
-            manager.run(id).into_iter().collect::<Vec<_>>()
-        } else {
-            manager.runs()
-        };
+        let mut runs = if let Some(id) = query.session_id { manager.run(id).into_iter().collect::<Vec<_>>() } else { manager.runs() };
         runs.sort_by_key(|r| std::cmp::Reverse(r.updated_at));
         let project_filter = query.project.as_deref().map(str::to_lowercase);
         let mut matches = Vec::new();
@@ -464,12 +474,8 @@ fn organize_meta_file() -> std::path::PathBuf {
 
 fn with_organize_meta<R>(f: impl FnOnce(&mut OrganizeMeta) -> R) -> R {
     let mut guard = lock(&ORGANIZE_META);
-    let meta = guard.get_or_insert_with(|| {
-        std::fs::read(organize_meta_file())
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default()
-    });
+    let meta = guard
+        .get_or_insert_with(|| std::fs::read(organize_meta_file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default());
     let out = f(meta);
     if let Ok(bytes) = serde_json::to_vec_pretty(meta) {
         let _ = nook_core::paths::write_atomic(&organize_meta_file(), &bytes);
@@ -689,12 +695,8 @@ pub(super) async fn session_questions(
                         "{agent} wants to answer a question for session “{title}”",
                         &[("agent", &caller.agent), ("title", &run.title)],
                     );
-                    let summary: Vec<String> = q
-                        .items
-                        .iter()
-                        .zip(&selections)
-                        .map(|(item, sel)| format!("- {}: {}", item.question, sel.join(", ")))
-                        .collect();
+                    let summary: Vec<String> =
+                        q.items.iter().zip(&selections).map(|(item, sel)| format!("- {}: {}", item.question, sel.join(", "))).collect();
                     let note = tr(
                         "De andere agent krijgt deze keuzes als antwoord op zijn meerkeuzevraag.",
                         "The other agent receives these choices as the answer to its multiple-choice question.",

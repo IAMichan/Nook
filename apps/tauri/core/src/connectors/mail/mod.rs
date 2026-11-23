@@ -315,11 +315,7 @@ pub fn lines(mails: &[Mail], labels: &dyn Fn(&str) -> String) -> String {
 
 /// `read_mail`'s answer: the whole message.
 pub fn full(mail: &Mail) -> String {
-    let mut out = vec![
-        format!("Subject: {}", mail.subject),
-        format!("From: {}", mail.sender()),
-        format!("To: {}", mail.to.join(", ")),
-    ];
+    let mut out = vec![format!("Subject: {}", mail.subject), format!("From: {}", mail.sender()), format!("To: {}", mail.to.join(", "))];
     if !mail.cc.is_empty() {
         out.push(format!("Cc: {}", mail.cc.join(", ")));
     }
@@ -352,7 +348,10 @@ pub fn unread_summary(per_account: &[(String, usize)], recent: &[Mail], now: Dat
         *senders.entry(who).or_default() += 1;
     }
     if !days.is_empty() {
-        out.push(format!("Per day received (last 14 days): {}.", days.iter().map(|(d, n)| format!("{d}: {n}")).collect::<Vec<_>>().join(", ")));
+        out.push(format!(
+            "Per day received (last 14 days): {}.",
+            days.iter().map(|(d, n)| format!("{d}: {n}")).collect::<Vec<_>>().join(", ")
+        ));
     }
     let mut top: Vec<(String, usize)> = senders.into_iter().collect();
     top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));

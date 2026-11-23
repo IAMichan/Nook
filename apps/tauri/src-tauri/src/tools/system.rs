@@ -267,8 +267,17 @@ async fn run_script(ctx: &ToolCtx, name: &str) -> Result<String, String> {
     let run = command.output();
     match tokio::time::timeout(std::time::Duration::from_secs(user_scripts::TIMEOUT_SECS), run).await {
         Ok(Ok(out)) => {
-            let report = user_scripts::report(&script.name, out.status.code(), &String::from_utf8_lossy(&out.stdout), &String::from_utf8_lossy(&out.stderr));
-            if out.status.success() { Ok(report) } else { Err(report) }
+            let report = user_scripts::report(
+                &script.name,
+                out.status.code(),
+                &String::from_utf8_lossy(&out.stdout),
+                &String::from_utf8_lossy(&out.stderr),
+            );
+            if out.status.success() {
+                Ok(report)
+            } else {
+                Err(report)
+            }
         }
         Ok(Err(e)) => Err(format!("Could not start {}: {e}", script.name)),
         Err(_) => Err(format!("Script {} took longer than {} seconds and was stopped.", script.name, user_scripts::TIMEOUT_SECS)),

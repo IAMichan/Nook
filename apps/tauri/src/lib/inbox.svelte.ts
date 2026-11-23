@@ -44,11 +44,14 @@ function savedHistory(): HistoryEntry[] {
 }
 
 class InboxService {
-  /// Items per provider.
+  /// Items per provider that are safe to cache in localStorage for instant startup.
   private byProvider = $state<Record<string, InboxItem[]>>(cached());
+  /// Items per provider kept only in memory (e.g. personal dates), never written to localStorage.
+  private ephemeralByProvider = $state<Record<string, InboxItem[]>>({});
   /// Items a feature pushed itself (`addItem`), for events that have no list to load.
   private pushed = $state<InboxItem[]>([]);
   private providers = new Map<string, InboxProvider>();
+  private ephemeralProviders = new Map<string, InboxProvider>();
   /// The newest load started per provider.
   private loads: Record<string, number> = {};
   private stops: (() => void)[] = [];
@@ -59,8 +62,14 @@ class InboxService {
   private orderVersion = $state(0);
 
   /// True until every provider answered once and nothing was cached: Home shows a calm placeholder meanwhile.
-  loading = $derived(this.pendingLoads > 0 && Object.keys(this.byProvider).length === 0);
-  items = $derived([...Object.values(this.byProvider).flat(), ...this.pushed]);
+  loading = $derived(
+    this.pendingLoads > 0 && Object.keys(this.byProvider).length === 0 && Object.keys(this.ephemeralByProvider).length === 0,
+  );
+  items = $derived([
+    ...Object.values(this.byProvider).flat(),
+    ...Object.values(this.ephemeralByProvider).flat(),
+    ...this.pushed,
+  ]);
   dismissed = $derived(nook.settings?.inboxDismissed ?? {});
   /// Everything seen so far, newest first: the notification history page reads it.
   history = $state<HistoryEntry[]>(savedHistory());
@@ -84,6 +93,13 @@ class InboxService {
     if (this.timer) this.attach(provider);
   }
 
+  /// Registers a provider whose items stay in memory and are never persisted to `localStorage`.
+  registerEphemeral(provider: InboxProvider) {
+    if (this.ephemeralProviders.has(provider.id)) return;
+    this.ephemeralProviders.set(provider.id, provider);
+    if (this.timer) this.attachEphemeral(provider);
+  }
+
   /// Starts loading and watching every provider. Home calls it; it is cheap to call again.
   /// Untracked: an effect that starts the inbox must not rerun on every list it loads.
   start() {
@@ -92,6 +108,7 @@ class InboxService {
       // A cached list from a provider that no longer exists would never refresh.
       this.byProvider = Object.fromEntries(Object.entries(this.byProvider).filter(([id]) => this.providers.has(id)));
       for (const p of this.providers.values()) this.attach(p);
+      for (const p of this.ephemeralProviders.values()) this.attachEphemeral(p);
     });
     this.timer = setInterval(() => this.refresh(), REFRESH);
     // Providers write their titles in the language of the moment, and the first load can come before the settings
@@ -114,6 +131,7 @@ class InboxService {
 
   refresh() {
     for (const p of this.providers.values()) this.load(p);
+    for (const p of this.ephemeralProviders.values()) this.loadEphemeral(p);
   }
 
   /// A one-off item from anywhere in Nook (`provider` handles its actions, if registered).
@@ -199,10 +217,12 @@ class InboxService {
 
   async act(item: InboxItem, action: string): Promise<Target | void> {
     const provider = this.providers.get(item.provider);
+    const ephemeral = provider ? undefined : this.ephemeralProviders.get(item.provider);
     recordAttention("opened", inboxAttention(item));
     try {
-      const target = await provider?.act?.(item, action);
-      this.load(provider);
+      const target = await (provider ?? ephemeral)?.act?.(item, action);
+      if (provider) this.load(provider);
+      else if (ephemeral) this.loadEphemeral(ephemeral);
       return target;
     } catch (e) {
       toast.error(item.title, e);
@@ -214,6 +234,11 @@ class InboxService {
     if (p.watch) this.stops.push(p.watch(() => this.load(p)));
   }
 
+  private attachEphemeral(p: InboxProvider) {
+    this.loadEphemeral(p);
+    if (p.watch) this.stops.push(p.watch(() => this.loadEphemeral(p)));
+  }
+
   private async load(p: InboxProvider | undefined) {
     if (!p) return;
     this.pendingLoads++;
@@ -223,8 +248,24 @@ class InboxService {
       const items = await p.load();
       if (seq !== this.loads[p.id]) return;
       this.byProvider = { ...this.byProvider, [p.id]: items };
-      this.history = remember(this.history, this.items);
+      this.history = remember(this.history, [...Object.values(this.byProvider).flat(), ...this.pushed]);
       this.save();
+      void this.reweigh();
+    } catch {
+      // The provider keeps what it showed; the next refresh tries again.
+    } finally {
+      this.pendingLoads--;
+    }
+  }
+
+  private async loadEphemeral(p: InboxProvider | undefined) {
+    if (!p) return;
+    this.pendingLoads++;
+    try {
+      const seq = (this.loads[p.id] = (this.loads[p.id] ?? 0) + 1);
+      const items = await p.load();
+      if (seq !== this.loads[p.id]) return;
+      this.ephemeralByProvider = { ...this.ephemeralByProvider, [p.id]: items };
       void this.reweigh();
     } catch {
       // The provider keeps what it showed; the next refresh tries again.

@@ -227,7 +227,9 @@ impl CodexDriver {
                 self.thread = Some(thread.clone());
                 let model = result.get("model").and_then(Value::as_str).map(str::to_string);
                 step.event(ClaudeEvent::Initialized { session_id: thread.clone(), model });
-                if let Some(pending) = self.pending_rollback.as_ref().filter(|p| p.thread_id.as_deref() == Some(thread.as_str()) && p.num_turns > 0) {
+                if let Some(pending) =
+                    self.pending_rollback.as_ref().filter(|p| p.thread_id.as_deref() == Some(thread.as_str()) && p.num_turns > 0)
+                {
                     let num_turns = pending.num_turns;
                     let line = self.request(Call::Rollback, "thread/rollback", json!({"threadId": thread, "numTurns": num_turns}));
                     step.replies.push(line);
@@ -245,7 +247,10 @@ impl CodexDriver {
             (Call::Rollback, Some(e)) => {
                 let unsupported = {
                     let lower = e.to_lowercase();
-                    lower.contains("method not found") || lower.contains("unknown method") || lower.contains("unsupported") || lower.contains("-32601")
+                    lower.contains("method not found")
+                        || lower.contains("unknown method")
+                        || lower.contains("unsupported")
+                        || lower.contains("-32601")
                 };
                 if unsupported {
                     if let (Some(thread), Some(before)) =

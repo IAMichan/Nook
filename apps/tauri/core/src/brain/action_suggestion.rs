@@ -58,8 +58,15 @@ pub const MAX_PROJECTS: usize = 16;
 pub const NOTHING: &str = "NONE";
 
 /// The only tools a suggestion is offered: the steps worth suggesting and what fills them in.
-pub const PREFERRED_TOOLS: [&str; 7] =
-    ["start_agent_session", "list_agent_sessions", "list_remote_machines", "create_reminder", "create_event", "check_availability", "list_events"];
+pub const PREFERRED_TOOLS: [&str; 7] = [
+    "start_agent_session",
+    "list_agent_sessions",
+    "list_remote_machines",
+    "create_reminder",
+    "create_event",
+    "check_availability",
+    "list_events",
+];
 
 /// The tools that send a chat message: the answer in a chat is the suggested reply's, so a step that sends one is dropped.
 pub const ANSWER_TOOLS: [&str; 4] = ["whatsapp_send", "chat_send", "send_to_source", "send_mail"];
@@ -149,12 +156,17 @@ pub fn prompt(place: &Place, lines: &[Line], fresh: usize, projects: &[String], 
         format!("The user's project folders (folder for start_agent_session): {}", names.join(", "))
     });
     if !handled.is_empty() {
-        parts.push(format!("Already offered in this conversation (do not offer again):\n{}", handled.iter().map(|h| format!("- {h}")).collect::<Vec<_>>().join("\n")));
+        parts.push(format!(
+            "Already offered in this conversation (do not offer again):\n{}",
+            handled.iter().map(|h| format!("- {h}")).collect::<Vec<_>>().join("\n")
+        ));
     }
     if !date_sheet.is_empty() {
         parts.push(date_sheet.to_string());
     }
-    parts.push(format!("Do the new messages ask for something you can do for the user now? Propose it with the action tools, or answer {NOTHING}."));
+    parts.push(format!(
+        "Do the new messages ask for something you can do for the user now? Propose it with the action tools, or answer {NOTHING}."
+    ));
     parts.join("\n\n")
 }
 
@@ -265,7 +277,11 @@ mod tests {
 
     #[test]
     fn reads_only_what_is_new_and_worth_a_look() {
-        let lines = vec![line("You", "Hi", "1"), line("Nook", "Hello", "2"), line("You", "Can you fix the login bug in the shop project tonight?", "3")];
+        let lines = vec![
+            line("You", "Hi", "1"),
+            line("Nook", "Hello", "2"),
+            line("You", "Can you fix the login bug in the shop project tonight?", "3"),
+        ];
         assert_eq!(new_lines(&lines, Some("2")).len(), 1);
         assert_eq!(new_lines(&lines, Some("gone")).len(), 3);
         assert!(worth_a_look(&new_lines(&lines, Some("2"))));
@@ -276,7 +292,14 @@ mod tests {
     #[test]
     fn prompts_with_the_new_lines_and_projects() {
         let lines = vec![line("You", "Earlier", "1"), line("Anna", "Please book the meeting for Friday 10:00", "2")];
-        let p = prompt(&Place::Chat { app: "Telegram".into(), name: "Anna".into() }, &lines, 1, &["C:\\code\\shop".into(), "/x/shop".into()], &["Start fix".into()], "");
+        let p = prompt(
+            &Place::Chat { app: "Telegram".into(), name: "Anna".into() },
+            &lines,
+            1,
+            &["C:\\code\\shop".into(), "/x/shop".into()],
+            &["Start fix".into()],
+            "",
+        );
         assert!(p.starts_with("Telegram chat with Anna."));
         assert!(p.contains("New since you last looked (only these can ask for a step):\nAnna: Please book"));
         assert!(p.contains("folders (folder for start_agent_session): shop") && !p.contains("shop, shop"));
@@ -288,7 +311,13 @@ mod tests {
     fn keeps_only_complete_new_steps() {
         assert!(!complete("start_agent_session", &json!({"task": "fix it", "folder": "shop"})));
         assert!(complete("create_event", &json!({"title": "Sync", "start": "2026-11-21T10:00"})));
-        let steps = vec![("chat_send", "Reply"), ("create_reminder", "Call Anna"), ("create_reminder", "call  anna"), ("create_event", "Old"), ("list_events", "x")];
+        let steps = vec![
+            ("chat_send", "Reply"),
+            ("create_reminder", "Call Anna"),
+            ("create_reminder", "call  anna"),
+            ("create_event", "Old"),
+            ("list_events", "x"),
+        ];
         let kept = keep(steps, |s| s.0.to_string(), |s| s.1.to_string(), &["Old".into()]);
         assert_eq!(kept, vec![("create_reminder", "Call Anna"), ("list_events", "x")]);
         assert_eq!(reason("NONE"), None);

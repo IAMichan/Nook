@@ -182,10 +182,7 @@ impl ChatHiddenMessages {
         if chat.is_empty() || message_id.is_empty() {
             return false;
         }
-        self.hidden
-            .entry(chat.to_string())
-            .or_default()
-            .insert(message_id.to_string())
+        self.hidden.entry(chat.to_string()).or_default().insert(message_id.to_string())
     }
 
     /// Unhides `message_id` in `chat`.
@@ -210,10 +207,7 @@ impl ChatHiddenMessages {
 
     /// Loads `chat-hidden.json` from `path` (or returns empty if missing/invalid).
     pub fn load(path: &std::path::Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
     }
 
     /// Saves `chat-hidden.json` to `path`.
@@ -278,7 +272,12 @@ impl InboxMessage {
     }
 
     /// A line about the group itself changing (yours when you did it, unless the app says whose it is).
-    pub fn group_notice(id: impl Into<String>, date: DateTime<Utc>, change: super::membership::ChatGroupChange, from_me: Option<bool>) -> Self {
+    pub fn group_notice(
+        id: impl Into<String>,
+        date: DateTime<Utc>,
+        change: super::membership::ChatGroupChange,
+        from_me: Option<bool>,
+    ) -> Self {
         let mut line = Self::new(id, String::new(), date, from_me.unwrap_or_else(|| change.by_me()));
         line.group_change = Some(change);
         line
@@ -501,7 +500,12 @@ impl InboxThread {
         if incoming.is_empty() {
             return crate::brain::message_trust::Verdict::default();
         }
-        let sender = match self.handle.as_deref().map(str::trim).filter(|h| h.contains('@') && !h.ends_with("@s.whatsapp.net") && !h.ends_with("@g.us") && !h.ends_with("@lid")) {
+        let sender = match self
+            .handle
+            .as_deref()
+            .map(str::trim)
+            .filter(|h| h.contains('@') && !h.ends_with("@s.whatsapp.net") && !h.ends_with("@g.us") && !h.ends_with("@lid"))
+        {
             Some(email) => format!("{} <{email}>", self.name),
             None => self.name.clone(),
         };
@@ -532,10 +536,7 @@ impl InboxThread {
         } else {
             self.name.clone()
         };
-        let handle = msg
-            .sender_id
-            .clone()
-            .or_else(|| (!msg.from_me).then(|| self.handle.clone()).flatten());
+        let handle = msg.sender_id.clone().or_else(|| (!msg.from_me).then(|| self.handle.clone()).flatten());
         Some(MessageInfo {
             id: msg.id,
             chat_key: self.id.clone(),
@@ -810,12 +811,8 @@ impl ChatInbox {
             return true;
         }
         let gone = self.removed.get(&key).copied();
-        let messages: Vec<InboxMessage> = chat
-            .messages
-            .iter()
-            .filter(|m| gone.is_none_or(|g| m.date > g) && !self.hidden.is_hidden(&key, &m.id))
-            .cloned()
-            .collect();
+        let messages: Vec<InboxMessage> =
+            chat.messages.iter().filter(|m| gone.is_none_or(|g| m.date > g) && !self.hidden.is_hidden(&key, &m.id)).cloned().collect();
         let described = known.as_ref().is_some_and(|k| {
             chat.unread.is_some()
                 || chat.members.is_some()
@@ -887,9 +884,11 @@ impl ChatInbox {
             }
             // A poll read again: its app's own counts win; a WhatsApp poll keeps the ballots Nook gathered for it.
             if let Some(poll) = &message.poll {
-                if poll.ballots.is_empty() && kept.poll.as_ref().is_none_or(|k| k.ballots.is_empty()) && kept.poll.as_ref() != Some(poll) {
-                    kept.poll = Some(poll.clone());
-                } else if kept.poll.is_none() {
+                if kept.poll.is_none()
+                    || (poll.ballots.is_empty()
+                        && kept.poll.as_ref().is_none_or(|k| k.ballots.is_empty())
+                        && kept.poll.as_ref() != Some(poll))
+                {
                     kept.poll = Some(poll.clone());
                 }
             }
@@ -1690,10 +1689,7 @@ mod tests {
         reply.sender = "Bo".into();
 
         let mut details = HashMap::new();
-        details.insert(
-            "3".to_string(),
-            MessageReadDetail { read_at: Some(at(3)), read_by: vec!["Anna".into()], readers: vec![] },
-        );
+        details.insert("3".to_string(), MessageReadDetail { read_at: Some(at(3)), read_by: vec!["Anna".into()], readers: vec![] });
 
         // Private chat: m1 and m2 advance to Read because m3 was read.
         let filled_private = fill_messages(&[m1.clone(), m2.clone(), m3.clone()], &details, true);

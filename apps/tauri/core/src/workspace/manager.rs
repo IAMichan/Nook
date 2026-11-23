@@ -332,11 +332,7 @@ impl Manager {
             if status.is_active() && status != RunStatus::Preparing {
                 return false;
             }
-            let others_working = s
-                .runs
-                .iter()
-                .filter(|r| r.id != id && r.status.is_active() && !s.capacity.is_waiting(r.id))
-                .count();
+            let others_working = s.runs.iter().filter(|r| r.id != id && r.status.is_active() && !s.capacity.is_waiting(r.id)).count();
             if !super::capacity::must_wait(limit, others_working) {
                 return false;
             }
@@ -369,11 +365,7 @@ impl Manager {
             }
             let existing: HashSet<Uuid> = s.runs.iter().map(|r| r.id).collect();
             s.capacity.prune(|id| existing.contains(&id));
-            let working = s
-                .runs
-                .iter()
-                .filter(|r| r.status.is_active() && !s.capacity.is_waiting(r.id))
-                .count();
+            let working = s.runs.iter().filter(|r| r.status.is_active() && !s.capacity.is_waiting(r.id)).count();
             let limit = super::capacity::max_working_sessions();
             s.capacity.dequeue_ready(limit, working)
         };
@@ -439,7 +431,7 @@ impl Manager {
             return vec![];
         }
         let mut runs = self.lock().runs.clone();
-        runs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        runs.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
         let mut hits = vec![];
         for run in runs {
             if hits.len() >= limit {
@@ -451,10 +443,8 @@ impl Manager {
             }
             let loaded = self.lock().events.get(&run.id).cloned();
             let events = loaded.unwrap_or_else(|| self.store.load_events(run.id));
-            let found = events
-                .iter()
-                .filter(|e| matches!(e.kind, EventKind::User | EventKind::Assistant))
-                .find_map(|e| snippet(&e.text, &needle));
+            let found =
+                events.iter().filter(|e| matches!(e.kind, EventKind::User | EventKind::Assistant)).find_map(|e| snippet(&e.text, &needle));
             if let Some(snippet) = found {
                 hits.push(SearchHit { run_id: run.id, snippet, archived: run.archived });
             }
@@ -932,12 +922,7 @@ impl Manager {
             {
                 let mut s = self.lock();
                 Self::load_timeline(&self.store, &mut s, id);
-                Self::append(
-                    &mut s,
-                    id,
-                    RunEvent::new(EventKind::System, note).with_tool(super::context_usage::GOAL_TOOL),
-                    &mut out,
-                );
+                Self::append(&mut s, id, RunEvent::new(EventKind::System, note).with_tool(super::context_usage::GOAL_TOOL), &mut out);
             }
             self.emit(out);
             return Ok(());
@@ -1107,9 +1092,11 @@ impl Manager {
     /// The agent read a steered message (`SteerReceipts`): the oldest one still waiting with that text (or else the
     /// oldest waiting at all) is read.
     fn steer_read(s: &mut Inner, id: Uuid, text: &str, out: &mut Out) {
-        let waiting = |e: &RunEvent| e.kind == EventKind::User && e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Pending);
+        let waiting =
+            |e: &RunEvent| e.kind == EventKind::User && e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Pending);
         let Some(list) = s.events.get(&id) else { return };
-        let target = list.iter().find(|e| waiting(e) && e.text.trim() == text.trim()).or_else(|| list.iter().find(|e| waiting(e))).map(|e| e.id.clone());
+        let target =
+            list.iter().find(|e| waiting(e) && e.text.trim() == text.trim()).or_else(|| list.iter().find(|e| waiting(e))).map(|e| e.id);
         if let Some(event_id) = target {
             Self::mutate(s, id, event_id, out, |e| e.state = Some(EventState::Done));
         }
@@ -1123,7 +1110,7 @@ impl Manager {
             .map(|l| {
                 l.iter()
                     .filter(|e| e.kind == EventKind::User && e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Pending))
-                    .map(|e| e.id.clone())
+                    .map(|e| e.id)
                     .collect()
             })
             .unwrap_or_default();
@@ -1171,11 +1158,8 @@ impl Manager {
             Self::clear_usage_limit(&mut s, id);
             Self::load_timeline(&self.store, &mut s, id);
             let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
-            let claude_rollback = run
-                .pending_rollback
-                .as_ref()
-                .filter(|p| !p.is_codex() && p.resume_session.is_some() && p.resume_at.is_some())
-                .cloned();
+            let claude_rollback =
+                run.pending_rollback.as_ref().filter(|p| !p.is_codex() && p.resume_session.is_some() && p.resume_at.is_some()).cloned();
             let (resume_session_id, fork_session, resume_at, used_claude_rollback) = match claude_rollback {
                 Some(pending) => (pending.resume_session, true, pending.resume_at, true),
                 None => (run.provider_session_id.clone(), s.fork_next.contains(&id), None, false),
@@ -1322,7 +1306,9 @@ impl Manager {
                 run.turn_started_at = Some(now);
                 crate::services::nook_telemetry::shared().turn_started(id, &run.usage, now);
                 // A finished task list goes with the work it was for; an unfinished one stays until the agent writes anew.
-                if run.tasks.as_ref().is_some_and(|t| t.iter().all(|x| matches!(x.status, super::tasks::StepStatus::Done | super::tasks::StepStatus::Cancelled))) {
+                if run.tasks.as_ref().is_some_and(|t| {
+                    t.iter().all(|x| matches!(x.status, super::tasks::StepStatus::Done | super::tasks::StepStatus::Cancelled))
+                }) {
                     run.tasks = None;
                 }
                 if used_claude_rollback {
@@ -1933,9 +1919,7 @@ impl Manager {
             Self::append(
                 s,
                 id,
-                RunEvent::new(EventKind::System, text)
-                    .with_tool(super::context_usage::COMPACTION_TOOL)
-                    .with_state(EventState::Running),
+                RunEvent::new(EventKind::System, text).with_tool(super::context_usage::COMPACTION_TOOL).with_state(EventState::Running),
                 out,
             );
         }
@@ -1973,9 +1957,7 @@ impl Manager {
                 Self::append(
                     s,
                     id,
-                    RunEvent::new(EventKind::System, text)
-                        .with_tool(super::context_usage::COMPACTION_TOOL)
-                        .with_state(EventState::Done),
+                    RunEvent::new(EventKind::System, text).with_tool(super::context_usage::COMPACTION_TOOL).with_state(EventState::Done),
                     out,
                 );
             }
@@ -2360,7 +2342,12 @@ impl Manager {
                 r.usage.context_tokens = None;
             });
             let mut out = Out::default();
-            Self::append(&mut s, id, RunEvent::new(EventKind::System, tr("Nieuw gesprek", "New conversation")).with_tool("clear"), &mut out);
+            Self::append(
+                &mut s,
+                id,
+                RunEvent::new(EventKind::System, tr("Nieuw gesprek", "New conversation")).with_tool("clear"),
+                &mut out,
+            );
             let agent = run.provider.display_name();
             let note = match recovery {
                 super::recovery::Recovery::Full => trf(
@@ -2505,7 +2492,13 @@ impl Manager {
 
     /// Decides; with Deny and a reason the agent hears why. Claude Code takes it as the denial's message; the agents on
     /// a driver (Codex, ACP) have no field for it, so it goes to them as a steer, or else first in the queue.
-    pub fn decide_with_reason(&self, run_id: Uuid, request_id: &str, decision: ApprovalDecision, reason: Option<&str>) -> Result<(), String> {
+    pub fn decide_with_reason(
+        &self,
+        run_id: Uuid,
+        request_id: &str,
+        decision: ApprovalDecision,
+        reason: Option<&str>,
+    ) -> Result<(), String> {
         let reason = reason.map(str::trim).filter(|r| !r.is_empty() && decision == ApprovalDecision::Deny).map(String::from);
         let mut tell_after = None;
         let mut out = Out::default();
@@ -2534,7 +2527,13 @@ impl Manager {
                     tell_after = reason.clone();
                     d.decide(request_id, allow, rules.is_some())
                 }
-                None => vec![parsers::claude_permission_response(request_id, allow, &pending.input, rules.as_ref(), reason.as_deref().unwrap_or(""))],
+                None => vec![parsers::claude_permission_response(
+                    request_id,
+                    allow,
+                    &pending.input,
+                    rules.as_ref(),
+                    reason.as_deref().unwrap_or(""),
+                )],
             };
             for line in lines {
                 let _ = input.send(Input::Line(line));
@@ -3517,7 +3516,17 @@ impl Manager {
             .get(&id)
             .into_iter()
             .flatten()
-            .map(|p| [p.tool.as_str(), p.summary.as_str()].iter().filter(|t| !t.is_empty()).cloned().collect::<Vec<_>>().join(": ").chars().take(160).collect())
+            .map(|p| {
+                [p.tool.as_str(), p.summary.as_str()]
+                    .iter()
+                    .filter(|t| !t.is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(": ")
+                    .chars()
+                    .take(160)
+                    .collect()
+            })
             .collect();
         let changed = s.runs.iter().find(|r| r.id == id).is_some_and(|r| r.restart.questions != asked || r.restart.approvals != approvals);
         if changed {
@@ -3534,11 +3543,19 @@ impl Manager {
         let mut out = Out::default();
         {
             let mut s = self.lock();
-            let ids: Vec<Uuid> = s.runs.iter().filter(|r| !r.restart.questions.is_empty() || !r.restart.approvals.is_empty()).map(|r| r.id).collect();
+            let ids: Vec<Uuid> =
+                s.runs.iter().filter(|r| !r.restart.questions.is_empty() || !r.restart.approvals.is_empty()).map(|r| r.id).collect();
             for id in ids {
                 let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { continue };
                 for q in &run.restart.questions {
-                    let pending = PendingQuestion { id: q.id.clone(), run_id: id, items: q.items.clone(), input: Value::Null, created: q.created, restored: true };
+                    let pending = PendingQuestion {
+                        id: q.id.clone(),
+                        run_id: id,
+                        items: q.items.clone(),
+                        input: Value::Null,
+                        created: q.created,
+                        restored: true,
+                    };
                     let list = s.questions.entry(id).or_default();
                     if !list.iter().any(|p| p.id == pending.id) {
                         list.push(pending);
@@ -3638,7 +3655,8 @@ impl Manager {
         let cut: Vec<(Uuid, bool)> = {
             let mut s = self.lock();
             s.quitting = true;
-            let cut: Vec<(Uuid, bool)> = s.runs.iter().filter(|r| r.status.is_active()).map(|r| (r.id, r.status == RunStatus::WaitingApproval)).collect();
+            let cut: Vec<(Uuid, bool)> =
+                s.runs.iter().filter(|r| r.status.is_active()).map(|r| (r.id, r.status == RunStatus::WaitingApproval)).collect();
             for (id, _) in &cut {
                 Self::sync_waiting(&mut s, *id);
             }

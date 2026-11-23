@@ -269,7 +269,10 @@ async fn finish(app: &AppHandle, mut note: Note, mine: Vec<TimedWord>, theirs: V
     // As Settings › Notifications says for Nook (`notices::decide`): Windows has no card at the bar for Nook yet, so a card
     // or a strip shows as the system notification it always was; quiet hours, quiet while sharing and Off keep it quiet.
     use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
-    if !matches!(crate::notices::decide(app, NoticeSource::Nook, "", false), NoticeDecision::HistoryOnly | NoticeDecision::Show(NoticeStyle::Off)) {
+    if !matches!(
+        crate::notices::decide(app, NoticeSource::Nook, "", false),
+        NoticeDecision::HistoryOnly | NoticeDecision::Show(NoticeStyle::Off)
+    ) {
         services.platform.system.notify("Nook", &format!("Gespreksnotitie klaar: {}", note.title));
     }
 }

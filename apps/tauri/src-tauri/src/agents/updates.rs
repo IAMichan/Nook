@@ -55,9 +55,10 @@ fn installed_version(executable: &str) -> Option<String> {
 
 async fn latest_version(kind: AgentKind, owner: &InstallOwner) -> Option<String> {
     let package = match owner {
-        InstallOwner::Npm { package, .. } | InstallOwner::Pnpm { package } | InstallOwner::Bun { package, .. } | InstallOwner::Volta { package } => {
-            package.clone()
-        }
+        InstallOwner::Npm { package, .. }
+        | InstallOwner::Pnpm { package }
+        | InstallOwner::Bun { package, .. }
+        | InstallOwner::Volta { package } => package.clone(),
         _ => updates::npm_package(kind)?.to_string(),
     };
     let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().ok()?;
@@ -101,7 +102,11 @@ pub async fn agents_updates(latest: bool) -> Vec<AgentUpdateRow> {
 pub async fn agents_update(kind: AgentKind) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (executable, owner) = owner_of(kind).ok_or_else(|| {
-            nook_core::i18n::trf("{agent} staat niet op deze computer.", "{agent} isn't installed on this computer.", &[("agent", &kind.name())])
+            nook_core::i18n::trf(
+                "{agent} staat niet op deze computer.",
+                "{agent} isn't installed on this computer.",
+                &[("agent", &kind.name())],
+            )
         })?;
         let command = updates::command(&owner, &executable).ok_or_else(|| {
             nook_core::i18n::tr(
@@ -110,9 +115,15 @@ pub async fn agents_update(kind: AgentKind) -> Result<Option<String>, String> {
             )
             .to_string()
         })?;
-        let program = nook_core::agents::which(&command.executable).map(|p| p.to_string_lossy().into_owned()).unwrap_or(command.executable.clone());
+        let program =
+            nook_core::agents::which(&command.executable).map(|p| p.to_string_lossy().into_owned()).unwrap_or(command.executable.clone());
         let mut cmd = Command::new(&program);
-        cmd.args(&command.arguments).env_clear().envs(environment(&program)).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.args(&command.arguments)
+            .env_clear()
+            .envs(environment(&program))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         quiet(&mut cmd);
         let output = cmd.output().map_err(|e| e.to_string())?;
         if !output.status.success() {

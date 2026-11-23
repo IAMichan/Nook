@@ -223,7 +223,7 @@ const owed: InboxProvider = {
 
 /// Birthdays today (the Mac's `birthdayAttention`): the people you gave a birthday in a chat's info, with Reply in their
 /// chat, and all-day birthday events in your calendars.
-const birthdays: InboxProvider = {
+const celebrationReminders: InboxProvider = {
   id: "birthdays",
   async load() {
     const today = new Date();
@@ -406,5 +406,6 @@ let registered = false;
 export function registerInboxSources() {
   if (registered) return;
   registered = true;
-  for (const p of [agents, chats, owed, birthdays, tasks, calendar, messages, code, connectorFailures, today, typing, gamerMode]) inbox.register(p);
+  for (const p of [agents, chats, owed, tasks, calendar, messages, code, connectorFailures, today, typing, gamerMode]) inbox.register(p);
+  inbox.registerEphemeral(celebrationReminders);
 }

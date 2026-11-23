@@ -122,7 +122,11 @@ pub fn start_rights(
     offered: &[PermissionPolicy],
 ) -> Result<PermissionPolicy, String> {
     let Some(requested) = requested else {
-        return Ok(if offered.contains(&PermissionPolicy::Ask) { PermissionPolicy::Ask } else { offered.first().copied().unwrap_or(PermissionPolicy::Ask) });
+        return Ok(if offered.contains(&PermissionPolicy::Ask) {
+            PermissionPolicy::Ask
+        } else {
+            offered.first().copied().unwrap_or(PermissionPolicy::Ask)
+        });
     };
     if let Some(caller) = caller {
         if rank(requested) > rank(caller) {
@@ -163,7 +167,11 @@ pub fn start(arguments: &Map<String, Value>, caller_folder: &str) -> Result<Star
             }
             items
                 .iter()
-                .map(|i| i.as_object().ok_or_else(|| "Each item of sessions is an object with task and/or title.".to_string()).and_then(|f| session(f, Some(&shared))))
+                .map(|i| {
+                    i.as_object()
+                        .ok_or_else(|| "Each item of sessions is an object with task and/or title.".to_string())
+                        .and_then(|f| session(f, Some(&shared)))
+                })
                 .collect::<Result<Vec<_>, _>>()?
         }
         None => vec![shared],
@@ -356,11 +364,8 @@ pub fn parse_search(arguments: &Map<String, Value>) -> Result<SearchArgs, String
         None => None,
     };
     let project = text(arguments, "project");
-    let limit = arguments
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(DEFAULT_SEARCH_LIMIT as u64)
-        .clamp(1, MAX_SEARCH_LIMIT as u64) as usize;
+    let limit =
+        arguments.get("limit").and_then(Value::as_u64).unwrap_or(DEFAULT_SEARCH_LIMIT as u64).clamp(1, MAX_SEARCH_LIMIT as u64) as usize;
     let include_archived = arguments.get("include_archived").and_then(Value::as_bool).unwrap_or(session_id.is_some());
     Ok(SearchArgs { query, session_id, project, limit, include_archived })
 }
@@ -441,9 +446,8 @@ pub fn search_session_parts(
     if needle.is_empty() {
         return None;
     }
-    let matched_meta = [title, task, project, working_directory, branch.unwrap_or("")]
-        .iter()
-        .any(|field| fold_query(field).contains(&needle));
+    let matched_meta =
+        [title, task, project, working_directory, branch.unwrap_or("")].iter().any(|field| fold_query(field).contains(&needle));
 
     let mut excerpts = Vec::new();
     for event in events {
@@ -543,10 +547,7 @@ impl SnoozeChoice {
         let local = now.with_timezone(tz);
         let at_hour = |day: chrono::NaiveDate, hour: u32| -> DateTime<Utc> {
             let dt = day.and_time(NaiveTime::from_hms_opt(hour, 0, 0).unwrap_or_default());
-            tz.from_local_datetime(&dt)
-                .earliest()
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|| now + Duration::hours(4))
+            tz.from_local_datetime(&dt).earliest().map(|d| d.with_timezone(&Utc)).unwrap_or_else(|| now + Duration::hours(4))
         };
         match self {
             Self::Hours(h) => now + Duration::hours(i64::from((*h).clamp(1, 168))),
@@ -612,9 +613,8 @@ pub fn parse_organize(arguments: &Map<String, Value>) -> Result<OrganizeArgs, St
         return Err(format!("Pass between 1 and {MAX_ORGANIZE_SESSIONS} session ids in session_id or session_ids."));
     }
 
-    let raw_action = text(arguments, "action").ok_or(
-        "Give an action: pin, unpin, settle, reopen, snooze, wake, archive, unarchive, mark_unread, mark_read or rename.",
-    )?;
+    let raw_action = text(arguments, "action")
+        .ok_or("Give an action: pin, unpin, settle, reopen, snooze, wake, archive, unarchive, mark_unread, mark_read or rename.")?;
     let action = match raw_action.to_ascii_lowercase().as_str() {
         "pin" => OrganizeAction::Pin,
         "unpin" => OrganizeAction::Unpin,
@@ -746,15 +746,15 @@ pub fn parse_questions(arguments: &Map<String, Value>) -> Result<QuestionAction,
                 let values: Vec<String> = match v {
                     Value::String(s) => {
                         let s = s.trim();
-                        if s.is_empty() { vec![] } else { vec![s.to_string()] }
+                        if s.is_empty() {
+                            vec![]
+                        } else {
+                            vec![s.to_string()]
+                        }
                     }
-                    Value::Array(arr) => arr
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string)
-                        .collect(),
+                    Value::Array(arr) => {
+                        arr.iter().filter_map(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+                    }
                     _ => return Err(format!("Answer for \"{key}\" must be a string or an array of strings.")),
                 };
                 if values.is_empty() {
@@ -773,10 +773,7 @@ pub fn parse_questions(arguments: &Map<String, Value>) -> Result<QuestionAction,
 
 /// Validates and maps an agent's `answers` object onto the ordered `selections` slice expected by
 /// [`super::manager::Manager::answer_question`].
-pub fn resolve_question_selections(
-    items: &[QuestionItem],
-    answers: &BTreeMap<String, Vec<String>>,
-) -> Result<Vec<Vec<String>>, String> {
+pub fn resolve_question_selections(items: &[QuestionItem], answers: &BTreeMap<String, Vec<String>>) -> Result<Vec<Vec<String>>, String> {
     if items.is_empty() {
         return Err("This question has no items to answer.".into());
     }
@@ -851,10 +848,7 @@ pub fn render_questions_list(questions: &[PendingQuestionView], approvals: &[Pen
     if !questions.is_empty() {
         lines.push(format!("# Pending questions ({})", questions.len()));
         for q in questions {
-            lines.push(format!(
-                "- session_id: {} · {} ({}) · request_id: {}",
-                q.session_id, q.session_title, q.agent, q.request_id
-            ));
+            lines.push(format!("- session_id: {} · {} ({}) · request_id: {}", q.session_id, q.session_title, q.agent, q.request_id));
             for (idx, item) in q.items.iter().enumerate() {
                 let kind = if item.multi_select { "multi-select" } else { "single-select" };
                 let labels: Vec<&str> = item.options.iter().map(|o| o.label.as_str()).collect();
@@ -1073,7 +1067,9 @@ mod tests {
         let rename = parse_organize(&args(json!({"session_id": id1.to_string(), "action": "rename", "title": "Auth refactor"}))).unwrap();
         assert_eq!(rename.action, OrganizeAction::Rename("Auth refactor".into()));
         assert!(parse_organize(&args(json!({"session_id": id1.to_string(), "action": "rename"}))).is_err());
-        assert!(parse_organize(&args(json!({"session_ids": [id1.to_string(), id2.to_string()], "action": "rename", "title": "x"}))).is_err());
+        assert!(
+            parse_organize(&args(json!({"session_ids": [id1.to_string(), id2.to_string()], "action": "rename", "title": "x"}))).is_err()
+        );
 
         let snooze = parse_organize(&args(json!({"session_id": id1.to_string(), "action": "snooze", "until": "tomorrow"}))).unwrap();
         assert_eq!(snooze.action, OrganizeAction::Snooze(SnoozeChoice::Tomorrow));
@@ -1131,8 +1127,19 @@ mod tests {
 
         // Rendering includes both questions and read-only approval notices.
         let rendered = render_questions_list(
-            &[PendingQuestionView { session_id: sid, session_title: "DB migration".into(), agent: "Claude Code".into(), request_id: "r1".into(), items: items.clone() }],
-            &[PendingApprovalNotice { session_id: Some(sid), agent: "Claude Code".into(), tool: "Bash".into(), title: "Run migrations".into() }],
+            &[PendingQuestionView {
+                session_id: sid,
+                session_title: "DB migration".into(),
+                agent: "Claude Code".into(),
+                request_id: "r1".into(),
+                items: items.clone(),
+            }],
+            &[PendingApprovalNotice {
+                session_id: Some(sid),
+                agent: "Claude Code".into(),
+                tool: "Bash".into(),
+                title: "Run migrations".into(),
+            }],
         );
         assert!(rendered.contains("Pending questions (1)"));
         assert!(rendered.contains("Pending permission approvals (1)"));

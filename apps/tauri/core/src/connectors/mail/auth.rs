@@ -151,12 +151,7 @@ pub async fn refresh_at(
             form(
                 http,
                 &url,
-                &[
-                    ("grant_type", "refresh_token"),
-                    ("client_id", &client),
-                    ("refresh_token", refresh_token),
-                    ("scope", MICROSOFT_SCOPES),
-                ],
+                &[("grant_type", "refresh_token"), ("client_id", &client), ("refresh_token", refresh_token), ("scope", MICROSOFT_SCOPES)],
             )
             .await?
         }
@@ -172,10 +167,7 @@ pub async fn refresh_at(
     if status == 200 {
         return tokens(&v).ok_or_else(|| ConnectorError::new("No token came back."));
     }
-    Err(ConnectorError::kind(
-        format!("{} wants you to sign in again (Settings › Mail and calendar).", provider.name()),
-        ErrorKind::Auth,
-    ))
+    Err(ConnectorError::kind(format!("{} wants you to sign in again (Settings › Mail and calendar).", provider.name()), ErrorKind::Auth))
 }
 
 /// PKCE: the verifier kept here and the challenge sent along.
@@ -251,7 +243,11 @@ pub async fn google_sign_in_at(http: &Http, env: &Env, token_url: &str, open: im
                 let _ = socket.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await;
                 continue;
             }
-            let page = if result.is_ok() { "Nook is signed in. You can close this tab." } else { "The sign-in did not finish. Try again in Nook." };
+            let page = if result.is_ok() {
+                "Nook is signed in. You can close this tab."
+            } else {
+                "The sign-in did not finish. Try again in Nook."
+            };
             let _ = socket
                 .write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len()).as_bytes())
                 .await;

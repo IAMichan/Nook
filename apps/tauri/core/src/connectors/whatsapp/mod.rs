@@ -803,13 +803,32 @@ pub enum WebhookEvent {
         status: Receipt,
     },
     /// Someone put an emoji on a message ("" takes theirs back): it goes on that message, never in a bubble of its own.
-    Reaction { chat: String, message: String, emoji: String, sender: String, from_me: bool },
+    Reaction {
+        chat: String,
+        message: String,
+        emoji: String,
+        sender: String,
+        from_me: bool,
+    },
     /// A message got new words, on the phone or through Nook.
-    Edited { chat: String, message: String, text: String },
+    Edited {
+        chat: String,
+        message: String,
+        text: String,
+    },
     /// A message was deleted for everyone.
-    Revoked { chat: String, message: String },
+    Revoked {
+        chat: String,
+        message: String,
+    },
     /// Someone voted on a poll (an empty choice takes their vote back): it moves that poll's counts, never a bubble.
-    PollVote { chat: String, poll: String, voter: String, choice: Vec<String>, from_me: bool },
+    PollVote {
+        chat: String,
+        poll: String,
+        voter: String,
+        choice: Vec<String>,
+        from_me: bool,
+    },
     /// Een geldige levering waar Nook niets mee hoeft (een test, een poll die verandert).
     Ignored,
 }
@@ -873,7 +892,9 @@ fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
     }
     let p = &json["payload"];
     if event == "message.reaction" {
-        let (Some(chat), Some(target)) = (non_empty(&p["chat_id"]), non_empty(&p["reacted_message_id"])) else { return WebhookEvent::Ignored };
+        let (Some(chat), Some(target)) = (non_empty(&p["chat_id"]), non_empty(&p["reacted_message_id"])) else {
+            return WebhookEvent::Ignored;
+        };
         let from_me = p["is_from_me"].as_bool().unwrap_or(false);
         let sender = non_empty(&p["from"]).unwrap_or_else(|| if from_me { String::new() } else { chat.clone() });
         return WebhookEvent::Reaction { chat, message: target, emoji: p["reaction"].as_str().unwrap_or("").to_string(), sender, from_me };
@@ -1556,7 +1577,9 @@ mod tests {
         let mut inbox = Inbox::default();
         inbox.add(m, &Filters::default(), None, false);
         let key = Inbox::key("120363000000000001@g.us");
-        inbox.store.with(|i| i.ballot(&key, "P1", "2", crate::chats::poll::Ballot { name: "Bea".into(), mine: false, choice: vec!["Pizza".into()] }));
+        inbox.store.with(|i| {
+            i.ballot(&key, "P1", "2", crate::chats::poll::Ballot { name: "Bea".into(), mine: false, choice: vec!["Pizza".into()] })
+        });
         let poll = inbox.get("120363000000000001@g.us").unwrap().messages[0].poll.clone().unwrap();
         assert_eq!(poll.options[1].votes, 1);
         let openwa = br#"{"event":"message.received","data":{"id":"O1","chatId":"31600000001@c.us","type":"poll","body":"","poll":{"name":"Q","options":["A","B"],"allowMultipleAnswers":true}}}"#;
@@ -1570,12 +1593,24 @@ mod tests {
         let reaction = r#"{"event":"message.reaction","payload":{"id":"R1","chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","is_from_me":false,"reaction":"👍","reacted_message_id":"M1"}}"#;
         assert_eq!(
             parse_webhook(GatewayKind::Gowa, reaction.as_bytes(), None),
-            Some(WebhookEvent::Reaction { chat: chat.into(), message: "M1".into(), emoji: "👍".into(), sender: chat.into(), from_me: false })
+            Some(WebhookEvent::Reaction {
+                chat: chat.into(),
+                message: "M1".into(),
+                emoji: "👍".into(),
+                sender: chat.into(),
+                from_me: false
+            })
         );
         let inside = br#"{"event":"message","payload":{"id":"R2","chat_id":"31600000001@s.whatsapp.net","is_from_me":true,"reaction":{"message":"","id":"M1"}}}"#;
         assert_eq!(
             parse_webhook(GatewayKind::Gowa, inside, None),
-            Some(WebhookEvent::Reaction { chat: chat.into(), message: "M1".into(), emoji: String::new(), sender: String::new(), from_me: true })
+            Some(WebhookEvent::Reaction {
+                chat: chat.into(),
+                message: "M1".into(),
+                emoji: String::new(),
+                sender: String::new(),
+                from_me: true
+            })
         );
         let edited = br#"{"event":"message","payload":{"id":"E1","chat_id":"31600000001@s.whatsapp.net","action":"message_edited","original_message_id":"M1","edited_text":"new words"}}"#;
         assert_eq!(
@@ -1583,7 +1618,10 @@ mod tests {
             Some(WebhookEvent::Edited { chat: chat.into(), message: "M1".into(), text: "new words".into() })
         );
         let revoked = br#"{"event":"message.revoked","payload":{"chat_id":"31600000001@s.whatsapp.net","revoked_message_id":"M2"}}"#;
-        assert_eq!(parse_webhook(GatewayKind::Gowa, revoked, None), Some(WebhookEvent::Revoked { chat: chat.into(), message: "M2".into() }));
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, revoked, None),
+            Some(WebhookEvent::Revoked { chat: chat.into(), message: "M2".into() })
+        );
         let reply = br#"{"event":"message","payload":{"id":"M3","chat_id":"31600000001@s.whatsapp.net","body":"yes","timestamp":"2026-11-20T10:00:00Z","replied_to_id":"M1","quoted_body":"coming?"}}"#;
         let Some(WebhookEvent::Message(m)) = parse_webhook(GatewayKind::Gowa, reply, None) else { panic!("no message") };
         assert_eq!(m.reply_to.as_deref(), Some("M1"));

@@ -30,7 +30,11 @@ fn title(tab: &str, language: &str) -> String {
         ("music", "es") => "Música",
         _ => "Nook",
     };
-    if tab == "chat" { name.to_string() } else { format!("{name} · Nook") }
+    if tab == "chat" {
+        name.to_string()
+    } else {
+        format!("{name} · Nook")
+    }
 }
 
 /// Opens `tab` in a window of its own, or brings its window forward. `focus: false` (reopening after a restart) leaves

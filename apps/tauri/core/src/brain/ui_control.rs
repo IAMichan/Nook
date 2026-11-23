@@ -297,15 +297,62 @@ pub fn rounds(questions: &[String], marker: &str) -> usize {
 /// Apps that hold passwords or run anything typed into them, the parts of Windows that guard the session, and Nook
 /// itself (clicking its own Run button would approve its own plans).
 pub const BLOCKED_NAMES: &[&str] = &[
-    "cmd", "command prompt", "opdrachtprompt", "eingabeaufforderung", "invite de commandes", "símbolo del sistema",
-    "powershell", "windows powershell", "pwsh", "terminal", "windows terminal", "windowsterminal", "wt", "conhost",
-    "openconsole", "git bash", "mintty", "wsl", "bash", "ubuntu", "alacritty", "wezterm", "kitty", "hyper", "warp",
-    "ghostty", "regedit", "registry editor", "register-editor", "registrierungs-editor", "éditeur du registre",
-    "editor del registro", "credential manager", "referentiebeheer", "anmeldeinformationsverwaltung",
-    "gestionnaire d'identification", "administrador de credenciales", "1password", "bitwarden", "lastpass",
-    "dashlane", "enpass", "keepass", "keepassxc", "taskmgr", "task manager", "taakbeheer", "task-manager",
-    "gestionnaire des tâches", "administrador de tareas", "mmc", "consent", "logonui", "lockapp",
-    "credentialuibroker", "nook",
+    "cmd",
+    "command prompt",
+    "opdrachtprompt",
+    "eingabeaufforderung",
+    "invite de commandes",
+    "símbolo del sistema",
+    "powershell",
+    "windows powershell",
+    "pwsh",
+    "terminal",
+    "windows terminal",
+    "windowsterminal",
+    "wt",
+    "conhost",
+    "openconsole",
+    "git bash",
+    "mintty",
+    "wsl",
+    "bash",
+    "ubuntu",
+    "alacritty",
+    "wezterm",
+    "kitty",
+    "hyper",
+    "warp",
+    "ghostty",
+    "regedit",
+    "registry editor",
+    "register-editor",
+    "registrierungs-editor",
+    "éditeur du registre",
+    "editor del registro",
+    "credential manager",
+    "referentiebeheer",
+    "anmeldeinformationsverwaltung",
+    "gestionnaire d'identification",
+    "administrador de credenciales",
+    "1password",
+    "bitwarden",
+    "lastpass",
+    "dashlane",
+    "enpass",
+    "keepass",
+    "keepassxc",
+    "taskmgr",
+    "task manager",
+    "taakbeheer",
+    "task-manager",
+    "gestionnaire des tâches",
+    "administrador de tareas",
+    "mmc",
+    "consent",
+    "logonui",
+    "lockapp",
+    "credentialuibroker",
+    "nook",
 ];
 
 pub fn is_blocked(name: &str) -> bool {
@@ -551,7 +598,19 @@ pub struct Element {
 
 impl Element {
     pub fn new(role: &str, label: &str, x: f64, y: f64, width: f64, height: f64) -> Element {
-        Element { role: role.into(), label: label.into(), value: None, x, y, width, height, enabled: true, focused: false, secure: false, visible: true }
+        Element {
+            role: role.into(),
+            label: label.into(),
+            value: None,
+            x,
+            y,
+            width,
+            height,
+            enabled: true,
+            focused: false,
+            secure: false,
+            visible: true,
+        }
     }
     pub fn center_x(&self) -> f64 {
         self.x + self.width / 2.0
@@ -600,8 +659,29 @@ pub fn role_for_control_type(control_type: i32, password: bool, toggle_switch: b
 
 /// Roles a person clicks, types in or reads to know where they are; the rest of the tree only holds these.
 pub const LISTED_ROLES: &[&str] = &[
-    "button", "checkbox", "switch", "toggle", "radio", "popup", "menubutton", "combobox", "field", "search", "password",
-    "textarea", "text", "slider", "stepper", "link", "row", "cell", "menuitem", "disclosure", "tab", "color", "date",
+    "button",
+    "checkbox",
+    "switch",
+    "toggle",
+    "radio",
+    "popup",
+    "menubutton",
+    "combobox",
+    "field",
+    "search",
+    "password",
+    "textarea",
+    "text",
+    "slider",
+    "stepper",
+    "link",
+    "row",
+    "cell",
+    "menuitem",
+    "disclosure",
+    "tab",
+    "color",
+    "date",
 ];
 
 fn role_aliases(role: &str) -> Vec<&'static str> {
@@ -638,8 +718,12 @@ pub enum MatchError {
 impl std::fmt::Display for MatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MatchError::NotFound(label) => write!(f, "No element \"{label}\" in the window now. Read it again (read_ui) and name an element exactly as listed."),
-            MatchError::Ambiguous(label, n) => write!(f, "\"{label}\" is there {n} times. Add role or index (1 = the first from the top left)."),
+            MatchError::NotFound(label) => {
+                write!(f, "No element \"{label}\" in the window now. Read it again (read_ui) and name an element exactly as listed.")
+            }
+            MatchError::Ambiguous(label, n) => {
+                write!(f, "\"{label}\" is there {n} times. Add role or index (1 = the first from the top left).")
+            }
         }
     }
 }
@@ -698,8 +782,11 @@ pub fn normalize(text: &str) -> String {
 /// window holds more than `limit` characters of elements, what is in view goes before what is scrolled out of it, and
 /// within that what you fill in and switch goes first, then buttons, then rows, links and plain text last.
 pub fn describe(app: &str, window: Option<&str>, elements: &[Element], limit: usize) -> String {
-    let mut lines = vec![format!("App: {app}{}", window.filter(|w| !w.is_empty()).map(|w| format!(" — window \"{w}\"")).unwrap_or_default())];
-    lines.push("Elements (role \"label\" [value] @ x,y). Name an element by its label in control_ui; add role or index when labels repeat.".into());
+    let mut lines =
+        vec![format!("App: {app}{}", window.filter(|w| !w.is_empty()).map(|w| format!(" — window \"{w}\"")).unwrap_or_default())];
+    lines.push(
+        "Elements (role \"label\" [value] @ x,y). Name an element by its label in control_ui; add role or index when labels repeat.".into(),
+    );
     let budget = limit.saturating_sub(lines.join("\n").chars().count());
     let rendered: Vec<String> = elements.iter().map(describe_line).collect();
     let tiers: Vec<u8> = elements.iter().map(shown_tier).collect();
@@ -1067,7 +1154,9 @@ mod tests {
 
     #[test]
     fn summaries_read_like_the_plan() {
-        let s = steps(&json!([{"action": "type", "element": "Search", "text": "coffee filters"}, {"action": "click", "x": 10, "y": 20}, {"action": "key", "keys": "enter"}]));
+        let s = steps(
+            &json!([{"action": "type", "element": "Search", "text": "coffee filters"}, {"action": "click", "x": 10, "y": 20}, {"action": "key", "keys": "enter"}]),
+        );
         assert_eq!(step_summary(&s[0]), "Type “coffee filters” in “Search”");
         assert_eq!(step_summary(&s[1]), "Click the point 10,20");
         assert_eq!(step_summary(&s[2]), "Press enter");
@@ -1118,11 +1207,7 @@ mod tests {
 
         let few = vec![el("text", "Title", 0.0, 0.0), el("button", "OK", 10.0, 10.0), el("button", "Cancel", 60.0, 10.0)];
         assert!(needs_seen_text(&few));
-        let enough = vec![
-            el("field", "Search", 0.0, 0.0),
-            el("button", "OK", 10.0, 10.0),
-            el("button", "Cancel", 60.0, 10.0),
-        ];
+        let enough = vec![el("field", "Search", 0.0, 0.0), el("button", "OK", 10.0, 10.0), el("button", "Cancel", 60.0, 10.0)];
         assert!(!needs_seen_text(&enough));
     }
 

@@ -37,7 +37,8 @@ async fn tick(app: &AppHandle, store: &FollowUpStore) {
         if let Some(turn) = turns.iter().find(|t| &t.chat == chat) {
             if super::notify::style(app, &turn.app, false).is_some() {
                 // "Lisa has not answered yet", with the last message (the Mac's `chats.followUp.reminder`).
-                let title = nook_core::i18n::trf("{name} heeft nog niet geantwoord", "{name} has not answered yet", &[("name", &turn.name)]);
+                let title =
+                    nook_core::i18n::trf("{name} heeft nog niet geantwoord", "{name} has not answered yet", &[("name", &turn.name)]);
                 crate::notices::notice(
                     app,
                     &format!("wait-{chat}"),

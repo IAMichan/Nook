@@ -83,11 +83,7 @@ pub fn refresh(app: &AppHandle, interval: Duration) {
             continue;
         }
         lock(&state.last).insert(profile.id.clone(), Instant::now());
-        let previous_codex = if profile.kind == AgentKind::Codex {
-            lock(&state.codex).get(&profile.id).cloned()
-        } else {
-            None
-        };
+        let previous_codex = if profile.kind == AgentKind::Codex { lock(&state.codex).get(&profile.id).cloned() } else { None };
         let app = app.clone();
         jobs.push(std::thread::spawn(move || {
             match profile.kind {
@@ -102,11 +98,9 @@ pub fn refresh(app: &AppHandle, interval: Duration) {
                     }
                 }
                 AgentKind::Codex => {
-                    if let Some(reading) = usage::read_codex_with_fallback(
-                        executable.as_deref(),
-                        profile.home.as_deref(),
-                        previous_codex.as_ref(),
-                    ) {
+                    if let Some(reading) =
+                        usage::read_codex_with_fallback(executable.as_deref(), profile.home.as_deref(), previous_codex.as_ref())
+                    {
                         if let Some(state) = app.try_state::<UsageState>() {
                             lock(&state.codex).insert(profile.id.clone(), reading);
                         }
@@ -234,9 +228,9 @@ pub fn agents_limits(app: AppHandle) -> Vec<AccountLimits> {
 
     let mut installed_cache: HashMap<AgentKind, bool> = HashMap::new();
     let mut is_installed = |kind: AgentKind| -> bool {
-        *installed_cache.entry(kind).or_insert_with(|| {
-            history.installed.contains(&kind) || nook_core::agents::find_executable(kind).is_some()
-        })
+        *installed_cache
+            .entry(kind)
+            .or_insert_with(|| history.installed.contains(&kind) || nook_core::agents::find_executable(kind).is_some())
     };
 
     let mut rows: Vec<AccountLimits> = profiles
@@ -253,7 +247,13 @@ pub fn agents_limits(app: AppHandle) -> Vec<AccountLimits> {
             };
             let antigravity_no_login = p.kind == AgentKind::Antigravity && ag.is_none_or(|r| r.no_login);
             let usage = match p.kind {
-                AgentKind::Claude => if home.is_empty() { default_plan.clone() } else { plans.get(&home).cloned() },
+                AgentKind::Claude => {
+                    if home.is_empty() {
+                        default_plan.clone()
+                    } else {
+                        plans.get(&home).cloned()
+                    }
+                }
                 AgentKind::Codex => codex.as_ref().map(CodexUsage::plan_usage),
                 _ => None,
             };

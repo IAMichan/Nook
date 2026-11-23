@@ -19,7 +19,6 @@ pub mod fuzzy;
 pub mod lyrics;
 pub mod music;
 pub mod music_history;
-pub mod user_scripts;
 pub mod nook_telemetry;
 pub mod notes;
 pub mod notice_log;
@@ -35,6 +34,7 @@ pub mod sounds;
 pub mod spoken;
 pub mod spotify;
 pub mod telemetry;
+pub mod user_scripts;
 
 pub mod think_along;
 pub mod toast;

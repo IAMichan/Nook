@@ -17,15 +17,35 @@ use super::AgentKind;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum InstallOwner {
-    Homebrew { brew: String, name: String, cask: bool },
-    Npm { npm: String, package: String },
-    Pnpm { package: String },
-    Bun { bun: String, package: String },
-    Volta { package: String },
-    Scoop { name: String },
-    Mise { tool: String },
+    Homebrew {
+        brew: String,
+        name: String,
+        cask: bool,
+    },
+    Npm {
+        npm: String,
+        package: String,
+    },
+    Pnpm {
+        package: String,
+    },
+    Bun {
+        bun: String,
+        package: String,
+    },
+    Volta {
+        package: String,
+    },
+    Scoop {
+        name: String,
+    },
+    Mise {
+        tool: String,
+    },
     /// The agent updates itself (`claude update`, `opencode upgrade`).
-    SelfUpdate { arguments: Vec<String> },
+    SelfUpdate {
+        arguments: Vec<String>,
+    },
     /// Nook cannot tell; you update it the way you installed it.
     Unknown,
 }
@@ -64,10 +84,7 @@ impl UpdateCommand {
 
 /// The agents whose program Nook can update. Antigravity's ACP server is a release Nook downloads and checks itself.
 pub fn updatable(kind: AgentKind) -> bool {
-    match kind {
-        AgentKind::Claude | AgentKind::Codex | AgentKind::Gemini | AgentKind::Opencode | AgentKind::Cursor | AgentKind::Grok => true,
-        _ => false,
-    }
+    matches!(kind, AgentKind::Claude | AgentKind::Codex | AgentKind::Gemini | AgentKind::Opencode | AgentKind::Cursor | AgentKind::Grok)
 }
 
 /// The npm package an agent is published as, for its newest version.
@@ -137,7 +154,8 @@ pub fn owner(kind: AgentKind, resolved: &str, home: &str, exists: impl Fn(&str) 
             return InstallOwner::Bun { bun: format!("{home}/.bun/bin/bun"), package };
         }
     }
-    if resolved.contains("/pnpm/global/") || resolved.contains("/Library/pnpm/") || resolved.to_lowercase().contains("/appdata/local/pnpm/") {
+    if resolved.contains("/pnpm/global/") || resolved.contains("/Library/pnpm/") || resolved.to_lowercase().contains("/appdata/local/pnpm/")
+    {
         if let Some(package) = package() {
             return InstallOwner::Pnpm { package };
         }
@@ -186,7 +204,8 @@ pub fn owner(kind: AgentKind, resolved: &str, home: &str, exists: impl Fn(&str) 
 
 /// The command that updates the program `owner` installed; `executable` is the agent's program, for its own updater.
 pub fn command(owner: &InstallOwner, executable: &str) -> Option<UpdateCommand> {
-    let c = |exe: &str, args: &[&str]| Some(UpdateCommand { executable: exe.into(), arguments: args.iter().map(|a| a.to_string()).collect() });
+    let c =
+        |exe: &str, args: &[&str]| Some(UpdateCommand { executable: exe.into(), arguments: args.iter().map(|a| a.to_string()).collect() });
     match owner {
         InstallOwner::Homebrew { brew, name, cask } => {
             let mut args = vec!["upgrade"];
@@ -313,7 +332,10 @@ mod tests {
             owner(AgentKind::Claude, r"C:\Users\me\AppData\Roaming\npm\claude.cmd", r"C:\Users\me", beside),
             InstallOwner::Npm { npm: "npm".into(), package: "@anthropic-ai/claude-code".into() }
         );
-        assert_eq!(owner(AgentKind::Gemini, r"C:\Users\me\scoop\apps\gemini\current\gemini.exe", r"C:\Users\me", no), InstallOwner::Scoop { name: "gemini".into() });
+        assert_eq!(
+            owner(AgentKind::Gemini, r"C:\Users\me\scoop\apps\gemini\current\gemini.exe", r"C:\Users\me", no),
+            InstallOwner::Scoop { name: "gemini".into() }
+        );
         assert_eq!(
             owner(AgentKind::Claude, r"C:\Users\me\.local\bin\claude.exe", r"C:\Users\me", no),
             InstallOwner::SelfUpdate { arguments: vec!["update".into()] }
@@ -340,7 +362,8 @@ mod tests {
         .unwrap();
         assert_eq!(claude.reported.as_deref(), Some("2.1.100"));
         assert_eq!(claude.required.as_deref(), Some("2.1.200"));
-        assert!(parse_rejection(Some("The 'gpt-5.5' model requires a newer version of Codex. Please upgrade to the latest app or CLI")).is_some());
+        assert!(parse_rejection(Some("The 'gpt-5.5' model requires a newer version of Codex. Please upgrade to the latest app or CLI"))
+            .is_some());
         assert!(parse_rejection(Some("network error")).is_none());
     }
 }

@@ -39,11 +39,22 @@ impl MusicPlay {
 
     /// The same recording, also when the player gave no id.
     pub fn key(&self) -> String {
-        if self.id.is_empty() { format!("{}|{}", self.artist, self.title) } else { self.id.clone() }
+        if self.id.is_empty() {
+            format!("{}|{}", self.artist, self.title)
+        } else {
+            self.id.clone()
+        }
     }
 
     pub fn track(&self) -> MusicTrack {
-        MusicTrack { id: self.id.clone(), title: self.title.clone(), artist: self.artist.clone(), duration: self.duration, artwork_url: self.artwork_url.clone(), album: self.album.clone() }
+        MusicTrack {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            artist: self.artist.clone(),
+            duration: self.duration,
+            artwork_url: self.artwork_url.clone(),
+            album: self.album.clone(),
+        }
     }
 }
 
@@ -82,7 +93,9 @@ impl MusicHistory {
         }
         let mut fresh = vec![];
         for play in imported {
-            let seen = known.get(&play.key()).is_some_and(|d| d.iter().any(|t| (*t - play.played_at).num_seconds().abs() < Self::SAME_PLAY_SECONDS));
+            let seen = known
+                .get(&play.key())
+                .is_some_and(|d| d.iter().any(|t| (*t - play.played_at).num_seconds().abs() < Self::SAME_PLAY_SECONDS));
             if !seen {
                 known.entry(play.key()).or_default().push(play.played_at);
                 fresh.push(play);
@@ -248,7 +261,6 @@ impl StatsPeriod {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ListenerType {
-
     Afternoon,
     Evening,
     Morning,
@@ -384,7 +396,12 @@ impl MusicStats {
             rank.seconds += play.listened;
             rank.track = play.track();
             if !play.artist.is_empty() {
-                let artist = artists.entry(play.artist.clone()).or_insert_with(|| ArtistRank { name: play.artist.clone(), plays: 0, seconds: 0, artwork_url: None });
+                let artist = artists.entry(play.artist.clone()).or_insert_with(|| ArtistRank {
+                    name: play.artist.clone(),
+                    plays: 0,
+                    seconds: 0,
+                    artwork_url: None,
+                });
                 artist.plays += 1;
                 artist.seconds += play.listened;
                 artist.artwork_url = play.artwork_url.clone().or(artist.artwork_url.take());
@@ -404,7 +421,10 @@ impl MusicStats {
         top.sort_by(|a, b| (b.seconds, &a.name).cmp(&(a.seconds, &b.name)));
         top.truncate(Self::RANK_LIMIT);
         stats.top_artists = top;
-        stats.best_day = days.iter().max_by(|a, b| (a.1, b.0).cmp(&(b.1, a.0))).map(|(d, s)| Bucket { start: d.format("%Y-%m-%d").to_string(), seconds: *s });
+        stats.best_day = days
+            .iter()
+            .max_by(|a, b| (a.1, b.0).cmp(&(b.1, a.0)))
+            .map(|(d, s)| Bucket { start: d.format("%Y-%m-%d").to_string(), seconds: *s });
         let peak = (0..24).max_by_key(|h| (stats.hours[*h], std::cmp::Reverse(*h))).unwrap_or(0);
         if stats.hours[peak] > 0 {
             stats.peak_hour = Some(peak as u32);
@@ -413,7 +433,8 @@ impl MusicStats {
             for (hour, seconds) in stats.hours.iter().enumerate() {
                 *parts.entry(ListenerType::from_hour(hour as u32)).or_default() += seconds;
             }
-            stats.listener_type = (stats.plays >= 5).then(|| parts.into_iter().max_by(|a, b| (a.1, b.0).cmp(&(b.1, a.0))).map(|p| p.0)).flatten();
+            stats.listener_type =
+                (stats.plays >= 5).then(|| parts.into_iter().max_by(|a, b| (a.1, b.0).cmp(&(b.1, a.0))).map(|p| p.0)).flatten();
         }
         stats
     }
@@ -462,7 +483,17 @@ mod tests {
     }
 
     fn play(id: &str, artist: &str, listened: u32, played_at: DateTime<Utc>) -> MusicPlay {
-        MusicPlay { id: id.into(), title: format!("T-{id}"), artist: artist.into(), album: String::new(), app: "Spotify".into(), artwork_url: None, duration: 200, listened, played_at }
+        MusicPlay {
+            id: id.into(),
+            title: format!("T-{id}"),
+            artist: artist.into(),
+            album: String::new(),
+            app: "Spotify".into(),
+            artwork_url: None,
+            duration: 200,
+            listened,
+            played_at,
+        }
     }
 
     fn utc() -> FixedOffset {

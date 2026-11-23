@@ -475,7 +475,13 @@ impl Conversation {
     pub fn card(&self) -> ConversationCard {
         use crate::brain::task_steps::StepStatus;
         let one_line = |text: &str| text.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
-        let clip = |text: String, n: usize| if text.chars().count() > n { format!("{}…", text.chars().take(n - 1).collect::<String>()) } else { text };
+        let clip = |text: String, n: usize| {
+            if text.chars().count() > n {
+                format!("{}…", text.chars().take(n - 1).collect::<String>())
+            } else {
+                text
+            }
+        };
         let tasks = self.messages.iter().rev().find(|m| !m.tasks.is_empty()).map(|m| m.tasks.as_slice()).unwrap_or(&[]);
         let active = tasks.iter().find(|t| t.status == StepStatus::Active);
         let done = tasks.iter().rev().find(|t| t.status == StepStatus::Done);
@@ -486,7 +492,13 @@ impl Conversation {
             }
         }
         sources.truncate(3);
-        let request = self.messages.iter().find(|m| m.from_user).map(|m| one_line(&m.text)).filter(|r| !r.is_empty() && *r != self.title).unwrap_or_default();
+        let request = self
+            .messages
+            .iter()
+            .find(|m| m.from_user)
+            .map(|m| one_line(&m.text))
+            .filter(|r| !r.is_empty() && *r != self.title)
+            .unwrap_or_default();
         let summary = self
             .messages
             .iter()

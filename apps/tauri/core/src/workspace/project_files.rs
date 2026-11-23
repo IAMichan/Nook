@@ -6,8 +6,23 @@ use std::path::{Path, PathBuf};
 
 /// Folders never walked into.
 const SKIPPED: &[&str] = &[
-    "node_modules", ".git", ".build", "build", "dist", "DerivedData", "Pods", ".next", "vendor", "target", ".scratch", ".venv",
-    "__pycache__", ".gradle", ".idea", ".svelte-kit", "coverage",
+    "node_modules",
+    ".git",
+    ".build",
+    "build",
+    "dist",
+    "DerivedData",
+    "Pods",
+    ".next",
+    "vendor",
+    "target",
+    ".scratch",
+    ".venv",
+    "__pycache__",
+    ".gradle",
+    ".idea",
+    ".svelte-kit",
+    "coverage",
 ];
 /// At most this many entries are looked at, so a huge folder answers quickly.
 const BUDGET: usize = 40_000;
@@ -86,7 +101,8 @@ pub fn save_picture(bytes: &[u8], extension: &str) -> std::io::Result<PathBuf> {
     let ext = if ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(&ext.as_str()) { ext } else { "png".into() };
     let dir = pictures();
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{}-{}.{ext}", chrono::Local::now().format("%Y%m%d-%H%M%S"), &uuid::Uuid::new_v4().simple().to_string()[..6]));
+    let path =
+        dir.join(format!("{}-{}.{ext}", chrono::Local::now().format("%Y%m%d-%H%M%S"), &uuid::Uuid::new_v4().simple().to_string()[..6]));
     std::fs::write(&path, bytes)?;
     Ok(path)
 }

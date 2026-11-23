@@ -753,9 +753,7 @@ pub mod prefetch {
                     (2, json!({"days": 7}))
                 }
             }
-            "whatsapp_open_chats" => {
-                (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 2 }, json!({}))
-            }
+            "whatsapp_open_chats" => (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 2 }, json!({})),
             "whatsapp_live" | "chat_inbox" => (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 1 }, json!({})),
             "list_notes" => (1, json!({"limit": 8})),
             "list_reminders" | "read_browser_tab" => (1, json!({})),

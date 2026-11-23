@@ -59,12 +59,26 @@ impl NoticeLog {
             return;
         }
         let detail = detail.trim();
-        let detail = if detail.chars().count() > DETAIL_LIMIT { format!("{}…", detail.chars().take(DETAIL_LIMIT).collect::<String>()) } else { detail.to_string() };
+        let detail = if detail.chars().count() > DETAIL_LIMIT {
+            format!("{}…", detail.chars().take(DETAIL_LIMIT).collect::<String>())
+        } else {
+            detail.to_string()
+        };
         self.next += 1;
         self.entries.retain(|e| e.key != key);
         self.entries.insert(
             0,
-            NoticeEntry { id: self.next, key: key.into(), kind, title: title.into(), detail, context: context.trim().into(), date: now, route: route.into(), seen: false },
+            NoticeEntry {
+                id: self.next,
+                key: key.into(),
+                kind,
+                title: title.into(),
+                detail,
+                context: context.trim().into(),
+                date: now,
+                route: route.into(),
+                seen: false,
+            },
         );
         self.prune(now);
     }

@@ -275,10 +275,8 @@ impl ToolSource for Mail {
         if private.contains("mail") || !ctx.scope.allows("mail") {
             return None;
         }
-        let names: Vec<String> = accounts
-            .iter()
-            .map(|a| format!("{} <{}>{}", a.label(), a.address, if a.calendar { " [calendar]" } else { "" }))
-            .collect();
+        let names: Vec<String> =
+            accounts.iter().map(|a| format!("{} <{}>{}", a.label(), a.address, if a.calendar { " [calendar]" } else { "" })).collect();
         Some(format!("Mail accounts: {}. Use inbox_mail, mail_unread, search_mail or read_mail to read mail.", names.join(", ")))
     }
 
@@ -363,19 +361,20 @@ pub fn build_draft(input: &Value, folder: &Path) -> nook_core::Result<(MailDraft
         return Err(nook_core::NookError::new("The email text (body) is missing."));
     }
     // A name for a recipient the screen brain read: its address, which never left this computer.
-    let to = text(input, "to")
-        .split([',', ';'])
-        .map(str::trim)
-        .filter(|a| !a.is_empty())
-        .map(|a| {
-            if is_mail_address(a) {
-                a.to_string()
-            } else {
-                crate::commands::screen_work::address_for(a).unwrap_or_else(|| a.to_string())
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
+    let to =
+        text(input, "to")
+            .split([',', ';'])
+            .map(str::trim)
+            .filter(|a| !a.is_empty())
+            .map(|a| {
+                if is_mail_address(a) {
+                    a.to_string()
+                } else {
+                    crate::commands::screen_work::address_for(a).unwrap_or_else(|| a.to_string())
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
     let cc = text(input, "cc");
     let bcc = text(input, "bcc");
     let bad: Vec<&str> = [to.as_str(), cc.as_str(), bcc.as_str()]

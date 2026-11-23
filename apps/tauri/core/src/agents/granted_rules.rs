@@ -258,12 +258,7 @@ impl GrantedRulesStore {
             existing.agent = agent.to_string();
             existing.granted_at = now;
         } else {
-            list.push(StoredRule {
-                rule: rule.to_string(),
-                reach: r_id,
-                agent: agent.to_string(),
-                granted_at: now,
-            });
+            list.push(StoredRule { rule: rule.to_string(), reach: r_id, agent: agent.to_string(), granted_at: now });
         }
         self.save();
     }
@@ -661,34 +656,14 @@ mod tests {
     #[test]
     fn approval_audit_formats_like_macos_and_stays_bounded() {
         let now = Utc::now();
-        let entry = ApprovalAuditEntry::new(
-            "Codex",
-            "web",
-            "/w/web",
-            "Bash",
-            "npm test",
-            "allow",
-            None,
-            Some(ApprovalSource::Phone),
-            false,
-            now,
-        );
+        let entry =
+            ApprovalAuditEntry::new("Codex", "web", "/w/web", "Bash", "npm test", "allow", None, Some(ApprovalSource::Phone), false, now);
         assert_eq!(entry.args, "Codex · web · Bash · npm test");
         assert_eq!(entry.result, "allow · phone");
 
         let long = "x".repeat(1_000);
-        let dangerous = ApprovalAuditEntry::new(
-            "Claude Code",
-            "",
-            "",
-            "Bash",
-            &long,
-            "deny",
-            None,
-            Some(ApprovalSource::Notification),
-            true,
-            now,
-        );
+        let dangerous =
+            ApprovalAuditEntry::new("Claude Code", "", "", "Bash", &long, "deny", None, Some(ApprovalSource::Notification), true, now);
         assert_eq!(dangerous.result, "deny · notification · danger");
         assert!(dangerous.args.ends_with('…'));
         assert!(dangerous.summary.chars().count() == AUDIT_ASKED_LIMIT + 1);

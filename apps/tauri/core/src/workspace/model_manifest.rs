@@ -8,8 +8,8 @@
 //! when it is newer (`updatedAt`).
 
 use std::collections::BTreeMap;
-use std::sync::{LazyLock, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -190,8 +190,15 @@ pub fn models(agent: &str, now: chrono::DateTime<chrono::Utc>) -> Vec<CatalogMod
 
 /// Every agent's models.
 pub fn all(now: chrono::DateTime<chrono::Utc>) -> BTreeMap<String, Vec<CatalogModel>> {
-    let agents: Vec<String> = ACTIVE.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.agents.keys().cloned().collect()).unwrap_or_default();
-    agents.into_iter().map(|k| { let list = models(&k, now); (k, list) }).collect()
+    let agents: Vec<String> =
+        ACTIVE.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.agents.keys().cloned().collect()).unwrap_or_default();
+    agents
+        .into_iter()
+        .map(|k| {
+            let list = models(&k, now);
+            (k, list)
+        })
+        .collect()
 }
 
 #[cfg(test)]

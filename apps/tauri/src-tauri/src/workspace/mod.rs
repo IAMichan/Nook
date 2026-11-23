@@ -6,9 +6,9 @@ pub mod automation;
 #[cfg(desktop)]
 pub mod bridge;
 pub mod bridge_cli;
-pub mod clones;
 #[cfg(desktop)]
 pub mod browser;
+pub mod clones;
 pub mod nook_runs;
 #[cfg(desktop)]
 pub mod snapshot;

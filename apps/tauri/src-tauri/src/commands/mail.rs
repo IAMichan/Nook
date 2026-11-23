@@ -170,12 +170,7 @@ fn mime_for(path: &Path) -> &'static str {
 /// Sends a `MailDraft` directly through a linked Microsoft or Google account (including attachments like `invite.ics`
 /// and optional `reply_to` threading). Returns the label of the account used.
 #[tauri::command]
-pub async fn mail_send_linked(
-    app: AppHandle,
-    mut draft: MailDraft,
-    account: Option<String>,
-    reply_to: Option<String>,
-) -> Res<String> {
+pub async fn mail_send_linked(app: AppHandle, mut draft: MailDraft, account: Option<String>, reply_to: Option<String>) -> Res<String> {
     let to = split_addresses(&draft.to);
     if to.is_empty() {
         return Err(tr("Vul eerst een ontvanger in.", "Enter a recipient first.").into());

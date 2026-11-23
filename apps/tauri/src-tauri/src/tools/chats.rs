@@ -52,10 +52,18 @@ fn read(app: &tauri::AppHandle, input: &Value) -> Result<String, String> {
         let shown: Vec<_> = chat::shown(inbox, &hidden).into_iter().filter(|t| app_filter.as_deref().is_none_or(|a| t.app == a)).collect();
         if !query.trim().is_empty() {
             let found = chat::search(&shown, &query);
-            return if found.is_empty() { format!("No message in the chats holds \"{query}\".") } else { format!("Messages with \"{query}\" (newest first):\n{found}") };
+            return if found.is_empty() {
+                format!("No message in the chats holds \"{query}\".")
+            } else {
+                format!("Messages with \"{query}\" (newest first):\n{found}")
+            };
         }
         if name.trim().is_empty() {
-            return if shown.is_empty() { "No chats in Nook yet.".to_string() } else { format!("Recent chats (newest first):\n{}", chat::overview(&shown, 20)) };
+            return if shown.is_empty() {
+                "No chats in Nook yet.".to_string()
+            } else {
+                format!("Recent chats (newest first):\n{}", chat::overview(&shown, 20))
+            };
         }
         match chat::pick(&shown, &name, app_filter.as_deref()) {
             Pick::One(thread) => {
@@ -163,7 +171,11 @@ impl ToolSource for Chats {
         (tool == "chat_send").then(|| {
             let app = text(input, "app");
             let name = if app.trim().is_empty() { "Chats".to_string() } else { chat::app_name(&chat::app_id(&app)) };
-            trf("{app}-bericht aan {to}: {message}", "{app} message to {to}: {message}", &[("app", &name), ("to", &text(input, "to")), ("message", &text(input, "message"))])
+            trf(
+                "{app}-bericht aan {to}: {message}",
+                "{app} message to {to}: {message}",
+                &[("app", &name), ("to", &text(input, "to")), ("message", &text(input, "message"))],
+            )
         })
     }
 
@@ -208,4 +220,3 @@ async fn send(ctx: &ToolCtx, input: &Value) -> Result<String, String> {
     crate::chats::inbox::chat_inbox_send(ctx.app.clone(), ctx.app.state::<Connectors>(), key, message, None).await?;
     Ok(format!("{app_title} message sent to {name}."))
 }
-

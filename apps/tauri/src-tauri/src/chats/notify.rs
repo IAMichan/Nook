@@ -29,21 +29,13 @@ pub struct ChatArrived {
 /// Evaluates notice priority for a specific incoming message inside `thread` (CH-64).
 /// Group chats default to `quiet_by_kind = true` so only direct mentions and replies-to-me raise priority.
 pub fn score_message(thread: &InboxThread, message: &InboxMessage) -> NoticeScore {
-    let mode = if thread.muted_in_app == Some(true) {
-        ChatNoticeMode::Muted
-    } else {
-        ChatNoticeMode::Automatic
-    };
+    let mode = if thread.muted_in_app == Some(true) { ChatNoticeMode::Muted } else { ChatNoticeMode::Automatic };
     priority::evaluate(thread, message, thread.is_group(), mode)
 }
 
 /// Evaluates notice priority for the newest incoming message in `thread` (CH-64).
 pub fn score_thread(thread: &InboxThread) -> NoticeScore {
-    let mode = if thread.muted_in_app == Some(true) {
-        ChatNoticeMode::Muted
-    } else {
-        ChatNoticeMode::Automatic
-    };
+    let mode = if thread.muted_in_app == Some(true) { ChatNoticeMode::Muted } else { ChatNoticeMode::Automatic };
     priority::evaluate_latest(thread, thread.is_group(), mode)
 }
 
@@ -81,20 +73,9 @@ pub fn toast(handle: &AppHandle, key: &str, app: &str, name: &str, preview: &str
 
 /// System notification with priority awareness (CH-64): urgent priority may pass burst pacing after user rules
 /// (`style(..., false)`) have already allowed the notice.
-pub fn toast_with_priority(
-    handle: &AppHandle,
-    key: &str,
-    app: &str,
-    name: &str,
-    preview: &str,
-    sends: bool,
-    priority: &NoticeScore,
-) {
-    let level = if priority.raises && priority.level == NoticePriorityLevel::Urgent {
-        ToastLevel::TimeSensitive
-    } else {
-        ToastLevel::Active
-    };
+pub fn toast_with_priority(handle: &AppHandle, key: &str, app: &str, name: &str, preview: &str, sends: bool, priority: &NoticeScore) {
+    let level =
+        if priority.raises && priority.level == NoticePriorityLevel::Urgent { ToastLevel::TimeSensitive } else { ToastLevel::Active };
     let toast = Toast::notice(
         &format!("chat-{key}"),
         name,

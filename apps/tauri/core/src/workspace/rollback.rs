@@ -105,7 +105,13 @@ impl ConversationLog {
     }
 
     pub fn mark(&self) -> ConversationMark {
-        ConversationMark { session: self.session.clone(), provider: self.provider, turns: self.turns, head: self.head.clone(), exact: self.exact }
+        ConversationMark {
+            session: self.session.clone(),
+            provider: self.provider,
+            turns: self.turns,
+            head: self.head.clone(),
+            exact: self.exact,
+        }
     }
 
     /// After a rollback to `mark`: what is left of the conversation.
@@ -150,8 +156,15 @@ impl PendingRollback {
 pub enum Plan {
     /// The conversation already ends there.
     Nothing,
-    Codex { thread: String, num_turns: usize, before_turn_id: Option<String> },
-    ClaudeResume { session: String, at: String },
+    Codex {
+        thread: String,
+        num_turns: usize,
+        before_turn_id: Option<String>,
+    },
+    ClaudeResume {
+        session: String,
+        at: String,
+    },
     /// Back to before the first message: the next turn starts a new conversation.
     Fresh,
     /// The conversation cannot follow (no mark, another agent or thread, turns Nook missed): files only.
@@ -209,10 +222,9 @@ pub fn merge(pending: Option<PendingRollback>, plan: &Plan) -> Option<PendingRol
     match plan {
         Plan::Nothing | Plan::Unavailable => pending,
         Plan::Codex { thread, num_turns, before_turn_id } => {
-            let mut next = pending.filter(|p| p.thread_id.as_deref() == Some(thread.as_str())).unwrap_or_else(|| PendingRollback {
-                thread_id: Some(thread.clone()),
-                ..Default::default()
-            });
+            let mut next = pending
+                .filter(|p| p.thread_id.as_deref() == Some(thread.as_str()))
+                .unwrap_or_else(|| PendingRollback { thread_id: Some(thread.clone()), ..Default::default() });
             next.num_turns += num_turns;
             next.before_turn_id = before_turn_id.clone();
             Some(next)
@@ -244,7 +256,13 @@ mod tests {
     use chrono::Duration;
 
     fn mark(session: Option<&str>, provider: RunProvider, turns: usize, head: Option<&str>) -> ConversationMark {
-        ConversationMark { session: session.map(str::to_string), provider: Some(provider), turns, head: head.map(str::to_string), exact: true }
+        ConversationMark {
+            session: session.map(str::to_string),
+            provider: Some(provider),
+            turns,
+            head: head.map(str::to_string),
+            exact: true,
+        }
     }
 
     fn codex_log(ids: &[&str], thread: &str) -> ConversationLog {

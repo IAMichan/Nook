@@ -17,7 +17,12 @@ impl Log for FileLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            nook_core::diagnostics::log().append(chrono::Local::now(), record.level().as_str(), record.target(), &record.args().to_string());
+            nook_core::diagnostics::log().append(
+                chrono::Local::now(),
+                record.level().as_str(),
+                record.target(),
+                &record.args().to_string(),
+            );
         }
     }
 

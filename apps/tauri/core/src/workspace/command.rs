@@ -6,9 +6,7 @@ use std::collections::BTreeMap;
 use super::bridge::{self, BridgeLaunch};
 use super::models::{ExecutionMode, PermissionPolicy, RunProvider};
 use super::parsers::claude_user_message;
-use crate::services::telemetry::{
-    OtlpConfig, OtlpHeader, OtlpProtocol, OtlpSignal, BASE_ENDPOINT_ENV, HEADERS_ENV, PROTOCOL_ENV,
-};
+use crate::services::telemetry::{OtlpConfig, OtlpHeader, OtlpProtocol, OtlpSignal, BASE_ENDPOINT_ENV, HEADERS_ENV, PROTOCOL_ENV};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchSpec {
@@ -290,9 +288,7 @@ pub struct TelemetryLaunch {
 /// variables for extensions or SDKs inside it.
 pub fn telemetry_signals(provider: RunProvider) -> &'static [OtlpSignal] {
     match provider {
-        RunProvider::Claude | RunProvider::Codex | RunProvider::Gemini => {
-            &[OtlpSignal::Traces, OtlpSignal::Metrics, OtlpSignal::Logs]
-        }
+        RunProvider::Claude | RunProvider::Codex | RunProvider::Gemini => &[OtlpSignal::Traces, OtlpSignal::Metrics, OtlpSignal::Logs],
         RunProvider::Opencode => &[OtlpSignal::Traces, OtlpSignal::Logs],
         RunProvider::Grok => &[OtlpSignal::Metrics, OtlpSignal::Logs],
         RunProvider::Cursor | RunProvider::Antigravity => &[],
@@ -345,25 +341,15 @@ pub fn toml_string(text: &str) -> String {
 
 /// Codex `[otel]` overrides (`-c otel.exporter={otlp-http={...}}`), one per configured signal.
 pub fn codex_telemetry_arguments(config: &OtlpConfig) -> Vec<String> {
-    let keys = [
-        (OtlpSignal::Logs, "otel.exporter"),
-        (OtlpSignal::Traces, "otel.trace_exporter"),
-        (OtlpSignal::Metrics, "otel.metrics_exporter"),
-    ];
+    let keys =
+        [(OtlpSignal::Logs, "otel.exporter"), (OtlpSignal::Traces, "otel.trace_exporter"), (OtlpSignal::Metrics, "otel.metrics_exporter")];
     let wire = if config.protocol == OtlpProtocol::HttpJson { "json" } else { "binary" };
-    let headers = config
-        .headers
-        .iter()
-        .map(|h| format!("{}={}", toml_string(&h.name), toml_string(&h.value)))
-        .collect::<Vec<_>>()
-        .join(",");
+    let headers =
+        config.headers.iter().map(|h| format!("{}={}", toml_string(&h.name), toml_string(&h.value))).collect::<Vec<_>>().join(",");
     let mut args = Vec::new();
     for (signal, key) in keys {
         let Some(url) = config.endpoint(signal) else { continue };
-        let table = format!(
-            "{{otlp-http={{endpoint={},protocol=\"{wire}\",headers={{{headers}}}}}}}",
-            toml_string(url)
-        );
+        let table = format!("{{otlp-http={{endpoint={},protocol=\"{wire}\",headers={{{headers}}}}}}}", toml_string(url));
         args.push("-c".into());
         args.push(format!("{key}={table}"));
     }
@@ -593,13 +579,7 @@ mod tests {
 
     #[test]
     fn telemetry_claude_sets_standard_and_native_env_and_preserves_existing() {
-        let cfg = otlp_config(
-            true,
-            false,
-            true,
-            OtlpProtocol::HttpJson,
-            vec![OtlpHeader::new("Authorization", "Bearer tok")],
-        );
+        let cfg = otlp_config(true, false, true, OtlpProtocol::HttpJson, vec![OtlpHeader::new("Authorization", "Bearer tok")]);
         let mut s = spec(&input(RunProvider::Claude, "", None, ""));
         s.extra_environment.insert("OTEL_TRACES_EXPORTER".into(), "custom".into());
         let out = apply_telemetry(RunProvider::Claude, &cfg, s);
@@ -620,13 +600,7 @@ mod tests {
 
     #[test]
     fn telemetry_codex_inserts_escaped_toml_overrides_after_subcommand() {
-        let cfg = otlp_config(
-            true,
-            false,
-            true,
-            OtlpProtocol::HttpJson,
-            vec![OtlpHeader::new("X-Key", "a\"b\\c\n")],
-        );
+        let cfg = otlp_config(true, false, true, OtlpProtocol::HttpJson, vec![OtlpHeader::new("X-Key", "a\"b\\c\n")]);
         assert_eq!(toml_string("a\"b\\c\n"), "\"a\\\"b\\\\c\\n\"");
 
         let s = spec(&input(RunProvider::Codex, "", None, ""));
@@ -641,21 +615,12 @@ mod tests {
 
     #[test]
     fn telemetry_gemini_grok_and_other_providers() {
-        let cfg = otlp_config(
-            true,
-            true,
-            false,
-            OtlpProtocol::HttpProtobuf,
-            vec![OtlpHeader::new("X-Token", "secret")],
-        );
+        let cfg = otlp_config(true, true, false, OtlpProtocol::HttpProtobuf, vec![OtlpHeader::new("X-Token", "secret")]);
         let gemini = telemetry_launch(RunProvider::Gemini, &cfg);
         assert_eq!(gemini.environment.get("GEMINI_TELEMETRY_ENABLED").map(String::as_str), Some("true"));
         assert_eq!(gemini.environment.get("GEMINI_TELEMETRY_OTLP_ENDPOINT").map(String::as_str), Some("http://localhost:4318"));
         assert_eq!(gemini.environment.get("GEMINI_TELEMETRY_TRACES_ENABLED").map(String::as_str), Some("true"));
-        assert_eq!(
-            gemini.environment.get("GEMINI_TELEMETRY_OTLP_HEADERS").map(String::as_str),
-            Some("{\"X-Token\":\"secret\"}")
-        );
+        assert_eq!(gemini.environment.get("GEMINI_TELEMETRY_OTLP_HEADERS").map(String::as_str), Some("{\"X-Token\":\"secret\"}"));
 
         let grok = telemetry_launch(RunProvider::Grok, &cfg);
         assert_eq!(grok.environment.get("GROK_EXTERNAL_OTEL").map(String::as_str), Some("1"));

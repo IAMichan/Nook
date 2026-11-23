@@ -172,4 +172,3 @@ mod tests {
         assert!(words.contains(&"Michan".to_string()));
     }
 }
-

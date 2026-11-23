@@ -94,7 +94,8 @@ mod tests {
 
     #[test]
     fn says_what_always_covers() {
-        let s = json!([{"type": "addRules", "destination": "localSettings", "rules": [{"toolName": "Bash", "ruleContent": "git status:*"}]}]);
+        let s =
+            json!([{"type": "addRules", "destination": "localSettings", "rules": [{"toolName": "Bash", "ruleContent": "git status:*"}]}]);
         assert_eq!(preview(&rules(Some(&s))).as_deref(), Some("Always allows Bash(git status:*) · this project"));
         assert_eq!(preview(&rules(Some(&json!(["session"])))).as_deref(), Some("Always allows this session"));
         assert_eq!(preview(&rules(None)), None);

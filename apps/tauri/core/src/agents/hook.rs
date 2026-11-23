@@ -42,7 +42,11 @@ pub fn canonical_compaction_event(name: &str) -> Option<&'static str> {
 
 /// Whether a normalized hook event starts or ends a compaction (`HookCompaction.change(kind:)` on macOS).
 pub fn compaction_change(kind: &str) -> CompactionChange {
-    if kind == "PreCompact" { CompactionChange::Start } else { CompactionChange::End }
+    if kind == "PreCompact" {
+        CompactionChange::Start
+    } else {
+        CompactionChange::End
+    }
 }
 
 /// Whether a compaction that started at `since` is still live at `now` (`HookCompaction.isLive` on macOS).

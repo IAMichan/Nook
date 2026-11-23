@@ -175,7 +175,11 @@ pub fn front_matter(text: &str) -> BTreeMap<String, String> {
         out.insert(k.clone(), v);
         key = Some(k);
     }
-    if closed { out } else { BTreeMap::new() }
+    if closed {
+        out
+    } else {
+        BTreeMap::new()
+    }
 }
 
 fn clean(value: Option<&String>) -> Option<String> {

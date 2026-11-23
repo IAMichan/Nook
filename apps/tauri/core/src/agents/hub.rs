@@ -1978,10 +1978,7 @@ mod tests {
         assert!(is_compacting_text(&s.steps.last().unwrap().text));
 
         // Explicit PostCompact clears compaction
-        hub.handle(
-            &msg("claude-code", "event", json!({"hook_event_name": "PostCompact", "session_id": "c1"})),
-            Responder::none(),
-        );
+        hub.handle(&msg("claude-code", "event", json!({"hook_event_name": "PostCompact", "session_id": "c1"})), Responder::none());
         let s = &hub.sessions()[0];
         assert!(!hub.is_compacting(&s.id));
         assert!(!s.is_compacting());

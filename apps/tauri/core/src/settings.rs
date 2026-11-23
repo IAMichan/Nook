@@ -495,7 +495,11 @@ impl Settings {
     /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged for a brain on
     /// this computer, filtered by the privacy level when it goes to an external brain (`shielded` on the Mac).
     pub fn shielded(&self, text: &str) -> String {
-        if self.is_local_brain() { text.to_string() } else { self.privacy_level.apply(text) }
+        if self.is_local_brain() {
+            text.to_string()
+        } else {
+            self.privacy_level.apply(text)
+        }
     }
 
     /// Korte naam voor de chip bij het invoerveld: "Ollama · llama3.2".

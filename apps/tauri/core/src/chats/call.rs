@@ -54,13 +54,43 @@ pub struct Person {
 
 /// The apps that hold calls at all, by source id. A mail app, LinkedIn and an app you added yourself have none.
 pub const CALLING_APPS: &[&str] = &[
-    "whatsapp", "telegram", "instagram", "messenger", "signal", "slack", "discord", "teams", "googlechat", "snapchat", "viber",
-    "wechat", "line", "skype", "element", "threema", "wire", "x",
+    "whatsapp",
+    "telegram",
+    "instagram",
+    "messenger",
+    "signal",
+    "slack",
+    "discord",
+    "teams",
+    "googlechat",
+    "snapchat",
+    "viber",
+    "wechat",
+    "line",
+    "skype",
+    "element",
+    "threema",
+    "wire",
+    "x",
 ];
 
 /// The apps that also call a group, in the group's chat in the app.
-pub const GROUP_CALLING_APPS: &[&str] =
-    &["whatsapp", "telegram", "messenger", "signal", "slack", "discord", "teams", "googlechat", "element", "wire", "line", "wechat", "viber", "skype"];
+pub const GROUP_CALLING_APPS: &[&str] = &[
+    "whatsapp",
+    "telegram",
+    "messenger",
+    "signal",
+    "slack",
+    "discord",
+    "teams",
+    "googlechat",
+    "element",
+    "wire",
+    "line",
+    "wechat",
+    "viber",
+    "skype",
+];
 
 /// Whether `app` holds calls Nook can start (for a person or for a group).
 pub fn can_call(app: &str, is_group: bool) -> bool {
@@ -359,10 +389,7 @@ mod tests {
         let call = launch(CallKind::Video, &teams).unwrap();
         assert!(call.is_direct());
         assert_eq!(call.url(), Some("msteams:/l/call/0/0?users=anna%40example%2Ecom&withVideo=true"));
-        assert_eq!(
-            launch(CallKind::Voice, &teams).unwrap().url(),
-            Some("msteams:/l/call/0/0?users=anna%40example%2Ecom&withVideo=false")
-        );
+        assert_eq!(launch(CallKind::Voice, &teams).unwrap().url(), Some("msteams:/l/call/0/0?users=anna%40example%2Ecom&withVideo=false"));
         let mut skype = person("skype");
         skype.username = Some("anna.b".into());
         assert_eq!(launch(CallKind::Video, &skype), Some(Launch::Direct("skype:anna.b?call&video=true".into())));

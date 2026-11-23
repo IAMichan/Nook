@@ -97,18 +97,7 @@ impl HunkPatch {
                         removed += 1;
                     }
                 }
-                DiffHunk {
-                    index,
-                    header: hunk_header,
-                    old_start,
-                    old_count,
-                    new_start,
-                    new_count,
-                    section,
-                    lines,
-                    added,
-                    removed,
-                }
+                DiffHunk { index, header: hunk_header, old_start, old_count, new_start, new_count, section, lines, added, removed }
             })
             .collect();
 
@@ -134,20 +123,12 @@ impl HunkPatch {
     /// Arguments for `git apply` for a given `HunkAction` and temporary patch file path.
     pub fn git_apply_args(action: HunkAction, patch_path: &str) -> Vec<String> {
         match action {
-            HunkAction::Stage => vec![
-                "apply".into(),
-                "--cached".into(),
-                "--unidiff-zero".into(),
-                "--whitespace=nowarn".into(),
-                patch_path.into(),
-            ],
-            HunkAction::Discard => vec![
-                "apply".into(),
-                "--reverse".into(),
-                "--unidiff-zero".into(),
-                "--whitespace=nowarn".into(),
-                patch_path.into(),
-            ],
+            HunkAction::Stage => {
+                vec!["apply".into(), "--cached".into(), "--unidiff-zero".into(), "--whitespace=nowarn".into(), patch_path.into()]
+            }
+            HunkAction::Discard => {
+                vec!["apply".into(), "--reverse".into(), "--unidiff-zero".into(), "--whitespace=nowarn".into(), patch_path.into()]
+            }
         }
     }
 }
@@ -159,8 +140,9 @@ pub fn build_hunk_patch(diff: &str, hunk_index: usize) -> Option<String> {
 
 /// Applies one hunk of `diff` in `repo` (staging to index or discarding from working tree).
 pub fn apply_hunk_to_repo(git: &Git, repo: &str, diff: &str, hunk_index: usize, action: HunkAction) -> Result<(), String> {
-    let patch = build_hunk_patch(diff, hunk_index)
-        .ok_or_else(|| tr("Deze wijziging kon niet worden gevonden in de diff.", "This hunk could not be found in the diff.").to_string())?;
+    let patch = build_hunk_patch(diff, hunk_index).ok_or_else(|| {
+        tr("Deze wijziging kon niet worden gevonden in de diff.", "This hunk could not be found in the diff.").to_string()
+    })?;
 
     let temp_path = std::env::temp_dir().join(format!("nook-hunk-{}.patch", Uuid::new_v4()));
     std::fs::write(&temp_path, patch.as_bytes()).map_err(|e| e.to_string())?;

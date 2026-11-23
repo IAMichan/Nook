@@ -447,9 +447,18 @@ mod tests {
         assert_eq!(AgentKind::Gemini.home_variable(), Some("GEMINI_CLI_HOME"));
         assert_eq!(AgentKind::Gemini.home_value("/h/.gemini-werk/.gemini"), "/h/.gemini-werk");
         assert_eq!(AgentKind::Gemini.home_value("/h/other"), "/h/other");
-        assert_eq!(AgentKind::Gemini.home_from_variable("/h/.gemini-werk"), std::path::Path::new("/h/.gemini-werk").join(".gemini").to_string_lossy());
+        assert_eq!(
+            AgentKind::Gemini.home_from_variable("/h/.gemini-werk"),
+            std::path::Path::new("/h/.gemini-werk").join(".gemini").to_string_lossy()
+        );
         assert_eq!(AgentKind::Claude.home_value("/h/.claude-werk"), "/h/.claude-werk");
-        let profile = AgentProfile { id: "gemini-werk".into(), kind: AgentKind::Gemini, label: "Werk".into(), home: Some("/h/.gemini-werk/.gemini".into()), auth: None };
+        let profile = AgentProfile {
+            id: "gemini-werk".into(),
+            kind: AgentKind::Gemini,
+            label: "Werk".into(),
+            home: Some("/h/.gemini-werk/.gemini".into()),
+            auth: None,
+        };
         assert_eq!(profile.environment().get("GEMINI_CLI_HOME").map(String::as_str), Some("/h/.gemini-werk"));
         assert!(AgentKind::Gemini.suggested_home("werk").ends_with(".gemini"));
     }

@@ -130,7 +130,12 @@ fn gather(app: &AppHandle) -> Vec<Document> {
                 id: format!("run:{}", run.id),
                 kind: "session".into(),
                 title: run.title.clone(),
-                subtitle: [agent.as_str(), project.as_str(), run.branch.as_deref().unwrap_or("")].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · "),
+                subtitle: [agent.as_str(), project.as_str(), run.branch.as_deref().unwrap_or("")]
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" · "),
                 date: Some(run.updated_at),
                 flags,
                 facets: [("agent".to_string(), agent.clone()), ("project".to_string(), project.clone())]
@@ -182,7 +187,9 @@ fn gather(app: &AppHandle) -> Vec<Document> {
         let agent = p.agent.name().to_string();
         let project = std::path::Path::new(&p.cwd).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
         let mut facets: std::collections::BTreeMap<String, String> =
-            [("agent".to_string(), format!("{agent} {}", p.model).trim().to_string()), ("project".to_string(), project.clone())].into_iter().collect();
+            [("agent".to_string(), format!("{agent} {}", p.model).trim().to_string()), ("project".to_string(), project.clone())]
+                .into_iter()
+                .collect();
         if !p.branch.is_empty() {
             facets.insert("branch".into(), p.branch.clone());
         }
@@ -198,7 +205,12 @@ fn gather(app: &AppHandle) -> Vec<Document> {
             id: format!("past:{kind}:{}", p.session_id),
             kind: "session".into(),
             title: p.title.clone(),
-            subtitle: [agent.as_str(), project.as_str(), p.branch.as_str()].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · "),
+            subtitle: [agent.as_str(), project.as_str(), p.branch.as_str()]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" · "),
             date: Some(p.ended),
             flags: vec!["done".into(), "settled".into()],
             facets,
@@ -237,7 +249,13 @@ fn gather(app: &AppHandle) -> Vec<Document> {
                         .iter()
                         .filter(|m| !m.deleted && !m.text.trim().is_empty())
                         .map(|m| {
-                            let author = if m.from_me { "me".to_string() } else if m.sender.is_empty() { t.name.clone() } else { m.sender.clone() };
+                            let author = if m.from_me {
+                                "me".to_string()
+                            } else if m.sender.is_empty() {
+                                t.name.clone()
+                            } else {
+                                m.sender.clone()
+                            };
                             Passage::new(m.text.clone(), author, Some(m.date), Some(m.id.clone()))
                         })
                         .collect(),
@@ -257,10 +275,17 @@ fn gather(app: &AppHandle) -> Vec<Document> {
                 passages.push(Passage::new(summary.clone(), "", Some(note.start), None));
             }
             passages.extend(note.key_points.iter().map(|k| Passage::new(k.clone(), "", Some(note.start), None)));
-            passages.extend(note.todos.iter().map(|t| Passage::new(t.text.clone(), t.owner.clone().unwrap_or_default(), Some(note.start), None)));
+            passages.extend(
+                note.todos.iter().map(|t| Passage::new(t.text.clone(), t.owner.clone().unwrap_or_default(), Some(note.start), None)),
+            );
             passages.extend(note.lines.iter().map(|l| {
                 let date = note.start + chrono::Duration::milliseconds((l.start * 1000.0) as i64);
-                Passage::new(l.text.clone(), names.get(l.speaker.as_str()).cloned().unwrap_or_else(|| l.speaker.clone()), Some(date), Some(l.id.clone()))
+                Passage::new(
+                    l.text.clone(),
+                    names.get(l.speaker.as_str()).cloned().unwrap_or_else(|| l.speaker.clone()),
+                    Some(date),
+                    Some(l.id.clone()),
+                )
             }));
             let speakers = note.speakers.iter().filter(|s| !s.is_me).map(|s| s.name.clone()).collect::<Vec<_>>().join(" ");
             let mut facets: std::collections::BTreeMap<String, String> = [("speaker".to_string(), speakers.clone())].into_iter().collect();
@@ -271,7 +296,11 @@ fn gather(app: &AppHandle) -> Vec<Document> {
                 id: format!("note:{}", note.id),
                 kind: "note".into(),
                 title: note.title.clone(),
-                subtitle: [note.app.clone().unwrap_or_default(), speakers].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · "),
+                subtitle: [note.app.clone().unwrap_or_default(), speakers]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · "),
                 date: Some(note.end.unwrap_or(note.start)),
                 flags: vec![serde_json::to_value(note.status).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()],
                 facets,
@@ -337,7 +366,9 @@ pub async fn search_ai_plan(app: AppHandle, question: String) -> Res<Vec<String>
     let env = crate::commands::chat::brain_env(&app, &settings);
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let prompt = search::plan_prompt(&question, &today);
-    let reply = tokio::time::timeout(Duration::from_secs(30), nook_core::brain::service::complete(&settings, &env, search::PLAN_SYSTEM, &prompt)).await;
+    let reply =
+        tokio::time::timeout(Duration::from_secs(30), nook_core::brain::service::complete(&settings, &env, search::PLAN_SYSTEM, &prompt))
+            .await;
     Ok(reply.ok().and_then(Result::ok).map(|r| search::queries_from_plan(&r)).unwrap_or_default())
 }
 
@@ -347,10 +378,11 @@ pub async fn search_ai_answer(app: AppHandle, question: String, sources: Vec<Sou
     let settings = app.state::<AppState>().settings();
     let env = crate::commands::chat::brain_env(&app, &settings);
     let prompt = search::answer_prompt(&question, &sources, &settings.language_instruction(&question));
-    let reply = tokio::time::timeout(Duration::from_secs(90), nook_core::brain::service::complete(&settings, &env, search::ANSWER_SYSTEM, &prompt))
-        .await
-        .map_err(|_| "timeout".to_string())?
-        .map_err(|e| e.to_string())?;
+    let reply =
+        tokio::time::timeout(Duration::from_secs(90), nook_core::brain::service::complete(&settings, &env, search::ANSWER_SYSTEM, &prompt))
+            .await
+            .map_err(|_| "timeout".to_string())?
+            .map_err(|e| e.to_string())?;
     Ok(search::clean_answer(&reply))
 }
 
@@ -400,16 +432,13 @@ pub fn buddy_breathe(app: AppHandle) {
 
 use nook_core::platform::NowPlaying;
 use nook_core::services::dictation_lang::{self, DictationLanguageSettings};
-use nook_core::services::music::{
-    LoadState, MusicArtist, MusicOutput, MusicPlayerStats, MusicPlaylist, MusicTrack, PlayQueue, QueueEntry,
-};
+use nook_core::services::music::{LoadState, MusicArtist, MusicOutput, MusicPlayerStats, MusicPlaylist, MusicTrack, PlayQueue, QueueEntry};
 use nook_core::services::music_history::{MusicHistory, MusicListening, MusicPlay, MusicStats, StatsPeriod};
 use nook_core::services::spotify::{self, SpotifyConfig, SpotifySearchCatalog};
 use nook_core::services::transcribe::{self, ReusableModelCopy, SpeechModelCatalogEntry};
 
 static MUSIC_QUEUE: std::sync::LazyLock<Mutex<PlayQueue>> = std::sync::LazyLock::new(|| Mutex::new(PlayQueue::default()));
-static MUSIC_LISTENING: std::sync::LazyLock<Mutex<MusicListening>> =
-    std::sync::LazyLock::new(|| Mutex::new(MusicListening::default()));
+static MUSIC_LISTENING: std::sync::LazyLock<Mutex<MusicListening>> = std::sync::LazyLock::new(|| Mutex::new(MusicListening::default()));
 
 /// Synchronizes the currently playing track from `platform.media.now_playing()` into [`MusicHistory`] and [`MusicListening`].
 fn sync_now_playing(app: &AppHandle) -> (Option<NowPlaying>, MusicHistory) {
@@ -452,10 +481,7 @@ fn sync_now_playing(app: &AppHandle) -> (Option<NowPlaying>, MusicHistory) {
     });
 
     let is_playing = now_playing.as_ref().is_some_and(|n| n.playing);
-    let finished = MUSIC_LISTENING
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .update(draft_play, is_playing, chrono::Utc::now());
+    let finished = MUSIC_LISTENING.lock().unwrap_or_else(|e| e.into_inner()).update(draft_play, is_playing, chrono::Utc::now());
     if let Some(play) = finished {
         history.add(play);
         dirty = true;
@@ -597,16 +623,8 @@ pub async fn music_queue(remove_id: Option<String>, clear: Option<bool>, play_en
     }
     let nook_queue = MUSIC_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).entries.clone();
     match spotify::player_queue().await {
-        Ok(spotify_queue) => Ok(MusicQueueView {
-            state: LoadState::Done,
-            nook_queue,
-            spotify_queue,
-        }),
-        Err(f) => Ok(MusicQueueView {
-            state: LoadState::from_failure(&f),
-            nook_queue,
-            spotify_queue: Vec::new(),
-        }),
+        Ok(spotify_queue) => Ok(MusicQueueView { state: LoadState::Done, nook_queue, spotify_queue }),
+        Err(f) => Ok(MusicQueueView { state: LoadState::from_failure(&f), nook_queue, spotify_queue: Vec::new() }),
     }
 }
 
@@ -618,15 +636,9 @@ pub async fn music_queue_add(
     device_id: Option<String>,
 ) -> Res<MusicQueueView> {
     if play_now == Some(true) {
-        let target = if track.id.is_empty() {
-            context_uri.clone().unwrap_or_default()
-        } else {
-            track.id.clone()
-        };
+        let target = if track.id.is_empty() { context_uri.clone().unwrap_or_default() } else { track.id.clone() };
         if !target.is_empty() {
-            spotify::play_uri(&target, context_uri.as_deref(), device_id.as_deref())
-                .await
-                .map_err(|e| e.to_string())?;
+            spotify::play_uri(&target, context_uri.as_deref(), device_id.as_deref()).await.map_err(|e| e.to_string())?;
         }
         if !track.title.is_empty() {
             let mut h = MusicHistory::load();
@@ -675,27 +687,14 @@ pub async fn music_playlists(playlist_id: Option<String>) -> Res<MusicPlaylistsV
             })
         }
     };
-    let selected = playlist_id
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| playlists.first().map(|p| p.id.clone()));
-    let tracks = if let Some(sel) = selected.as_deref() {
-        spotify::playlist_tracks(sel).await.unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    Ok(MusicPlaylistsView {
-        state: LoadState::Done,
-        playlists,
-        selected_id: selected,
-        tracks,
-    })
+    let selected = playlist_id.filter(|s| !s.trim().is_empty()).or_else(|| playlists.first().map(|p| p.id.clone()));
+    let tracks = if let Some(sel) = selected.as_deref() { spotify::playlist_tracks(sel).await.unwrap_or_default() } else { Vec::new() };
+    Ok(MusicPlaylistsView { state: LoadState::Done, playlists, selected_id: selected, tracks })
 }
 
 #[tauri::command]
 pub async fn music_playlist_create(name: String, description: Option<String>, public: Option<bool>) -> Res<MusicPlaylist> {
-    spotify::create_playlist(&name, description.as_deref(), public.unwrap_or(false))
-        .await
-        .map_err(|e| e.to_string())
+    spotify::create_playlist(&name, description.as_deref(), public.unwrap_or(false)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -720,15 +719,11 @@ pub async fn music_playlist_modify(
         }
         "remove_track" => {
             let uri = track_uri.unwrap_or_default();
-            spotify::remove_tracks_from_playlist(&playlist_id, &[uri])
-                .await
-                .map_err(|e| e.to_string())?;
+            spotify::remove_tracks_from_playlist(&playlist_id, &[uri]).await.map_err(|e| e.to_string())?;
         }
         "play" => {
             let target = track_uri.as_deref().unwrap_or(&playlist_id);
-            spotify::play_uri(target, Some(&playlist_id), None)
-                .await
-                .map_err(|e| e.to_string())?;
+            spotify::play_uri(target, Some(&playlist_id), None).await.map_err(|e| e.to_string())?;
         }
         other => return Err(format!("Unknown playlist action: {other}")),
     }
@@ -771,11 +766,7 @@ pub async fn music_library(time_range: Option<String>) -> Res<MusicLibraryView> 
                 artists: stats_month
                     .top_artists
                     .iter()
-                    .map(|a| MusicArtist {
-                        name: a.name.clone(),
-                        plays: Some(a.plays),
-                        artwork_url: a.artwork_url.clone(),
-                    })
+                    .map(|a| MusicArtist { name: a.name.clone(), plays: Some(a.plays), artwork_url: a.artwork_url.clone() })
                     .collect(),
             };
             (LoadState::from_failure(&f), fallback)
@@ -838,9 +829,7 @@ pub async fn music_outputs(app: AppHandle) -> Res<Vec<MusicOutput>> {
 #[tauri::command]
 pub async fn music_select_output(app: AppHandle, device_id: String, play: Option<bool>) -> Res<Vec<MusicOutput>> {
     if !device_id.trim().is_empty() && device_id != "local:default" {
-        spotify::select_connect_device(&device_id, play.unwrap_or(true))
-            .await
-            .map_err(|e| e.to_string())?;
+        spotify::select_connect_device(&device_id, play.unwrap_or(true)).await.map_err(|e| e.to_string())?;
     }
     music_outputs(app).await
 }
@@ -877,11 +866,7 @@ pub async fn music_spotify_connect(
     }
 
     let cfg = SpotifyConfig::load();
-    let cid = client_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&cfg.client_id);
+    let cid = client_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&cfg.client_id);
     let pending = spotify::begin_pkce(cid, redirect_uri.as_deref()).map_err(|e| e.to_string())?;
     let _ = app.state::<Services>().platform.system.open_url(&pending.authorize_url);
 
@@ -938,10 +923,7 @@ pub struct VoiceDictationLanguagesView {
 }
 
 #[tauri::command]
-pub fn voice_dictation_languages(
-    app: AppHandle,
-    update: Option<DictationLanguageSettings>,
-) -> Res<VoiceDictationLanguagesView> {
+pub fn voice_dictation_languages(app: AppHandle, update: Option<DictationLanguageSettings>) -> Res<VoiceDictationLanguagesView> {
     let mut settings = match update {
         Some(mut next) => {
             next.normalize();
@@ -952,31 +934,15 @@ pub fn voice_dictation_languages(
     };
     settings.normalize();
     let app_lang = nook_core::i18n::language();
-    let sys_locale: Vec<String> = std::env::var("LC_ALL")
-        .or_else(|_| std::env::var("LANG"))
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .into_iter()
-        .collect();
-    let candidates: Vec<String> = settings
-        .candidates(&sys_locale, &[], app_lang)
-        .into_iter()
-        .map(str::to_string)
-        .collect();
+    let sys_locale: Vec<String> =
+        std::env::var("LC_ALL").or_else(|_| std::env::var("LANG")).ok().filter(|v| !v.trim().is_empty()).into_iter().collect();
+    let candidates: Vec<String> = settings.candidates(&sys_locale, &[], app_lang).into_iter().map(str::to_string).collect();
     let available: Vec<DictationLanguageOption> = dictation_lang::LANGUAGES
         .iter()
-        .map(|(code, name)| DictationLanguageOption {
-            code: (*code).to_string(),
-            name: (*name).to_string(),
-        })
+        .map(|(code, name)| DictationLanguageOption { code: (*code).to_string(), name: (*name).to_string() })
         .collect();
     let context_preview = crate::services::flow::initial_prompt(&app);
-    Ok(VoiceDictationLanguagesView {
-        settings,
-        candidates,
-        available,
-        context_preview,
-    })
+    Ok(VoiceDictationLanguagesView { settings, candidates, available, context_preview })
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -992,10 +958,9 @@ pub struct VoiceModelsView {
 pub fn voice_reusable_models(reuse_model_id: Option<String>, snapshot_path: Option<String>) -> Res<VoiceModelsView> {
     let models_dir = transcribe::speech_models_dir();
     let mut linked_path = None;
-    if let (Some(id), Some(path)) = (
-        reuse_model_id.as_deref().filter(|s| !s.is_empty()),
-        snapshot_path.as_deref().filter(|s| !s.is_empty()),
-    ) {
+    if let (Some(id), Some(path)) =
+        (reuse_model_id.as_deref().filter(|s| !s.is_empty()), snapshot_path.as_deref().filter(|s| !s.is_empty()))
+    {
         let dest = transcribe::reuse_hf_model(id, std::path::Path::new(path), &models_dir).map_err(|e| e.to_string())?;
         linked_path = Some(dest.to_string_lossy().to_string());
     }
@@ -1006,5 +971,3 @@ pub fn voice_reusable_models(reuse_model_id: Option<String>, snapshot_path: Opti
         linked_path,
     })
 }
-
-

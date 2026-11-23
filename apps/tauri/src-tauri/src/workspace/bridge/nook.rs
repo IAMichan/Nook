@@ -118,7 +118,9 @@ async fn chats(
     use_args.insert("arguments".into(), input);
     let mut result = nook_use(app, &use_args, caller, context).await?;
     if tool == BridgeTool::ChatList && !result.is_error {
-        result.text.push_str("\n\nchat_send can write in the chats of the apps Nook links. Nook Chat itself: nook_chat_list and nook_chat_send.");
+        result
+            .text
+            .push_str("\n\nchat_send can write in the chats of the apps Nook links. Nook Chat itself: nook_chat_list and nook_chat_send.");
     }
     Ok(result)
 }
@@ -195,7 +197,8 @@ async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller
     let executor = Executor { app: app.clone(), ctx: ToolCtx::new(app, ""), all: loop_tools, caller: caller.agent.clone() };
     let step = Step { tool: name.clone(), input };
     let withheld: Vec<String> = kept(app).into_iter().collect();
-    let states = tools::chats::WITHHELD.scope(withheld, action_gate::run_plan(&executor, std::slice::from_ref(&step), &[], &[true], &[])).await;
+    let states =
+        tools::chats::WITHHELD.scope(withheld, action_gate::run_plan(&executor, std::slice::from_ref(&step), &[], &[true], &[])).await;
     match states.into_iter().next() {
         Some(StepState::Done(r)) | Some(StepState::Verified(r)) => {
             audit(app, BridgeTool::NookUse, caller, &name, "uitgevoerd");

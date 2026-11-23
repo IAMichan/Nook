@@ -12,7 +12,13 @@ use super::Services;
 static CACHE: Mutex<Option<HashMap<String, Option<Lyrics>>>> = Mutex::new(None);
 
 #[tauri::command]
-pub async fn music_lyrics(app: AppHandle, title: String, artist: String, album: String, duration: Option<f64>) -> Result<Option<Lyrics>, String> {
+pub async fn music_lyrics(
+    app: AppHandle,
+    title: String,
+    artist: String,
+    album: String,
+    duration: Option<f64>,
+) -> Result<Option<Lyrics>, String> {
     if !app.state::<Services>().prefs().online_lyrics || title.trim().is_empty() {
         return Ok(None);
     }

@@ -146,7 +146,12 @@ pub struct OpenInPrefs {
 
 impl Default for OpenInPrefs {
     fn default() -> Self {
-        Self { terminal: BUILT_IN_TERMINAL.into(), search_engine: SearchEngine::default(), link_target: "app".into(), remember_history: true }
+        Self {
+            terminal: BUILT_IN_TERMINAL.into(),
+            search_engine: SearchEngine::default(),
+            link_target: "app".into(),
+            remember_history: true,
+        }
     }
 }
 

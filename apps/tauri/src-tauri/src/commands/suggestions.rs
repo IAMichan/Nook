@@ -120,10 +120,16 @@ pub async fn suggest_actions(app: AppHandle, request: SuggestRequest) -> Res<Opt
     if !offered.iter().any(|t| t.kind == ToolKind::Action) {
         return Ok(None);
     }
-    let prompt = rules::prompt(&request.place, &request.lines, fresh, &projects(&app), &handled, &dates::date_sheet(&chrono::Local::now(), 8));
+    let prompt =
+        rules::prompt(&request.place, &request.lines, fresh, &projects(&app), &handled, &dates::date_sheet(&chrono::Local::now(), 8));
     let env = super::chat::brain_env(&app, &settings);
     let system = rules::system();
-    let plan = match tokio::time::timeout(Duration::from_secs(rules::TIMEOUT_SECONDS), service::propose(&settings, &env, &system, &prompt, offered, rules::ROUNDS)).await {
+    let plan = match tokio::time::timeout(
+        Duration::from_secs(rules::TIMEOUT_SECONDS),
+        service::propose(&settings, &env, &system, &prompt, offered, rules::ROUNDS),
+    )
+    .await
+    {
         Ok(Ok(plan)) => plan,
         _ => return Ok(None),
     };
@@ -154,7 +160,10 @@ pub async fn run_suggested_actions(app: AppHandle, nook_id: Option<String>, step
     let all = tools::all_tools(&ctx);
     let mut done = vec![];
     for step in steps {
-        let spec = all.iter().find(|t| t.name == step.tool && t.kind == ToolKind::Action).ok_or_else(|| format!("Nook cannot do {} now.", step.tool))?;
+        let spec = all
+            .iter()
+            .find(|t| t.name == step.tool && t.kind == ToolKind::Action)
+            .ok_or_else(|| format!("Nook cannot do {} now.", step.tool))?;
         let input = action_gate::normalized(&step.input, &spec.schema);
         let problems = action_gate::problems(&step.tool, &input, &spec.schema);
         if !problems.is_empty() {

@@ -191,9 +191,7 @@ pub fn receipt_details(message: &Value, chat: &ServiceChat) -> (Option<DateTime<
     let mut read_by: Vec<String> = vec![];
     let mut readers: Vec<MessageReader> = vec![];
 
-    let person_name = |id: &str| -> String {
-        chat.people.get(id).cloned().filter(|n| !n.is_empty()).unwrap_or_else(|| id.to_string())
-    };
+    let person_name = |id: &str| -> String { chat.people.get(id).cloned().filter(|n| !n.is_empty()).unwrap_or_else(|| id.to_string()) };
 
     match message.get("seen") {
         Some(Value::String(ts)) => {
@@ -311,7 +309,13 @@ fn notice_line(message: &Value, kind: Option<&str>, id: &str, sent: DateTime<Utc
             let joined = change.get("membership").and_then(Value::as_str) == Some("join");
             let people = [person];
             let membership = if sender.is_empty() || sender == user {
-                let what = if joined { MembershipChange::Joined } else if sender.is_empty() { MembershipChange::Gone } else { MembershipChange::Left };
+                let what = if joined {
+                    MembershipChange::Joined
+                } else if sender.is_empty() {
+                    MembershipChange::Gone
+                } else {
+                    MembershipChange::Left
+                };
                 ChatMembership::new(what, None, &people)
             } else {
                 let by = notice_by(message, mine, chat).filter(|b| !b.is_empty()).unwrap_or_else(|| SOMEONE.into());
@@ -339,9 +343,7 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
         .filter_map(|message| {
             let id = message.get("id")?.as_str()?;
             let kind = message.get("type").and_then(Value::as_str);
-            if kind == Some("REACTION")
-                || message.get("isHidden").and_then(Value::as_bool) == Some(true)
-            {
+            if kind == Some("REACTION") || message.get("isHidden").and_then(Value::as_bool) == Some(true) {
                 return None;
             }
             let sent = date(message.get("timestamp")?)?;
@@ -383,7 +385,8 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
                 item.receipt = Some(receipt(message));
             }
             item.edited = message.get("isEdited").and_then(Value::as_bool) == Some(true);
-            item.reply_to = message.get("linkedMessageID").and_then(Value::as_str).filter(|l| !l.is_empty()).map(|l| message_id(l, &chat.id));
+            item.reply_to =
+                message.get("linkedMessageID").and_then(Value::as_str).filter(|l| !l.is_empty()).map(|l| message_id(l, &chat.id));
             item.reactions = message.get("reactions").and_then(Value::as_array).map(|list| reactions(list, chat));
             // A poll (`type: POLL`, its text the question) with who chose each option, as every app's poll.
             item.poll = super::poll::ChatPoll::helper(message, chat.me.as_deref(), &|id| chat.people.get(id).cloned());
@@ -411,8 +414,7 @@ pub fn message_read_details(json: &Value, chat: &ServiceChat) -> HashMap<String,
     let mut out = HashMap::new();
     for message in items(json) {
         let Some(id) = message.get("id").and_then(Value::as_str) else { continue };
-        if message.get("isSender").and_then(Value::as_bool) != Some(true)
-            || message.get("isDeleted").and_then(Value::as_bool) == Some(true)
+        if message.get("isSender").and_then(Value::as_bool) != Some(true) || message.get("isDeleted").and_then(Value::as_bool) == Some(true)
         {
             continue;
         }
@@ -427,7 +429,8 @@ pub fn message_read_details(json: &Value, chat: &ServiceChat) -> HashMap<String,
 
 /// The people of a chat a text tags as "@Name", by their id in the helper (`ChatTags`): the longest name wins.
 pub fn tagged(text: &str, chat: &ServiceChat) -> Vec<(String, String)> {
-    let mut people: Vec<(&String, &String)> = chat.people.iter().filter(|(id, name)| !name.is_empty() && Some(id.as_str()) != chat.me.as_deref()).collect();
+    let mut people: Vec<(&String, &String)> =
+        chat.people.iter().filter(|(id, name)| !name.is_empty() && Some(id.as_str()) != chat.me.as_deref()).collect();
     people.sort_by_key(|(_, name)| std::cmp::Reverse(name.len()));
     let mut out: Vec<(String, String)> = vec![];
     for (at, _) in text.match_indices('@') {
@@ -608,7 +611,13 @@ impl ChatdClient {
     }
 
     /// Sends text that tags people as "@Name" (`ChatMentions`): each `(id, name)` in `mentions` becomes its app's own tag.
-    pub async fn send_tagging(&self, chat: &str, text: &str, reply_to: Option<&str>, mentions: &[(String, String)]) -> Result<Option<String>, String> {
+    pub async fn send_tagging(
+        &self,
+        chat: &str,
+        text: &str,
+        reply_to: Option<&str>,
+        mentions: &[(String, String)],
+    ) -> Result<Option<String>, String> {
         let mut body = json!({"text": text});
         if let Some(reply) = reply_to {
             body["replyToMessageID"] = json!(reply);
@@ -626,7 +635,12 @@ impl ChatdClient {
         use base64::Engine;
         let content = base64::engine::general_purpose::STANDARD.encode(bytes);
         let uploaded = self
-            .call(reqwest::Method::POST, "/v1/assets/upload/base64", &[], Some(json!({"content": content, "fileName": name, "mimeType": mime})))
+            .call(
+                reqwest::Method::POST,
+                "/v1/assets/upload/base64",
+                &[],
+                Some(json!({"content": content, "fileName": name, "mimeType": mime})),
+            )
             .await?;
         let upload = uploaded.get("uploadID").and_then(Value::as_str).ok_or("the helper took no file")?;
         let kind = match mime.split('/').next().unwrap_or_default() {
@@ -696,7 +710,9 @@ impl ChatdClient {
 
     /// Archives the chat in its app, or brings it back.
     pub async fn archive(&self, chat: &str, archived: bool) -> Result<(), String> {
-        self.call(reqwest::Method::POST, &format!("{}/archive", Self::path(chat)), &[], Some(json!({"archived": archived}))).await.map(|_| ())
+        self.call(reqwest::Method::POST, &format!("{}/archive", Self::path(chat)), &[], Some(json!({"archived": archived})))
+            .await
+            .map(|_| ())
     }
 
     /// Asks the app for older messages of the chat; true while it has still more.
@@ -1093,7 +1109,10 @@ mod tests {
         let list = messages(&answer, chat);
         assert_eq!(list.len(), 3);
         let first = list[0].membership.as_ref().unwrap();
-        assert_eq!((first.change, first.by.as_deref(), first.people.clone()), (MembershipChange::Added, Some("Bo"), vec!["Cy".to_string()]));
+        assert_eq!(
+            (first.change, first.by.as_deref(), first.people.clone()),
+            (MembershipChange::Added, Some("Bo"), vec!["Cy".to_string()])
+        );
         assert_eq!(list[1].membership.as_ref().unwrap().change, MembershipChange::Left);
         let renamed = list[2].group_change.as_ref().unwrap();
         assert!(renamed.by_me() && list[2].from_me);
@@ -1236,7 +1255,10 @@ mod tests {
         people.insert("@annb".to_string(), "Anna Bakker".to_string());
         people.insert("@me:x".to_string(), "Me".to_string());
         let chat = ServiceChat { id: "!c".into(), people, me: Some("@me:x".into()), ..Default::default() };
-        assert_eq!(tagged("hi @Anna Bakker and @Anna, @Me", &chat), vec![("@annb".to_string(), "Anna Bakker".to_string()), ("@ann".to_string(), "Anna".to_string())]);
+        assert_eq!(
+            tagged("hi @Anna Bakker and @Anna, @Me", &chat),
+            vec![("@annb".to_string(), "Anna Bakker".to_string()), ("@ann".to_string(), "Anna".to_string())]
+        );
         assert!(tagged("no tags", &chat).is_empty());
     }
 

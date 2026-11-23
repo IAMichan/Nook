@@ -649,7 +649,7 @@ fn terminal_list(app: &AppHandle, caller: &BridgeCaller) -> ToolResult {
 fn terminal_stop(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
     let ws = workspace(app).ok_or("Nook is not ready.")?;
     let t = terminal_for(app, a, caller)?;
-    if !t.owner.as_ref().is_some_and(|o| o.key == caller.key()) {
+    if t.owner.as_ref().is_none_or(|o| o.key != caller.key()) {
         return Err(format!("You can only stop terminals you started with terminal_run; {} is not one of them.", t.short_id));
     }
     if let Verdict::Refuse(reason) = check(app, BridgeTool::TerminalStop, caller, None) {
@@ -1056,8 +1056,7 @@ fn expand_tilde(path: &str) -> String {
 
 // MARK: Apparaten & emulators (AG-12)
 
-static OPEN_DEVICES: std::sync::LazyLock<Mutex<HashMap<String, Vec<String>>>> =
-    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+static OPEN_DEVICES: std::sync::LazyLock<Mutex<HashMap<String, Vec<String>>>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn caller_device_key(caller: &BridgeCaller) -> String {
     caller.run.clone().unwrap_or_else(|| caller.directory.clone())
@@ -1116,11 +1115,7 @@ async fn discover_android_devices() -> Vec<nook_core::workspace::bridge::Android
                     if serial.starts_with("emulator-") {
                         if let Ok(avd_out) = run_android_cmd(&adb, &["-s", &serial, "emu", "avd", "name"], 3).await {
                             let avd_text = String::from_utf8_lossy(&avd_out.stdout);
-                            if let Some(avd_name) = avd_text
-                                .lines()
-                                .map(str::trim)
-                                .find(|l| !l.is_empty() && *l != "OK")
-                            {
+                            if let Some(avd_name) = avd_text.lines().map(str::trim).find(|l| !l.is_empty() && *l != "OK") {
                                 running_avds.insert(avd_name.to_string());
                                 dev.name = avd_name.replace('_', " ");
                             }
@@ -1170,7 +1165,8 @@ async fn device_open(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCal
                     BridgeTool::DeviceOpen,
                     tr("Apparaat openen", "Open device").into(),
                     arg(a, "device_id").to_string(),
-                    tr("Wil een Android-emulator of verbonden apparaat openen.", "Wants to open an Android emulator or connected device.").into(),
+                    tr("Wil een Android-emulator of verbonden apparaat openen.", "Wants to open an Android emulator or connected device.")
+                        .into(),
                     "",
                 )
                 .await
@@ -1186,16 +1182,10 @@ async fn device_open(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCal
     let raw_id = arg(a, "device_id");
     let raw_name = arg(a, "name");
     let target = if !raw_id.is_empty() {
-        devices
-            .iter()
-            .find(|d| d.id.eq_ignore_ascii_case(raw_id) || d.serial.as_deref() == Some(raw_id))
-            .cloned()
+        devices.iter().find(|d| d.id.eq_ignore_ascii_case(raw_id) || d.serial.as_deref() == Some(raw_id)).cloned()
     } else if !raw_name.is_empty() {
         let q = raw_name.to_ascii_lowercase();
-        devices
-            .iter()
-            .find(|d| d.name.to_ascii_lowercase().contains(&q) || d.id.to_ascii_lowercase().contains(&q))
-            .cloned()
+        devices.iter().find(|d| d.name.to_ascii_lowercase().contains(&q) || d.id.to_ascii_lowercase().contains(&q)).cloned()
     } else {
         devices.iter().find(|d| d.running).cloned().or_else(|| devices.first().cloned())
     }
@@ -1207,9 +1197,7 @@ async fn device_open(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCal
         let before: std::collections::BTreeSet<String> = devices.iter().filter_map(|d| d.serial.clone()).collect();
         let mut cmd = std::process::Command::new(&emu);
         cmd.args(["-avd", avd, "-netdelay", "none", "-netspeed", "full"]);
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
+        cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
         #[cfg(windows)]
         {
             #[allow(unused_imports)]
@@ -1223,10 +1211,8 @@ async fn device_open(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCal
             tokio::time::sleep(Duration::from_secs(2)).await;
             if let Ok(out) = run_android_cmd(&adb, &["devices", "-l"], 5).await {
                 let running = nook_core::workspace::bridge::parse_adb_running_devices(&String::from_utf8_lossy(&out.stdout));
-                if let Some(found) = running
-                    .iter()
-                    .find(|d| d.serial.as_ref().is_some_and(|s| !before.contains(s)))
-                    .or_else(|| running.first())
+                if let Some(found) =
+                    running.iter().find(|d| d.serial.as_ref().is_some_and(|s| !before.contains(s))).or_else(|| running.first())
                 {
                     if let Some(s) = &found.serial {
                         if let Ok(boot) = run_android_cmd(&adb, &["-s", s, "shell", "getprop", "sys.boot_completed"], 4).await {
@@ -1242,22 +1228,14 @@ async fn device_open(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCal
         let s = booted_serial.ok_or_else(|| format!("Started emulator `{avd}`, but it did not finish booting within 90 seconds."))?;
         (format!("android:{s}"), s, target.name)
     } else {
-        let s = target
-            .serial
-            .clone()
-            .or_else(|| target.id.strip_prefix("android:").map(str::to_string))
-            .ok_or("Device has no adb serial.")?;
+        let s =
+            target.serial.clone().or_else(|| target.id.strip_prefix("android:").map(str::to_string)).ok_or("Device has no adb serial.")?;
         (format!("android:{s}"), s, target.name)
     };
 
     if let Some(url) = a.get("url").and_then(Value::as_str).map(str::trim).filter(|u| !u.is_empty()) {
         if let Some(adb) = find_android_binary("adb") {
-            let _ = run_android_cmd(
-                &adb,
-                &["-s", &serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url],
-                8,
-            )
-            .await;
+            let _ = run_android_cmd(&adb, &["-s", &serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url], 8).await;
         }
     }
 
@@ -1291,11 +1269,7 @@ async fn resolve_active_serial(a: &Map<String, Value>, caller: &BridgeCaller) ->
             id
         } else {
             let running = discover_android_devices().await;
-            running
-                .into_iter()
-                .find(|d| d.running)
-                .map(|d| d.id)
-                .ok_or("No open or running Android device. Call `device_open` first.")?
+            running.into_iter().find(|d| d.running).map(|d| d.id).ok_or("No open or running Android device. Call `device_open` first.")?
         }
     };
     let serial = chosen_id.strip_prefix("android:").unwrap_or(&chosen_id).to_string();
@@ -1343,4 +1317,3 @@ async fn device_close(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCa
     audit(app, BridgeTool::DeviceClose, caller, &device_id, "ok");
     Ok(ToolResult::text(format!("Closed `{device_id}`.")))
 }
-

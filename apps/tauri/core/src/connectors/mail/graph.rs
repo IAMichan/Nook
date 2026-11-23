@@ -66,7 +66,15 @@ pub fn messages(v: &Value, account: &str) -> Vec<Mail> {
 }
 
 /// The inbox's newest mail since `since`, unread only when asked.
-pub async fn inbox(http: &Http, base: &str, token: &str, account: &str, since: DateTime<Utc>, unread_only: bool, limit: usize) -> CResult<Vec<Mail>> {
+pub async fn inbox(
+    http: &Http,
+    base: &str,
+    token: &str,
+    account: &str,
+    since: DateTime<Utc>,
+    unread_only: bool,
+    limit: usize,
+) -> CResult<Vec<Mail>> {
     let mut filter = format!("receivedDateTime ge {}", since.format("%Y-%m-%dT%H:%M:%SZ"));
     if unread_only {
         filter.push_str(" and isRead eq false");
@@ -298,7 +306,13 @@ mod tests {
         assert_eq!(events[0].start.to_rfc3339(), "2026-11-23T08:30:00+00:00");
         assert!(events[0].busy && !events[1].busy);
         assert_eq!(events[0].location, "Teams");
-        let body = event_body(&NewEvent { title: "Lunch".into(), start: events[1].start, end: events[1].end, location: String::new(), notes: String::new() });
+        let body = event_body(&NewEvent {
+            title: "Lunch".into(),
+            start: events[1].start,
+            end: events[1].end,
+            location: String::new(),
+            notes: String::new(),
+        });
         assert_eq!(body["start"]["dateTime"], "2026-11-23T12:00:00");
     }
 }

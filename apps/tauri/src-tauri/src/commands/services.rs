@@ -487,7 +487,11 @@ pub fn sound_file(name: String, choice: Option<String>) -> Option<String> {
 pub fn system_sounds() -> SoundChoicesView {
     SoundChoicesView {
         system: sounds::system_sounds(),
-        custom: ["attention", "permission", "done", "error"].into_iter().filter(|n| NookSound::parse(n).and_then(|s| s.custom_file()).is_some()).map(String::from).collect(),
+        custom: ["attention", "permission", "done", "error"]
+            .into_iter()
+            .filter(|n| NookSound::parse(n).and_then(|s| s.custom_file()).is_some())
+            .map(String::from)
+            .collect(),
     }
 }
 
@@ -631,13 +635,12 @@ pub async fn telemetry_test(
         Some(u) => u,
         None => {
             let candidate = url.unwrap_or_else(|| settings.endpoint_for(signal).to_string());
-            validate_http_url(&candidate).ok_or_else(|| {
-                nook_core::i18n::tr("Vul een http- of https-adres in.", "Enter an http or https address.").to_string()
-            })?
+            validate_http_url(&candidate)
+                .ok_or_else(|| nook_core::i18n::tr("Vul een http- of https-adres in.", "Enter an http or https address.").to_string())?
         }
     };
-    let configured_match = cfg.endpoint(signal).is_some_and(|e| e == target)
-        || validate_http_url(settings.endpoint_for(signal)).is_some_and(|e| e == target);
+    let configured_match =
+        cfg.endpoint(signal).is_some_and(|e| e == target) || validate_http_url(settings.endpoint_for(signal)).is_some_and(|e| e == target);
     let headers = if configured_match { cfg.headers } else { Vec::new() };
     Ok(OtlpExporter::new().test_connection(signal, &target, &headers).await)
 }
@@ -653,10 +656,7 @@ pub async fn secrets_onepassword_status(
     connect_host: Option<String>,
     connect_token: Option<String>,
 ) -> Res<nook_core::secrets::OnePasswordStatus> {
-    use nook_core::secrets::{
-        OnePasswordProvider, OP_CONNECT_HOST_KEY, OP_CONNECT_TOKEN_KEY, OP_ENABLED_KEY,
-        OP_SERVICE_ACCOUNT_KEY,
-    };
+    use nook_core::secrets::{OnePasswordProvider, OP_CONNECT_HOST_KEY, OP_CONNECT_TOKEN_KEY, OP_ENABLED_KEY, OP_SERVICE_ACCOUNT_KEY};
     blocking(move || {
         let state = app.state::<crate::state::AppState>();
         if let Some(en) = enabled {
@@ -681,11 +681,7 @@ pub async fn secrets_onepassword_status(
 /// Resolves an `op://vault/item/field` reference via `op read --no-newline`, or tests sign-in (`op whoami`) when
 /// `reference` is empty (`SecretProviderSheet.test` on the Mac, CH-97).
 #[tauri::command]
-pub async fn secrets_onepassword_resolve(
-    app: AppHandle,
-    reference: String,
-    mask_value: Option<bool>,
-) -> Res<String> {
+pub async fn secrets_onepassword_resolve(app: AppHandle, reference: String, mask_value: Option<bool>) -> Res<String> {
     use nook_core::secrets::{OnePasswordProvider, SecretReference};
     let mask_out = mask_value.unwrap_or(false);
     blocking(move || {
@@ -696,8 +692,7 @@ pub async fn secrets_onepassword_resolve(
         if trimmed.is_empty() {
             return provider.check(&cfg, None).map_err(|e| e.message());
         }
-        let parsed = SecretReference::parse(trimmed)
-            .ok_or_else(|| nook_core::secrets::OnePasswordFailure::NotReference.message())?;
+        let parsed = SecretReference::parse(trimmed).ok_or_else(|| nook_core::secrets::OnePasswordFailure::NotReference.message())?;
         let secret = provider.read(&parsed, &cfg).map_err(|e| e.message())?;
         if mask_out {
             Ok(nook_core::secrets::mask(&secret))
@@ -712,15 +707,10 @@ pub async fn secrets_onepassword_resolve(
 
 /// Parses and routes a `nook://` deep link URL, emitting a `nook-deep-link` event to the frontend window.
 #[tauri::command]
-pub fn handle_deep_link(
-    app: AppHandle,
-    url: String,
-) -> Res<nook_core::services::deep_link::DeepLinkRoute> {
+pub fn handle_deep_link(app: AppHandle, url: String) -> Res<nook_core::services::deep_link::DeepLinkRoute> {
     use tauri::Emitter;
-    let route = nook_core::services::deep_link::DeepLinkRoute::parse(&url)
-        .ok_or_else(|| "Invalid or unsupported nook:// link.".to_string())?;
+    let route =
+        nook_core::services::deep_link::DeepLinkRoute::parse(&url).ok_or_else(|| "Invalid or unsupported nook:// link.".to_string())?;
     let _ = app.emit("nook-deep-link", &route);
     Ok(route)
 }
-
-

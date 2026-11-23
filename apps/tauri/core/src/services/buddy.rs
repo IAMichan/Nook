@@ -228,8 +228,7 @@ impl BuddyActivity {
     /// True when the user was active within the last 2 minutes.
     pub fn is_active(&self, now: DateTime<FixedOffset>) -> bool {
         let now_utc = now.with_timezone(&Utc);
-        self.last_active
-            .is_some_and(|last| (now_utc - last).num_seconds() < Self::PRESENT_WITHIN_SECS)
+        self.last_active.is_some_and(|last| (now_utc - last).num_seconds() < Self::PRESENT_WITHIN_SECS)
     }
 
     /// True when the user sat down for the first time today within the freshness window.
@@ -448,13 +447,7 @@ impl BuddyPlanner {
         // 2. Good morning: first activity of the day, 05:00–11:30.
         if signals.first_of_day && (5 * 60..11 * 60 + 30).contains(&minutes_of_day) {
             if let Some(id) = once(BuddyMomentKind::Morning, 1, String::new()) {
-                return Some(BuddyMoment {
-                    kind: BuddyMomentKind::Morning,
-                    id,
-                    count: signals.events_today,
-                    minutes: 0,
-                    unit: None,
-                });
+                return Some(BuddyMoment { kind: BuddyMomentKind::Morning, id, count: signals.events_today, minutes: 0, unit: None });
             }
         }
 
@@ -502,7 +495,7 @@ impl BuddyPlanner {
         }
 
         // 6. Late at night (23:00–04:00), once per night across midnight (8h cooldown).
-        if hour >= 23 || hour < 4 {
+        if !(4..23).contains(&hour) {
             let night_ok = rolled
                 .last_late_night
                 .is_none_or(|last| (signals.now.with_timezone(&Utc) - last).num_seconds() > BuddyLedger::LATE_NIGHT_COOLDOWN_SECS);
@@ -557,23 +550,13 @@ impl BuddyPlanner {
                 (moment.count > 0).then(|| tr("Bekijk", "View").to_string()),
                 12,
             ),
-            BuddyMomentKind::BreakTime => (
-                "caring",
-                Some("breathe".to_string()),
-                Some(tr("Adem mee", "Breathe along").to_string()),
-                16,
-            ),
+            BuddyMomentKind::BreakTime => ("caring", Some("breathe".to_string()), Some(tr("Adem mee", "Breathe along").to_string()), 16),
             BuddyMomentKind::LateNight => ("sleepy", None, None, 12),
             BuddyMomentKind::FridayWrap => ("proud", None, None, 12),
             BuddyMomentKind::Birthday => ("celebrate", None, None, 16),
             BuddyMomentKind::Milestone => {
                 let open_agents = moment.unit.unwrap_or(MilestoneUnit::Sessions) == MilestoneUnit::Sessions;
-                (
-                    "celebrate",
-                    open_agents.then(|| "agents".to_string()),
-                    open_agents.then(|| tr("Bekijk", "View").to_string()),
-                    14,
-                )
+                ("celebrate", open_agents.then(|| "agents".to_string()), open_agents.then(|| tr("Bekijk", "View").to_string()), 14)
             }
         };
 
@@ -596,54 +579,137 @@ impl BuddyPlanner {
         let m = moment.minutes;
         match moment.kind {
             BuddyMomentKind::Morning => match (n, tone) {
-                (0, BuddyTone::Calm) => tr("Goedemorgen. Vandaag staat er niets in je agenda.", "Good morning. Nothing in your calendar today.").to_string(),
+                (0, BuddyTone::Calm) => {
+                    tr("Goedemorgen. Vandaag staat er niets in je agenda.", "Good morning. Nothing in your calendar today.").to_string()
+                }
                 (0, BuddyTone::Warm) => tr("Morgen! Een vrije dag, geen afspraken.", "Morning! A free day, no events at all.").to_string(),
-                (0, BuddyTone::Playful) => tr("Goeiemorgen, zonnetje! Geen enkele meeting vandaag.", "Morning, sunshine! Not a single meeting today.").to_string(),
-                (1, BuddyTone::Calm) => tr("Goedemorgen. Je hebt vandaag één afspraak.", "Good morning. One event in your calendar today.").to_string(),
-                (1, BuddyTone::Warm) => tr("Morgen! Maar één ding in je agenda vandaag.", "Morning! Just one thing on your calendar today.").to_string(),
-                (1, BuddyTone::Playful) => tr("Goeiemorgen, zonnetje! Maar één meeting vandaag.", "Morning, sunshine! Only one meeting today. Easy.").to_string(),
-                (_, BuddyTone::Calm) => trf("Goedemorgen. Je hebt vandaag {n} afspraken.", "Good morning. {n} events in your calendar today.", &[("n", &n)]),
-                (_, BuddyTone::Warm) => trf("Morgen! Je hebt vandaag {n} dingen op de planning.", "Morning! You have {n} things on today.", &[("n", &n)]),
-                (_, BuddyTone::Playful) => trf("Goeiemorgen, zonnetje! {n} afspraken vandaag. Eerst koffie?", "Morning, sunshine! {n} events today. Coffee first?", &[("n", &n)]),
+                (0, BuddyTone::Playful) => {
+                    tr("Goeiemorgen, zonnetje! Geen enkele meeting vandaag.", "Morning, sunshine! Not a single meeting today.").to_string()
+                }
+                (1, BuddyTone::Calm) => {
+                    tr("Goedemorgen. Je hebt vandaag één afspraak.", "Good morning. One event in your calendar today.").to_string()
+                }
+                (1, BuddyTone::Warm) => {
+                    tr("Morgen! Maar één ding in je agenda vandaag.", "Morning! Just one thing on your calendar today.").to_string()
+                }
+                (1, BuddyTone::Playful) => {
+                    tr("Goeiemorgen, zonnetje! Maar één meeting vandaag.", "Morning, sunshine! Only one meeting today. Easy.").to_string()
+                }
+                (_, BuddyTone::Calm) => {
+                    trf("Goedemorgen. Je hebt vandaag {n} afspraken.", "Good morning. {n} events in your calendar today.", &[("n", &n)])
+                }
+                (_, BuddyTone::Warm) => {
+                    trf("Morgen! Je hebt vandaag {n} dingen op de planning.", "Morning! You have {n} things on today.", &[("n", &n)])
+                }
+                (_, BuddyTone::Playful) => trf(
+                    "Goeiemorgen, zonnetje! {n} afspraken vandaag. Eerst koffie?",
+                    "Morning, sunshine! {n} events today. Coffee first?",
+                    &[("n", &n)],
+                ),
             },
             BuddyMomentKind::WelcomeBack => match (n, tone) {
-                (0, BuddyTone::Calm) => tr("Welkom terug. Er is niets gebeurd terwijl je weg was.", "Welcome back. Nothing happened while you were away.").to_string(),
-                (0, BuddyTone::Warm) => tr("Hé, je bent er weer! Alles was rustig.", "Hey, you're back! All quiet while you were gone.").to_string(),
-                (0, BuddyTone::Playful) => tr("Daar ben je! Ik heb je plekje warm gehouden.", "There you are! I kept your seat warm.").to_string(),
-                (1, BuddyTone::Calm) => tr("Welkom terug. Er is een agent klaar terwijl je weg was.", "Welcome back. An agent finished while you were away.").to_string(),
-                (1, BuddyTone::Warm) => tr("Hé, je bent er weer! Er is intussen een agent klaar.", "Hey, you're back! One agent finished in the meantime.").to_string(),
-                (1, BuddyTone::Playful) => tr("Daar ben je! Een agent is klaar terwijl je weg was.", "There you are! An agent wrapped up while you were out.").to_string(),
-                (_, BuddyTone::Calm) => trf("Welkom terug. Er zijn {n} agents klaar terwijl je weg was.", "Welcome back. {n} agents finished while you were away.", &[("n", &n)]),
-                (_, BuddyTone::Warm) => trf("Hé, je bent er weer! Intussen zijn {n} agents klaar.", "Hey, you're back! {n} agents finished in the meantime.", &[("n", &n)]),
-                (_, BuddyTone::Playful) => trf("Daar ben je! {n} agents klaar, ik heb ze in de gaten gehouden.", "There you are! {n} agents done, I kept an eye on them.", &[("n", &n)]),
+                (0, BuddyTone::Calm) => {
+                    tr("Welkom terug. Er is niets gebeurd terwijl je weg was.", "Welcome back. Nothing happened while you were away.")
+                        .to_string()
+                }
+                (0, BuddyTone::Warm) => {
+                    tr("Hé, je bent er weer! Alles was rustig.", "Hey, you're back! All quiet while you were gone.").to_string()
+                }
+                (0, BuddyTone::Playful) => {
+                    tr("Daar ben je! Ik heb je plekje warm gehouden.", "There you are! I kept your seat warm.").to_string()
+                }
+                (1, BuddyTone::Calm) => {
+                    tr("Welkom terug. Er is een agent klaar terwijl je weg was.", "Welcome back. An agent finished while you were away.")
+                        .to_string()
+                }
+                (1, BuddyTone::Warm) => {
+                    tr("Hé, je bent er weer! Er is intussen een agent klaar.", "Hey, you're back! One agent finished in the meantime.")
+                        .to_string()
+                }
+                (1, BuddyTone::Playful) => {
+                    tr("Daar ben je! Een agent is klaar terwijl je weg was.", "There you are! An agent wrapped up while you were out.")
+                        .to_string()
+                }
+                (_, BuddyTone::Calm) => trf(
+                    "Welkom terug. Er zijn {n} agents klaar terwijl je weg was.",
+                    "Welcome back. {n} agents finished while you were away.",
+                    &[("n", &n)],
+                ),
+                (_, BuddyTone::Warm) => trf(
+                    "Hé, je bent er weer! Intussen zijn {n} agents klaar.",
+                    "Hey, you're back! {n} agents finished in the meantime.",
+                    &[("n", &n)],
+                ),
+                (_, BuddyTone::Playful) => trf(
+                    "Daar ben je! {n} agents klaar, ik heb ze in de gaten gehouden.",
+                    "There you are! {n} agents done, I kept an eye on them.",
+                    &[("n", &n)],
+                ),
             },
             BuddyMomentKind::BreakTime => match tone {
-                BuddyTone::Calm => trf("Je werkt al {n} minuten. Tijd voor een korte pauze?", "You've been working for {n} minutes. Time for a short break?", &[("n", &m)]),
-                BuddyTone::Warm => trf("Al {n} minuten zonder pauze. Even je benen strekken?", "{n} minutes without a break. Stretch your legs?", &[("n", &m)]),
-                BuddyTone::Playful => trf("{n} minuten aan één stuk! Even bewegen?", "{n} minutes straight! Time to wiggle a bit?", &[("n", &m)]),
+                BuddyTone::Calm => trf(
+                    "Je werkt al {n} minuten. Tijd voor een korte pauze?",
+                    "You've been working for {n} minutes. Time for a short break?",
+                    &[("n", &m)],
+                ),
+                BuddyTone::Warm => trf(
+                    "Al {n} minuten zonder pauze. Even je benen strekken?",
+                    "{n} minutes without a break. Stretch your legs?",
+                    &[("n", &m)],
+                ),
+                BuddyTone::Playful => {
+                    trf("{n} minuten aan één stuk! Even bewegen?", "{n} minutes straight! Time to wiggle a bit?", &[("n", &m)])
+                }
             },
             BuddyMomentKind::LateNight => match tone {
                 BuddyTone::Calm => tr("Het is laat. Ik houd alles in de gaten.", "It's late. I'll keep an eye on things.").to_string(),
-                BuddyTone::Warm => tr("Het wordt laat. Ik let wel op als je gaat slapen.", "It's getting late. I'll keep watch if you head to bed.").to_string(),
-                BuddyTone::Playful => tr("*gaap* Al zo laat. Bedtijd voor ons allebei?", "*yawn* Late already. Bedtime for both of us?").to_string(),
+                BuddyTone::Warm => {
+                    tr("Het wordt laat. Ik let wel op als je gaat slapen.", "It's getting late. I'll keep watch if you head to bed.")
+                        .to_string()
+                }
+                BuddyTone::Playful => {
+                    tr("*gaap* Al zo laat. Bedtijd voor ons allebei?", "*yawn* Late already. Bedtime for both of us?").to_string()
+                }
             },
             BuddyMomentKind::FridayWrap => match tone {
-                BuddyTone::Calm => tr("Het is vrijdagmiddag. Goed gewerkt deze week.", "It's Friday afternoon. Nice work this week.").to_string(),
-                BuddyTone::Warm => tr("Vrijdagmiddag! Je hebt deze week goed werk gedaan.", "Friday afternoon! You did good work this week.").to_string(),
-                BuddyTone::Playful => tr("Vrijdagmiddag! Het weekend is in zicht.", "Friday afternoon! The weekend is in sight.").to_string(),
+                BuddyTone::Calm => {
+                    tr("Het is vrijdagmiddag. Goed gewerkt deze week.", "It's Friday afternoon. Nice work this week.").to_string()
+                }
+                BuddyTone::Warm => {
+                    tr("Vrijdagmiddag! Je hebt deze week goed werk gedaan.", "Friday afternoon! You did good work this week.").to_string()
+                }
+                BuddyTone::Playful => {
+                    tr("Vrijdagmiddag! Het weekend is in zicht.", "Friday afternoon! The weekend is in sight.").to_string()
+                }
             },
             BuddyMomentKind::Birthday => match tone {
                 BuddyTone::Calm => tr("Gefeliciteerd met je verjaardag!", "Happy birthday!").to_string(),
-                BuddyTone::Warm => tr("Gefeliciteerd! Ik hoop dat het een mooie dag wordt.", "Happy birthday! I hope it's a lovely day.").to_string(),
-                BuddyTone::Playful => tr("Hoera, je bent jarig! Ik heb mijn feesthoedje op.", "Happy birthday! I put on my party hat for you.").to_string(),
+                BuddyTone::Warm => {
+                    tr("Gefeliciteerd! Ik hoop dat het een mooie dag wordt.", "Happy birthday! I hope it's a lovely day.").to_string()
+                }
+                BuddyTone::Playful => {
+                    tr("Hoera, je bent jarig! Ik heb mijn feesthoedje op.", "Happy birthday! I put on my party hat for you.").to_string()
+                }
             },
             BuddyMomentKind::Milestone => match (moment.unit.unwrap_or(MilestoneUnit::Sessions), tone) {
-                (MilestoneUnit::Sessions, BuddyTone::Calm) => trf("{n} agent-sessies afgerond met Nook.", "{n} agent sessions finished with Nook.", &[("n", &n)]),
-                (MilestoneUnit::Sessions, BuddyTone::Warm) => trf("Al {n} agent-sessies samen. Mooi!", "That's {n} agent sessions together. Nice!", &[("n", &n)]),
-                (MilestoneUnit::Sessions, BuddyTone::Playful) => trf("{n} agent-sessies! Dat vraagt om een feestje.", "{n} agent sessions! That calls for a party.", &[("n", &n)]),
-                (MilestoneUnit::Words, BuddyTone::Calm) => trf("{n} woorden geschreven met Nook.", "{n} words written with Nook.", &[("n", &n)]),
-                (MilestoneUnit::Words, BuddyTone::Warm) => trf("Al {n} woorden samen. Lekker bezig!", "That's {n} words together. Nice going!", &[("n", &n)]),
-                (MilestoneUnit::Words, BuddyTone::Playful) => trf("{n} woorden! Een heel boek in wording.", "{n} words! A whole book in the making.", &[("n", &n)]),
+                (MilestoneUnit::Sessions, BuddyTone::Calm) => {
+                    trf("{n} agent-sessies afgerond met Nook.", "{n} agent sessions finished with Nook.", &[("n", &n)])
+                }
+                (MilestoneUnit::Sessions, BuddyTone::Warm) => {
+                    trf("Al {n} agent-sessies samen. Mooi!", "That's {n} agent sessions together. Nice!", &[("n", &n)])
+                }
+                (MilestoneUnit::Sessions, BuddyTone::Playful) => {
+                    trf("{n} agent-sessies! Dat vraagt om een feestje.", "{n} agent sessions! That calls for a party.", &[("n", &n)])
+                }
+                (MilestoneUnit::Words, BuddyTone::Calm) => {
+                    trf("{n} woorden geschreven met Nook.", "{n} words written with Nook.", &[("n", &n)])
+                }
+                (MilestoneUnit::Words, BuddyTone::Warm) => {
+                    trf("Al {n} woorden samen. Lekker bezig!", "That's {n} words together. Nice going!", &[("n", &n)])
+                }
+                (MilestoneUnit::Words, BuddyTone::Playful) => {
+                    trf("{n} woorden! Een heel boek in wording.", "{n} words! A whole book in the making.", &[("n", &n)])
+                }
             },
         }
     }
@@ -725,10 +791,7 @@ impl BuddyService {
     }
 
     pub fn open(path: PathBuf) -> Self {
-        let disk: BuddyDiskState = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let disk: BuddyDiskState = std::fs::read(&path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
         Self {
             activity: BuddyActivity::default(),
             ledger: disk.ledger,
@@ -812,12 +875,7 @@ impl BuddyService {
 
     /// Unique agent sessions that finished strictly after `start` and up to `end`.
     pub fn finished_between(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> usize {
-        let unique: HashSet<&str> = self
-            .finishes
-            .iter()
-            .filter(|(at, _)| *at > start && *at <= end)
-            .map(|(_, s)| s.as_str())
-            .collect();
+        let unique: HashSet<&str> = self.finishes.iter().filter(|(at, _)| *at > start && *at <= end).map(|(_, s)| s.as_str()).collect();
         unique.len()
     }
 
@@ -1051,7 +1109,16 @@ mod tests {
         let mut ledger = BuddyLedger::default();
         for i in 0..4 {
             let t = base + Duration::hours(i);
-            ledger.record(&BuddyMoment { kind: BuddyMomentKind::BreakTime, id: format!("breakTime@2026-05-06#{i}"), count: 0, minutes: 90, unit: None }, t);
+            ledger.record(
+                &BuddyMoment {
+                    kind: BuddyMomentKind::BreakTime,
+                    id: format!("breakTime@2026-05-06#{i}"),
+                    count: 0,
+                    minutes: 90,
+                    unit: None,
+                },
+                t,
+            );
         }
         assert!(!ledger.can_show(base + Duration::hours(5)));
 

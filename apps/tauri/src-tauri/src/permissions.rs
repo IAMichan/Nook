@@ -49,11 +49,7 @@ pub fn settings_uri_for(id: &str) -> Option<&'static str> {
 /// Extracts the value column from `reg query` stdout for `name`.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn parse_reg_query_value(stdout: &str, name: &str) -> Option<String> {
-    stdout
-        .lines()
-        .find(|l| l.trim_start().starts_with(name))
-        .and_then(|l| l.split_whitespace().last())
-        .map(str::to_string)
+    stdout.lines().find(|l| l.trim_start().starts_with(name)).and_then(|l| l.split_whitespace().last()).map(str::to_string)
 }
 
 /// Windows `StartupApproved\Run` stores a hex REG_BINARY whose first byte is even (02/06) when enabled and odd (03/07)
@@ -153,11 +149,8 @@ fn build_overview(c: WindowsChecks) -> Vec<Permission> {
 #[cfg(windows)]
 fn reg_value(key: &str, name: &str) -> Option<String> {
     use std::os::windows::process::CommandExt;
-    let out = std::process::Command::new("reg")
-        .args(["query", &format!("HKCU\\{key}"), "/v", name])
-        .creation_flags(0x0800_0000)
-        .output()
-        .ok()?;
+    let out =
+        std::process::Command::new("reg").args(["query", &format!("HKCU\\{key}"), "/v", name]).creation_flags(0x0800_0000).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -176,9 +169,8 @@ fn consent(capability: &str) -> bool {
 
 #[cfg(windows)]
 fn read() -> Vec<Permission> {
-    let toasts = reg_value("Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications", "ToastEnabled")
-        .map(|v| v != "0x0")
-        .unwrap_or(true);
+    let toasts =
+        reg_value("Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications", "ToastEnabled").map(|v| v != "0x0").unwrap_or(true);
     let background = reg_value("Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", "GlobalUserDisabled")
         .map(|v| v != "0x1")
         .unwrap_or(true);

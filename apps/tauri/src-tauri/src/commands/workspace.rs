@@ -200,8 +200,9 @@ pub async fn workspace_start(
     // "Or start without a project": an empty folder of its own under ~/.nook/scratch, named after the task.
     let scratch = config.project_path.trim().is_empty();
     if scratch {
-        config.project_path = nook_core::workspace::scratch::create(&config.task)
-            .map_err(|e| trf("Nook kon er geen map voor maken: {error}", "Nook could not make a folder for it: {error}", &[("error", &e.to_string())]))?;
+        config.project_path = nook_core::workspace::scratch::create(&config.task).map_err(|e| {
+            trf("Nook kon er geen map voor maken: {error}", "Nook could not make a folder for it: {error}", &[("error", &e.to_string())])
+        })?;
         config.isolation = IsolationMode::Folder;
         config.base_branch.clear();
     }
@@ -325,8 +326,12 @@ pub async fn workspace_save_picture(data: String, extension: String) -> Res<Stri
     if bytes.len() > 20 * 1024 * 1024 {
         return Err(tr("Deze afbeelding is te groot.", "This picture is too large.").into());
     }
-    blocking(move || nook_core::workspace::project_files::save_picture(&bytes, &extension).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string()))
-        .await?
+    blocking(move || {
+        nook_core::workspace::project_files::save_picture(&bytes, &extension)
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// A project's own icon (`ProjectFavicons`) as a picture the window can draw, or `None`; read once per folder.
@@ -338,7 +343,8 @@ pub async fn workspace_favicon(path: String) -> Res<Option<String>> {
         return Ok(hit.clone());
     }
     let key = path.clone();
-    let found = blocking(move || nook_core::workspace::favicon::find(&path).and_then(|p| nook_core::workspace::favicon::data_url(&p))).await?;
+    let found =
+        blocking(move || nook_core::workspace::favicon::find(&path).and_then(|p| nook_core::workspace::favicon::data_url(&p))).await?;
     lock(&CACHE).insert(key, found.clone());
     Ok(found)
 }
@@ -384,7 +390,10 @@ pub fn workspace_agent_commands(state: State<'_, WorkspaceState>, run: String) -
 /// The CPU and memory of a working session's agent and everything it started (`ResourceUsageBadge`); `None` while
 /// it has no process, and on the first reading.
 #[tauri::command]
-pub async fn workspace_resources(state: State<'_, WorkspaceState>, run: String) -> Res<Option<nook_core::workspace::resources::ResourceUsage>> {
+pub async fn workspace_resources(
+    state: State<'_, WorkspaceState>,
+    run: String,
+) -> Res<Option<nook_core::workspace::resources::ResourceUsage>> {
     static METERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<Uuid, nook_core::workspace::resources::Meter>>> =
         std::sync::LazyLock::new(Default::default);
     let id = id(&run)?;
@@ -754,12 +763,7 @@ pub fn workspace_can_revert(
 
 /// Zet de bestanden (en het gesprek) terug naar hoe ze waren voor dit bericht, of alleen het gesprek (`keep_files`).
 #[tauri::command]
-pub async fn workspace_revert(
-    state: State<'_, WorkspaceState>,
-    run: String,
-    before: DateTime<Utc>,
-    keep_files: Option<bool>,
-) -> Res<()> {
+pub async fn workspace_revert(state: State<'_, WorkspaceState>, run: String, before: DateTime<Utc>, keep_files: Option<bool>) -> Res<()> {
     let run = id(&run)?;
     let m = state.manager.clone();
     if keep_files.unwrap_or(false) {
@@ -799,7 +803,7 @@ pub async fn workspace_clone(app: AppHandle, state: State<'_, WorkspaceState>, u
             .and_then(|p| std::path::Path::new(&p).parent().map(|p| p.to_string_lossy().into_owned()))
             .unwrap_or_else(|| nook_core::agents::home_dir().join("Developer").to_string_lossy().into_owned());
         // With its progress in the main window's clone notices, Hide and Cancel (`CloneCenter` on the Mac).
-        crate::workspace::clones::clone(&app, &git, &url, &parent)
+        crate::workspace::clones::clone(&app, git, &url, &parent)
     })
     .await?
 }
@@ -1311,12 +1315,7 @@ pub async fn workspace_skills_catalog(
         use std::path::{Path, PathBuf};
 
         let home = dirs::home_dir().unwrap_or_default();
-        let project_dir = project
-            .as_deref()
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-            .map(PathBuf::from)
-            .filter(|p| p.is_dir());
+        let project_dir = project.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).filter(|p| p.is_dir());
 
         // Collect unique roots and track which providers read each root.
         let mut root_providers: BTreeMap<PathBuf, BTreeSet<RunProvider>> = BTreeMap::new();
@@ -1407,12 +1406,9 @@ pub async fn workspace_read_skill(path: String) -> Res<SkillDocument> {
         f.take(128 * 1024).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         let content = String::from_utf8_lossy(&bytes).into_owned();
         let meta = nook_core::workspace::skills::front_matter(&content);
-        let fallback = file
-            .parent()
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.clone());
-        let name = meta.get("name").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).filter(|s| !s.is_empty()).unwrap_or(fallback);
+        let fallback = file.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone());
+        let name =
+            meta.get("name").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).filter(|s| !s.is_empty()).unwrap_or(fallback);
         let description = meta.get("description").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).unwrap_or_default();
 
         // List scripts inside the skill directory (for folder skills with SKILL.md).
@@ -1777,21 +1773,14 @@ pub struct SideChatReply {
 /// Answers a quick side question (`/btw <question>`, `/side <question>`) about a session using a bounded summary of
 /// its recent timeline as context, without interrupting the main agent turn (AG-61).
 #[tauri::command]
-pub async fn workspace_side_chat(
-    app: AppHandle,
-    state: State<'_, WorkspaceState>,
-    run: String,
-    question: String,
-) -> Res<SideChatReply> {
+pub async fn workspace_side_chat(app: AppHandle, state: State<'_, WorkspaceState>, run: String, question: String) -> Res<SideChatReply> {
     let run_id = id(&run)?;
     let clean = question.trim().to_string();
     if clean.is_empty() {
         return Err(tr("Stel een vraag na /btw of /side.", "Ask a question after /btw or /side.").to_string());
     }
-    let session = state
-        .manager
-        .run(run_id)
-        .ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
+    let session =
+        state.manager.run(run_id).ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
     let events = state.manager.timeline(run_id);
 
     // Match macOS `SideChat.cutoff`: exclude the currently in-flight user turn while the main agent works.
@@ -1842,12 +1831,7 @@ pub async fn workspace_side_chat(
     .map_err(|_| tr("Het zijgesprek duurde te lang.", "The side chat timed out.").to_string())?
     .map_err(|e| e.to_string())?;
 
-    Ok(SideChatReply {
-        question: clean,
-        answer: answer.trim().to_string(),
-        model,
-        created_at: Utc::now(),
-    })
+    Ok(SideChatReply { question: clean, answer: answer.trim().to_string(), model, created_at: Utc::now() })
 }
 
 // MARK: Text generation — session title regeneration & next-prompt suggestions (AG-70)
@@ -1862,17 +1846,8 @@ Write from the user's perspective as a direct instruction or question to the age
 Use the same language as the user's messages. If no follow-up makes sense, reply with NONE.";
 
 fn fallback_session_title(user_messages: &[String], goal: Option<&str>, task: &str) -> String {
-    let source = user_messages
-        .last()
-        .map(String::as_str)
-        .or(goal)
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or(task);
-    let first_line = source
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .unwrap_or("Session");
+    let source = user_messages.last().map(String::as_str).or(goal).filter(|s| !s.trim().is_empty()).unwrap_or(task);
+    let first_line = source.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("Session");
     let words: Vec<&str> = first_line.split_whitespace().take(7).collect();
     let candidate = words.join(" ").trim_matches(|c: char| c == '"' || c == '\'' || c == '.' || c == ':').to_string();
     if candidate.is_empty() {
@@ -1885,16 +1860,10 @@ fn fallback_session_title(user_messages: &[String], goal: Option<&str>, task: &s
 /// Regenerates a session title from the user messages in its timeline (and active goal / project title instructions),
 /// updates the run in `WorkspaceManager`, emits `workspace-changed`, and returns the new title (AG-70).
 #[tauri::command]
-pub async fn workspace_regenerate_title(
-    app: AppHandle,
-    state: State<'_, WorkspaceState>,
-    run: String,
-) -> Res<String> {
+pub async fn workspace_regenerate_title(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<String> {
     let run_id = id(&run)?;
-    let session = state
-        .manager
-        .run(run_id)
-        .ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
+    let session =
+        state.manager.run(run_id).ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
     let events = state.manager.timeline(run_id);
     let mut user_messages: Vec<String> = events
         .iter()
@@ -1916,7 +1885,11 @@ pub async fn workspace_regenerate_title(
         let ws_settings = state.settings.lock().unwrap_or_else(|e| e.into_inner());
         let defaults = ws_settings.defaults_for(&session.project_path);
         let trimmed = defaults.title_instructions.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     };
 
     let mut prompt = String::new();
@@ -1950,13 +1923,7 @@ pub async fn workspace_regenerate_title(
     .ok()
     .and_then(|r| r.ok())
     .map(|raw| {
-        raw.lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == '.')
-            .trim()
-            .to_string()
+        raw.lines().next().unwrap_or("").trim().trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == '.').trim().to_string()
     })
     .filter(|s| !s.is_empty());
 
@@ -1968,11 +1935,7 @@ pub async fn workspace_regenerate_title(
 
 /// Suggests the single next follow-up prompt after a completed turn (`None` while running or before the first assistant reply) (AG-70).
 #[tauri::command]
-pub async fn workspace_suggest_next_prompt(
-    app: AppHandle,
-    state: State<'_, WorkspaceState>,
-    run: String,
-) -> Res<Option<String>> {
+pub async fn workspace_suggest_next_prompt(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<Option<String>> {
     let run_id = id(&run)?;
     let Some(session) = state.manager.run(run_id) else {
         return Ok(None);
@@ -1983,7 +1946,9 @@ pub async fn workspace_suggest_next_prompt(
     let events = state.manager.timeline(run_id);
     let visible: Vec<_> = events
         .iter()
-        .filter(|e| !e.rolled_back.unwrap_or(false) && matches!(e.kind, EventKind::User | EventKind::Assistant) && !e.text.trim().is_empty())
+        .filter(|e| {
+            !e.rolled_back.unwrap_or(false) && matches!(e.kind, EventKind::User | EventKind::Assistant) && !e.text.trim().is_empty()
+        })
         .collect();
     let has_user = visible.iter().any(|e| e.kind == EventKind::User);
     let ends_with_assistant = visible.last().is_some_and(|e| e.kind == EventKind::Assistant);
@@ -2032,13 +1997,8 @@ pub async fn workspace_suggest_next_prompt(
         .trim()
         .trim_matches(|c: char| c == '"' || c == '\'' || c == '`')
         .trim();
-    if stripped.is_empty()
-        || stripped.len() > 240
-        || matches!(stripped.to_ascii_lowercase().as_str(), "none" | "null" | "n/a" | "-")
-    {
+    if stripped.is_empty() || stripped.len() > 240 || matches!(stripped.to_ascii_lowercase().as_str(), "none" | "null" | "n/a" | "-") {
         return Ok(None);
     }
     Ok(Some(stripped.to_string()))
 }
-
-

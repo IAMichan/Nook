@@ -34,7 +34,11 @@ impl Passage {
     }
 
     fn folded(&self) -> std::borrow::Cow<'_, str> {
-        if self.folded.is_empty() { std::borrow::Cow::Owned(fold(&self.text)) } else { std::borrow::Cow::Borrowed(&self.folded) }
+        if self.folded.is_empty() {
+            std::borrow::Cow::Owned(fold(&self.text))
+        } else {
+            std::borrow::Cow::Borrowed(&self.folded)
+        }
     }
 }
 
@@ -121,12 +125,17 @@ fn normalize_app_token(raw: &str) -> String {
 
 fn kind_alias(value: &str) -> Option<&'static str> {
     match fold(value).as_str() {
-        "nook" | "nooks" | "conversation" | "conversations" | "gesprek" | "gesprekken" | "gesprach" | "conversacion" | "ask" => Some("conversation"),
-        "agent" | "agents" | "session" | "sessions" | "sessie" | "sessies" | "sitzung" | "sesion" | "run" | "runs" | "code" => Some("session"),
+        "nook" | "nooks" | "conversation" | "conversations" | "gesprek" | "gesprekken" | "gesprach" | "conversacion" | "ask" => {
+            Some("conversation")
+        }
+        "agent" | "agents" | "session" | "sessions" | "sessie" | "sessies" | "sitzung" | "sesion" | "run" | "runs" | "code" => {
+            Some("session")
+        }
         "chat" | "chats" | "message" | "messages" | "bericht" | "berichten" | "nachricht" | "mensaje" => Some("chat"),
         "note" | "notes" | "notitie" | "notities" | "call" | "calls" | "meeting" | "meetings" | "notiz" | "nota" => Some("note"),
         "memory" | "memories" | "geheugen" | "herinnering" | "herinneringen" | "gedachtnis" | "memoire" | "memoria" => Some("memory"),
-        "notice" | "notices" | "notification" | "notifications" | "melding" | "meldingen" | "mitteilung" | "mitteilungen" | "aviso" | "avisos" => Some("notice"),
+        "notice" | "notices" | "notification" | "notifications" | "melding" | "meldingen" | "mitteilung" | "mitteilungen" | "aviso"
+        | "avisos" => Some("notice"),
         "setting" | "settings" | "instelling" | "instellingen" | "einstellung" | "reglage" | "ajuste" | "prefs" => Some("setting"),
         "action" | "actions" | "command" | "commands" | "actie" | "acties" | "aktion" | "commande" | "accion" => Some("action"),
         _ => None,
@@ -332,9 +341,14 @@ pub fn search(documents: &[Document], request: &Request) -> Vec<Hit> {
     if request.is_empty() && request.kinds.is_empty() {
         return vec![];
     }
-    let regex = request.regex.as_deref().and_then(|source| RegexBuilder::new(source).case_insensitive(true).size_limit(1 << 20).build().ok());
-    let alternatives: Vec<Vec<String>> =
-        request.alternatives.iter().map(|a| a.iter().map(|t| fold(t)).filter(|t| !t.is_empty()).collect()).filter(|a: &Vec<String>| !a.is_empty()).collect();
+    let regex =
+        request.regex.as_deref().and_then(|source| RegexBuilder::new(source).case_insensitive(true).size_limit(1 << 20).build().ok());
+    let alternatives: Vec<Vec<String>> = request
+        .alternatives
+        .iter()
+        .map(|a| a.iter().map(|t| fold(t)).filter(|t| !t.is_empty()).collect())
+        .filter(|a: &Vec<String>| !a.is_empty())
+        .collect();
     let excluded: Vec<String> = request.excluded.iter().map(|t| fold(t)).filter(|t| !t.is_empty()).collect();
     let terms: Vec<String> = {
         let mut all: Vec<String> = alternatives.iter().flatten().cloned().collect();
@@ -517,7 +531,11 @@ pub fn search(documents: &[Document], request: &Request) -> Vec<Hit> {
                 .max_by(|a, b| a.1.total_cmp(b.1).then(document.passages[*a.0].date.cmp(&document.passages[*b.0].date)))
                 .map(|(i, _)| *i)
                 .or(regex_passage)
-                .or_else(|| (!request.from.is_empty() || !request.app.is_empty() || alternatives.is_empty()).then(|| passages.last().map(|(i, _)| *i)).flatten());
+                .or_else(|| {
+                    (!request.from.is_empty() || !request.app.is_empty() || alternatives.is_empty())
+                        .then(|| passages.last().map(|(i, _)| *i))
+                        .flatten()
+                });
 
             let mut score = best_score + document.boost;
             // Exponential recency boost matching macOS: up to +35% for today, fading over ~2 weeks.
@@ -559,11 +577,8 @@ pub fn snippet(text: &str, terms: &[String], regex: Option<&regex::Regex>) -> St
     // Folding keeps one character per character for the scripts that matter here; where it does not, start at 0.
     let folded: Vec<char> = flat.chars().map(|c| fold(&c.to_string()).chars().next().unwrap_or(c)).collect();
     let folded: String = folded.into_iter().collect();
-    let byte_at = terms
-        .iter()
-        .filter_map(|t| folded.find(t.as_str()))
-        .min()
-        .or_else(|| regex.and_then(|re| re.find(&flat).map(|m| m.start())));
+    let byte_at =
+        terms.iter().filter_map(|t| folded.find(t.as_str())).min().or_else(|| regex.and_then(|re| re.find(&flat).map(|m| m.start())));
     let at = byte_at.map_or(0, |b| folded[..b.min(folded.len())].chars().count());
     let start = at.saturating_sub(SNIPPET / 3);
     let end = (start + SNIPPET).min(chars.len());
@@ -600,7 +615,11 @@ pub fn plan_prompt(question: &str, today: &str) -> String {
 /// The searches in the brain's reply, cleaned: no empty or repeated ones, at most [`MAX_QUERIES`]. A reply that is not
 /// the JSON asked for, but lines of searches, still counts.
 pub fn queries_from_plan(reply: &str) -> Vec<String> {
-    let json = reply.find('{').zip(reply.rfind('}')).filter(|(s, e)| s < e).and_then(|(s, e)| serde_json::from_str::<serde_json::Value>(&reply[s..=e]).ok());
+    let json = reply
+        .find('{')
+        .zip(reply.rfind('}'))
+        .filter(|(s, e)| s < e)
+        .and_then(|(s, e)| serde_json::from_str::<serde_json::Value>(&reply[s..=e]).ok());
     let found: Vec<String> = match json.as_ref().and_then(|v| v.get("queries")).and_then(|q| q.as_array()) {
         Some(list) => list.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
         None => reply.lines().map(|l| l.trim().trim_start_matches(|c: char| "-*•0123456789.)".contains(c)).trim().to_string()).collect(),
@@ -697,10 +716,7 @@ mod tests {
     }
 
     fn doc_with_facets(id: &str, kind: &str, title: &str, facets: &[(&str, &str)], passages: &[(&str, &str)]) -> Document {
-        Document {
-            facets: facets.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
-            ..doc(id, kind, title, passages)
-        }
+        Document { facets: facets.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(), ..doc(id, kind, title, passages) }
     }
 
     fn request(words: &[&[&str]]) -> Request {
@@ -710,7 +726,12 @@ mod tests {
     #[test]
     fn finds_the_passage_that_holds_the_words() {
         let docs = vec![
-            doc("conversation:1", "conversation", "Trip", &[("me", "When does the flight to Lisbon leave?"), ("nook", "The flight leaves at 9:40 on Friday.")]),
+            doc(
+                "conversation:1",
+                "conversation",
+                "Trip",
+                &[("me", "When does the flight to Lisbon leave?"), ("nook", "The flight leaves at 9:40 on Friday.")],
+            ),
             doc("note:1", "note", "Standup", &[("Anna", "The release slips to Monday.")]),
         ];
         let hits = search(&docs, &request(&[&["flight", "friday"]]));
@@ -767,12 +788,36 @@ mod tests {
     #[test]
     fn filters_by_app_and_from_over_transcripts_chats_notes_memories_and_notices() {
         let docs = vec![
-            doc_with_facets("past:claude:1", "session", "Fix auth", &[("agent", "Claude Code"), ("project", "nook")], &[("me", "Fix the OAuth callback"), ("Claude Code", "Updated the token exchange")]),
-            doc_with_facets("chat:whatsapp:1", "chat", "Anna", &[("app", "WhatsApp")], &[("Anna", "Can we move lunch to Friday?"), ("me", "Sure!")]),
+            doc_with_facets(
+                "past:claude:1",
+                "session",
+                "Fix auth",
+                &[("agent", "Claude Code"), ("project", "nook")],
+                &[("me", "Fix the OAuth callback"), ("Claude Code", "Updated the token exchange")],
+            ),
+            doc_with_facets(
+                "chat:whatsapp:1",
+                "chat",
+                "Anna",
+                &[("app", "WhatsApp")],
+                &[("Anna", "Can we move lunch to Friday?"), ("me", "Sure!")],
+            ),
             doc_with_facets("chat:telegram:2", "chat", "Anna", &[("app", "Telegram")], &[("Anna", "Sent the invoice PDF")]),
-            doc_with_facets("note:1", "note", "Weekly sync", &[("app", "Zoom"), ("speaker", "Lisa")], &[("Lisa", "Invoice approved by finance")]),
+            doc_with_facets(
+                "note:1",
+                "note",
+                "Weekly sync",
+                &[("app", "Zoom"), ("speaker", "Lisa")],
+                &[("Lisa", "Invoice approved by finance")],
+            ),
             doc_with_facets("memory:1", "memory", "Lisa prefers Zoom calls", &[("type", "preference")], &[]),
-            doc_with_facets("notice:1", "notice", "Anna", &[("app", "WhatsApp"), ("author", "Anna")], &[("Anna", "Missed call on WhatsApp")]),
+            doc_with_facets(
+                "notice:1",
+                "notice",
+                "Anna",
+                &[("app", "WhatsApp"), ("author", "Anna")],
+                &[("Anna", "Missed call on WhatsApp")],
+            ),
         ];
 
         // app:whatsapp alone finds WhatsApp chat and WhatsApp notice.
@@ -803,9 +848,11 @@ mod tests {
         let now = Utc::now();
         let mut title_doc = doc("conversation:title", "conversation", "Invoice March", &[("me", "Checking status")]);
         title_doc.date = Some(now - chrono::Duration::days(10));
-        let mut body_doc = doc("conversation:body", "conversation", "Random thread", &[("me", "Here is the invoice"), ("nook", "For March")]);
+        let mut body_doc =
+            doc("conversation:body", "conversation", "Random thread", &[("me", "Here is the invoice"), ("nook", "For March")]);
         body_doc.date = Some(now - chrono::Duration::days(10));
-        let mut together_doc = doc("conversation:together", "conversation", "Random thread 2", &[("me", "Here is the invoice for March in one message")]);
+        let mut together_doc =
+            doc("conversation:together", "conversation", "Random thread 2", &[("me", "Here is the invoice for March in one message")]);
         together_doc.date = Some(now - chrono::Duration::days(10));
 
         let hits = search(&[body_doc, together_doc, title_doc], &parse_query("invoice march"));
@@ -837,7 +884,17 @@ mod tests {
         assert_eq!(queries_from_plan("{\"queries\": [\"invoice march\", \"Invoice March\", \"factuur\"]}"), ["invoice march", "factuur"]);
         assert_eq!(queries_from_plan("1. flight lisbon\n- hotel"), ["flight lisbon", "hotel"]);
         assert_eq!(clean_answer("<think>hm</think>```\nIt leaves at 9:40 [1].\n```"), "It leaves at 9:40 [1].");
-        let prompt = answer_prompt("When?", &[Source { kind: "conversation".into(), title: "Trip".into(), author: "me".into(), text: "Friday".into(), ..Default::default() }], "Answer in English.");
+        let prompt = answer_prompt(
+            "When?",
+            &[Source {
+                kind: "conversation".into(),
+                title: "Trip".into(),
+                author: "me".into(),
+                text: "Friday".into(),
+                ..Default::default()
+            }],
+            "Answer in English.",
+        );
         assert!(prompt.contains("[1] conversation · Trip") && prompt.contains("The user: Friday"));
     }
 }

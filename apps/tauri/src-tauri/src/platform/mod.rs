@@ -5,9 +5,9 @@ pub mod secrets;
 #[cfg(desktop)]
 pub mod desktop;
 #[cfg(desktop)]
-pub mod local_brain;
-#[cfg(desktop)]
 pub mod file_preview;
+#[cfg(desktop)]
+pub mod local_brain;
 #[cfg(desktop)]
 pub mod tab_windows;
 #[cfg(desktop)]

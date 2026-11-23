@@ -13,13 +13,47 @@ pub const MAX_CANDIDATES: usize = 3;
 
 /// Languages whisper.cpp, OpenAI and Groq understand, by their two-letter code, with the English name Settings shows.
 pub const LANGUAGES: &[(&str, &str)] = &[
-    ("af", "Afrikaans"), ("ar", "Arabic"), ("bg", "Bulgarian"), ("ca", "Catalan"), ("cs", "Czech"), ("da", "Danish"),
-    ("de", "German"), ("el", "Greek"), ("en", "English"), ("es", "Spanish"), ("et", "Estonian"), ("fa", "Persian"),
-    ("fi", "Finnish"), ("fr", "French"), ("he", "Hebrew"), ("hi", "Hindi"), ("hr", "Croatian"), ("hu", "Hungarian"),
-    ("id", "Indonesian"), ("it", "Italian"), ("ja", "Japanese"), ("ko", "Korean"), ("lt", "Lithuanian"), ("lv", "Latvian"),
-    ("ms", "Malay"), ("nl", "Dutch"), ("no", "Norwegian"), ("pl", "Polish"), ("pt", "Portuguese"), ("ro", "Romanian"),
-    ("ru", "Russian"), ("sk", "Slovak"), ("sl", "Slovenian"), ("sr", "Serbian"), ("sv", "Swedish"), ("sw", "Swahili"),
-    ("th", "Thai"), ("tr", "Turkish"), ("uk", "Ukrainian"), ("vi", "Vietnamese"), ("zh", "Chinese"),
+    ("af", "Afrikaans"),
+    ("ar", "Arabic"),
+    ("bg", "Bulgarian"),
+    ("ca", "Catalan"),
+    ("cs", "Czech"),
+    ("da", "Danish"),
+    ("de", "German"),
+    ("el", "Greek"),
+    ("en", "English"),
+    ("es", "Spanish"),
+    ("et", "Estonian"),
+    ("fa", "Persian"),
+    ("fi", "Finnish"),
+    ("fr", "French"),
+    ("he", "Hebrew"),
+    ("hi", "Hindi"),
+    ("hr", "Croatian"),
+    ("hu", "Hungarian"),
+    ("id", "Indonesian"),
+    ("it", "Italian"),
+    ("ja", "Japanese"),
+    ("ko", "Korean"),
+    ("lt", "Lithuanian"),
+    ("lv", "Latvian"),
+    ("ms", "Malay"),
+    ("nl", "Dutch"),
+    ("no", "Norwegian"),
+    ("pl", "Polish"),
+    ("pt", "Portuguese"),
+    ("ro", "Romanian"),
+    ("ru", "Russian"),
+    ("sk", "Slovak"),
+    ("sl", "Slovenian"),
+    ("sr", "Serbian"),
+    ("sv", "Swedish"),
+    ("sw", "Swahili"),
+    ("th", "Thai"),
+    ("tr", "Turkish"),
+    ("uk", "Ukrainian"),
+    ("vi", "Vietnamese"),
+    ("zh", "Chinese"),
 ];
 
 /// "nl-NL", "nl_NL", "NL" or "Dutch" → "nl"; `None` for a language the engines do not know.
@@ -45,7 +79,10 @@ pub fn name_of(code: &str) -> Option<&'static str> {
 /// Nook's own language, English; unknown languages are skipped.
 pub fn automatic_languages(last_heard: &str, system: &[String], keyboards: &[String], app_language: &str) -> Vec<&'static str> {
     let mut out: Vec<&'static str> = vec![];
-    let all = std::iter::once(last_heard).chain(system.iter().map(String::as_str)).chain(keyboards.iter().map(String::as_str)).chain([app_language, "en"]);
+    let all = std::iter::once(last_heard)
+        .chain(system.iter().map(String::as_str))
+        .chain(keyboards.iter().map(String::as_str))
+        .chain([app_language, "en"]);
     for id in all {
         let Some(code) = code_of(id) else { continue };
         if !out.contains(&code) {
@@ -166,11 +203,7 @@ pub struct DictationLanguageSettings {
 
 impl Default for DictationLanguageSettings {
     fn default() -> Self {
-        Self {
-            mode: AUTOMATIC.to_string(),
-            spoken_languages: Vec::new(),
-            last_heard: String::new(),
-        }
+        Self { mode: AUTOMATIC.to_string(), spoken_languages: Vec::new(), last_heard: String::new() }
     }
 }
 
@@ -180,10 +213,7 @@ impl DictationLanguageSettings {
     }
 
     pub fn load() -> Self {
-        let mut s: Self = std::fs::read(Self::file())
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
+        let mut s: Self = std::fs::read(Self::file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         s.normalize();
         s
     }
@@ -285,11 +315,8 @@ mod tests {
 
     #[test]
     fn spoken_language_checkboxes_prioritize_checked_languages() {
-        let mut settings = DictationLanguageSettings {
-            mode: "auto".into(),
-            spoken_languages: ids(&["de-DE", "es", "nl"]),
-            last_heard: "es".into(),
-        };
+        let mut settings =
+            DictationLanguageSettings { mode: "auto".into(), spoken_languages: ids(&["de-DE", "es", "nl"]), last_heard: "es".into() };
         settings.normalize();
         assert_eq!(settings.spoken_languages, ids(&["de", "es", "nl"]));
         assert_eq!(settings.candidates(&ids(&["fr-FR"]), &[], "en"), vec!["es", "de", "nl"]);
@@ -300,4 +327,3 @@ mod tests {
         assert_eq!(settings.candidates(&ids(&["nl"]), &[], "en"), vec!["fr"]);
     }
 }
-

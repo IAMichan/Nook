@@ -81,10 +81,7 @@ impl DeepLinkRoute {
             return None;
         }
         let host = url.host_str()?.to_lowercase();
-        let segments: Vec<&str> = url
-            .path_segments()
-            .map(|s| s.filter(|p| !p.is_empty()).collect())
-            .unwrap_or_default();
+        let segments: Vec<&str> = url.path_segments().map(|s| s.filter(|p| !p.is_empty()).collect()).unwrap_or_default();
 
         match host.as_str() {
             "chat" | "conversation" | "chats" => {
@@ -104,9 +101,7 @@ impl DeepLinkRoute {
                 }
                 let raw_id = percent_decode(segments[0])?;
                 let id = clean_identifier(&raw_id)?;
-                let title = query_param(url, "title")
-                    .map(|t| clean_single_line(&t, Self::MAX_TITLE_LEN))
-                    .filter(|t| !t.is_empty());
+                let title = query_param(url, "title").map(|t| clean_single_line(&t, Self::MAX_TITLE_LEN)).filter(|t| !t.is_empty());
                 Some(Self::Session { id, title })
             }
             "settings" => {
@@ -136,13 +131,9 @@ impl DeepLinkRoute {
                     return None;
                 }
                 let q = query_param(url, "q").or_else(|| query_param(url, "text")).or_else(|| query_param(url, "prompt"));
-                let project = query_param(url, "project")
-                    .map(|p| clean_single_line(&p, Self::MAX_TITLE_LEN))
-                    .filter(|p| !p.is_empty());
+                let project = query_param(url, "project").map(|p| clean_single_line(&p, Self::MAX_TITLE_LEN)).filter(|p| !p.is_empty());
                 if let Some(text) = q.map(|t| clean_text(&t, Self::MAX_TEXT_LEN)).filter(|t| !t.is_empty()) {
-                    let repo = query_param(url, "repo")
-                        .map(|r| clean_single_line(&r, Self::MAX_TITLE_LEN))
-                        .filter(|r| !r.is_empty());
+                    let repo = query_param(url, "repo").map(|r| clean_single_line(&r, Self::MAX_TITLE_LEN)).filter(|r| !r.is_empty());
                     return Some(Self::Ask { query: text, project, repo });
                 }
                 Some(Self::New { project })
@@ -151,20 +142,14 @@ impl DeepLinkRoute {
                 if !segments.is_empty() {
                     return None;
                 }
-                let raw_q = query_param(url, "q")
-                    .or_else(|| query_param(url, "text"))
-                    .or_else(|| query_param(url, "prompt"))
-                    .unwrap_or_default();
+                let raw_q =
+                    query_param(url, "q").or_else(|| query_param(url, "text")).or_else(|| query_param(url, "prompt")).unwrap_or_default();
                 let query = clean_text(&raw_q, Self::MAX_TEXT_LEN);
                 if query.is_empty() {
                     return None;
                 }
-                let project = query_param(url, "project")
-                    .map(|p| clean_single_line(&p, Self::MAX_TITLE_LEN))
-                    .filter(|p| !p.is_empty());
-                let repo = query_param(url, "repo")
-                    .map(|r| clean_single_line(&r, Self::MAX_TITLE_LEN))
-                    .filter(|r| !r.is_empty());
+                let project = query_param(url, "project").map(|p| clean_single_line(&p, Self::MAX_TITLE_LEN)).filter(|p| !p.is_empty());
+                let repo = query_param(url, "repo").map(|r| clean_single_line(&r, Self::MAX_TITLE_LEN)).filter(|r| !r.is_empty());
                 Some(Self::Ask { query, project, repo })
             }
             _ => None,
@@ -254,9 +239,7 @@ pub fn decide_incoming_link(
     }
     let is_web = scheme == "http" || scheme == "https";
     let is_html_file = scheme == "file"
-        && ["html", "htm", "xhtml", "shtml"].iter().any(|ext| {
-            url.path().rsplit('.').next().is_some_and(|e| e.eq_ignore_ascii_case(ext))
-        });
+        && ["html", "htm", "xhtml", "shtml"].iter().any(|ext| url.path().rsplit('.').next().is_some_and(|e| e.eq_ignore_ascii_case(ext)));
     if !is_web && !is_html_file {
         return Some(IncomingLinkDecision::PreviousBrowser { url: trimmed.to_string() });
     }
@@ -264,9 +247,7 @@ pub fn decide_incoming_link(
         return Some(IncomingLinkDecision::SessionPanel { url: trimmed.to_string() });
     }
     match target {
-        IncomingLinkTarget::Session if session_on_screen => {
-            Some(IncomingLinkDecision::SessionBrowser { url: trimmed.to_string() })
-        }
+        IncomingLinkTarget::Session if session_on_screen => Some(IncomingLinkDecision::SessionBrowser { url: trimmed.to_string() }),
         IncomingLinkTarget::Session | IncomingLinkTarget::NookBrowser => {
             Some(IncomingLinkDecision::NookBrowser { url: trimmed.to_string() })
         }
@@ -284,11 +265,7 @@ fn clean_identifier(raw: &str) -> Option<String> {
     }
     // Identifiers may be UUIDs, chat keys (`whatsapp#316...`, `telegram#123`, `slack|name`), etc.,
     // but never paths (`..`, `/`, `\`) or control characters.
-    if trimmed.contains("..")
-        || trimmed.contains('/')
-        || trimmed.contains('\\')
-        || trimmed.chars().any(char::is_control)
-    {
+    if trimmed.contains("..") || trimmed.contains('/') || trimmed.contains('\\') || trimmed.chars().any(char::is_control) {
         return None;
     }
     Some(trimmed.to_string())
@@ -300,10 +277,7 @@ fn clean_single_line(raw: &str, max_len: usize) -> String {
 }
 
 fn clean_text(raw: &str, max_len: usize) -> String {
-    let filtered: String = raw
-        .chars()
-        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
-        .collect();
+    let filtered: String = raw.chars().filter(|&c| c == '\n' || c == '\t' || !c.is_control()).collect();
     filtered.trim().chars().take(max_len).collect()
 }
 
@@ -323,46 +297,23 @@ mod tests {
         );
         assert_eq!(
             DeepLinkRoute::parse("nook://session/550e8400-e29b-41d4-a716-446655440000?title=Fix%20login"),
-            Some(DeepLinkRoute::Session {
-                id: "550e8400-e29b-41d4-a716-446655440000".into(),
-                title: Some("Fix login".into()),
-            })
+            Some(DeepLinkRoute::Session { id: "550e8400-e29b-41d4-a716-446655440000".into(), title: Some("Fix login".into()) })
         );
     }
 
     #[test]
     fn parses_settings_new_and_ask_deep_links() {
-        assert_eq!(
-            DeepLinkRoute::parse("nook://settings/notifications"),
-            Some(DeepLinkRoute::Settings { page: "notifications".into() })
-        );
-        assert_eq!(
-            DeepLinkRoute::parse("nook://settings"),
-            Some(DeepLinkRoute::Settings { page: String::new() })
-        );
-        assert_eq!(
-            DeepLinkRoute::parse("nook://memory"),
-            Some(DeepLinkRoute::Settings { page: "memory".into() })
-        );
-        assert_eq!(
-            DeepLinkRoute::parse("nook://new"),
-            Some(DeepLinkRoute::New { project: None })
-        );
+        assert_eq!(DeepLinkRoute::parse("nook://settings/notifications"), Some(DeepLinkRoute::Settings { page: "notifications".into() }));
+        assert_eq!(DeepLinkRoute::parse("nook://settings"), Some(DeepLinkRoute::Settings { page: String::new() }));
+        assert_eq!(DeepLinkRoute::parse("nook://memory"), Some(DeepLinkRoute::Settings { page: "memory".into() }));
+        assert_eq!(DeepLinkRoute::parse("nook://new"), Some(DeepLinkRoute::New { project: None }));
         assert_eq!(
             DeepLinkRoute::parse("nook://ask?q=What%20is%20next%20on%20my%20calendar%3F"),
-            Some(DeepLinkRoute::Ask {
-                query: "What is next on my calendar?".into(),
-                project: None,
-                repo: None,
-            })
+            Some(DeepLinkRoute::Ask { query: "What is next on my calendar?".into(), project: None, repo: None })
         );
         assert_eq!(
             DeepLinkRoute::parse("nook://prompt?text=Refactor%20auth&repo=nook/app"),
-            Some(DeepLinkRoute::Ask {
-                query: "Refactor auth".into(),
-                project: None,
-                repo: Some("nook/app".into()),
-            })
+            Some(DeepLinkRoute::Ask { query: "Refactor auth".into(), project: None, repo: Some("nook/app".into()) })
         );
     }
 

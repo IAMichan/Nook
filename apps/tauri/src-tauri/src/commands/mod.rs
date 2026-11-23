@@ -84,7 +84,9 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
         if before.shortcuts != saved.shortcuts {
             crate::platform::desktop::register_shortcuts(&app);
         }
-        if before.placement != saved.placement || before.panel_large != saved.panel_large || before.screen_choice != saved.screen_choice
+        if before.placement != saved.placement
+            || before.panel_large != saved.panel_large
+            || before.screen_choice != saved.screen_choice
             || before.bar_on_all_screens != saved.bar_on_all_screens
             || before.show_bar != saved.show_bar
             || before.hide_when_idle != saved.hide_when_idle

@@ -15,8 +15,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use uuid::Uuid;
 
 use super::telemetry::{
-    privacy_safe_resource, OtlpConfig, OtlpExporter, OtlpLogRecord, OtlpPayload, OtlpSeverity, OtlpSignal, OtlpSpan,
-    OtlpSum, OtlpValue,
+    privacy_safe_resource, OtlpConfig, OtlpExporter, OtlpLogRecord, OtlpPayload, OtlpSeverity, OtlpSignal, OtlpSpan, OtlpSum, OtlpValue,
 };
 use crate::workspace::models::{RunStatus, RunUsage, WorkspaceRun};
 use crate::workspace::schedule::{ScheduleTrigger, ScheduledRunStatus};

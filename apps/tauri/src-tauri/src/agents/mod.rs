@@ -220,8 +220,17 @@ pub fn present_attention(app: &AppHandle, session: &nook_core::agents::models::A
             AgentStatus::Waiting => NoticeKind::Waiting,
             _ => NoticeKind::Info,
         };
-        let context = [session.host.as_str(), session.project.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join(" · ");
-        crate::notice_history::record(app, &format!("agent:{}", session.id), kind, &session.name, &session.summary, &context, &format!("agent:{}", session.id));
+        let context =
+            [session.host.as_str(), session.project.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+        crate::notice_history::record(
+            app,
+            &format!("agent:{}", session.id),
+            kind,
+            &session.name,
+            &session.summary,
+            &context,
+            &format!("agent:{}", session.id),
+        );
     }
     if !system_notices_for(app, &session.name, false) {
         return;

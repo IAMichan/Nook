@@ -263,7 +263,11 @@ impl ChatHelper {
 
     /// Reads the helper into the inbox at its pace, sooner when the live line says a chat changed, and keeps the line
     /// open while the helper runs. `changed` is called after every read that changed the inbox.
-    pub fn run(self: &Arc<Self>, chats: Arc<InboxStore>, changed: impl Fn(&nook_core::chats::ChatInbox, &InboxStore) + Send + Sync + 'static) {
+    pub fn run(
+        self: &Arc<Self>,
+        chats: Arc<InboxStore>,
+        changed: impl Fn(&nook_core::chats::ChatInbox, &InboxStore) + Send + Sync + 'static,
+    ) {
         let me = self.clone();
         tauri::async_runtime::spawn(async move {
             loop {

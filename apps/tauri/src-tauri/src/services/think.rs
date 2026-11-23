@@ -187,7 +187,13 @@ async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &
     }
     // The full nudge filter (`NudgeFilter` on the Mac): an offer that asks without an action, is not about the screen,
     // is about something weeks away or repeats an earlier one in other words stays unsaid.
-    if let Some(why) = nook_core::services::nudge_filter::reject(&body, !plan.actions.is_empty(), &snapshot.text, &earlier, chrono::Local::now().date_naive()) {
+    if let Some(why) = nook_core::services::nudge_filter::reject(
+        &body,
+        !plan.actions.is_empty(),
+        &snapshot.text,
+        &earlier,
+        chrono::Local::now().date_naive(),
+    ) {
         log::debug!("think along: no offer ({why})");
         return;
     }
@@ -219,7 +225,13 @@ async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &
     match crate::notices::decide(app, NoticeSource::Suggestions, app_name, false) {
         NoticeDecision::HistoryOnly | NoticeDecision::Show(NoticeStyle::Off) => {}
         NoticeDecision::Show(NoticeStyle::System) => {
-            crate::notices::notice(app, &format!("nudge-{}", nudge.id), "Nook", &nudge.line, nook_core::services::toast::NoticeTarget::Nowhere);
+            crate::notices::notice(
+                app,
+                &format!("nudge-{}", nudge.id),
+                "Nook",
+                &nudge.line,
+                nook_core::services::toast::NoticeTarget::Nowhere,
+            );
             super::emit(app, "nudge", Some(nudge));
         }
         NoticeDecision::Show(_) => {

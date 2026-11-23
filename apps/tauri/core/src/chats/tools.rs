@@ -100,7 +100,11 @@ pub fn overview(threads: &[&InboxThread], limit: usize) -> String {
         .take(limit)
         .map(|t| {
             let unread = if t.unread > 0 { format!(" · {} unread", t.unread) } else { String::new() };
-            let last = t.messages.last().map(|m| format!(" · {} {}: {}", when(m.date), who(t, m), clip(&message_text(m), 120))).unwrap_or_default();
+            let last = t
+                .messages
+                .last()
+                .map(|m| format!(" · {} {}: {}", when(m.date), who(t, m), clip(&message_text(m), 120)))
+                .unwrap_or_default();
             let trust = t.trust();
             let warning = if trust.is_suspicious() { format!(" · {}", trust.marker()) } else { String::new() };
             format!("- {} · {}{unread}{last}{warning}", app_name(&t.app), t.name)
@@ -112,7 +116,8 @@ pub fn overview(threads: &[&InboxThread], limit: usize) -> String {
 /// The newest `limit` messages of a chat, oldest first, "date Who: text".
 pub fn transcript(thread: &InboxThread, limit: usize) -> String {
     let start = thread.messages.len().saturating_sub(limit);
-    let lines: Vec<String> = thread.messages[start..].iter().map(|m| format!("{} {}: {}", when(m.date), who(thread, m), message_text(m))).collect();
+    let lines: Vec<String> =
+        thread.messages[start..].iter().map(|m| format!("{} {}: {}", when(m.date), who(thread, m), message_text(m))).collect();
     if lines.is_empty() {
         "(Nook has no messages of this chat yet.)".into()
     } else {
@@ -147,11 +152,14 @@ pub fn search(threads: &[&InboxThread], query: &str) -> String {
         for m in &t.messages {
             let text = fold(&message_text(m));
             if words.iter().all(|w| text.contains(w.as_str())) {
-                found.push((m.date, format!("- {} · {} · {} {}: {}", app_name(&t.app), t.name, when(m.date), who(t, m), clip(&message_text(m), 300))));
+                found.push((
+                    m.date,
+                    format!("- {} · {} · {} {}: {}", app_name(&t.app), t.name, when(m.date), who(t, m), clip(&message_text(m), 300)),
+                ));
             }
         }
     }
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|b| std::cmp::Reverse(b.0));
     found.into_iter().take(30).map(|(_, l)| l).collect::<Vec<_>>().join("\n")
 }
 
@@ -183,7 +191,8 @@ pub fn pick<'a>(threads: &[&'a InboxThread], name: &str, app: Option<&str>) -> P
     if let Some(t) = pool.iter().find(|t| t.id == name.trim() || t.chat_id.as_deref() == Some(name.trim())) {
         return Pick::One(t);
     }
-    let exact: Vec<&InboxThread> = pool.iter().copied().filter(|t| fold(&t.name) == wanted || t.handle.as_deref().is_some_and(|h| fold(h) == wanted)).collect();
+    let exact: Vec<&InboxThread> =
+        pool.iter().copied().filter(|t| fold(&t.name) == wanted || t.handle.as_deref().is_some_and(|h| fold(h) == wanted)).collect();
     let list = if exact.is_empty() { pool.iter().copied().filter(|t| fold(&t.name).contains(&wanted)).collect() } else { exact };
     match list.len() {
         0 => Pick::None,
@@ -201,11 +210,7 @@ pub fn which(name: &str, threads: &[&InboxThread]) -> String {
 /// The chats a call may see, newest first: not those of an app kept on this device for this caller (`withheld`).
 pub fn shown<'a>(inbox: &'a ChatInbox, withheld: &[String]) -> Vec<&'a InboxThread> {
     let now = Utc::now();
-    inbox
-        .sorted()
-        .into_iter()
-        .filter(|t| !withheld.contains(&t.app) && (!t.messages.is_empty() || ChatInbox::is_listed(t, now)))
-        .collect()
+    inbox.sorted().into_iter().filter(|t| !withheld.contains(&t.app) && (!t.messages.is_empty() || ChatInbox::is_listed(t, now))).collect()
 }
 
 #[cfg(test)]
@@ -214,11 +219,15 @@ mod tests {
 
     fn thread(id: &str, app: &str, name: &str, messages: &[(&str, &str, bool)]) -> InboxThread {
         let mut t = InboxThread::new(id, app, name);
-        t.messages = messages.iter().enumerate().map(|(i, (sender, text, mine))| {
-            let mut m = InboxMessage::new(format!("{id}-{i}"), *text, Utc::now() - chrono::Duration::minutes(10 - i as i64), *mine);
-            m.sender = (*sender).into();
-            m
-        }).collect();
+        t.messages = messages
+            .iter()
+            .enumerate()
+            .map(|(i, (sender, text, mine))| {
+                let mut m = InboxMessage::new(format!("{id}-{i}"), *text, Utc::now() - chrono::Duration::minutes(10 - i as i64), *mine);
+                m.sender = (*sender).into();
+                m
+            })
+            .collect();
         t
     }
 

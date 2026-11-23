@@ -27,20 +27,17 @@ use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::System::StationsAndDesktops::{
     CloseDesktop, GetUserObjectInformationW, OpenInputDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_READOBJECTS, UOI_NAME,
 };
-use windows::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-};
+use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::UI::Accessibility::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEINPUT,
-    MOUSE_EVENT_FLAGS, VIRTUAL_KEY,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+    KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE,
+    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEINPUT, MOUSE_EVENT_FLAGS, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetForegroundWindow, GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, SetCursorPos, SetForegroundWindow, ShowWindow, WindowFromPoint, GA_ROOT, GWL_EXSTYLE, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_RESTORE, WS_EX_TOOLWINDOW,
+    GetAncestor, GetForegroundWindow, GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+    SetCursorPos, SetForegroundWindow, ShowWindow, WindowFromPoint, GA_ROOT, GWL_EXSTYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_RESTORE, WS_EX_TOOLWINDOW,
 };
 
 use super::screen::{cloaked, com, display_name, exe_path, title, top_windows, WindowsScreen};
@@ -156,10 +153,7 @@ impl ScreenReader for WindowsUiScreen {
 
 fn process_names(pid: u32) -> (String, String) {
     let path = exe_path(pid).unwrap_or_default();
-    let exe = std::path::Path::new(&path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let exe = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let name = display_name(&path).unwrap_or_else(|| exe.clone());
     (exe, name)
 }
@@ -335,8 +329,7 @@ fn owns_point(x: f64, y: f64, pid: u32) -> bool {
 
 fn uia() -> Result<IUIAutomation, String> {
     com();
-    unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) }
-        .map_err(|e| format!("UI Automation unavailable: {e}"))
+    unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) }.map_err(|e| format!("UI Automation unavailable: {e}"))
 }
 
 // MARK: read_ui (UI Automation tree)
@@ -420,10 +413,8 @@ fn read_ui_elements(pid: u32) -> Result<(String, Vec<Element>), String> {
                 }
 
                 let offscreen = el.CachedIsOffscreen().map(|b| b.as_bool()).unwrap_or(false);
-                let inside = rect.right > win_rect.left
-                    && rect.left < win_rect.right
-                    && rect.bottom > win_rect.top
-                    && rect.top < win_rect.bottom;
+                let inside =
+                    rect.right > win_rect.left && rect.left < win_rect.right && rect.bottom > win_rect.top && rect.top < win_rect.bottom;
                 let visible = !offscreen && inside;
                 if !visible {
                     if offscreen_count >= MAX_OFFSCREEN {
@@ -535,13 +526,7 @@ fn focused_label_for_pid(pid: u32) -> Option<String> {
 
 fn focused_is_password() -> bool {
     let Ok(automation) = uia() else { return false };
-    unsafe {
-        automation
-            .GetFocusedElement()
-            .ok()
-            .and_then(|el| el.CurrentIsPassword().ok())
-            .is_some_and(|b| b.as_bool())
-    }
+    unsafe { automation.GetFocusedElement().ok().and_then(|el| el.CurrentIsPassword().ok()).is_some_and(|b| b.as_bool()) }
 }
 
 /// Attempts to scroll an offscreen element into view via `IUIAutomationScrollItemPattern` and returns its new center.
@@ -595,18 +580,14 @@ fn virtual_coords(x: f64, y: f64) -> (i32, i32) {
 fn mouse_input(dx: i32, dy: i32, data: u32, flags: MOUSE_EVENT_FLAGS) -> INPUT {
     INPUT {
         r#type: INPUT_MOUSE,
-        Anonymous: INPUT_0 {
-            mi: MOUSEINPUT { dx, dy, mouseData: data, dwFlags: flags, time: 0, dwExtraInfo: NOOK_MARKER },
-        },
+        Anonymous: INPUT_0 { mi: MOUSEINPUT { dx, dy, mouseData: data, dwFlags: flags, time: 0, dwExtraInfo: NOOK_MARKER } },
     }
 }
 
 fn key_input(vk: u16, scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
     INPUT {
         r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT { wVk: VIRTUAL_KEY(vk), wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: NOOK_MARKER },
-        },
+        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VIRTUAL_KEY(vk), wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: NOOK_MARKER } },
     }
 }
 
@@ -635,11 +616,7 @@ fn move_mouse(x: f64, y: f64) -> Result<(), String> {
 fn send_click(x: f64, y: f64, right: bool, double: bool) -> Result<(), String> {
     move_mouse(x, y)?;
     std::thread::sleep(Duration::from_millis(25));
-    let (down, up) = if right {
-        (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)
-    } else {
-        (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
-    };
+    let (down, up) = if right { (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP) } else { (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP) };
     send_inputs(&[mouse_input(0, 0, 0, down), mouse_input(0, 0, 0, up)])?;
     if double {
         std::thread::sleep(Duration::from_millis(45));
@@ -702,11 +679,7 @@ fn send_key_combo(combo: &KeyCombo) -> Result<(), String> {
     inputs.push(key_input(combo.code, 0, key_flags | KEYEVENTF_KEYUP));
     for &m in combo.modifiers.iter().rev() {
         let vk = modifier_vk(m);
-        let flags = if is_extended_vk(vk) {
-            KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP
-        } else {
-            KEYEVENTF_KEYUP
-        };
+        let flags = if is_extended_vk(vk) { KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP } else { KEYEVENTF_KEYUP };
         inputs.push(key_input(vk, 0, flags));
     }
     send_inputs(&inputs)
@@ -791,11 +764,7 @@ fn ensure_foreground(pid: u32, hwnd: HWND) -> Result<(), String> {
         bring_to_front(hwnd);
     }
     if foreground_pid() != Some(pid) {
-        return Err(tr(
-            "De app kon niet naar de voorgrond worden gehaald.",
-            "The app could not be brought to the front.",
-        )
-        .into());
+        return Err(tr("De app kon niet naar de voorgrond worden gehaald.", "The app could not be brought to the front.").into());
     }
     Ok(())
 }
@@ -810,10 +779,7 @@ fn perform_step(pid: u32, step: &Step, target: Option<&Element>, to: Option<&Ele
     // Open a Windows Settings page (`ms-settings:...`) without needing a pre-existing window first.
     if step.action == Action::Open {
         if let Some(url) = step.url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
-            std::process::Command::new("explorer.exe")
-                .arg(url)
-                .spawn()
-                .map_err(|e| format!("Could not open {url}: {e}"))?;
+            std::process::Command::new("explorer.exe").arg(url).spawn().map_err(|e| format!("Could not open {url}: {e}"))?;
             std::thread::sleep(Duration::from_millis(350));
             return Ok(ui_control::step_summary(step));
         }
@@ -836,11 +802,7 @@ fn perform_step(pid: u32, step: &Step, target: Option<&Element>, to: Option<&Ele
         Action::Click | Action::DoubleClick | Action::RightClick => {
             if let Some(el) = target {
                 if !el.enabled {
-                    return Err(trf(
-                        "“{label}” is uitgeschakeld.",
-                        "“{label}” is disabled.",
-                        &[("label", &el.label)],
-                    ));
+                    return Err(trf("“{label}” is uitgeschakeld.", "“{label}” is disabled.", &[("label", &el.label)]));
                 }
             }
             let (x, y) = resolve_point(pid, target, step.x, step.y)?;
@@ -887,18 +849,10 @@ fn perform_step(pid: u32, step: &Step, target: Option<&Element>, to: Option<&Ele
             }
             if let Some(el) = target {
                 if el.secure {
-                    return Err(tr(
-                        "Nook typt nooit in wachtwoordvelden.",
-                        "Nook never types into password fields.",
-                    )
-                    .into());
+                    return Err(tr("Nook typt nooit in wachtwoordvelden.", "Nook never types into password fields.").into());
                 }
                 if !el.enabled {
-                    return Err(trf(
-                        "“{label}” is uitgeschakeld.",
-                        "“{label}” is disabled.",
-                        &[("label", &el.label)],
-                    ));
+                    return Err(trf("“{label}” is uitgeschakeld.", "“{label}” is disabled.", &[("label", &el.label)]));
                 }
                 let (x, y) = resolve_point(pid, Some(el), None, None)?;
                 ensure_point_owned(x, y, pid)?;
@@ -907,11 +861,7 @@ fn perform_step(pid: u32, step: &Step, target: Option<&Element>, to: Option<&Ele
             }
             ensure_foreground(pid, hwnd)?;
             if focused_is_password() {
-                return Err(tr(
-                    "Nook typt nooit in wachtwoordvelden.",
-                    "Nook never types into password fields.",
-                )
-                .into());
+                return Err(tr("Nook typt nooit in wachtwoordvelden.", "Nook never types into password fields.").into());
             }
             if step.replace {
                 if let Some(select_all) = ui_control::parse_keys("ctrl+a") {

@@ -78,9 +78,8 @@ fn resolve_target_app(
 ) -> Result<RunningApp, String> {
     let wanted = query.trim();
     if wanted.is_empty() {
-        let front = screen
-            .active_app()
-            .ok_or_else(|| tr("Geen actieve app gevonden om te lezen.", "No active app found to read.").to_string())?;
+        let front =
+            screen.active_app().ok_or_else(|| tr("Geen actieve app gevonden om te lezen.", "No active app found to read.").to_string())?;
         if ui_control::is_blocked_app(&front.name) || ui_control::is_blocked_app(&front.id) {
             return Err(blocked_error(&front.name));
         }
@@ -138,12 +137,8 @@ fn read_ui_for_app(
     let mut description = ui_control::describe(&target.name, title_opt, &elements, ui_control::DEFAULT_DESCRIBE_LIMIT);
     if ui_control::needs_seen_text(&elements) {
         if let Ok(sections) = screen.read_app(&target.name, 3_000) {
-            let text_block: String = sections
-                .into_iter()
-                .map(|(_, body)| body.trim().to_string())
-                .filter(|b| !b.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let text_block: String =
+                sections.into_iter().map(|(_, body)| body.trim().to_string()).filter(|b| !b.is_empty()).collect::<Vec<_>>().join("\n");
             if !text_block.is_empty() {
                 let clipped: String = text_block.chars().take(2_500).collect();
                 description.push_str("\n\nVisible text (fallback):\n");
@@ -184,15 +179,11 @@ fn execute_control_ui_with(
     state.check_and_record(CONTROL_TOOL, input).map_err(str::to_string)?;
 
     let steps = ui_control::steps(&input["steps"]);
-    let opens_settings_url = steps
-        .first()
-        .is_some_and(|s| s.action == ui_control::Action::Open && s.url.as_deref().is_some_and(|u| !u.trim().is_empty()));
+    let opens_settings_url =
+        steps.first().is_some_and(|s| s.action == ui_control::Action::Open && s.url.as_deref().is_some_and(|u| !u.trim().is_empty()));
 
     let target_app = if opens_settings_url {
-        match resolve_target_app(screen, system, &app_name, false, Duration::ZERO) {
-            Ok(found) => Some(found),
-            Err(_) => None,
-        }
+        resolve_target_app(screen, system, &app_name, false, Duration::ZERO).ok()
     } else {
         Some(resolve_target_app(screen, system, &app_name, can_open_apps, settle)?)
     };
@@ -216,13 +207,15 @@ fn execute_control_ui_with(
                 Some(label) => {
                     let found = ui_control::find(label, step.role.as_deref(), step.index, &elements)
                         .map_err(|e| format!("Step {}: {e}", idx + 1))?;
-                    if !found.enabled && matches!(
-                        step.action,
-                        ui_control::Action::Click
-                            | ui_control::Action::DoubleClick
-                            | ui_control::Action::RightClick
-                            | ui_control::Action::Type
-                    ) {
+                    if !found.enabled
+                        && matches!(
+                            step.action,
+                            ui_control::Action::Click
+                                | ui_control::Action::DoubleClick
+                                | ui_control::Action::RightClick
+                                | ui_control::Action::Type
+                        )
+                    {
                         return Err(format!(
                             "Step {}: {}",
                             idx + 1,
@@ -241,9 +234,7 @@ fn execute_control_ui_with(
                 None => None,
             };
             let to = match step.to_element.as_deref() {
-                Some(label) => Some(
-                    ui_control::find(label, None, None, &elements).map_err(|e| format!("Step {}: {e}", idx + 1))?,
-                ),
+                Some(label) => Some(ui_control::find(label, None, None, &elements).map_err(|e| format!("Step {}: {e}", idx + 1))?),
                 None => None,
             };
             (target, to)
@@ -300,12 +291,8 @@ fn execute_menu_command_with(
             let fresh = read_ui_snapshot_for_pid(screen, &target.name, target.pid);
             Ok(state.after_window(&summary, &fresh))
         }
-        MenuCommandOutcome::Disabled => {
-            Err(format!("{joined} is not available in {} right now (nothing selected?).", target.name))
-        }
-        MenuCommandOutcome::NotFound => {
-            Err(format!("{} has no menu item {joined}. Check the path with {LIST_MENU_TOOL}.", target.name))
-        }
+        MenuCommandOutcome::Disabled => Err(format!("{joined} is not available in {} right now (nothing selected?).", target.name)),
+        MenuCommandOutcome::NotFound => Err(format!("{} has no menu item {joined}. Check the path with {LIST_MENU_TOOL}.", target.name)),
     }
 }
 
@@ -539,13 +526,7 @@ mod tests {
             Self {
                 apps: vec![
                     RunningApp { name: "Edge".into(), id: "msedge".into(), pid: 42, frontmost: true, title: "Shop".into() },
-                    RunningApp {
-                        name: "PowerShell".into(),
-                        id: "pwsh".into(),
-                        pid: 99,
-                        frontmost: false,
-                        title: "Admin".into(),
-                    },
+                    RunningApp { name: "PowerShell".into(), id: "pwsh".into(), pid: 99, frontmost: false, title: "Admin".into() },
                 ],
                 window_title: "Shop".into(),
                 elements: Mutex::new(elements),
@@ -587,18 +568,8 @@ mod tests {
         fn ui_elements(&self, _pid: u32) -> Result<(String, Vec<Element>), String> {
             Ok((self.window_title.clone(), self.elements.lock().unwrap().clone()))
         }
-        fn ui_perform(
-            &self,
-            _pid: u32,
-            step: &Step,
-            target: Option<&Element>,
-            _to: Option<&Element>,
-        ) -> Result<String, String> {
-            self.performed.lock().unwrap().push(format!(
-                "{}:{}",
-                step.action.name(),
-                target.map(|e| e.label.as_str()).unwrap_or("")
-            ));
+        fn ui_perform(&self, _pid: u32, step: &Step, target: Option<&Element>, _to: Option<&Element>) -> Result<String, String> {
+            self.performed.lock().unwrap().push(format!("{}:{}", step.action.name(), target.map(|e| e.label.as_str()).unwrap_or("")));
             if let Some(next) = self.after_elements.lock().unwrap().take() {
                 *self.elements.lock().unwrap() = next;
             }
@@ -640,12 +611,7 @@ mod tests {
         disabled.enabled = false;
         let mut password = el("password", "Password", 10.0, 120.0);
         password.secure = true;
-        let screen = FakeScreen::new(vec![
-            el("field", "Search", 10.0, 10.0),
-            el("button", "Next", 10.0, 40.0),
-            disabled,
-            password,
-        ]);
+        let screen = FakeScreen::new(vec![el("field", "Search", 10.0, 10.0), el("button", "Next", 10.0, 40.0), disabled, password]);
         let sys = FakeSystem::new();
         let mut state = RepeatTracker::new();
 
@@ -706,10 +672,7 @@ mod tests {
             GateDecision::Checkpoint(_)
         ));
         let save_menu = json!({"app": "Edge", "path": ["File", "Save As"]});
-        assert_eq!(
-            gate_takeover_call(&screen, Some(42), MENU_TOOL, &save_menu, "Edge: File › Save As", &mut state),
-            GateDecision::Allow
-        );
+        assert_eq!(gate_takeover_call(&screen, Some(42), MENU_TOOL, &save_menu, "Edge: File › Save As", &mut state), GateDecision::Allow);
         let blocked_menu = json!({"app": "PowerShell", "path": ["File", "Exit"]});
         assert!(matches!(
             gate_takeover_call(&screen, Some(99), MENU_TOOL, &blocked_menu, "PowerShell: File › Exit", &mut state),
@@ -744,10 +707,7 @@ mod tests {
             UiControl.summarize(CONTROL_TOOL, &json!({"app": "Edge", "steps": [{"action": "click", "element": "Next"}]})).as_deref(),
             Some("Edge: Click “Next”")
         );
-        assert_eq!(
-            UiControl.summarize(WAIT_TOOL, &json!({"request": "Solve the captcha"})).as_deref(),
-            Some("Solve the captcha")
-        );
+        assert_eq!(UiControl.summarize(WAIT_TOOL, &json!({"request": "Solve the captcha"})).as_deref(), Some("Solve the captcha"));
         assert_eq!(
             UiControl.summarize(MENU_TOOL, &json!({"app": "Notepad", "path": ["File", "Save"]})).as_deref(),
             Some("Notepad: File › Save")

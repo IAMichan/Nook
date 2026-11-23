@@ -211,7 +211,13 @@ read rest
     }
     assert!(manager.wait_idle(id, Duration::from_secs(10)).await);
     let run = manager.run(id).unwrap();
-    assert_eq!(run.status, RunStatus::Completed, "{:?} {:#?}", run.status_detail, manager.timeline(id).iter().map(|e| (e.kind, e.text.clone())).collect::<Vec<_>>());
+    assert_eq!(
+        run.status,
+        RunStatus::Completed,
+        "{:?} {:#?}",
+        run.status_detail,
+        manager.timeline(id).iter().map(|e| (e.kind, e.text.clone())).collect::<Vec<_>>()
+    );
     let retry = std::fs::read_to_string(root.join("retry-prompt.json")).unwrap();
     assert!(retry.contains("Fix the login"));
     assert!(manager.timeline(id).iter().any(|e| e.text.contains("no longer fits")));

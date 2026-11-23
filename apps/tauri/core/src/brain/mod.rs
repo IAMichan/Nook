@@ -41,8 +41,8 @@ pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
 }
 
 pub mod access;
-pub mod action_suggestion;
 pub mod action_gate;
+pub mod action_suggestion;
 pub mod answer_images;
 pub mod app_menu;
 pub mod calendar_invite;
@@ -69,8 +69,8 @@ pub mod network_guard;
 pub mod open_browser_tab;
 pub mod os_settings;
 pub mod prepare;
-pub mod private_brief;
 pub mod privacy_level;
+pub mod private_brief;
 pub mod profile;
 pub mod quality;
 pub mod query_plan;
@@ -84,9 +84,9 @@ pub mod sources;
 pub mod subscription;
 pub mod suggestions;
 pub mod system_report;
+pub mod takeover;
 pub mod task_steps;
 pub mod text;
-pub mod takeover;
 pub mod tool_loop;
 pub mod ui_control;
 pub mod undo;

@@ -762,9 +762,7 @@ pub fn verdict(tool: BridgeTool, caller: &BridgeCaller, command: Option<RiskLeve
     match tool {
         BridgeTool::PullRequestCreate => Verdict::Ask(Reason::Outward),
         // Scheduling and secret requests ALWAYS require explicit user approval, even under Bypass rights.
-        BridgeTool::ScheduleTask | BridgeTool::UpdateScheduledTask | BridgeTool::RunScheduledTaskNow => {
-            Verdict::Ask(Reason::Schedule)
-        }
+        BridgeTool::ScheduleTask | BridgeTool::UpdateScheduledTask | BridgeTool::RunScheduledTaskNow => Verdict::Ask(Reason::Schedule),
         BridgeTool::RequestSecret => Verdict::Ask(Reason::Secret),
         // On a real site a click can send or buy something; `page_verdict` lets the user's own dev server through.
         BridgeTool::BrowserClick | BridgeTool::BrowserType | BridgeTool::SessionOrganize
@@ -1130,10 +1128,7 @@ pub fn parse_schedule_rule_optional(a: &Map<String, Value>) -> Result<Option<Sch
 }
 
 /// Caps scheduled-task permissions: never `Bypass`, never higher than the caller's own rights.
-pub fn parse_schedule_permission(
-    raw: Option<&Value>,
-    caller_permission: Option<PermissionPolicy>,
-) -> Result<PermissionPolicy, String> {
+pub fn parse_schedule_permission(raw: Option<&Value>, caller_permission: Option<PermissionPolicy>) -> Result<PermissionPolicy, String> {
     let requested = match raw.and_then(Value::as_str).map(|s| s.trim().to_ascii_lowercase()).as_deref() {
         None | Some("") | Some("ask") => PermissionPolicy::Ask,
         Some("acceptedits" | "accept_edits") => PermissionPolicy::AcceptEdits,
@@ -1174,12 +1169,7 @@ pub fn parse_schedule_create(
         let fresh = a.get("fresh").and_then(Value::as_bool).unwrap_or(false);
         ScheduledTaskTarget::ExistingSession { id, fresh }
     } else {
-        let folder = a
-            .get("folder")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or(caller_folder);
+        let folder = a.get("folder").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).unwrap_or(caller_folder);
         if folder.is_empty() {
             return Err("Give folder or session_id for the scheduled task.".into());
         }
@@ -1204,7 +1194,7 @@ pub fn parse_schedule_create(
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScheduleUpdate {
     Delete(Uuid),
-    Save(ScheduledTask, Vec<String>),
+    Save(Box<ScheduledTask>, Vec<String>),
 }
 
 /// Applies `update_scheduled_task` arguments to an existing [`ScheduledTask`], returning the updated task and a list
@@ -1241,9 +1231,12 @@ pub fn parse_schedule_update(
         changes.push(format!("rights → {}", if perm == PermissionPolicy::AcceptEdits { "acceptEdits" } else { "ask" }));
     }
     if changes.is_empty() {
-        return Err("Give at least one field to update (title, prompt, rule/every_minutes/daily_at/once_at, enabled, rights) or delete: true.".into());
+        return Err(
+            "Give at least one field to update (title, prompt, rule/every_minutes/daily_at/once_at, enabled, rights) or delete: true."
+                .into(),
+        );
     }
-    Ok(ScheduleUpdate::Save(updated, changes))
+    Ok(ScheduleUpdate::Save(Box::new(updated), changes))
 }
 
 /// Human-readable description of a [`ScheduleRule`].
@@ -1265,11 +1258,7 @@ pub fn describe_schedule_rule(rule: &ScheduleRule) -> String {
                 "every day".to_string()
             } else {
                 let names = ["?", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                weekdays
-                    .iter()
-                    .filter_map(|d| names.get(*d as usize).copied())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                weekdays.iter().filter_map(|d| names.get(*d as usize).copied()).collect::<Vec<_>>().join(", ")
             };
             format!("{hour:02}:{minute:02} ({days})")
         }
@@ -1292,10 +1281,7 @@ pub fn render_scheduled_task(task: &ScheduledTask) -> String {
         ScheduledTaskTarget::Nook => "Nook Chat".into(),
     };
     let next = task.next_run.map(|t| format!(" · next: {}", t.to_rfc3339())).unwrap_or_default();
-    let last = task
-        .last_status
-        .map(|s| format!(" · last: {s:?}").to_ascii_lowercase())
-        .unwrap_or_default();
+    let last = task.last_status.map(|s| format!(" · last: {s:?}").to_ascii_lowercase()).unwrap_or_default();
     format!("- {} · {} · {} · {state} · {target}{next}{last}", task.id, task.title, describe_schedule_rule(&task.rule))
 }
 
@@ -1362,12 +1348,7 @@ pub fn parse_pr_url(raw: &str) -> Option<PullRequestRef> {
                 return None;
             }
             let repo = format!("{}/{}", segments[0], segments[1]);
-            return Some(PullRequestRef {
-                host: PrHost::Github,
-                url: format!("https://github.com/{repo}/pull/{number}"),
-                repo,
-                number,
-            });
+            return Some(PullRequestRef { host: PrHost::Github, url: format!("https://github.com/{repo}/pull/{number}"), repo, number });
         }
         return None;
     }
@@ -1615,18 +1596,9 @@ pub fn parse_adb_running_devices(output: &str) -> Vec<AndroidDevice> {
             continue;
         }
         let serial = parts[0];
-        let model = parts
-            .iter()
-            .skip(2)
-            .find_map(|p| p.strip_prefix("model:"))
-            .map(|m| m.replace('_', " "));
+        let model = parts.iter().skip(2).find_map(|p| p.strip_prefix("model:")).map(|m| m.replace('_', " "));
         let name = model.unwrap_or_else(|| serial.to_string());
-        out.push(AndroidDevice {
-            id: format!("{ANDROID_ID_PREFIX}:{serial}"),
-            name,
-            running: true,
-            serial: Some(serial.to_string()),
-        });
+        out.push(AndroidDevice { id: format!("{ANDROID_ID_PREFIX}:{serial}"), name, running: true, serial: Some(serial.to_string()) });
     }
     out
 }
@@ -1636,23 +1608,13 @@ pub fn parse_android_avds(output: &str, running_names: &std::collections::BTreeS
     let mut out = Vec::new();
     for raw in output.lines() {
         let line = raw.trim();
-        if line.is_empty()
-            || line.starts_with("INFO")
-            || line.starts_with("WARNING")
-            || line.starts_with("ERROR")
-            || line.contains('|')
-        {
+        if line.is_empty() || line.starts_with("INFO") || line.starts_with("WARNING") || line.starts_with("ERROR") || line.contains('|') {
             continue;
         }
         if running_names.contains(line) {
             continue;
         }
-        out.push(AndroidDevice {
-            id: format!("android-avd:{line}"),
-            name: line.replace('_', " "),
-            running: false,
-            serial: None,
-        });
+        out.push(AndroidDevice { id: format!("android-avd:{line}"), name: line.replace('_', " "), running: false, serial: None });
     }
     out
 }
@@ -1865,7 +1827,7 @@ mod tests {
         let del = json!({"delete": true}).as_object().unwrap().clone();
         assert_eq!(parse_schedule_update(&del, &task, None).unwrap(), ScheduleUpdate::Delete(task.id));
 
-        let rendered = render_scheduled_tasks(&[saved], false);
+        let rendered = render_scheduled_tasks(std::slice::from_ref(saved.as_ref()), false);
         assert!(rendered.contains("switched off globally") && rendered.contains("Nightly tests"));
     }
 

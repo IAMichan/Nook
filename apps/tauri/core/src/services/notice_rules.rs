@@ -124,7 +124,11 @@ impl QuietHours {
             return false;
         }
         let hour = hour % 24;
-        if from < to { hour >= from && hour < to } else { hour >= from || hour < to }
+        if from < to {
+            hour >= from && hour < to
+        } else {
+            hour >= from || hour < to
+        }
     }
 
     pub fn silences(&self, urgent: bool, hour: u32) -> bool {
@@ -355,14 +359,7 @@ impl NoticeRules {
         watching: bool,
         hour: u32,
     ) -> NoticeDecision {
-        if BotSenderDetector::should_suppress(
-            sender,
-            handle,
-            is_bot_profile,
-            muted_in_app,
-            self.suppress_bots,
-            self.respect_app_mute,
-        ) {
+        if BotSenderDetector::should_suppress(sender, handle, is_bot_profile, muted_in_app, self.suppress_bots, self.respect_app_mute) {
             return NoticeDecision::HistoryOnly;
         }
         self.decide(NoticeSource::Chats, app, false, quiet, watching, hour)
@@ -578,33 +575,18 @@ mod tests {
         rules.set_app(NoticeSource::Chats, "slack", true);
 
         // Bot sender suppressed by default
-        assert_eq!(
-            rules.decide_chat("slack", "slackbot", None, false, false, false, false, 12),
-            NoticeDecision::HistoryOnly
-        );
+        assert_eq!(rules.decide_chat("slack", "slackbot", None, false, false, false, false, 12), NoticeDecision::HistoryOnly);
         // Muted in app suppressed by default
-        assert_eq!(
-            rules.decide_chat("slack", "Anna", None, false, true, false, false, 12),
-            NoticeDecision::HistoryOnly
-        );
+        assert_eq!(rules.decide_chat("slack", "Anna", None, false, true, false, false, 12), NoticeDecision::HistoryOnly);
         // Human sender in unmuted chat shows
-        assert_eq!(
-            rules.decide_chat("slack", "Anna", None, false, false, false, false, 12),
-            NoticeDecision::Show(NoticeStyle::Card)
-        );
+        assert_eq!(rules.decide_chat("slack", "Anna", None, false, false, false, false, 12), NoticeDecision::Show(NoticeStyle::Card));
 
         // Turning off suppress_bots allows bot notifications
         rules.suppress_bots = false;
-        assert_eq!(
-            rules.decide_chat("slack", "slackbot", None, false, false, false, false, 12),
-            NoticeDecision::Show(NoticeStyle::Card)
-        );
+        assert_eq!(rules.decide_chat("slack", "slackbot", None, false, false, false, false, 12), NoticeDecision::Show(NoticeStyle::Card));
 
         // Turning off respect_app_mute allows muted-in-app notifications
         rules.respect_app_mute = false;
-        assert_eq!(
-            rules.decide_chat("slack", "Anna", None, false, true, false, false, 12),
-            NoticeDecision::Show(NoticeStyle::Card)
-        );
+        assert_eq!(rules.decide_chat("slack", "Anna", None, false, true, false, false, 12), NoticeDecision::Show(NoticeStyle::Card));
     }
 }

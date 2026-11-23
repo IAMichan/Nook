@@ -121,7 +121,6 @@ pub fn loudness_passes(samples: &[f32], threshold: f32) -> bool {
     rms >= threshold.max(0.0001)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,4 +184,3 @@ mod tests {
         assert!(loudness_passes(&tone(1, 0.08), DEFAULT_LOUDNESS_THRESHOLD));
     }
 }
-

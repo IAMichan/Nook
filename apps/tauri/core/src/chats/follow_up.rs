@@ -297,7 +297,15 @@ mod tests {
         group.kind = ChatKind::Group;
         let mut scam = turn("s", 6, false, "verify");
         scam.suspicious = true;
-        let turns = vec![turn("a", 8, false, "ok"), turn("b", 5, false, "coming?"), turn("c", 1, false, "new"), turn("d", 6, true, "mine"), turn("e", 24 * 20, false, "old"), group, scam];
+        let turns = vec![
+            turn("a", 8, false, "ok"),
+            turn("b", 5, false, "coming?"),
+            turn("c", 1, false, "new"),
+            turn("d", 6, true, "mine"),
+            turn("e", 24 * 20, false, "old"),
+            group,
+            scam,
+        ];
         let owed: Vec<String> = f.owed(&turns, now()).into_iter().map(|t| t.chat).collect();
         assert_eq!(owed, vec!["b", "a"]);
         let mut snoozed = FollowUps::default();
@@ -320,7 +328,12 @@ mod tests {
     #[test]
     fn scheduled_messages_go_in_time_or_wait_for_an_ok() {
         let mut f = FollowUps::default();
-        let send = |id: &str, chat: &str, mins_ago: i64| ScheduledSend { id: id.into(), chat: chat.into(), text: "hi".into(), send_at: now() - Duration::minutes(mins_ago) };
+        let send = |id: &str, chat: &str, mins_ago: i64| ScheduledSend {
+            id: id.into(),
+            chat: chat.into(),
+            text: "hi".into(),
+            send_at: now() - Duration::minutes(mins_ago),
+        };
         f.schedule(send("1", "a", 1));
         f.schedule(send("2", "a", 300));
         f.schedule(send("3", "gone", 1));
@@ -372,7 +385,12 @@ mod tests {
         // 3. Multi-message gift card scam followed by an innocent nudge ("Hello?").
         let mut multi = InboxThread::new("telegram#scam2", "telegram", "Unknown Boss");
         multi.kind = Some(ChatKind::Person);
-        multi.messages.push(InboxMessage::new("m3a", "Please buy 5 gift cards right now and send the codes.", now() - Duration::hours(6), false));
+        multi.messages.push(InboxMessage::new(
+            "m3a",
+            "Please buy 5 gift cards right now and send the codes.",
+            now() - Duration::hours(6),
+            false,
+        ));
         multi.messages.push(InboxMessage::new("m3b", "Hello?", now() - Duration::hours(5), false));
 
         // 4. Legitimate friend asking a question.

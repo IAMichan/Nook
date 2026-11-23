@@ -357,11 +357,7 @@ pub fn find(id_or_uri: &str) -> Option<&'static SettingsPane> {
     if needle.is_empty() {
         return None;
     }
-    ALL.iter().find(|p| {
-        p.id.eq_ignore_ascii_case(&needle)
-            || p.uri.eq_ignore_ascii_case(&needle)
-            || p.name.to_lowercase() == needle
-    })
+    ALL.iter().find(|p| p.id.eq_ignore_ascii_case(&needle) || p.uri.eq_ignore_ascii_case(&needle) || p.name.to_lowercase() == needle)
 }
 
 /// The settings pages that best match a task description, scored by keyword and control matches.
@@ -370,10 +366,7 @@ pub fn matching(task: &str, limit: usize) -> Vec<&'static SettingsPane> {
         return Vec::new();
     }
     let low = task.to_lowercase();
-    let words: Vec<&str> = low
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
+    let words: Vec<&str> = low.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
 
     let mut scored: Vec<(&'static SettingsPane, i32)> = ALL
         .iter()
@@ -399,7 +392,7 @@ pub fn matching(task: &str, limit: usize) -> Vec<&'static SettingsPane> {
         })
         .collect();
 
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|b| std::cmp::Reverse(b.1));
     scored.into_iter().take(limit).map(|(p, _)| p).collect()
 }
 

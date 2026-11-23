@@ -25,14 +25,26 @@ impl CheckoutPlan {
     /// A branch of the repository itself is fetched by name; a fork's (or an unknown head) by the pull request's own ref.
     pub fn new(repository: &str, number: u64, head_branch: &str, fork: bool) -> Self {
         if !fork && !head_branch.is_empty() {
-            return Self { repository: repository.into(), number, reference: head_branch.into(), branch: head_branch.into(), tracks_origin: true };
+            return Self {
+                repository: repository.into(),
+                number,
+                reference: head_branch.into(),
+                branch: head_branch.into(),
+                tracks_origin: true,
+            };
         }
         Self::pull_ref(repository, number)
     }
 
     /// The pull request's own ref, which a fork's head is only reachable by.
     pub fn pull_ref(repository: &str, number: u64) -> Self {
-        Self { repository: repository.into(), number, reference: format!("pull/{number}/head"), branch: format!("pr-{number}"), tracks_origin: false }
+        Self {
+            repository: repository.into(),
+            number,
+            reference: format!("pull/{number}/head"),
+            branch: format!("pr-{number}"),
+            tracks_origin: false,
+        }
     }
 }
 
@@ -235,14 +247,7 @@ pub mod build_leftovers {
 
     const DEPENDENCY_FOLDERS: &[&str] = &["node_modules", "target", ".next", "dist", ".turbo"];
 
-    const TEST_PACKAGE_PREFIXES: &[&str] = &[
-        "nook-core-tests",
-        "nook-core",
-        "nook-tests",
-        "nook-test",
-        "coretests",
-        "nook-pkg",
-    ];
+    const TEST_PACKAGE_PREFIXES: &[&str] = &["nook-core-tests", "nook-core", "nook-tests", "nook-test", "coretests", "nook-pkg"];
 
     const XCODE_BUILD_PREFIXES: &[&str] = &["nook-dd", "nook-build", "nook-derived", "dd"];
 
@@ -350,16 +355,10 @@ pub mod build_leftovers {
             }
         }
 
-        let settled_norm: HashSet<PathBuf> = roots
-            .settled_worktrees
-            .iter()
-            .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()))
-            .collect();
-        let idle_norm: HashSet<PathBuf> = roots
-            .idle_worktrees
-            .iter()
-            .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()))
-            .collect();
+        let settled_norm: HashSet<PathBuf> =
+            roots.settled_worktrees.iter().map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())).collect();
+        let idle_norm: HashSet<PathBuf> =
+            roots.idle_worktrees.iter().map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())).collect();
 
         for worktree in &roots.worktrees {
             let scratch = worktree.join(".scratch");
@@ -372,11 +371,7 @@ pub mod build_leftovers {
                 }
             }
             let wt_canon = std::fs::canonicalize(worktree).unwrap_or_else(|_| worktree.clone());
-            let build_age = if settled_norm.contains(&wt_canon) {
-                SETTLED_STALE_AFTER
-            } else {
-                STALE_AFTER
-            };
+            let build_age = if settled_norm.contains(&wt_canon) { SETTLED_STALE_AFTER } else { STALE_AFTER };
             let build_dir = worktree.join(".build");
             if let Ok(entries) = std::fs::read_dir(&build_dir) {
                 for entry in entries.flatten() {
@@ -561,9 +556,7 @@ pub mod worktree_archive {
     ];
 
     pub fn default_root() -> PathBuf {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| ".".into());
+        let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| ".".into());
         PathBuf::from(home).join(".nook").join("worktree-archive")
     }
 
@@ -592,7 +585,11 @@ pub mod worktree_archive {
         };
         let s = resolved.replace('\\', "/");
         let trimmed = s.trim_end_matches('/');
-        if trimmed.is_empty() { "/".into() } else { trimmed.into() }
+        if trimmed.is_empty() {
+            "/".into()
+        } else {
+            trimmed.into()
+        }
     }
 
     pub fn relative_path(file: &str, worktree: &str) -> Option<String> {
@@ -639,13 +636,7 @@ pub mod worktree_archive {
         save_with_limits(worktree, root, MAX_BYTES, MAX_TOTAL_BYTES, SystemTime::now())
     }
 
-    pub fn save_with_limits(
-        worktree: &str,
-        root: &Path,
-        max_bytes: u64,
-        max_total_bytes: u64,
-        now: SystemTime,
-    ) -> bool {
+    pub fn save_with_limits(worktree: &str, root: &Path, max_bytes: u64, max_total_bytes: u64, now: SystemTime) -> bool {
         let scratch = Path::new(worktree).join(".scratch");
         if !is_real_directory(&scratch) {
             return false;
@@ -1094,7 +1085,7 @@ mod tests {
         assert_eq!(checkout(&git, &plan, CheckoutMode::Here, &c, &root, &[], "dirty").unwrap(), c);
         assert_eq!(git.current_branch(&c).as_deref(), Some("feature"));
 
-        let found = local_folder(&git, "x/y", &[c.clone()]);
+        let found = local_folder(&git, "x/y", std::slice::from_ref(&c));
         assert!(found.is_none());
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -1153,10 +1144,8 @@ mod tests {
         };
 
         let found = find(&roots, now);
-        let names: std::collections::HashSet<String> = found
-            .iter()
-            .filter_map(|f| f.path.file_name().map(|n| n.to_string_lossy().into_owned()))
-            .collect();
+        let names: std::collections::HashSet<String> =
+            found.iter().filter_map(|f| f.path.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
         assert_eq!(names, ["nook-core-tests.abc".to_string(), "nook-dd-feature".to_string()].into_iter().collect());
 
         // Idle worktree dependency folders
@@ -1246,4 +1235,3 @@ mod tests {
         assert!(!follows(true, "/w/new", &["/w/old/a.swift".into(), "/w/newer/b.swift".into()]));
     }
 }
-

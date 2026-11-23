@@ -99,7 +99,9 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
     }
 }
 
-static WA_VOTES: std::sync::OnceLock<Box<dyn Fn(&str) -> bool + Send + Sync>> = std::sync::OnceLock::new();
+type WaVotesFn = Box<dyn Fn(&str) -> bool + Send + Sync>;
+
+static WA_VOTES: std::sync::OnceLock<WaVotesFn> = std::sync::OnceLock::new();
 
 /// Whether the WhatsApp account of this chat can vote on a poll (set once the connectors are up).
 fn wa_votes(thread: &InboxThread) -> bool {
@@ -251,7 +253,8 @@ pub async fn chat_inbox_send(app: AppHandle, c: State<'_, Connectors>, key: Stri
         let client = c.chat_helper.bridge.client().ok_or_else(helper_off)?;
         // The helper names a message by its own id; Nook keeps it as `nook-<chat>-<id>`.
         let quoted = reply_to.as_deref().map(|r| network_id(r, &id).unwrap_or_else(|| r.trim_start_matches(ID_PREFIX).to_string()));
-        let mentions = c.chat_helper.bridge.chat(&source, &id).map(|chat| nook_core::chats::chatd::tagged(&text, &chat)).unwrap_or_default();
+        let mentions =
+            c.chat_helper.bridge.chat(&source, &id).map(|chat| nook_core::chats::chatd::tagged(&text, &chat)).unwrap_or_default();
         client.send_tagging(&id, &text, quoted.as_deref(), &mentions).await?;
         c.chat_helper.bridge.changed(&id, None);
     }
@@ -278,7 +281,8 @@ pub async fn chat_inbox_send_file(
 ) -> Res<()> {
     use base64::Engine;
     let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(base64.as_bytes()).map_err(|_| "The file could not be read.".to_string())?;
+    let bytes =
+        base64::engine::general_purpose::STANDARD.decode(base64.as_bytes()).map_err(|_| "The file could not be read.".to_string())?;
     if bytes.len() > 100 * 1024 * 1024 {
         return Err("The file is larger than 100 MB.".into());
     }
@@ -292,7 +296,8 @@ pub async fn chat_inbox_send_file(
     }
     if source == whatsapp::APP {
         use nook_core::connectors::whatsapp::provider::{FileKind, OutgoingFile};
-        let file = OutgoingFile { kind: FileKind::of(&mime, voice.unwrap_or(false)), name: &name, mime: &mime, bytes: &bytes, caption: &caption };
+        let file =
+            OutgoingFile { kind: FileKind::of(&mime, voice.unwrap_or(false)), name: &name, mime: &mime, bytes: &bytes, caption: &caption };
         c.wa(&chat).send_file(&chat, &file, reply_to.as_deref()).await.map_err(|e| e.message)?;
     } else {
         let client = c.chat_helper.bridge.client().ok_or_else(helper_off)?;
@@ -313,11 +318,19 @@ pub async fn chat_inbox_people(c: State<'_, Connectors>, key: String) -> Res<Vec
         return Ok(c.wa(&chat).group_members(&chat).await.into_iter().map(|(_, name)| name).filter(|n| !n.is_empty()).collect());
     }
     let chat = c.chat_helper.bridge.chat(&source, &chat);
-    Ok(chat.map(|c| {
-        let mut names: Vec<String> = c.people.iter().filter(|(id, _)| Some(id.as_str()) != c.me.as_deref()).map(|(_, n)| n.clone()).filter(|n| !n.is_empty()).collect();
-        names.sort();
-        names
-    }).unwrap_or_default())
+    Ok(chat
+        .map(|c| {
+            let mut names: Vec<String> = c
+                .people
+                .iter()
+                .filter(|(id, _)| Some(id.as_str()) != c.me.as_deref())
+                .map(|(_, n)| n.clone())
+                .filter(|n| !n.is_empty())
+                .collect();
+            names.sort();
+            names
+        })
+        .unwrap_or_default())
 }
 
 /// Removes the chat from Nook (not from its app); its app brings back only what is newer.
@@ -331,7 +344,14 @@ pub fn chat_inbox_remove(app: AppHandle, c: State<'_, Connectors>, key: String) 
 /// everyone), `deleteForMe`, or `react` (with `text` the emoji, "" to take yours off). WhatsApp through its gateway, the
 /// helper's apps through the helper; deleting for you stays in Nook for the helper's apps.
 #[tauri::command]
-pub async fn chat_inbox_message(app: AppHandle, c: State<'_, Connectors>, key: String, message: String, step: String, text: Option<String>) -> Res<()> {
+pub async fn chat_inbox_message(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    message: String,
+    step: String,
+    text: Option<String>,
+) -> Res<()> {
     let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
     let text = text.unwrap_or_default();
     if source == whatsapp::APP {
@@ -381,13 +401,20 @@ pub async fn chat_inbox_message(app: AppHandle, c: State<'_, Connectors>, key: S
 /// Sends a poll you wrote (`ChatPollForm`), where the chat's app takes one: WhatsApp's gateways. The helper's apps have
 /// no polls another app can send.
 #[tauri::command]
-pub async fn chat_inbox_send_poll(app: AppHandle, c: State<'_, Connectors>, key: String, poll: nook_core::chats::poll::PollDraft) -> Res<()> {
+pub async fn chat_inbox_send_poll(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    poll: nook_core::chats::poll::PollDraft,
+) -> Res<()> {
     let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
     if let Some(problem) = poll.problem() {
         return Err(serde_json::to_value(problem).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default());
     }
     if source != whatsapp::APP {
-        return Err(nook_core::i18n::tr("Deze app kan vanuit Nook geen peiling ontvangen.", "This app cannot take a poll from Nook.").into());
+        return Err(
+            nook_core::i18n::tr("Deze app kan vanuit Nook geen peiling ontvangen.", "This app cannot take a poll from Nook.").into()
+        );
     }
     c.wa(&chat).send_poll(&chat, &poll).await.map_err(|e| e.message)?;
     changed(&app);
@@ -404,7 +431,10 @@ pub async fn chat_inbox_vote(app: AppHandle, c: State<'_, Connectors>, key: Stri
     } else {
         let net = network_id(&message, &chat).unwrap_or_else(|| message.clone());
         let client = c.chat_helper.bridge.client().ok_or_else(helper_off)?;
-        client.vote(&chat, &net, &choice).await.map_err(|_| nook_core::i18n::tr("De stem kwam niet aan.", "The vote did not go through.").to_string())?;
+        client
+            .vote(&chat, &net, &choice)
+            .await
+            .map_err(|_| nook_core::i18n::tr("De stem kwam niet aan.", "The vote did not go through.").to_string())?;
         c.env.chats.with(|inbox| inbox.vote_mine(&key, &message, &choice));
         c.chat_helper.bridge.changed(&chat, Some(&net));
     }
@@ -432,7 +462,14 @@ pub async fn chat_inbox_older(app: AppHandle, c: State<'_, Connectors>, key: Str
 
 /// Pins, mutes or archives the chat in its app itself (`ChatAbilities`), where its app lets Nook: the helper's apps.
 #[tauri::command]
-pub async fn chat_inbox_in_app(app: AppHandle, c: State<'_, Connectors>, key: String, pinned: Option<bool>, muted: Option<bool>, archived: Option<bool>) -> Res<()> {
+pub async fn chat_inbox_in_app(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    pinned: Option<bool>,
+    muted: Option<bool>,
+    archived: Option<bool>,
+) -> Res<()> {
     use nook_core::chats::ChatAction;
     let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
     let abilities = abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
@@ -497,7 +534,19 @@ fn transcript(c: &Connectors, key: &str) -> Option<(String, String, String, bool
         let kept: Vec<&nook_core::chats::InboxMessage> = t.messages.iter().filter(|m| !m.deleted).collect();
         let lines: Vec<String> = kept[kept.len().saturating_sub(30)..]
             .iter()
-            .map(|m| format!("{}: {}", if m.from_me { "You" } else if m.sender.is_empty() { t.name.as_str() } else { m.sender.as_str() }, if m.text.is_empty() { "(a file)" } else { m.text.as_str() }))
+            .map(|m| {
+                format!(
+                    "{}: {}",
+                    if m.from_me {
+                        "You"
+                    } else if m.sender.is_empty() {
+                        t.name.as_str()
+                    } else {
+                        m.sender.as_str()
+                    },
+                    if m.text.is_empty() { "(a file)" } else { m.text.as_str() }
+                )
+            })
             .collect();
         let last_is_theirs = t.messages.last().is_some_and(|m| !m.from_me);
         Some((super::notify::app_name(&t.app).to_string(), t.name.clone(), lines.join("\n"), last_is_theirs))
@@ -524,45 +573,25 @@ async fn write_message(app: &AppHandle, c: &Connectors, key: &str, instruction: 
 
 /// Edits one of your own messages in `key` (`chat_inbox_edit_message`, CH-47).
 #[tauri::command]
-pub async fn chat_inbox_edit_message(
-    app: AppHandle,
-    c: State<'_, Connectors>,
-    key: String,
-    message: String,
-    text: String,
-) -> Res<()> {
+pub async fn chat_inbox_edit_message(app: AppHandle, c: State<'_, Connectors>, key: String, message: String, text: String) -> Res<()> {
     chat_inbox_message(app, c, key, message, "edit".into(), Some(text)).await
 }
 
 /// Deletes a message for everyone in `key` (`chat_inbox_delete_for_everyone`, CH-47).
 #[tauri::command]
-pub async fn chat_inbox_delete_for_everyone(
-    app: AppHandle,
-    c: State<'_, Connectors>,
-    key: String,
-    message: String,
-) -> Res<()> {
+pub async fn chat_inbox_delete_for_everyone(app: AppHandle, c: State<'_, Connectors>, key: String, message: String) -> Res<()> {
     chat_inbox_message(app, c, key, message, "revoke".into(), None).await
 }
 
 /// Deletes a message for you alone in `key`, recording it in `ChatHiddenMessages` (`chat_inbox_delete_for_me`, CH-47).
 #[tauri::command]
-pub async fn chat_inbox_delete_for_me(
-    app: AppHandle,
-    c: State<'_, Connectors>,
-    key: String,
-    message: String,
-) -> Res<()> {
+pub async fn chat_inbox_delete_for_me(app: AppHandle, c: State<'_, Connectors>, key: String, message: String) -> Res<()> {
     chat_inbox_message(app, c, key, message, "deleteForMe".into(), None).await
 }
 
 /// Detailed metadata for one message in `key` (`MessageInfoPopover`, CH-47).
 #[tauri::command]
-pub fn chat_inbox_message_info(
-    c: State<'_, Connectors>,
-    key: String,
-    message: String,
-) -> Option<nook_core::chats::inbox::MessageInfo> {
+pub fn chat_inbox_message_info(c: State<'_, Connectors>, key: String, message: String) -> Option<nook_core::chats::inbox::MessageInfo> {
     c.env.chats.read(|inbox| inbox.message_info(&key, &message))
 }
 
@@ -634,40 +663,27 @@ pub async fn chat_inline_nook(
         if !service::brain_ready(&settings, state.key_for(settings.provider).is_some_and(|k| !k.is_empty())) {
             return Err("Nook has no brain ready to answer with. Choose one in Settings › Brain.".into());
         }
-        let (app_name, name, lines, _) =
-            transcript(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+        let (app_name, name, lines, _) = transcript(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
         let env = crate::commands::chat::brain_env(&app, &settings);
         let system = "You answer the user's question about the chat transcript below concisely and accurately, in the user's language. Do not draft a message to send; answer the user directly in 1–3 sentences.";
         let prompt = format!(
             "{app_name} chat with {name}. The newest messages, oldest first (\"You\" is the user):\n{}\n\nThe user's question about this chat:\n{clean_inst}",
             if lines.is_empty() { "(no messages yet)" } else { &lines }
         );
-        let answer = match tokio::time::timeout(
-            std::time::Duration::from_secs(60),
-            service::complete(&settings, &env, system, &prompt),
-        )
-        .await
-        {
-            Ok(Ok(ans)) => ans.trim().to_string(),
-            Ok(Err(e)) => return Err(e.to_string()),
-            Err(_) => return Err("Nook took too long to answer.".into()),
-        };
+        let answer =
+            match tokio::time::timeout(std::time::Duration::from_secs(60), service::complete(&settings, &env, system, &prompt)).await {
+                Ok(Ok(ans)) => ans.trim().to_string(),
+                Ok(Err(e)) => return Err(e.to_string()),
+                Err(_) => return Err("Nook took too long to answer.".into()),
+            };
         if answer.is_empty() {
             return Err("Nook could not find an answer in this chat.".into());
         }
-        return Ok(InlineNookResult {
-            kind: "answer".into(),
-            text: answer,
-            instruction: clean_inst,
-        });
+        return Ok(InlineNookResult { kind: "answer".into(), text: answer, instruction: clean_inst });
     }
 
     let full_instruction = if !existing.is_empty() {
-        let change = if clean_inst.is_empty() {
-            "Try another version in a similar tone."
-        } else {
-            clean_inst.as_str()
-        };
+        let change = if clean_inst.is_empty() { "Try another version in a similar tone." } else { clean_inst.as_str() };
         format!("Your draft so far:\n{existing}\n\nThe change: {change}")
     } else {
         clean_inst.clone()
@@ -677,11 +693,7 @@ pub async fn chat_inline_nook(
         .await?
         .ok_or_else(|| "Nook could not write a message for this chat.".to_string())?;
 
-    Ok(InlineNookResult {
-        kind: "draft".into(),
-        text,
-        instruction: clean_inst,
-    })
+    Ok(InlineNookResult { kind: "draft".into(), text, instruction: clean_inst })
 }
 
 /// "@nook …" in a chat's field: the message Nook writes from the chat and what you asked, for the field. Never sent.
@@ -694,10 +706,7 @@ pub async fn chat_draft(app: AppHandle, c: State<'_, Connectors>, key: String, i
 /// (`ChatReplySuggestion`); `None` when there is nothing to answer, the chat looks like phishing/scam (CH-39), or no brain.
 #[tauri::command]
 pub async fn chat_suggest_reply(app: AppHandle, c: State<'_, Connectors>, key: String) -> Res<Option<String>> {
-    let allowed = c
-        .env
-        .chats
-        .read(|inbox| inbox.threads.get(&key).is_some_and(nook_core::chats::follow_up::should_suggest_reply));
+    let allowed = c.env.chats.read(|inbox| inbox.threads.get(&key).is_some_and(nook_core::chats::follow_up::should_suggest_reply));
     if !allowed {
         return Ok(None);
     }

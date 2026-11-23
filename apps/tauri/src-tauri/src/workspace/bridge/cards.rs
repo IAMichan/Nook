@@ -76,7 +76,10 @@ pub(super) fn render_page(app: &AppHandle, a: &Map<String, Value>, caller: &Brid
     std::fs::write(&file, html).map_err(|e| format!("Nook could not keep the page: {e}"))?;
     ws.manager.append_event(run.id, cards::page_event(page, &title, &file.to_string_lossy(), request.height));
     audit(app, BridgeTool::RenderPage, caller, &title, "shown");
-    Ok(ToolResult::text(format!("Shown in your timeline as \"{title}\" ({} pt high). The user sees it; it cannot send anything back.", request.height as i64)))
+    Ok(ToolResult::text(format!(
+        "Shown in your timeline as \"{title}\" ({} pt high). The user sees it; it cannot send anything back.",
+        request.height as i64
+    )))
 }
 
 /// The page an event shows, behind its content policy; only from Nook's own page folder.

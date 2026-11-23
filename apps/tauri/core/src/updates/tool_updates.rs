@@ -40,7 +40,7 @@ pub fn save(state: &State) {
 
 /// At most once a day, also across launches (a minute of slack so a tick just before the mark is not skipped).
 pub fn due(last: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
-    last.map_or(true, |last| now - last >= INTERVAL - chrono::Duration::seconds(60))
+    last.is_none_or(|last| now - last >= INTERVAL - chrono::Duration::seconds(60))
 }
 
 /// GOWA is updated only when Nook's own copy is the one in use.

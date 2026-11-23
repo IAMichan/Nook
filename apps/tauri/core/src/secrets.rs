@@ -125,9 +125,7 @@ impl SecretReference {
         if part.is_empty() || count > 128 || part.starts_with(' ') || part.ends_with(' ') {
             return false;
         }
-        part.chars().all(|c| {
-            (c.is_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-')) && c != '\n' && c != '\r'
-        })
+        part.chars().all(|c| (c.is_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-')) && c != '\n' && c != '\r')
     }
 
     fn is_valid_query(q: &str) -> bool {
@@ -182,31 +180,18 @@ impl OnePasswordConfig {
 
     /// Environment variables to set and remove when spawning `op`.
     pub fn environment(&self) -> (HashMap<String, String>, Vec<String>) {
-        let all = [
-            "OP_SERVICE_ACCOUNT_TOKEN".to_string(),
-            "OP_CONNECT_HOST".to_string(),
-            "OP_CONNECT_TOKEN".to_string(),
-        ];
+        let all = ["OP_SERVICE_ACCOUNT_TOKEN".to_string(), "OP_CONNECT_HOST".to_string(), "OP_CONNECT_TOKEN".to_string()];
         match self.mode() {
             OnePasswordMode::ServiceAccount => {
                 let mut set = HashMap::new();
-                set.insert(
-                    "OP_SERVICE_ACCOUNT_TOKEN".to_string(),
-                    self.service_account_token.clone().unwrap_or_default(),
-                );
+                set.insert("OP_SERVICE_ACCOUNT_TOKEN".to_string(), self.service_account_token.clone().unwrap_or_default());
                 let removed = all.into_iter().filter(|k| k != "OP_SERVICE_ACCOUNT_TOKEN").collect();
                 (set, removed)
             }
             OnePasswordMode::Connect => {
                 let mut set = HashMap::new();
-                set.insert(
-                    "OP_CONNECT_HOST".to_string(),
-                    self.connect_host.clone().unwrap_or_default(),
-                );
-                set.insert(
-                    "OP_CONNECT_TOKEN".to_string(),
-                    self.connect_token.clone().unwrap_or_default(),
-                );
+                set.insert("OP_CONNECT_HOST".to_string(), self.connect_host.clone().unwrap_or_default());
+                set.insert("OP_CONNECT_TOKEN".to_string(), self.connect_token.clone().unwrap_or_default());
                 (set, vec!["OP_SERVICE_ACCOUNT_TOKEN".to_string()])
             }
             OnePasswordMode::Desktop => (HashMap::new(), all.to_vec()),
@@ -262,11 +247,7 @@ pub struct OnePasswordStatus {
     pub account: Option<String>,
 }
 
-pub type OpRunner = Arc<
-    dyn Fn(&str, &[String], &HashMap<String, String>, &[String]) -> Option<OnePasswordOutput>
-        + Send
-        + Sync,
->;
+pub type OpRunner = Arc<dyn Fn(&str, &[String], &HashMap<String, String>, &[String]) -> Option<OnePasswordOutput> + Send + Sync>;
 
 /// 1Password CLI (`op`) secret provider (`OnePassword` / `SecretProviders` on macOS, CH-97).
 pub struct OnePasswordProvider {
@@ -281,9 +262,7 @@ impl Default for OnePasswordProvider {
 
 impl OnePasswordProvider {
     pub fn new() -> Self {
-        Self {
-            runner: Arc::new(Self::process_runner),
-        }
+        Self { runner: Arc::new(Self::process_runner) }
     }
 
     pub fn with_runner(runner: OpRunner) -> Self {
@@ -296,12 +275,8 @@ impl OnePasswordProvider {
         if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
             candidates.push(format!("{home}/.local/bin/op"));
             candidates.push(format!("{home}/bin/op"));
-            candidates.push(format!(
-                "{home}\\AppData\\Local\\Microsoft\\WinGet\\Links\\op.exe"
-            ));
-            candidates.push(format!(
-                "{home}\\AppData\\Local\\Programs\\1Password CLI\\op.exe"
-            ));
+            candidates.push(format!("{home}\\AppData\\Local\\Microsoft\\WinGet\\Links\\op.exe"));
+            candidates.push(format!("{home}\\AppData\\Local\\Programs\\1Password CLI\\op.exe"));
             candidates.push(format!("{home}\\scoop\\shims\\op.exe"));
         }
         candidates.extend([
@@ -318,11 +293,7 @@ impl OnePasswordProvider {
         }
         // Fallback: check if `op` is on PATH by running `op --version`
         let cmd = if cfg!(windows) { "op.exe" } else { "op" };
-        if Command::new(cmd)
-            .arg("--version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-        {
+        if Command::new(cmd).arg("--version").output().is_ok_and(|o| o.status.success()) {
             return Some(cmd.to_string());
         }
         None
@@ -330,10 +301,7 @@ impl OnePasswordProvider {
 
     /// Builds a config from a `SecretStore` (reading tokens and enabled state).
     pub fn config_from_store(store: &dyn SecretStore) -> OnePasswordConfig {
-        let enabled = store
-            .read(OP_ENABLED_KEY)
-            .map(|v| v != "false" && v != "0")
-            .unwrap_or(true);
+        let enabled = store.read(OP_ENABLED_KEY).map(|v| v != "false" && v != "0").unwrap_or(true);
         OnePasswordConfig {
             executable: Self::locate_op(),
             service_account_token: store.read(OP_SERVICE_ACCOUNT_KEY),
@@ -362,25 +330,15 @@ impl OnePasswordProvider {
             version,
             enabled: config.enabled,
             mode: config.mode(),
-            has_service_account_token: config
-                .service_account_token
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty()),
-            has_connect_token: config
-                .connect_token
-                .as_deref()
-                .is_some_and(|s| !s.trim().is_empty()),
+            has_service_account_token: config.service_account_token.as_deref().is_some_and(|s| !s.trim().is_empty()),
+            has_connect_token: config.connect_token.as_deref().is_some_and(|s| !s.trim().is_empty()),
             connect_host: config.connect_host.clone().unwrap_or_default(),
             account: None,
         }
     }
 
     /// Reads the secret behind `reference` via `op read --no-newline <ref>`.
-    pub fn read(
-        &self,
-        reference: &SecretReference,
-        config: &OnePasswordConfig,
-    ) -> Result<String, OnePasswordFailure> {
+    pub fn read(&self, reference: &SecretReference, config: &OnePasswordConfig) -> Result<String, OnePasswordFailure> {
         if !config.enabled {
             return Err(OnePasswordFailure::Disabled);
         }
@@ -388,11 +346,7 @@ impl OnePasswordProvider {
             return Err(OnePasswordFailure::NotInstalled);
         };
         let (set, removed) = config.environment();
-        let args = vec![
-            "read".to_string(),
-            "--no-newline".to_string(),
-            reference.text(),
-        ];
+        let args = vec!["read".to_string(), "--no-newline".to_string(), reference.text()];
         let Some(output) = (self.runner)(exe, &args, &set, &removed) else {
             return Err(OnePasswordFailure::TimedOut);
         };
@@ -420,11 +374,7 @@ impl OnePasswordProvider {
     }
 
     /// Resolves a map of key-value pairs where any `op://` reference is replaced by its resolved secret.
-    pub fn resolve_all(
-        &self,
-        values: &HashMap<String, String>,
-        config: &OnePasswordConfig,
-    ) -> Result<HashMap<String, String>, String> {
+    pub fn resolve_all(&self, values: &HashMap<String, String>, config: &OnePasswordConfig) -> Result<HashMap<String, String>, String> {
         if !values.values().any(|v| v.trim().starts_with("op://")) {
             return Ok(values.clone());
         }
@@ -443,11 +393,7 @@ impl OnePasswordProvider {
     }
 
     /// Checks that `op` can sign in (`op whoami`, or `op read` when a `probe` reference is given).
-    pub fn check(
-        &self,
-        config: &OnePasswordConfig,
-        probe: Option<&SecretReference>,
-    ) -> Result<String, OnePasswordFailure> {
+    pub fn check(&self, config: &OnePasswordConfig, probe: Option<&SecretReference>) -> Result<String, OnePasswordFailure> {
         if !config.enabled {
             return Err(OnePasswordFailure::Disabled);
         }
@@ -479,25 +425,13 @@ impl OnePasswordProvider {
 
     /// Strips `[ERROR] YYYY/MM/DD HH:MM:SS` prefix from `op` stderr and truncates to 200 chars.
     pub fn reason(stderr: &str) -> String {
-        let line = stderr
-            .lines()
-            .map(str::trim)
-            .find(|l| !l.is_empty())
-            .unwrap_or("");
+        let line = stderr.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
         let mut rest = line.strip_prefix("[ERROR]").unwrap_or(line).trim_start();
         // Strip optional date `YYYY/MM/DD` and time `HH:MM:SS`
-        if rest.len() >= 10
-            && rest.as_bytes()[4] == b'/'
-            && rest.as_bytes()[7] == b'/'
-            && rest[..4].chars().all(|c| c.is_ascii_digit())
-        {
+        if rest.len() >= 10 && rest.as_bytes()[4] == b'/' && rest.as_bytes()[7] == b'/' && rest[..4].chars().all(|c| c.is_ascii_digit()) {
             rest = rest[10..].trim_start();
         }
-        if rest.len() >= 8
-            && rest.as_bytes()[2] == b':'
-            && rest.as_bytes()[5] == b':'
-            && rest[..2].chars().all(|c| c.is_ascii_digit())
-        {
+        if rest.len() >= 8 && rest.as_bytes()[2] == b':' && rest.as_bytes()[5] == b':' && rest[..2].chars().all(|c| c.is_ascii_digit()) {
             rest = rest[8..].trim_start();
         }
         if rest.is_empty() {
@@ -588,34 +522,20 @@ mod tests {
 
     #[test]
     fn reference_is_read_with_op_read_and_modes_configure_env() {
-        let calls: Arc<Mutex<Vec<(Vec<String>, HashMap<String, String>, Vec<String>)>>> =
-            Arc::new(Mutex::new(Vec::new()));
+        type RecordedCall = (Vec<String>, HashMap<String, String>, Vec<String>);
+        let calls: Arc<Mutex<Vec<RecordedCall>>> = Arc::new(Mutex::new(Vec::new()));
         let calls_clone = calls.clone();
         let provider = OnePasswordProvider::with_runner(Arc::new(move |_, args, env, removed| {
-            calls_clone
-                .lock()
-                .unwrap()
-                .push((args.to_vec(), env.clone(), removed.to_vec()));
-            Some(OnePasswordOutput {
-                status: 0,
-                stdout: b"s3cret".to_vec(),
-                stderr: String::new(),
-            })
+            calls_clone.lock().unwrap().push((args.to_vec(), env.clone(), removed.to_vec()));
+            Some(OnePasswordOutput { status: 0, stdout: b"s3cret".to_vec(), stderr: String::new() })
         }));
 
-        let config = OnePasswordConfig {
-            executable: Some("/opt/homebrew/bin/op".to_string()),
-            enabled: true,
-            ..Default::default()
-        };
+        let config = OnePasswordConfig { executable: Some("/opt/homebrew/bin/op".to_string()), enabled: true, ..Default::default() };
         let value = provider.resolve("op://Private/Stripe/credential", &config).unwrap();
         assert_eq!(value, "s3cret");
         {
             let recorded = calls.lock().unwrap();
-            assert_eq!(
-                recorded[0].0,
-                vec!["read", "--no-newline", "op://Private/Stripe/credential"]
-            );
+            assert_eq!(recorded[0].0, vec!["read", "--no-newline", "op://Private/Stripe/credential"]);
             assert!(recorded[0].1.is_empty());
             assert_eq!(recorded[0].2.len(), 3);
         }
@@ -634,10 +554,7 @@ mod tests {
             enabled: true,
         };
         assert_eq!(service_cfg.mode(), OnePasswordMode::ServiceAccount);
-        assert_eq!(
-            service_cfg.environment().0.get("OP_SERVICE_ACCOUNT_TOKEN").map(String::as_str),
-            Some("ops_x")
-        );
+        assert_eq!(service_cfg.environment().0.get("OP_SERVICE_ACCOUNT_TOKEN").map(String::as_str), Some("ops_x"));
 
         let connect_cfg = OnePasswordConfig {
             executable: Some("op".to_string()),
@@ -655,19 +572,11 @@ mod tests {
             Some(OnePasswordOutput {
                 status: 1,
                 stdout: Vec::new(),
-                stderr: "[ERROR] 2026/11/10 10:00:00 \"Stripe\" isn't an item in the \"Private\" vault\n"
-                    .to_string(),
+                stderr: "[ERROR] 2026/11/10 10:00:00 \"Stripe\" isn't an item in the \"Private\" vault\n".to_string(),
             })
         }));
-        let config = OnePasswordConfig {
-            executable: Some("op".to_string()),
-            enabled: true,
-            ..Default::default()
-        };
+        let config = OnePasswordConfig { executable: Some("op".to_string()), enabled: true, ..Default::default() };
         let err = provider.resolve("op://Private/Stripe/credential", &config).unwrap_err();
-        assert_eq!(
-            err,
-            OnePasswordFailure::Refused("\"Stripe\" isn't an item in the \"Private\" vault".to_string())
-        );
+        assert_eq!(err, OnePasswordFailure::Refused("\"Stripe\" isn't an item in the \"Private\" vault".to_string()));
     }
 }

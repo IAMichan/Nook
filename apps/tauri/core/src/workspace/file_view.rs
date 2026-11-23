@@ -12,8 +12,8 @@ pub const LARGEST_TEXT: u64 = 2 * 1024 * 1024;
 
 /// Files an app shows better than their bytes, whatever they contain.
 const PREVIEW_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp", "ico", "icns", "pdf", "mov", "mp4", "m4v", "mp3",
-    "m4a", "wav", "aiff", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pages", "numbers", "key", "rtf", "zip", "gz", "tar", "dmg",
+    "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp", "ico", "icns", "pdf", "mov", "mp4", "m4v", "mp3", "m4a",
+    "wav", "aiff", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pages", "numbers", "key", "rtf", "zip", "gz", "tar", "dmg",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -59,10 +59,14 @@ pub struct FileView {
 #[serde(tag = "result", rename_all = "camelCase")]
 pub enum FileSaveResult {
     /// Written; the file's new modification time.
-    Saved { modified: Option<u64> },
+    Saved {
+        modified: Option<u64>,
+    },
     /// Someone else wrote the file after it was opened: saving would overwrite that.
     ChangedOnDisk,
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
 }
 
 /// The text of a file that holds text, or `None` for bytes that are not text.
@@ -70,7 +74,10 @@ pub fn decode(data: &[u8], modified: Option<u64>) -> Option<FileEditText> {
     let mut file = FileEditText { modified, ..Default::default() };
     let text = if data.starts_with(&[0xFF, 0xFE]) || data.starts_with(&[0xFE, 0xFF]) {
         let little = data[0] == 0xFF;
-        let units: Vec<u16> = data[2..].chunks_exact(2).map(|c| if little { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) }).collect();
+        let units: Vec<u16> = data[2..]
+            .chunks_exact(2)
+            .map(|c| if little { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
+            .collect();
         file.encoding = if little { FileEncoding::Utf16Le } else { FileEncoding::Utf16Be };
         file.byte_order_mark = true;
         String::from_utf16(&units).ok()?

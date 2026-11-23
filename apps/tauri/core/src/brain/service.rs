@@ -630,7 +630,8 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
     // Een groet heeft geen agenda, mail of scherm nodig: een klein model praat daar anders over in plaats van te antwoorden.
     let lean = small && intent.is_small_talk && request.history.is_empty() && request.screen.is_none();
     // What Nook gathered goes to an external brain filtered by the privacy level (`settings.shielded` on the Mac).
-    let used_context = settings.shielded(&if lean { request.context.lines().next().unwrap_or("").to_string() } else { request.context.clone() });
+    let used_context =
+        settings.shielded(&if lean { request.context.lines().next().unwrap_or("").to_string() } else { request.context.clone() });
     let screen_text = settings.shielded(&request.screen.as_ref().map(|s| s.1.clone()).unwrap_or_default());
     // Alles moet in het venster passen: schermtekst wijkt eerst, dan context, nooit de vraag zelf.
     let budget = profile.prompt_character_budget() as i64
@@ -728,7 +729,14 @@ async fn fill_in(
 /// Proposes steps with these tools without running them (`writeInChat` on the Mac): read tools run in the loop, action
 /// tools become the plan's actions, which only run after the user's click. For the steps suggested from a conversation
 /// (`action_suggestion`).
-pub async fn propose(settings: &Settings, env: &BrainEnv, system: &str, prompt: &str, tools: Vec<LoopTool>, rounds: usize) -> Result<BrainPlan> {
+pub async fn propose(
+    settings: &Settings,
+    env: &BrainEnv,
+    system: &str,
+    prompt: &str,
+    tools: Vec<LoopTool>,
+    rounds: usize,
+) -> Result<BrainPlan> {
     let profile = profile_for(settings, env.memory_gb);
     let mut tool_runner = runner(tools, rounds, 3);
     execute(settings, env, profile, system, prompt, "", &[], &[], false, false, &mut tool_runner, None).await

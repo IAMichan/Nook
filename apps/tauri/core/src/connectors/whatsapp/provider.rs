@@ -65,7 +65,8 @@ fn form(boundary: &str, fields: &[(&str, String)], field: &str, name: &str, mime
     }
     let safe: String = name.chars().filter(|c| !matches!(c, '"' | '\r' | '\n' | '\\')).collect();
     out.extend_from_slice(
-        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{safe}\"\r\nContent-Type: {mime}\r\n\r\n").as_bytes(),
+        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{safe}\"\r\nContent-Type: {mime}\r\n\r\n")
+            .as_bytes(),
     );
     out.extend_from_slice(bytes);
     out.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
@@ -145,7 +146,14 @@ impl WaHttp {
     }
 
     /// A body Nook built itself (a multipart form) with its content type.
-    async fn call_raw(&self, path: &str, query: &[(&str, String)], content_type: &str, body: Vec<u8>, timeout: u64) -> WaResult<(Vec<u8>, u16)> {
+    async fn call_raw(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        content_type: &str,
+        body: Vec<u8>,
+        timeout: u64,
+    ) -> WaResult<(Vec<u8>, u16)> {
         let mut url = self.base.clone();
         let prefix = url.path().trim_matches('/').to_string();
         url.set_path(&if prefix.is_empty() { path.to_string() } else { format!("/{prefix}{path}") });
@@ -251,7 +259,8 @@ pub fn members(list: &Value) -> Vec<(String, String)> {
                 return None;
             }
             let field = |names: &[&str]| names.iter().find_map(|k| non_empty(&p[*k]));
-            let id = field(&["PhoneNumber", "phoneNumber", "JID", "jid", "LID", "Id", "id"]).or_else(|| non_empty(&p["id"]["_serialized"]))?;
+            let id =
+                field(&["PhoneNumber", "phoneNumber", "JID", "jid", "LID", "Id", "id"]).or_else(|| non_empty(&p["id"]["_serialized"]))?;
             let name = field(&["DisplayName", "displayName", "FullName", "Name", "name", "PushName", "pushname"]).unwrap_or_default();
             Some((id, name.trim().to_string()))
         })
@@ -923,8 +932,10 @@ impl Provider {
                 let boundary = format!("nook-{}", uuid::Uuid::new_v4().simple());
                 let body = form(&boundary, &fields, field, file.name, file.mime, file.bytes);
                 let scope = self.scope_id().await?;
-                let (data, code) =
-                    self.http.call_raw(path, &[("device_id", scope)], &format!("multipart/form-data; boundary={boundary}"), body, 120).await?;
+                let (data, code) = self
+                    .http
+                    .call_raw(path, &[("device_id", scope)], &format!("multipart/form-data; boundary={boundary}"), body, 120)
+                    .await?;
                 self.check(&data, code)?;
                 Ok(non_empty(&gowa::results(&data)["message_id"]))
             }
@@ -1000,10 +1011,16 @@ impl Provider {
                 let Ok(data) = self.gowa_scoped("GET", "/group/info", &[("group_id", chat.into())], None).await else { return vec![] };
                 let r = gowa::results(&data);
                 let r = if r["data"].is_object() { r["data"].clone() } else { r };
-                if r["Participants"].is_null() { r["participants"].clone() } else { r["Participants"].clone() }
+                if r["Participants"].is_null() {
+                    r["participants"].clone()
+                } else {
+                    r["Participants"].clone()
+                }
             }
             GatewayKind::Openwa => {
-                let Ok(data) = self.openwa_scoped("GET", &format!("/groups/{}", path_component(chat)), &[], None).await else { return vec![] };
+                let Ok(data) = self.openwa_scoped("GET", &format!("/groups/{}", path_component(chat)), &[], None).await else {
+                    return vec![];
+                };
                 parse(&data)["participants"].clone()
             }
         };
@@ -1251,7 +1268,8 @@ mod tests {
         ])
         .await;
         let provider = Provider::new(GatewayKind::Gowa, &server.url(""), None).unwrap();
-        let file = OutgoingFile { kind: FileKind::of("image/png", false), name: "a.png", mime: "image/png", bytes: b"PNGDATA", caption: " Look " };
+        let file =
+            OutgoingFile { kind: FileKind::of("image/png", false), name: "a.png", mime: "image/png", bytes: b"PNGDATA", caption: " Look " };
         let id = provider.send_file("31622222222@s.whatsapp.net", &file, Some("M1")).await.unwrap();
         assert_eq!(id.as_deref(), Some("F1"));
         let sent = server.requests();

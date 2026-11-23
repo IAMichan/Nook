@@ -48,7 +48,10 @@ pub fn is_video_page(url: &str) -> bool {
     let Ok(u) = url::Url::parse(url) else { return false };
     let host = u.host_str().unwrap_or("").to_lowercase();
     let path = u.path().to_lowercase();
-    host.ends_with("youtube.com") || host == "youtu.be" || host.ends_with("vimeo.com") || host.ends_with("tiktok.com")
+    host.ends_with("youtube.com")
+        || host == "youtu.be"
+        || host.ends_with("vimeo.com")
+        || host.ends_with("tiktok.com")
         || (host.ends_with("instagram.com") && path.starts_with("/reel"))
 }
 
@@ -103,14 +106,27 @@ fn attr(tag: &str, name: &str) -> Option<String> {
 }
 
 fn unescape(text: &str) -> String {
-    text.replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&#x27;", "'").replace("&lt;", "<").replace("&gt;", ">")
+    text.replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
 }
 
 /// An address on the internet: not this computer, not its network, not a link-local or reserved one.
 pub fn is_public(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast()
-            || v4.is_documentation() || v4.octets()[0] == 100 && (64..128).contains(&v4.octets()[1]) || v4.octets()[0] >= 224),
+        IpAddr::V4(v4) => {
+            !(v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.octets()[0] == 100 && (64..128).contains(&v4.octets()[1])
+                || v4.octets()[0] >= 224)
+        }
         IpAddr::V6(v6) => {
             let seg = v6.segments();
             !(v6.is_loopback() || v6.is_unspecified() || (seg[0] & 0xfe00) == 0xfc00 || (seg[0] & 0xffc0) == 0xfe80 || v6.is_multicast())

@@ -142,7 +142,9 @@ pub fn parse_page(a: &Map<String, Value>) -> Result<PageRequest, String> {
     match (html, path) {
         (Some(_), Some(_)) => Err("Give either html or path, not both.".into()),
         (None, Some(path)) => Ok(PageRequest { html: String::new(), title, height, path: Some(path) }),
-        (None, None) => Err("Give the page as html (a complete HTML document or fragment) or as path (an HTML file in your working directory).".into()),
+        (None, None) => {
+            Err("Give the page as html (a complete HTML document or fragment) or as path (an HTML file in your working directory).".into())
+        }
         (Some(html), None) => {
             if html.len() > MAX_HTML_BYTES {
                 return Err(format!(
@@ -211,7 +213,10 @@ mod tests {
     #[test]
     fn a_suggestion_needs_a_prompt_and_titles_itself() {
         assert!(SessionSuggestion::parse(&args(json!({"title": "x"}))).unwrap_err().contains("Give prompt"));
-        let s = SessionSuggestion::parse(&args(json!({"prompt": "Fix the flaky\nlogin test in auth.spec.ts", "summary": "It fails\n one in five runs.", "worktree": true}))).unwrap();
+        let s = SessionSuggestion::parse(&args(
+            json!({"prompt": "Fix the flaky\nlogin test in auth.spec.ts", "summary": "It fails\n one in five runs.", "worktree": true}),
+        ))
+        .unwrap();
         assert_eq!(s.title, "Fix the flaky login test in auth.spec.ts");
         assert_eq!(s.summary, "It fails one in five runs.");
         assert_eq!(s.worktree, Some(true));

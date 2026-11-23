@@ -117,14 +117,7 @@ impl InterruptionBudget {
     ///
     /// - `extra_gap_secs`: caller-specific backoff gap (e.g. Think Along backoff after ignored offers).
     /// - `gap_factor`: multiplier for gaps when the user repeatedly dismisses notices (clamped to `>= 1.0`).
-    pub fn allows(
-        &self,
-        kind: InterruptionClass,
-        now_secs: f64,
-        day_key: &str,
-        extra_gap_secs: f64,
-        gap_factor: f64,
-    ) -> bool {
+    pub fn allows(&self, kind: InterruptionClass, now_secs: f64, day_key: &str, extra_gap_secs: f64, gap_factor: f64) -> bool {
         if kind == InterruptionClass::Notice {
             return true;
         }
@@ -143,14 +136,11 @@ impl InterruptionBudget {
                 return false;
             }
         }
-        let last_unasked = [
-            self.last.get(&InterruptionClass::Suggestion),
-            self.last.get(&InterruptionClass::Moment),
-        ]
-        .into_iter()
-        .flatten()
-        .copied()
-        .reduce(f64::max);
+        let last_unasked = [self.last.get(&InterruptionClass::Suggestion), self.last.get(&InterruptionClass::Moment)]
+            .into_iter()
+            .flatten()
+            .copied()
+            .reduce(f64::max);
         if let Some(previous) = last_unasked {
             if now_secs - previous < Self::UNASKED_GAP_SECS * factor {
                 return false;
@@ -199,24 +189,12 @@ impl NoticePacer {
     /// - `priority`: a chat that asks a question or mentions the user may pass a full burst; gaps still hold.
     /// - `calm_secs`: how long the surface must have been quiet before showing (e.g. 300s for suggestions).
     /// - `gap_factor`: stretches gaps when notices are dismissed; clamped to `>= 1.0`.
-    pub fn permits(
-        &self,
-        key: &str,
-        urgent: bool,
-        priority: bool,
-        calm_secs: f64,
-        gap_factor: f64,
-        now_secs: f64,
-    ) -> bool {
+    pub fn permits(&self, key: &str, urgent: bool, priority: bool, calm_secs: f64, gap_factor: f64, now_secs: f64) -> bool {
         if urgent {
             return true;
         }
         let factor = gap_factor.max(1.0);
-        let recent: Vec<&(f64, String)> = self
-            .shown
-            .iter()
-            .filter(|(t, _)| now_secs - *t < Self::BURST_WINDOW_SECS)
-            .collect();
+        let recent: Vec<&(f64, String)> = self.shown.iter().filter(|(t, _)| now_secs - *t < Self::BURST_WINDOW_SECS).collect();
         if let Some((last_t, _)) = recent.last() {
             if now_secs - *last_t < (Self::GAP_SECS * factor).max(calm_secs) {
                 return false;
@@ -251,20 +229,9 @@ impl NoticePacer {
     }
 
     /// The earliest timestamp (`>= now_secs`) at which `permits` will let a notice for `key` through.
-    pub fn next_permitted(
-        &self,
-        key: &str,
-        priority: bool,
-        calm_secs: f64,
-        gap_factor: f64,
-        now_secs: f64,
-    ) -> f64 {
+    pub fn next_permitted(&self, key: &str, priority: bool, calm_secs: f64, gap_factor: f64, now_secs: f64) -> f64 {
         let factor = gap_factor.max(1.0);
-        let recent: Vec<&(f64, String)> = self
-            .shown
-            .iter()
-            .filter(|(t, _)| now_secs - *t < Self::BURST_WINDOW_SECS)
-            .collect();
+        let recent: Vec<&(f64, String)> = self.shown.iter().filter(|(t, _)| now_secs - *t < Self::BURST_WINDOW_SECS).collect();
         let mut at = now_secs;
         if let Some((last_t, _)) = recent.last() {
             at = at.max(*last_t + (Self::GAP_SECS * factor).max(calm_secs));
@@ -293,15 +260,7 @@ impl NoticePacer {
     }
 
     /// Checks `permits`, and if allowed, records the pop-up.
-    pub fn allow(
-        &mut self,
-        key: &str,
-        urgent: bool,
-        priority: bool,
-        calm_secs: f64,
-        gap_factor: f64,
-        now_secs: f64,
-    ) -> bool {
+    pub fn allow(&mut self, key: &str, urgent: bool, priority: bool, calm_secs: f64, gap_factor: f64, now_secs: f64) -> bool {
         if !self.permits(key, urgent, priority, calm_secs, gap_factor, now_secs) {
             return false;
         }
@@ -532,31 +491,11 @@ mod tests {
         let mut pacer = NoticePacer::default();
         let mut t = START;
         for i in 0..4 {
-            assert!(pacer.allow_class(
-                InterruptionClass::Suggestion,
-                &format!("suggestion:{i}"),
-                false,
-                false,
-                300.0,
-                0.0,
-                1.0,
-                t,
-                DAY1,
-            ));
+            assert!(pacer.allow_class(InterruptionClass::Suggestion, &format!("suggestion:{i}"), false, false, 300.0, 0.0, 1.0, t, DAY1,));
             t += 20.0 * 60.0;
         }
         // 5th suggestion hits per-class budget cap -> gracefully denied (history-only).
-        assert!(!pacer.allow_class(
-            InterruptionClass::Suggestion,
-            "suggestion:4",
-            false,
-            false,
-            300.0,
-            0.0,
-            1.0,
-            t,
-            DAY1,
-        ));
+        assert!(!pacer.allow_class(InterruptionClass::Suggestion, "suggestion:4", false, false, 300.0, 0.0, 1.0, t, DAY1,));
         // Regular notices are still permitted and don't touch the unasked budget.
         assert!(pacer.allow_class(InterruptionClass::Notice, "agent:1", false, false, 0.0, 0.0, 1.0, t, DAY1));
         assert_eq!(pacer.budget.spent(InterruptionClass::Notice, DAY1), 0);

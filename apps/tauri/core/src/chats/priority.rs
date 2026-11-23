@@ -4,6 +4,7 @@
 //! - A direct question in a private chat (someone asks you something),
 //! - A direct mention of you in a group that is otherwise quiet, or
 //! - A direct reply to one of your messages in a group
+//!
 //! raises priority so it can come through the pacer sooner and show a priority badge on the bar card.
 //!
 //! Priority NEVER bypasses user rules: a muted or hidden chat, an app switched off, quiet mode,
@@ -83,17 +84,9 @@ pub struct NoticeScore {
 impl NoticeScore {
     /// Primary reason to surface on a compact badge, highest signal first.
     pub fn primary_reason(&self) -> Option<PriorityReason> {
-        for wanted in [
-            PriorityReason::UrgentCue,
-            PriorityReason::DirectMention,
-            PriorityReason::ReplyToMe,
-            PriorityReason::Question,
-        ] {
-            if self.reasons.contains(&wanted) {
-                return Some(wanted);
-            }
-        }
-        None
+        [PriorityReason::UrgentCue, PriorityReason::DirectMention, PriorityReason::ReplyToMe, PriorityReason::Question]
+            .into_iter()
+            .find(|&wanted| self.reasons.contains(&wanted))
     }
 }
 
@@ -120,23 +113,12 @@ pub fn asks_question(text: &str) -> bool {
 }
 
 /// Explicit urgency keywords across EN / NL / DE / FR / ES (whole-word match).
-const URGENT_WORDS: &[&str] = &[
-    "urgent",
-    "asap",
-    "emergency",
-    "dringend",
-    "spoed",
-    "noodgeval",
-    "notfall",
-    "sofort",
-    "urgente",
-    "emergencia",
-];
+const URGENT_WORDS: &[&str] =
+    &["urgent", "asap", "emergency", "dringend", "spoed", "noodgeval", "notfall", "sofort", "urgente", "emergencia"];
 
 /// Whether a message carries an explicit urgency cue as a whole word.
 pub fn has_urgent_cue(text: &str) -> bool {
-    text.split(|c: char| !c.is_alphanumeric())
-        .any(|word| !word.is_empty() && URGENT_WORDS.iter().any(|kw| word.eq_ignore_ascii_case(kw)))
+    text.split(|c: char| !c.is_alphanumeric()).any(|word| !word.is_empty() && URGENT_WORDS.iter().any(|kw| word.eq_ignore_ascii_case(kw)))
 }
 
 /// Exact macOS `ChatNoticePriority.raises(kind:mentionsMe:asksQuestion:quietByKind:mode:)` rule:
@@ -216,9 +198,7 @@ pub fn score_message(
     let capped = score.min(100) as u8;
 
     // Group chatter stays Normal unless you are directly addressed (quiet-group mention or direct reply-to-me).
-    let elevated = mac_raises
-        || (kind == ChatKind::Group && replies_to_me)
-        || (kind == ChatKind::Person && (replies_to_me || urgent_cue));
+    let elevated = mac_raises || (kind == ChatKind::Group && replies_to_me) || (kind == ChatKind::Person && (replies_to_me || urgent_cue));
 
     let level = if !elevated {
         NoticePriorityLevel::Normal
@@ -237,20 +217,9 @@ pub fn evaluate(thread: &InboxThread, message: &InboxMessage, quiet_by_kind: boo
     if message.from_me || message.deleted {
         return NoticeScore::default();
     }
-    let effective_mode = if thread.muted_in_app == Some(true) {
-        ChatNoticeMode::Muted
-    } else {
-        mode
-    };
+    let effective_mode = if thread.muted_in_app == Some(true) { ChatNoticeMode::Muted } else { mode };
     let reply_to_me = is_reply_to_me(thread, message);
-    score_message(
-        thread.notice_kind(),
-        &message.text,
-        message.mentions_me,
-        reply_to_me,
-        quiet_by_kind,
-        effective_mode,
-    )
+    score_message(thread.notice_kind(), &message.text, message.mentions_me, reply_to_me, quiet_by_kind, effective_mode)
 }
 
 /// Evaluates notice priority for the newest non-deleted incoming message in `thread`.
@@ -322,7 +291,8 @@ mod tests {
         assert!(group_mention.score > group_general_q.score);
         assert_eq!(group_mention.primary_reason(), Some(PriorityReason::DirectMention));
 
-        let group_mention_question = score_message(ChatKind::Group, "@michan can you deploy now?", true, false, true, ChatNoticeMode::Automatic);
+        let group_mention_question =
+            score_message(ChatKind::Group, "@michan can you deploy now?", true, false, true, ChatNoticeMode::Automatic);
         assert_eq!(group_mention_question.level, NoticePriorityLevel::Urgent);
         assert!(group_mention_question.raises);
         assert!(group_mention_question.score >= 65);

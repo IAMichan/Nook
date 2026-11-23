@@ -165,7 +165,13 @@ impl PowerMonitor for WindowsPower {
     fn screen_locked(&self) -> bool {
         use windows::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop, DESKTOP_CONTROL_FLAGS};
         const DESKTOP_SWITCHDESKTOP: u32 = 0x0100;
-        match unsafe { OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, windows::Win32::System::StationsAndDesktops::DESKTOP_ACCESS_FLAGS(DESKTOP_SWITCHDESKTOP)) } {
+        match unsafe {
+            OpenInputDesktop(
+                DESKTOP_CONTROL_FLAGS(0),
+                false,
+                windows::Win32::System::StationsAndDesktops::DESKTOP_ACCESS_FLAGS(DESKTOP_SWITCHDESKTOP),
+            )
+        } {
             Ok(desktop) => {
                 unsafe {
                     let _ = CloseDesktop(desktop);

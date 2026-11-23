@@ -17,7 +17,13 @@ fn id(raw: &str) -> Res<Uuid> {
 /// Keeps what you chose on a suggested session (`SessionSuggestion.state(after:)`): Start with the new session's id,
 /// Do it here, or ×. Options changes nothing until a session starts from the composer.
 #[tauri::command]
-pub fn workspace_suggestion_chosen(state: State<'_, WorkspaceState>, run: String, event: String, choice: SuggestionChoice, session: Option<String>) -> Res<()> {
+pub fn workspace_suggestion_chosen(
+    state: State<'_, WorkspaceState>,
+    run: String,
+    event: String,
+    choice: SuggestionChoice,
+    session: Option<String>,
+) -> Res<()> {
     let (run, event) = (id(&run)?, id(&event)?);
     let Some(next) = cards::state_after(choice) else { return Ok(()) };
     let changed = state.manager.change_event(run, event, |e| {
@@ -26,7 +32,11 @@ pub fn workspace_suggestion_chosen(state: State<'_, WorkspaceState>, run: String
             e.output = session.clone();
         }
     });
-    if changed { Ok(()) } else { Err("That card is gone.".into()) }
+    if changed {
+        Ok(())
+    } else {
+        Err("That card is gone.".into())
+    }
 }
 
 /// The page a `render_page` card shows, behind its content policy.

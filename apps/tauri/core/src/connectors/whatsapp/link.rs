@@ -740,7 +740,11 @@ impl WhatsAppLink {
             }
             Some(WebhookEvent::PollVote { chat, poll, voter, choice, from_me }) => {
                 let key = super::Inbox::key_in(&self.account, &chat);
-                let (id, name) = if from_me { ("\u{1}me".to_string(), String::new()) } else { (jid::normalized(&voter), self.person_name(&chat, &voter)) };
+                let (id, name) = if from_me {
+                    ("\u{1}me".to_string(), String::new())
+                } else {
+                    (jid::normalized(&voter), self.person_name(&chat, &voter))
+                };
                 let ballot = crate::chats::poll::Ballot { name, mine: from_me, choice };
                 self.env.chats.with(|inbox| inbox.ballot(&key, &poll, &id, ballot));
             }
@@ -767,7 +771,9 @@ impl WhatsAppLink {
                 .map(|m| m.sender.clone())
         });
         from_messages
-            .or_else(|| self.with(|i| i.known.iter().find(|k| jid::same_user(&k.jid, &person)).map(|k| k.name.clone()).filter(|n| !n.is_empty())))
+            .or_else(|| {
+                self.with(|i| i.known.iter().find(|k| jid::same_user(&k.jid, &person)).map(|k| k.name.clone()).filter(|n| !n.is_empty()))
+            })
             .unwrap_or_else(|| jid::display_number(&person))
     }
 
@@ -1026,7 +1032,8 @@ impl WhatsAppLink {
         let target = jid::normalized(chat);
         let id = provider.send_poll(&target, &question, &options, draft.multiple).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
         let me = self.with(|i| i.me.clone()).unwrap_or_default();
-        let mut mine = Message::new(&id.unwrap_or_else(|| format!("nook-{}", uuid::Uuid::new_v4())), &target, &me, "", "", Utc::now(), true);
+        let mut mine =
+            Message::new(&id.unwrap_or_else(|| format!("nook-{}", uuid::Uuid::new_v4())), &target, &me, "", "", Utc::now(), true);
         mine.poll = Some(crate::chats::poll::ChatPoll::new(&question, &options, draft.multiple));
         let filters = self.settings().filters();
         self.with(|i| i.inbox.add(mine, &filters, None, false));
@@ -1851,7 +1858,6 @@ impl Connector for WhatsAppLink {
     }
 }
 
-
 /// The text with each "@Name" of a group member (the longest name first) as "@<number>", which WhatsApp tags, and the
 /// JIDs it tags.
 pub fn tag_members(text: &str, members: &[(String, String)]) -> (String, Vec<String>) {
@@ -1973,7 +1979,10 @@ mod tests {
 
     #[test]
     fn a_member_named_with_at_goes_as_their_number() {
-        let members = vec![("31611111111@s.whatsapp.net".to_string(), "Anna".to_string()), ("31622222222@s.whatsapp.net".to_string(), "Anna Bakker".to_string())];
+        let members = vec![
+            ("31611111111@s.whatsapp.net".to_string(), "Anna".to_string()),
+            ("31622222222@s.whatsapp.net".to_string(), "Anna Bakker".to_string()),
+        ];
         let (text, tagged) = super::tag_members("Hi @Anna Bakker and @Anna, mail me@home", &members);
         assert_eq!(text, "Hi @31622222222 and @31611111111, mail me@home");
         assert_eq!(tagged, vec!["31622222222@s.whatsapp.net".to_string(), "31611111111@s.whatsapp.net".to_string()]);

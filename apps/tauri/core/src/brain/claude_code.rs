@@ -130,10 +130,8 @@ pub fn parse_line(line: &str) -> Parsed {
     let Ok(event) = serde_json::from_str::<Value>(line.trim()) else { return Parsed::default() };
     let mut parsed = Parsed { session: event["session_id"].as_str().map(str::to_string), ..Default::default() };
     match event["type"].as_str() {
-        Some("stream_event") => {
-            if event["event"]["type"] == "content_block_delta" && event["event"]["delta"]["type"] == "text_delta" {
-                parsed.delta = event["event"]["delta"]["text"].as_str().map(str::to_string);
-            }
+        Some("stream_event") if event["event"]["type"] == "content_block_delta" && event["event"]["delta"]["type"] == "text_delta" => {
+            parsed.delta = event["event"]["delta"]["text"].as_str().map(str::to_string);
         }
         Some("assistant") => {
             let text: String = event["message"]["content"]

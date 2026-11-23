@@ -328,11 +328,10 @@ pub fn sync_mirrors(app: &AppHandle) {
     };
     let monitors = app.available_monitors().unwrap_or_default();
     let here = bar.current_monitor().ok().flatten();
-    let screens: Vec<(i32, i32, u32, u32)> = monitors.iter().map(|m| (m.position().x, m.position().y, m.size().width, m.size().height)).collect();
-    let bar_on = here
-        .as_ref()
-        .and_then(|h| monitors.iter().position(|m| m.position() == h.position() && m.size() == h.size()))
-        .unwrap_or(0);
+    let screens: Vec<(i32, i32, u32, u32)> =
+        monitors.iter().map(|m| (m.position().x, m.position().y, m.size().width, m.size().height)).collect();
+    let bar_on =
+        here.as_ref().and_then(|h| monitors.iter().position(|m| m.position() == h.position() && m.size() == h.size())).unwrap_or(0);
     let targets = mirror_targets(&screens, bar_on);
     for (label, window) in &existing {
         let keep = label.strip_prefix(MIRROR_PREFIX).and_then(|n| n.parse::<usize>().ok()).is_some_and(|n| targets.contains(&n));
@@ -386,7 +385,8 @@ fn follow_pointer(app: &AppHandle) {
             continue;
         }
         let (Some(bar), Some(under)) = (app.get_webview_window(BAR), chosen_monitor(&app, "mouse")) else { continue };
-        let moved = bar.current_monitor().ok().flatten().is_none_or(|here| here.position() != under.position() || here.size() != under.size());
+        let moved =
+            bar.current_monitor().ok().flatten().is_none_or(|here| here.position() != under.position() || here.size() != under.size());
         if moved {
             place_bar(&app, false);
         }
@@ -404,7 +404,10 @@ fn chosen_monitor(app: &AppHandle, choice: &str) -> Option<tauri::Monitor> {
             let cursor = app.cursor_position().ok()?;
             app.available_monitors().ok()?.into_iter().find(|m| {
                 let (p, s) = (m.position(), m.size());
-                cursor.x >= p.x as f64 && cursor.y >= p.y as f64 && cursor.x < (p.x + s.width as i32) as f64 && cursor.y < (p.y + s.height as i32) as f64
+                cursor.x >= p.x as f64
+                    && cursor.y >= p.y as f64
+                    && cursor.x < (p.x + s.width as i32) as f64
+                    && cursor.y < (p.y + s.height as i32) as f64
             })
         }
         name => app.available_monitors().ok()?.into_iter().find(|m| m.name().is_some_and(|n| n == name)),
@@ -457,9 +460,7 @@ pub fn route_from_args(args: &[String]) -> Option<&'static str> {
         Some("agents")
     } else if args.iter().any(|a| a == "--chats") {
         Some("chats")
-    } else if args.iter().any(|a| a == "--new-nook" || a == "--new") {
-        Some("chat")
-    } else if args.iter().any(|a| a == "--window") {
+    } else if args.iter().any(|a| a == "--new-nook" || a == "--new" || a == "--window") {
         Some("chat")
     } else {
         None
@@ -467,11 +468,13 @@ pub fn route_from_args(args: &[String]) -> Option<&'static str> {
 }
 
 /// Whether command-line arguments ask to start a fresh Nook conversation immediately (`--new-nook`).
+#[cfg(test)]
 pub fn is_new_nook_arg(args: &[String]) -> bool {
     args.iter().any(|a| a == "--new-nook" || a == "--new")
 }
 
 /// One task in the Windows taskbar Jump List (`New Nook`, `Settings`, `Agents`, `Chats`, UI-49).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JumpListTask {
     pub flag: &'static str,
@@ -481,6 +484,7 @@ pub struct JumpListTask {
 }
 
 /// The Windows Jump List tasks in the interface language (UI-49).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub fn jump_list_tasks(language: &str) -> [JumpListTask; 4] {
     let tr = |nl, en| nook_core::i18n::translate(language, nl, en);
     [
@@ -517,24 +521,17 @@ pub fn jump_list_tasks(language: &str) -> [JumpListTask; 4] {
 pub fn refresh_jump_list(language: &str) {
     use windows::core::{Interface, HSTRING, PROPVARIANT};
     use windows::Win32::System::Com::StructuredStorage::IPropertyStore;
-    use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
-    };
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
     use windows::Win32::UI::Shell::Common::{IObjectArray, IObjectCollection};
-    use windows::Win32::UI::Shell::{
-        DestinationList, EnumerableObjectCollection, ICustomDestinationList, IShellLinkW, ShellLink,
-    };
     use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
+    use windows::Win32::UI::Shell::{DestinationList, EnumerableObjectCollection, ICustomDestinationList, IShellLinkW, ShellLink};
 
     let Some(exe) = std::env::current_exe().ok() else { return };
     let exe_str = exe.to_string_lossy().into_owned();
     let tasks = jump_list_tasks(language);
 
     // PKEY_Title: {F29F85E0-4FF9-1068-AB91-08002B27B3D9}, pid 2
-    const PKEY_TITLE: PROPERTYKEY = PROPERTYKEY {
-        fmtid: windows::core::GUID::from_u128(0xf29f85e0_4ff9_1068_ab91_08002b27b3d9),
-        pid: 2,
-    };
+    const PKEY_TITLE: PROPERTYKEY = PROPERTYKEY { fmtid: windows::core::GUID::from_u128(0xf29f85e0_4ff9_1068_ab91_08002b27b3d9), pid: 2 };
 
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
@@ -545,9 +542,7 @@ pub fn refresh_jump_list(language: &str) {
         let Ok(_removed): windows::core::Result<IObjectArray> = list.BeginList(&mut min_slots) else {
             return;
         };
-        let Ok(collection) =
-            CoCreateInstance::<_, IObjectCollection>(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)
-        else {
+        let Ok(collection) = CoCreateInstance::<_, IObjectCollection>(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER) else {
             let _ = list.AbortList();
             return;
         };
@@ -636,8 +631,7 @@ fn tray_labels(language: &str) -> [&'static str; 7] {
 
 /// The actions of the tray menu; `tray_live::build_menu` puts the status lines above them (UI-48).
 pub(crate) fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let [open, window, new_nook, agents, chats, settings, quit] =
-        tray_labels(&app.state::<AppState>().settings().app_language);
+    let [open, window, new_nook, agents, chats, settings, quit] = tray_labels(&app.state::<AppState>().settings().app_language);
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let window = MenuItem::with_id(app, "window", window, true, Some("Alt+CommandOrControl+W"))?;
     let new_nook = MenuItem::with_id(app, "new", new_nook, true, None::<&str>)?;
@@ -737,13 +731,8 @@ pub fn force_terminate_process(_pid: u32) {}
 pub fn shutdown_and_exit(app: &AppHandle) {
     remember_main(app);
     if let Some(ws) = app.try_state::<crate::workspace::WorkspaceState>() {
-        let pids: Vec<u32> = ws
-            .manager
-            .runs()
-            .into_iter()
-            .filter(|r| r.status.is_active())
-            .filter_map(|r| ws.manager.agent_pid(r.id))
-            .collect();
+        let pids: Vec<u32> =
+            ws.manager.runs().into_iter().filter(|r| r.status.is_active()).filter_map(|r| ws.manager.agent_pid(r.id)).collect();
         for &pid in &pids {
             polite_stop_process(pid);
         }
@@ -816,6 +805,7 @@ struct QuitTexts {
 }
 
 /// The Mac's words (`quit.working.*`) in the interface language.
+#[cfg(test)]
 fn quit_texts(language: &str, working: usize) -> QuitTexts {
     quit_texts_with_continue(language, working, false)
 }
@@ -839,12 +829,7 @@ fn quit_texts_with_continue(language: &str, working: usize, continue_after_relau
             "Quitting Nook stops them. You can continue them after you open Nook again.",
         )
     };
-    QuitTexts {
-        title,
-        detail,
-        quit: tr("Toch stoppen", "Quit Anyway"),
-        cancel: tr("Annuleren", "Cancel"),
-    }
+    QuitTexts { title, detail, quit: tr("Toch stoppen", "Quit Anyway"), cancel: tr("Annuleren", "Cancel") }
 }
 
 /// Globale sneltoetsen uit de instellingen. Een toets die al door een andere app bezet is, wordt overgeslagen
@@ -874,7 +859,14 @@ pub fn register_shortcuts(app: &AppHandle) {
             }
         });
         if let Err(e) = result {
-            log::warn!("{}", trf("Sneltoets {accelerator} kon niet worden vastgelegd: {e}", "Shortcut {accelerator} could not be registered: {e}", &[("accelerator", &accelerator), ("e", &e)]));
+            log::warn!(
+                "{}",
+                trf(
+                    "Sneltoets {accelerator} kon niet worden vastgelegd: {e}",
+                    "Shortcut {accelerator} could not be registered: {e}",
+                    &[("accelerator", &accelerator), ("e", &e)]
+                )
+            );
             problems.push(name);
         }
     }

@@ -126,10 +126,7 @@ pub fn language_code(answer: &str, app: &str) -> String {
 
 /// Extracts the detected language code from an OpenAI/Groq `verbose_json` response or a `whisper.cpp` JSON output (`SV-47`).
 pub fn detected_language(json: &Value) -> Option<&'static str> {
-    let raw = json
-        .get("language")
-        .and_then(Value::as_str)
-        .or_else(|| json.pointer("/result/language").and_then(Value::as_str))?;
+    let raw = json.get("language").and_then(Value::as_str).or_else(|| json.pointer("/result/language").and_then(Value::as_str))?;
     super::dictation_lang::code_of(raw)
 }
 
@@ -361,9 +358,7 @@ fn classify_hf_snapshot(repo_id: &str, snapshot_dir: &std::path::Path, linked_di
         return Vec::new();
     }
 
-    let is_linked = |target_name: &str| -> bool {
-        linked_dir.is_some_and(|d| d.join(target_name).exists())
-    };
+    let is_linked = |target_name: &str| -> bool { linked_dir.is_some_and(|d| d.join(target_name).exists()) };
 
     // 1. Parakeet transducer / ONNX / NeMo repositories
     if lower_repo.contains("parakeet") {
@@ -374,11 +369,7 @@ fn classify_hf_snapshot(repo_id: &str, snapshot_dir: &std::path::Path, linked_di
         if has_model_files {
             let is_v3 = lower_repo.contains("v3");
             let model_id = if is_v3 { "parakeet-tdt-0.6b-v3" } else { "parakeet-tdt-0.6b-v2" };
-            let name = if is_v3 {
-                "Parakeet TDT 0.6B v3 (Hugging Face cache)"
-            } else {
-                "Parakeet TDT 0.6B v2 (Hugging Face cache)"
-            };
+            let name = if is_v3 { "Parakeet TDT 0.6B v3 (Hugging Face cache)" } else { "Parakeet TDT 0.6B v2 (Hugging Face cache)" };
             return vec![ReusableModelCopy {
                 model_id: model_id.to_string(),
                 name: name.to_string(),
@@ -400,10 +391,7 @@ fn classify_hf_snapshot(repo_id: &str, snapshot_dir: &std::path::Path, linked_di
             && (lower_name.ends_with(".bin") || lower_name.ends_with(".gguf"));
         if is_ggml {
             let size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(total_size);
-            let stem = fname
-                .trim_end_matches(".bin")
-                .trim_end_matches(".gguf")
-                .to_string();
+            let stem = fname.trim_end_matches(".bin").trim_end_matches(".gguf").to_string();
             copies.push(ReusableModelCopy {
                 model_id: stem.clone(),
                 name: format!("{fname} ({repo_id})"),
@@ -453,14 +441,7 @@ pub fn scan_hf_cache_dir(hub_dir: &std::path::Path, linked_dir: Option<&std::pat
         let repo_id = rest.replacen("--", "/", 1);
         let snapshots_root = model_dir.join("snapshots");
         let snapshot_dirs: Vec<std::path::PathBuf> = if snapshots_root.is_dir() {
-            std::fs::read_dir(&snapshots_root)
-                .ok()
-                .into_iter()
-                .flatten()
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.is_dir())
-                .collect()
+            std::fs::read_dir(&snapshots_root).ok().into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()
         } else if model_dir.is_dir() {
             vec![model_dir.clone()]
         } else {
@@ -505,18 +486,12 @@ pub fn reuse_hf_model(model_id: &str, snapshot_path: &std::path::Path, target_di
         let path = snapshot_path.display();
         return Err(nook_err!(
             "{}",
-            crate::i18n::trf(
-                "Modelbestand bestaat niet: {path}",
-                "Model file does not exist: {path}",
-                &[("path", &path)],
-            )
+            crate::i18n::trf("Modelbestand bestaat niet: {path}", "Model file does not exist: {path}", &[("path", &path)],)
         ));
     }
     std::fs::create_dir_all(target_dir)?;
-    let safe_name: String = model_id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' })
-        .collect();
+    let safe_name: String =
+        model_id.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' }).collect();
     let dest = if snapshot_path.is_file() {
         let ext = snapshot_path.extension().and_then(|e| e.to_str()).unwrap_or("bin");
         if safe_name.ends_with(&format!(".{ext}")) {
@@ -543,8 +518,7 @@ pub fn reuse_hf_model(model_id: &str, snapshot_path: &std::path::Path, target_di
         let linked = if snapshot_path.is_dir() {
             std::os::windows::fs::symlink_dir(snapshot_path, &dest)
         } else {
-            std::os::windows::fs::symlink_file(snapshot_path, &dest)
-                .or_else(|_| std::fs::hard_link(snapshot_path, &dest))
+            std::os::windows::fs::symlink_file(snapshot_path, &dest).or_else(|_| std::fs::hard_link(snapshot_path, &dest))
         };
         if linked.is_ok() {
             return Ok(dest);
@@ -597,10 +571,7 @@ mod tests {
     #[test]
     fn whisper_cli_args_wires_auto_language_and_prompt_context() {
         let auto_args = whisper_cli_args("/models/ggml-base.bin", "/tmp/in.wav", "auto", "Nook, Parakeet");
-        assert_eq!(
-            auto_args,
-            vec!["-m", "/models/ggml-base.bin", "-f", "/tmp/in.wav", "-l", "auto", "-oj", "--prompt", "Nook, Parakeet"]
-        );
+        assert_eq!(auto_args, vec!["-m", "/models/ggml-base.bin", "-f", "/tmp/in.wav", "-l", "auto", "-oj", "--prompt", "Nook, Parakeet"]);
         let fixed_args = whisper_cli_args("/models/ggml-base.bin", "/tmp/in.wav", "nl-NL", "  ");
         assert_eq!(fixed_args, vec!["-m", "/models/ggml-base.bin", "-f", "/tmp/in.wav", "-l", "nl", "-oj"]);
         assert_eq!(detected_language(&json!({"language": "dutch"})), Some("nl"));
@@ -610,14 +581,8 @@ mod tests {
     #[test]
     fn scans_and_reuses_parakeet_and_whisper_from_huggingface_cache() {
         let temp = std::env::temp_dir().join(format!("nook-hf-test-{}", uuid::Uuid::new_v4().simple()));
-        let parakeet_snap = temp
-            .join("models--csukuangfj--sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
-            .join("snapshots")
-            .join("abc123456");
-        let whisper_snap = temp
-            .join("models--ggerganov--whisper.cpp")
-            .join("snapshots")
-            .join("def789012");
+        let parakeet_snap = temp.join("models--csukuangfj--sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8").join("snapshots").join("abc123456");
+        let whisper_snap = temp.join("models--ggerganov--whisper.cpp").join("snapshots").join("def789012");
         let linked_dir = temp.join("linked");
 
         std::fs::create_dir_all(&parakeet_snap).unwrap();
@@ -644,4 +609,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp);
     }
 }
-

@@ -239,10 +239,8 @@ impl MailService {
         })?;
         let (display_name, address) = graph::me(&self.env.http, &self.bases.graph, &tokens.access).await?;
         let label = if name.trim().is_empty() { display_name } else { name.trim().to_string() };
-        let account = self.add_account(
-            MailAccount { id: String::new(), provider: Provider::Microsoft, address, name: label, calendar: true },
-            refresh,
-        )?;
+        let account = self
+            .add_account(MailAccount { id: String::new(), provider: Provider::Microsoft, address, name: label, calendar: true }, refresh)?;
         self.cache_token(&account.id, &tokens.access, tokens.expires_in);
         Ok(account)
     }
@@ -399,9 +397,12 @@ impl MailService {
                 }
             };
             let res = match account.provider {
-                Provider::Microsoft => graph::inbox(&self.env.http, &self.bases.graph, &token, &account.id, since, unread_only, limit).await,
+                Provider::Microsoft => {
+                    graph::inbox(&self.env.http, &self.bases.graph, &token, &account.id, since, unread_only, limit).await
+                }
                 Provider::Google => {
-                    gmail::query(&self.env.http, &self.bases.gmail, &token, &account.id, &gmail::inbox_query(days, unread_only), limit).await
+                    gmail::query(&self.env.http, &self.bases.gmail, &token, &account.id, &gmail::inbox_query(days, unread_only), limit)
+                        .await
                 }
             };
             match res {
@@ -421,7 +422,7 @@ impl MailService {
         if unanswered_only {
             all.retain(|m| m.replied != Some(true));
         }
-        all.sort_by(|a, b| b.date.cmp(&a.date));
+        all.sort_by_key(|b| std::cmp::Reverse(b.date));
         all.truncate(limit);
         Ok(all)
     }
@@ -465,17 +466,16 @@ impl MailService {
         if all.is_empty() && !errors.is_empty() && errors.len() == accounts.len() {
             return Err(ConnectorError::new(errors.join("; ")));
         }
-        all.sort_by(|a, b| b.date.cmp(&a.date));
+        all.sort_by_key(|b| std::cmp::Reverse(b.date));
         all.truncate(limit);
         Ok(all)
     }
 
     /// `read_mail`: fetches one full message by tool id (`"<account>:<provider_id>"`).
     pub async fn read(&self, id: &str) -> CResult<Mail> {
-        let (acct_id, msg_id) = split_id(id).ok_or_else(|| ConnectorError::new("Invalid message id; use the id from inbox_mail or search_mail."))?;
-        let account = self
-            .account(acct_id)
-            .ok_or_else(|| ConnectorError::new(format!("Unknown mail account \"{acct_id}\".")))?;
+        let (acct_id, msg_id) =
+            split_id(id).ok_or_else(|| ConnectorError::new("Invalid message id; use the id from inbox_mail or search_mail."))?;
+        let account = self.account(acct_id).ok_or_else(|| ConnectorError::new(format!("Unknown mail account \"{acct_id}\".")))?;
         let token = self.access_token(&account).await?;
         let res = match account.provider {
             Provider::Microsoft => graph::read(&self.env.http, &self.bases.graph, &token, &account.id, msg_id).await,
@@ -609,10 +609,7 @@ impl MailService {
         let accounts = self.require_accounts()?;
         let reply_parts = outgoing.reply_to.as_deref().and_then(split_id);
         let account = if let Some((acct_id, _)) = reply_parts {
-            accounts
-                .iter()
-                .find(|a| a.id == acct_id)
-                .ok_or_else(|| ConnectorError::new(format!("Unknown mail account \"{acct_id}\".")))?
+            accounts.iter().find(|a| a.id == acct_id).ok_or_else(|| ConnectorError::new(format!("Unknown mail account \"{acct_id}\".")))?
         } else if let Some(hint) = from_account.map(str::trim).filter(|s| !s.is_empty()) {
             match_account(&accounts, hint).ok_or_else(|| {
                 ConnectorError::new(trf(
@@ -635,11 +632,8 @@ impl MailService {
                     Some(msg_id) => gmail::read(&self.env.http, &self.bases.gmail, &token, &account.id, msg_id).await.ok(),
                     None => None,
                 };
-                let from_header = if account.name.is_empty() {
-                    account.address.clone()
-                } else {
-                    format!("{} <{}>", account.name, account.address)
-                };
+                let from_header =
+                    if account.name.is_empty() { account.address.clone() } else { format!("{} <{}>", account.name, account.address) };
                 gmail::send(&self.env.http, &self.bases.gmail, &token, &from_header, outgoing, original.as_ref()).await
             }
         };
@@ -695,10 +689,7 @@ impl MailService {
         let accounts: Vec<MailAccount> = self.accounts().into_iter().filter(|a| a.calendar).collect();
         if accounts.is_empty() {
             return Err(ConnectorError::kind(
-                tr(
-                    "Geen gekoppeld mailaccount met agenda-synchronisatie gevonden.",
-                    "No linked mail account with calendar sync enabled.",
-                ),
+                tr("Geen gekoppeld mailaccount met agenda-synchronisatie gevonden.", "No linked mail account with calendar sync enabled."),
                 ErrorKind::Config,
             ));
         }
@@ -887,7 +878,13 @@ mod tests {
 
         let work = svc
             .add_account(
-                MailAccount { id: String::new(), provider: Provider::Microsoft, address: "work@acme.nl".into(), name: "Work".into(), calendar: true },
+                MailAccount {
+                    id: String::new(),
+                    provider: Provider::Microsoft,
+                    address: "work@acme.nl".into(),
+                    name: "Work".into(),
+                    calendar: true,
+                },
                 "rt-ms-1",
             )
             .unwrap();
@@ -899,7 +896,13 @@ mod tests {
         // Re-linking same provider + address deduplicates and updates token.
         let relinked = svc
             .add_account(
-                MailAccount { id: String::new(), provider: Provider::Microsoft, address: "WORK@ACME.NL".into(), name: String::new(), calendar: true },
+                MailAccount {
+                    id: String::new(),
+                    provider: Provider::Microsoft,
+                    address: "WORK@ACME.NL".into(),
+                    name: String::new(),
+                    calendar: true,
+                },
                 "rt-ms-2",
             )
             .unwrap();
@@ -936,7 +939,13 @@ mod tests {
         );
         let acct = svc
             .add_account(
-                MailAccount { id: "work".into(), provider: Provider::Microsoft, address: "me@work.nl".into(), name: "Work".into(), calendar: true },
+                MailAccount {
+                    id: "work".into(),
+                    provider: Provider::Microsoft,
+                    address: "me@work.nl".into(),
+                    name: "Work".into(),
+                    calendar: true,
+                },
                 "rt-initial",
             )
             .unwrap();
@@ -1028,12 +1037,24 @@ mod tests {
             },
         );
         svc.add_account(
-            MailAccount { id: "work".into(), provider: Provider::Microsoft, address: "me@acme.nl".into(), name: "Work".into(), calendar: true },
+            MailAccount {
+                id: "work".into(),
+                provider: Provider::Microsoft,
+                address: "me@acme.nl".into(),
+                name: "Work".into(),
+                calendar: true,
+            },
             "rt-ms",
         )
         .unwrap();
         svc.add_account(
-            MailAccount { id: "home".into(), provider: Provider::Google, address: "me@gmail.com".into(), name: "Home".into(), calendar: true },
+            MailAccount {
+                id: "home".into(),
+                provider: Provider::Google,
+                address: "me@gmail.com".into(),
+                name: "Home".into(),
+                calendar: true,
+            },
             "rt-g",
         )
         .unwrap();
@@ -1107,12 +1128,24 @@ mod tests {
             },
         );
         svc.add_account(
-            MailAccount { id: "work".into(), provider: Provider::Microsoft, address: "me@work.nl".into(), name: "Work".into(), calendar: true },
+            MailAccount {
+                id: "work".into(),
+                provider: Provider::Microsoft,
+                address: "me@work.nl".into(),
+                name: "Work".into(),
+                calendar: true,
+            },
             "rt-ms",
         )
         .unwrap();
         svc.add_account(
-            MailAccount { id: "home".into(), provider: Provider::Google, address: "me@gmail.com".into(), name: "Home".into(), calendar: true },
+            MailAccount {
+                id: "home".into(),
+                provider: Provider::Google,
+                address: "me@gmail.com".into(),
+                name: "Home".into(),
+                calendar: true,
+            },
             "rt-g",
         )
         .unwrap();
@@ -1122,7 +1155,11 @@ mod tests {
             to: vec!["anna@example.com".into()],
             subject: "Invite".into(),
             body: "See attached.".into(),
-            attachments: vec![super::super::Attachment { name: "invite.ics".into(), mime: "text/calendar".into(), bytes: b"BEGIN:VCALENDAR".to_vec() }],
+            attachments: vec![super::super::Attachment {
+                name: "invite.ics".into(),
+                mime: "text/calendar".into(),
+                bytes: b"BEGIN:VCALENDAR".to_vec(),
+            }],
             ..Default::default()
         };
         let used = svc.send_mail(&out, None).await.unwrap();
@@ -1203,12 +1240,24 @@ mod tests {
             },
         );
         svc.add_account(
-            MailAccount { id: "work".into(), provider: Provider::Microsoft, address: "me@work.nl".into(), name: "Work".into(), calendar: true },
+            MailAccount {
+                id: "work".into(),
+                provider: Provider::Microsoft,
+                address: "me@work.nl".into(),
+                name: "Work".into(),
+                calendar: true,
+            },
             "rt-ms",
         )
         .unwrap();
         svc.add_account(
-            MailAccount { id: "home".into(), provider: Provider::Google, address: "me@gmail.com".into(), name: "Home".into(), calendar: true },
+            MailAccount {
+                id: "home".into(),
+                provider: Provider::Google,
+                address: "me@gmail.com".into(),
+                name: "Home".into(),
+                calendar: true,
+            },
             "rt-g",
         )
         .unwrap();
@@ -1287,7 +1336,13 @@ mod tests {
         // Auth failure propagates Auth ErrorKind.
         let acct = svc
             .add_account(
-                MailAccount { id: "work".into(), provider: Provider::Microsoft, address: "a@b.nl".into(), name: "Work".into(), calendar: true },
+                MailAccount {
+                    id: "work".into(),
+                    provider: Provider::Microsoft,
+                    address: "a@b.nl".into(),
+                    name: "Work".into(),
+                    calendar: true,
+                },
                 "expired-rt",
             )
             .unwrap();

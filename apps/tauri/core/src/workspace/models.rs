@@ -778,7 +778,11 @@ pub fn normalized_branch_prefix(raw: &str) -> String {
         .map(|p| slug(p, 32))
         .filter(|p| !p.is_empty())
         .collect();
-    if parts.is_empty() { DEFAULT_BRANCH_PREFIX.to_string() } else { parts.join("/") }
+    if parts.is_empty() {
+        DEFAULT_BRANCH_PREFIX.to_string()
+    } else {
+        parts.join("/")
+    }
 }
 
 pub fn set_branch_prefix(raw: &str) {
@@ -787,7 +791,11 @@ pub fn set_branch_prefix(raw: &str) {
 
 fn branch_prefix() -> String {
     let prefix = BRANCH_PREFIX.read().unwrap_or_else(|e| e.into_inner()).clone();
-    if prefix.is_empty() { DEFAULT_BRANCH_PREFIX.to_string() } else { prefix }
+    if prefix.is_empty() {
+        DEFAULT_BRANCH_PREFIX.to_string()
+    } else {
+        prefix
+    }
 }
 
 /// "nook/fix-login-bug-3fa2": herkenbaar en uniek dankzij een stukje van het id; the prefix is the one from Settings.

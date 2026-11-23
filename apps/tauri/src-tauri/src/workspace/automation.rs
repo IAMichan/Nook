@@ -193,7 +193,9 @@ pub fn webhook_url(app: &AppHandle, task: Uuid) -> Option<String> {
 
 /// The title rules `project` sets for itself (Settings › Projects), empty when none.
 fn app_rules(app: &AppHandle, project: &str) -> String {
-    app.try_state::<WorkspaceState>().map(|w| crate::workspace::lock(&w.settings).defaults_for(project).title_instructions).unwrap_or_default()
+    app.try_state::<WorkspaceState>()
+        .map(|w| crate::workspace::lock(&w.settings).defaults_for(project).title_instructions)
+        .unwrap_or_default()
 }
 
 /// A short title for a new session from its first message, written by the chosen brain (the same path as every other

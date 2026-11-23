@@ -67,17 +67,9 @@ pub(super) async fn request_secret(
     }
 
     let account = secret_account(&name);
-    let stored = app
-        .try_state::<AppState>()
-        .and_then(|s| s.secrets.read(&account))
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
+    let stored = app.try_state::<AppState>().and_then(|s| s.secrets.read(&account)).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
 
-    let title = trf(
-        "{agent} vraagt om geheim {name}",
-        "{agent} requests secret {name}",
-        &[("agent", &caller.agent), ("name", &name)],
-    );
+    let title = trf("{agent} vraagt om geheim {name}", "{agent} requests secret {name}", &[("agent", &caller.agent), ("name", &name)]);
     let detail = secret_detail(&name, reason, sign_in.as_deref());
     let note = match (stored.is_some(), delivery) {
         (true, SecretDelivery::File) => tr(
@@ -98,10 +90,7 @@ pub(super) async fn request_secret(
         ),
     };
 
-    let decision = ws
-        .bridge
-        .ask_secret(app, caller, BridgeTool::RequestSecret, title, detail, note.into(), &context.connection)
-        .await;
+    let decision = ws.bridge.ask_secret(app, caller, BridgeTool::RequestSecret, title, detail, note.into(), &context.connection).await;
 
     if !decision.allowed {
         audit(app, BridgeTool::RequestSecret, caller, &name, "niet toegestaan");

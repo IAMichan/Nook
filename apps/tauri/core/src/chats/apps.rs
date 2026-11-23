@@ -67,12 +67,7 @@ pub fn built_in() -> Vec<MessagingApp> {
     messages.calls_are_facetime = true;
     let mut slack = app("slack", "Slack", &["app.slack.com"], Some("slack.com"));
     slack.notice_layout = NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, sender_in_title: false };
-    let mut teams = app(
-        "teams",
-        "Teams",
-        &["teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com"],
-        Some("teams.microsoft.com"),
-    );
+    let mut teams = app("teams", "Teams", &["teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com"], Some("teams.microsoft.com"));
     teams.notice_layout = NoticeLayout { speaker_in_text: SpeakerInText::Always, ..PLAIN };
     vec![
         whatsapp,
@@ -121,8 +116,16 @@ pub struct ChatNotice {
 /// "New message in #general" as "#general" (Slack, in the five languages).
 pub fn slack_chat(title: &str) -> String {
     const PREFIXES: [&str; 10] = [
-        "New message in ", "New message from ", "Nieuw bericht in ", "Nieuw bericht van ", "Neue Nachricht in ",
-        "Neue Nachricht von ", "Nouveau message dans ", "Nouveau message de ", "Nuevo mensaje en ", "Nuevo mensaje de ",
+        "New message in ",
+        "New message from ",
+        "Nieuw bericht in ",
+        "Nieuw bericht van ",
+        "Neue Nachricht in ",
+        "Neue Nachricht von ",
+        "Nouveau message dans ",
+        "Nouveau message de ",
+        "Nuevo mensaje en ",
+        "Nuevo mensaje de ",
     ];
     let lower = title.to_lowercase();
     for prefix in PREFIXES {
@@ -211,7 +214,10 @@ mod tests {
 
     #[test]
     fn the_apps_say_what_sets_them_apart() {
-        assert_eq!(known("slack").unwrap().notice_layout, NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, sender_in_title: false });
+        assert_eq!(
+            known("slack").unwrap().notice_layout,
+            NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, sender_in_title: false }
+        );
         assert_eq!(known("teams").unwrap().notice_layout.speaker_in_text, SpeakerInText::Always);
         assert!(known("whatsapp").unwrap().notice_layout.sender_in_title);
         assert_eq!(known("telegram").unwrap().notice_layout, NoticeLayout::default());

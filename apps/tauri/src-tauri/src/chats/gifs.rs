@@ -43,7 +43,10 @@ fn client() -> reqwest::Client {
 pub async fn chat_gifs(c: State<'_, Connectors>, query: String, offset: Option<usize>) -> Res<GifPage> {
     let own = c.env.secrets.read(giphy::KEY_ACCOUNT);
     let Some(key) = giphy::key(own.as_deref()) else {
-        return Ok(GifPage { gifs: vec![], problem: Some(tr("Voeg een GIPHY-sleutel toe om GIF's te zoeken.", "Add a GIPHY key to search GIFs.").into()) });
+        return Ok(GifPage {
+            gifs: vec![],
+            problem: Some(tr("Voeg een GIPHY-sleutel toe om GIF's te zoeken.", "Add a GIPHY key to search GIFs.").into()),
+        });
     };
     let url = giphy::request(&query, &key, nook_core::i18n::language(), offset.unwrap_or(0));
     let response = match client().get(&url).send().await {
@@ -54,7 +57,10 @@ pub async fn chat_gifs(c: State<'_, Connectors>, query: String, offset: Option<u
     let data = response.bytes().await.map_err(|e| e.to_string())?;
     if status != 200 {
         let why = giphy::problem(&data).unwrap_or_else(|| format!("HTTP {status}"));
-        return Ok(GifPage { gifs: vec![], problem: Some(nook_core::i18n::trf("GIPHY gaf geen GIF's: {why}", "GIPHY gave no GIFs: {why}", &[("why", &why)])) });
+        return Ok(GifPage {
+            gifs: vec![],
+            problem: Some(nook_core::i18n::trf("GIPHY gaf geen GIF's: {why}", "GIPHY gave no GIFs: {why}", &[("why", &why)])),
+        });
     }
     let gifs = giphy::gifs(&data);
     let problem = gifs.is_empty().then(|| tr("Geen GIF's gevonden.", "No GIFs found.").to_string());
@@ -99,7 +105,10 @@ pub fn chat_giphy_key_save(c: State<'_, Connectors>, key: String) -> Res<()> {
     if key.is_empty() {
         return Err(tr("De GIPHY-sleutel kon niet bewaard worden", "The GIPHY key could not be saved").into());
     }
-    c.env.secrets.write(giphy::KEY_ACCOUNT, &key).map_err(|_| tr("De GIPHY-sleutel kon niet bewaard worden", "The GIPHY key could not be saved").to_string())
+    c.env
+        .secrets
+        .write(giphy::KEY_ACCOUNT, &key)
+        .map_err(|_| tr("De GIPHY-sleutel kon niet bewaard worden", "The GIPHY key could not be saved").to_string())
 }
 
 #[tauri::command]

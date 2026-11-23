@@ -173,7 +173,8 @@ pub async fn whatsapp_avatars(c: State<'_, Connectors>, chats: Vec<String>) -> R
     // Each account is asked for its own chats; the answer is by the key the chat was asked by.
     let mut out = HashMap::new();
     for link in c.whatsapp_accounts.links() {
-        let mine: Vec<String> = chats.iter().filter(|k| nook_core::connectors::whatsapp::accounts::split(k).0 == link.account()).cloned().collect();
+        let mine: Vec<String> =
+            chats.iter().filter(|k| nook_core::connectors::whatsapp::accounts::split(k).0 == link.account()).cloned().collect();
         if mine.is_empty() {
             continue;
         }
@@ -442,9 +443,9 @@ pub async fn chat_forward(
     message_id: String,
     target_keys: Vec<String>,
 ) -> Res<ForwardResult> {
-    use std::collections::HashSet;
     use nook_core::chats::{ChatAction, ChatForward, ChatMedia, OutgoingKind};
     use nook_core::connectors::whatsapp;
+    use std::collections::HashSet;
 
     if target_keys.is_empty() {
         return Ok(ForwardResult { forwarded: vec![], failed: vec![] });
@@ -494,22 +495,18 @@ pub async fn chat_forward(
     }
 
     let outgoing_kind = ChatForward::outgoing_kind(&media, file_path.as_ref());
-    let forward = ChatForward::new(&text, file_path, outgoing_kind)
-        .ok_or_else(|| "Nothing to forward from this message.".to_string())?;
+    let forward = ChatForward::new(&text, file_path, outgoing_kind).ok_or_else(|| "Nothing to forward from this message.".to_string())?;
 
     let mut forwarded = Vec::new();
     let mut failed = Vec::new();
 
     for target_key in target_keys {
-        let target_meta = c.env.chats.read(|inbox| {
-            inbox.threads.get(&target_key).map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default(), t.name.clone()))
-        });
+        let target_meta = c
+            .env
+            .chats
+            .read(|inbox| inbox.threads.get(&target_key).map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default(), t.name.clone())));
         let Some((target_app, target_id, target_name)) = target_meta else {
-            failed.push(ForwardFailure {
-                key: target_key.clone(),
-                name: target_key,
-                reason: "This chat is no longer in Nook.".into(),
-            });
+            failed.push(ForwardFailure { key: target_key.clone(), name: target_key, reason: "This chat is no longer in Nook.".into() });
             continue;
         };
 
@@ -539,22 +536,13 @@ pub async fn chat_forward(
         if let Some(att) = &parts.attachment {
             match std::fs::read(&att.file) {
                 Ok(bytes) => {
-                    let name = att
-                        .file
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "attachment".into());
+                    let name = att.file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "attachment".into());
                     let mime = mime_for_forward(&att.file, att.kind);
                     let is_voice = att.kind == OutgoingKind::Voice;
                     if target_app == whatsapp::APP {
                         use nook_core::connectors::whatsapp::provider::{FileKind, OutgoingFile};
-                        let file = OutgoingFile {
-                            kind: FileKind::of(mime, is_voice),
-                            name: &name,
-                            mime,
-                            bytes: &bytes,
-                            caption: &att.caption,
-                        };
+                        let file =
+                            OutgoingFile { kind: FileKind::of(mime, is_voice), name: &name, mime, bytes: &bytes, caption: &att.caption };
                         if let Err(e) = c.wa(&target_id).send_file(&target_id, &file, None).await {
                             step_err = Some(e.message);
                         }
@@ -658,7 +646,12 @@ pub async fn chat_set_muted(app: AppHandle, c: State<'_, Connectors>, key: Strin
 
 /// Archives or unarchives a chat, syncing to the app when `ChatAbilities::archive` allows it (CH-58).
 #[tauri::command]
-pub async fn chat_set_archived(app: AppHandle, c: State<'_, Connectors>, key: String, archived: bool) -> Res<nook_core::chats::ChatAbilities> {
+pub async fn chat_set_archived(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    archived: bool,
+) -> Res<nook_core::chats::ChatAbilities> {
     use nook_core::chats::ChatAction;
     let (_, chat_id) = crate::chats::inbox::chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
     let abilities = crate::chats::inbox::abilities_for(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
@@ -696,20 +689,11 @@ pub async fn chat_ask_nook(app: AppHandle, c: State<'_, Connectors>, key: String
     let (source, chat_id, name) = c
         .env
         .chats
-        .read(|inbox| {
-            inbox
-                .threads
-                .get(&key)
-                .map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default(), t.name.clone()))
-        })
+        .read(|inbox| inbox.threads.get(&key).map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default(), t.name.clone())))
         .ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
 
     if source == nook_core::connectors::whatsapp::APP {
-        let target = if chat_id.is_empty() {
-            key.strip_prefix("whatsapp#").unwrap_or(&key).to_string()
-        } else {
-            chat_id
-        };
+        let target = if chat_id.is_empty() { key.strip_prefix("whatsapp#").unwrap_or(&key).to_string() } else { chat_id };
         return whatsapp_ask_nook(app, c, target).await;
     }
 
@@ -724,10 +708,8 @@ pub async fn chat_ask_nook(app: AppHandle, c: State<'_, Connectors>, key: String
     let app_label = crate::chats::notify::app_name(&source);
     let prompt = format!("Write a short reply to {} on {app_label} that I can send.", prompt_name(&name));
     let nook_id = app.state::<AppState>().with_chat(|chat| chat.new_conversation());
-    let run = CardRun {
-        focus: vec![("chat_inbox".into(), serde_json::json!({"chat": name, "app": source, "limit": 20}))],
-        only_chat: None,
-    };
+    let run =
+        CardRun { focus: vec![("chat_inbox".into(), serde_json::json!({"chat": name, "app": source, "limit": 20}))], only_chat: None };
     chat::ask_from_card(&app, &nook_id, &prompt, run)?;
     Ok(nook_id)
 }

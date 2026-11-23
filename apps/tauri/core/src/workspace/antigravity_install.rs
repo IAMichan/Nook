@@ -171,11 +171,7 @@ pub fn uninstall(paths: &Paths) -> Result<(), String> {
 /// Downloads, checks, unpacks, test-starts and activates the pinned release. `progress` hears each step.
 pub async fn install(paths: &Paths, mut progress: impl FnMut(Phase) + Send) -> Result<(), String> {
     let asset = current().ok_or_else(|| {
-        tr(
-            "Er is geen Antigravity-server voor deze computer.",
-            "There is no Antigravity server for this computer.",
-        )
-        .to_string()
+        tr("Er is geen Antigravity-server voor deze computer.", "There is no Antigravity server for this computer.").to_string()
     })?;
     let failed = |e: &dyn std::fmt::Display| {
         trf("Antigravity installeren lukte niet: {error}", "Couldn't install Antigravity: {error}", &[("error", e)])
@@ -225,9 +221,7 @@ pub async fn install(paths: &Paths, mut progress: impl FnMut(Phase) + Send) -> R
 }
 
 async fn download(asset: &Asset, to: &Path, progress: &mut (impl FnMut(Phase) + Send)) -> Result<(), String> {
-    let failed = |e: &dyn std::fmt::Display| {
-        trf("De download lukte niet: {error}", "The download failed: {error}", &[("error", e)])
-    };
+    let failed = |e: &dyn std::fmt::Display| trf("De download lukte niet: {error}", "The download failed: {error}", &[("error", e)]);
     progress(Phase::Downloading(0.0));
     let response = reqwest::Client::new().get(asset.url).send().await.map_err(|e| failed(&e))?;
     if !response.status().is_success() {
@@ -281,7 +275,8 @@ fn unpack(archive: &Path, into: &Path, asset: &Asset) -> Result<(), String> {
     };
     let file = std::fs::File::open(archive).map_err(|_| bad())?;
     let mut zip = zip::ZipArchive::new(file).map_err(|_| bad())?;
-    let names: Vec<String> = (0..zip.len()).filter_map(|i| zip.by_index(i).ok().and_then(|f| f.name().ok().map(|n| n.to_string()))).collect();
+    let names: Vec<String> =
+        (0..zip.len()).filter_map(|i| zip.by_index(i).ok().and_then(|f| f.name().ok().map(|n| n.to_string()))).collect();
     let expected = [asset.executable.name, asset.harness.name];
     if names.len() != 2 || !expected.iter().all(|e| names.iter().any(|n| n == e)) {
         return Err(bad());
@@ -305,7 +300,11 @@ fn unpack(archive: &Path, into: &Path, asset: &Asset) -> Result<(), String> {
         }
         files.push((name, written));
     }
-    if verify(&files, asset) { Ok(()) } else { Err(bad()) }
+    if verify(&files, asset) {
+        Ok(())
+    } else {
+        Err(bad())
+    }
 }
 
 /// A test start in a throwaway profile: `initialize` must answer as Antigravity, with Google sign-in, within 90 s.
@@ -377,9 +376,14 @@ mod tests {
 
     #[test]
     fn pins_a_release_for_every_desktop() {
-        for (os, arch) in
-            [("macos", "aarch64"), ("macos", "x86_64"), ("windows", "x86_64"), ("windows", "aarch64"), ("linux", "x86_64"), ("linux", "aarch64")]
-        {
+        for (os, arch) in [
+            ("macos", "aarch64"),
+            ("macos", "x86_64"),
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+        ] {
             let a = asset(os, arch).unwrap();
             assert!(a.url.starts_with(BASE) && a.url.ends_with(".zip"), "{os} {arch}");
             assert_eq!(a.sha256.len(), 64);

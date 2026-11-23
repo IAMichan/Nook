@@ -71,7 +71,11 @@ pub fn status_lines(info: &TrayLive) -> Vec<StatusLine> {
     }
     if info.agents_running > 0 {
         let title = if info.agents_waiting > 0 {
-            trf("{n} agents bezig, {w} wachten op jou", "{n} agents running, {w} waiting for you", &[("n", &info.agents_running), ("w", &info.agents_waiting)])
+            trf(
+                "{n} agents bezig, {w} wachten op jou",
+                "{n} agents running, {w} waiting for you",
+                &[("n", &info.agents_running), ("w", &info.agents_waiting)],
+            )
         } else {
             trf("{n} agents bezig", "{n} agents running", &[("n", &info.agents_running)])
         };
@@ -84,7 +88,11 @@ pub fn status_lines(info: &TrayLive) -> Vec<StatusLine> {
         lines.push(StatusLine { id: "status-music", title: track.to_string() });
     }
     let update = match info.update.as_deref() {
-        Some("available") => Some(trf("Bijwerken naar Nook {version}…", "Update to Nook {version}…", &[("version", &info.update_version.clone().unwrap_or_default())])),
+        Some("available") => Some(trf(
+            "Bijwerken naar Nook {version}…",
+            "Update to Nook {version}…",
+            &[("version", &info.update_version.clone().unwrap_or_default())],
+        )),
         Some("installing") => Some(tr("Nook wordt bijgewerkt…", "Updating Nook…").to_string()),
         Some("ready") => Some(tr("Herstart Nook om de update af te ronden", "Restart Nook to finish the update").to_string()),
         Some("failed") => Some(tr("De update is niet afgerond", "The update did not finish").to_string()),
@@ -121,7 +129,13 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let mut position = 0;
     for line in &lines {
         if line.id == "status-music" {
-            let play = MenuItem::with_id(app, "music-play", if info.playing { tr("Pauzeer", "Pause") } else { tr("Speel af", "Play") }, true, None::<&str>)?;
+            let play = MenuItem::with_id(
+                app,
+                "music-play",
+                if info.playing { tr("Pauzeer", "Pause") } else { tr("Speel af", "Play") },
+                true,
+                None::<&str>,
+            )?;
             let next = MenuItem::with_id(app, "music-next", tr("Volgend nummer", "Next track"), true, None::<&str>)?;
             let music = Submenu::with_id_and_items(app, line.id, &line.title, true, &[&play, &next])?;
             menu.insert(&music, position)?;
@@ -189,7 +203,8 @@ pub fn handle_menu(app: &AppHandle, id: &str) -> bool {
         }
         "status-update" => super::desktop::show_main(app, "settings:maintenance"),
         "music-play" | "music-next" => {
-            let command = if id == "music-next" { nook_core::platform::MediaCommand::Next } else { nook_core::platform::MediaCommand::PlayPause };
+            let command =
+                if id == "music-next" { nook_core::platform::MediaCommand::Next } else { nook_core::platform::MediaCommand::PlayPause };
             let app = app.clone();
             std::thread::spawn(move || {
                 let _ = app.state::<crate::services::Services>().platform.media.send(command);

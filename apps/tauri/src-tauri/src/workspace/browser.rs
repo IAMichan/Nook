@@ -176,7 +176,9 @@ impl Browser {
                             // "Remember visited pages": the pages you visit, never the ones an agent opened.
                             let s = ws.browser.state();
                             if s.opened_by.is_none() && nook_core::workspace::open_in::OpenInPrefs::current().remember_history {
-                                tauri::async_runtime::spawn_blocking(move || nook_core::workspace::browser_history::record(&s.url, &s.title));
+                                tauri::async_runtime::spawn_blocking(move || {
+                                    nook_core::workspace::browser_history::record(&s.url, &s.title)
+                                });
                             }
                         });
                     }
@@ -307,7 +309,9 @@ impl Browser {
     pub async fn pick_element(&self, app: &AppHandle) -> Result<Option<PickedElement>, String> {
         let state = self.state();
         if !state.open || state.url.is_empty() {
-            return Err(nook_core::i18n::tr("Er staat geen pagina open in de browser van Nook.", "No page is open in Nook's browser.").into());
+            return Err(
+                nook_core::i18n::tr("Er staat geen pagina open in de browser van Nook.", "No page is open in Nook's browser.").into()
+            );
         }
         if let Some(w) = app.get_webview_window(LABEL) {
             let _ = w.show();
@@ -354,7 +358,9 @@ impl Browser {
     pub async fn page_elements(&self, app: &AppHandle) -> Result<Vec<PickedElement>, String> {
         let state = self.state();
         if !state.open || state.url.is_empty() {
-            return Err(nook_core::i18n::tr("Er staat geen pagina open in de browser van Nook.", "No page is open in Nook's browser.").into());
+            return Err(
+                nook_core::i18n::tr("Er staat geen pagina open in de browser van Nook.", "No page is open in Nook's browser.").into()
+            );
         }
         let raw = self.evaluate(app, PAGE_ELEMENTS_SCRIPT).await?;
         let arr: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap_or_default();
@@ -378,11 +384,7 @@ pub struct PickedElement {
 impl PickedElement {
     pub fn new(url: String, selector: String, text: String, label: String, html: String) -> Self {
         let short_label: String = label.chars().take(36).collect();
-        let name = if !short_label.is_empty() {
-            format!("{selector} \"{short_label}\"")
-        } else {
-            selector.clone()
-        };
+        let name = if !short_label.is_empty() { format!("{selector} \"{short_label}\"") } else { selector.clone() };
         let mut lines = vec![format!("[Element on {url}: `{selector}`]")];
         if !label.is_empty() && label != text {
             lines.push(format!("Label: {label}"));

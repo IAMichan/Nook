@@ -91,7 +91,7 @@ pub fn common_groups<'a>(name: &str, app: &str, threads: impl IntoIterator<Item 
     }
     let mut shared: Vec<&InboxThread> = threads
         .into_iter()
-        .filter(|t| t.app == app && t.kind == Some(ChatKind::Group) || (t.app == app && t.is_group()))
+        .filter(|t| t.app == app && (t.is_group() || t.kind == Some(ChatKind::Group)))
         .filter(|t| t.members.as_ref().is_some_and(|members| members.iter().any(|m| fold(m) == wanted)))
         .collect();
     shared.sort_by_key(|t| std::cmp::Reverse(t.activity.or_else(|| t.messages.last().map(|m| m.date))));

@@ -139,7 +139,8 @@ pub fn stop(folder: &str, pid: u32, port: u16, shells: &[u32], agents: &[u32]) -
     if roots.processes.contains_key(&pid) || !started_by_nook(pid, &roots, &table_of(&system)) {
         return false;
     }
-    let parents: Vec<(u32, u32)> = system.processes().iter().filter_map(|(p, proc_)| Some((p.as_u32(), proc_.parent()?.as_u32()))).collect();
+    let parents: Vec<(u32, u32)> =
+        system.processes().iter().filter_map(|(p, proc_)| Some((p.as_u32(), proc_.parent()?.as_u32()))).collect();
     for target in stop_order(pid, &parents) {
         if roots.processes.contains_key(&target) {
             continue;

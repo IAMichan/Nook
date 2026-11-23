@@ -73,7 +73,11 @@ pub fn list() -> Vec<UserScript> {
 /// The script called `name` (without its extension, case does not matter).
 pub fn find_in(dir: &Path, name: &str) -> Option<UserScript> {
     let wanted = name.trim().to_lowercase();
-    let wanted = wanted.rsplit_once('.').filter(|(_, ext)| ["ps1", "bat", "cmd", "lnk", "sh"].contains(ext)).map(|(stem, _)| stem.to_string()).unwrap_or(wanted);
+    let wanted = wanted
+        .rsplit_once('.')
+        .filter(|(_, ext)| ["ps1", "bat", "cmd", "lnk", "sh"].contains(ext))
+        .map(|(stem, _)| stem.to_string())
+        .unwrap_or(wanted);
     list_in(dir).into_iter().find(|s| s.name.to_lowercase() == wanted)
 }
 

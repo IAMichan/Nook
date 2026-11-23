@@ -71,9 +71,7 @@ pub fn compacting_step_text() -> &'static str {
 /// Whether `text` is the compaction step text in the active or any catalog language.
 pub fn is_compacting_text(text: &str) -> bool {
     text == compacting_step_text()
-        || ["en", "de", "fr", "es"]
-            .into_iter()
-            .any(|lang| crate::i18n::translate(lang, "", "Compacting the conversation…") == text)
+        || ["en", "de", "fr", "es"].into_iter().any(|lang| crate::i18n::translate(lang, "", "Compacting the conversation…") == text)
 }
 
 /// Een agentsessie zoals de interface hem toont.

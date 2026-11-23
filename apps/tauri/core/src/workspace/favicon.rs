@@ -41,8 +41,15 @@ pub const CANDIDATES: &[&str] = &[
 ];
 
 /// Files that may link the icon (`<link rel="icon" href="…">`, or `rel: "icon", href: "…"` in a route).
-const SOURCES: &[&str] =
-    &["index.html", "public/index.html", "app/routes/__root.tsx", "src/routes/__root.tsx", "app/root.tsx", "src/root.tsx", "src/index.html"];
+const SOURCES: &[&str] = &[
+    "index.html",
+    "public/index.html",
+    "app/routes/__root.tsx",
+    "src/routes/__root.tsx",
+    "app/root.tsx",
+    "src/root.tsx",
+    "src/index.html",
+];
 /// Folders of a monorepo whose packages may hold the web app with the favicon.
 const WORKSPACES: &[&str] = &["apps", "packages", "web", "site", "website"];
 /// Folders inside a monorepo package that hold its web app.

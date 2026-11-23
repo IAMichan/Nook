@@ -101,7 +101,9 @@ mod tests {
         let trending = request("  ", "k", "nl", 0);
         assert!(trending.starts_with("https://api.giphy.com/v1/gifs/trending?") && !trending.contains("q="));
         let search = request("happy cat", "k", "nl", 30);
-        assert!(search.contains("/v1/gifs/search") && search.contains("q=happy") && search.contains("lang=nl") && search.contains("offset=30"));
+        assert!(
+            search.contains("/v1/gifs/search") && search.contains("q=happy") && search.contains("lang=nl") && search.contains("offset=30")
+        );
         assert_eq!(key(Some("  ")), Some(BUILT_IN_KEY.to_string()));
         assert_eq!(key(Some("mine")), Some("mine".to_string()));
     }
@@ -119,6 +121,9 @@ mod tests {
         assert_eq!((found[0].width, found[0].height), (Some(100.0), Some(80.0)));
         assert_eq!(file_name(&found[0].file), "GIF.mp4");
         assert_eq!(file_name("https://i.giphy.com/x/giphy.gif?cid=1"), "GIF.gif");
-        assert_eq!(problem(br#"{"meta":{"msg":"Invalid authentication credentials"}}"#).as_deref(), Some("Invalid authentication credentials"));
+        assert_eq!(
+            problem(br#"{"meta":{"msg":"Invalid authentication credentials"}}"#).as_deref(),
+            Some("Invalid authentication credentials")
+        );
     }
 }

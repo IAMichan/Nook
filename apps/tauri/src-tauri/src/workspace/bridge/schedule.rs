@@ -27,9 +27,7 @@ fn matches_caller(task: &ScheduledTask, caller: &BridgeCaller) -> bool {
     let caller_dir = paths::normalize(&caller.directory);
     let caller_run = caller.run.as_deref().and_then(|s| Uuid::parse_str(s).ok());
     match &task.target {
-        ScheduledTaskTarget::NewSession { project_path, .. } => {
-            !caller_dir.is_empty() && paths::normalize(project_path) == caller_dir
-        }
+        ScheduledTaskTarget::NewSession { project_path, .. } => !caller_dir.is_empty() && paths::normalize(project_path) == caller_dir,
         ScheduledTaskTarget::ExistingSession { id, .. } => caller_run == Some(*id),
         ScheduledTaskTarget::Nook => false,
     }
@@ -41,12 +39,7 @@ pub(super) fn list_scheduled_tasks(app: &AppHandle, a: &Map<String, Value>, call
     }
     let auto = app.try_state::<AutomationState>().ok_or("Nook automation is not ready.")?;
     let show_all = a.get("all").and_then(Value::as_bool).unwrap_or(false);
-    let tasks: Vec<ScheduledTask> = auto
-        .scheduler
-        .tasks()
-        .into_iter()
-        .filter(|t| show_all || matches_caller(t, caller))
-        .collect();
+    let tasks: Vec<ScheduledTask> = auto.scheduler.tasks().into_iter().filter(|t| show_all || matches_caller(t, caller)).collect();
     let global_on = auto.settings().scheduled_tasks;
     Ok(ToolResult::text(render_scheduled_tasks(&tasks, global_on)))
 }
@@ -175,11 +168,7 @@ pub(super) async fn update_scheduled_task(
                 "Het aanpassen of verwijderen van een geplande taak vraagt altijd om jouw bevestiging.",
                 "Updating or deleting a scheduled task always requires your approval.",
             );
-            if !ws
-                .bridge
-                .ask(app, caller, BridgeTool::UpdateScheduledTask, title, detail, note.into(), &context.connection)
-                .await
-            {
+            if !ws.bridge.ask(app, caller, BridgeTool::UpdateScheduledTask, title, detail, note.into(), &context.connection).await {
                 audit(app, BridgeTool::UpdateScheduledTask, caller, &existing.title, "niet toegestaan");
                 return Err(refusal(Reason::Schedule).into());
             }
@@ -195,7 +184,7 @@ pub(super) async fn update_scheduled_task(
             Ok(ToolResult::text(format!("Deleted scheduled task \"{}\" ({id}).", existing.title)))
         }
         ScheduleUpdate::Save(next, changes) => {
-            let saved = auto.scheduler.save_task(next, Utc::now(), &Local);
+            let saved = auto.scheduler.save_task(*next, Utc::now(), &Local);
             let _ = app.emit("automation-changed", ());
             audit(app, BridgeTool::UpdateScheduledTask, caller, &saved.title, &changes.join(", "));
             Ok(ToolResult::text(format!("Updated scheduled task:\n{}", render_scheduled_task(&saved))))
@@ -231,11 +220,7 @@ pub(super) async fn run_scheduled_task_now(
                 "De taak start direct één keer met zijn eigen opdracht en rechten.",
                 "The task runs once right now with its own prompt and rights.",
             );
-            if !ws
-                .bridge
-                .ask(app, caller, BridgeTool::RunScheduledTaskNow, title, detail, note.into(), &context.connection)
-                .await
-            {
+            if !ws.bridge.ask(app, caller, BridgeTool::RunScheduledTaskNow, title, detail, note.into(), &context.connection).await {
                 audit(app, BridgeTool::RunScheduledTaskNow, caller, &existing.title, "niet toegestaan");
                 return Err(refusal(Reason::Schedule).into());
             }

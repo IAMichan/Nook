@@ -399,13 +399,7 @@ pub fn agents_granted_rules(
 
 /// Trekt één toestemmingsregel in uit zowel Nook's opslag als het Claude settings-bestand (indien van toepassing).
 #[tauri::command]
-pub fn agents_revoke_rule(
-    app: AppHandle,
-    state: State<'_, AgentsState>,
-    project: String,
-    rule: String,
-    file: Option<String>,
-) -> Res<bool> {
+pub fn agents_revoke_rule(app: AppHandle, state: State<'_, AgentsState>, project: String, rule: String, file: Option<String>) -> Res<bool> {
     let removed = state.hub.revoke_rule(&project, &rule, file.as_deref())?;
     if removed {
         changed(&app);

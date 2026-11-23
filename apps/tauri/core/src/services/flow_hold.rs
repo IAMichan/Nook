@@ -29,7 +29,8 @@ impl HoldKey {
 
     /// The key a setting names; `None` for an ordinary accelerator like "Control+Alt+D".
     pub fn parse(setting: &str) -> Option<Self> {
-        let flat: String = setting.chars().filter(|c| !c.is_whitespace() && *c != '+' && *c != '-' && *c != '_').collect::<String>().to_lowercase();
+        let flat: String =
+            setting.chars().filter(|c| !c.is_whitespace() && *c != '+' && *c != '-' && *c != '_').collect::<String>().to_lowercase();
         match flat.as_str() {
             "rightcontrol" | "rightctrl" | "rcontrol" | "rctrl" => Some(Self::RightControl),
             "rightalt" | "rightoption" | "ralt" | "altgr" => Some(Self::RightAlt),

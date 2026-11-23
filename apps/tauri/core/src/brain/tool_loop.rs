@@ -49,8 +49,11 @@ pub struct ToolRunner {
     /// Tools die tijdens het gesprek vrijkomen (`use_source`); ze doen vanaf de volgende aanroep mee.
     pub unlocked: std::sync::Arc<std::sync::Mutex<Vec<LoopTool>>>,
     /// Filters what a tool read before the brain gets it (the privacy level for an external brain); none keeps it.
-    pub shield: Option<Box<dyn Fn(&str) -> String + Send + Sync>>,
+    pub shield: Option<OutputShield>,
 }
+
+/// Filter applied to tool outputs before handing them to an external brain.
+pub type OutputShield = Box<dyn Fn(&str) -> String + Send + Sync>;
 
 impl ToolRunner {
     pub fn new(tools: Vec<LoopTool>) -> Self {

@@ -415,13 +415,9 @@ pub async fn reply_to_case(settings: &Settings, env: &BrainEnv, case: &eval::Cas
     };
 
     let context = build_context(case, evidence_section.as_deref());
-    let mut plan = service::run(
-        settings,
-        env,
-        BrainRequest { text: case.question.into(), context: context.clone(), ..Default::default() },
-        None,
-    )
-    .await?;
+    let mut plan =
+        service::run(settings, env, BrainRequest { text: case.question.into(), context: context.clone(), ..Default::default() }, None)
+            .await?;
 
     let mut retried_grounding = false;
     let loose = needs_grounding_retry(&plan.text, case.question, &context, settings.check_answers, is_small);
@@ -518,10 +514,7 @@ mod tests {
         assert!(!plain.contains("Evidence ("));
         assert_eq!(build_context(case, Some("")), plain);
 
-        let section = evidence::section(&[evidence::Item {
-            title: "Tandarts".into(),
-            quotes: vec!["dinsdag 21 oktober om 14:30".into()],
-        }]);
+        let section = evidence::section(&[evidence::Item { title: "Tandarts".into(), quotes: vec!["dinsdag 21 oktober om 14:30".into()] }]);
         let with_ev = build_context(case, Some(&section));
         let ev_idx = with_ev.find("Evidence (").unwrap();
         let read_idx = with_ev.find("\n\nRead in full").unwrap();
@@ -542,7 +535,8 @@ mod tests {
 
         let compute_case = question("amount-sum").unwrap();
         let compute_ctx = build_context(compute_case, None);
-        assert!(needs_grounding_retry("De totale kosten bedragen 999 euro voor alles.", compute_case.question, &compute_ctx, true, true).is_empty());
+        assert!(needs_grounding_retry("De totale kosten bedragen 999 euro voor alles.", compute_case.question, &compute_ctx, true, true)
+            .is_empty());
 
         let prompt = correction_prompt(case.question, &["14:30".into()]);
         assert!(prompt.starts_with(case.question));

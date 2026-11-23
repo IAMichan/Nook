@@ -187,12 +187,7 @@ pub fn context_words(app: &AppHandle) -> Vec<String> {
         }
     }
     let active_window = services.platform.screen.active_app().map(|a| a.title);
-    let focused_field = services
-        .platform
-        .text_input
-        .focused_field()
-        .ok()
-        .map(|f| format!("{} {}", f.window_title, f.before));
+    let focused_field = services.platform.text_input.focused_field().ok().map(|f| format!("{} {}", f.window_title, f.before));
     nook_core::services::dictation_context::prompt_words(
         &dict_words,
         &projects,
@@ -236,4 +231,3 @@ async fn shape(app: &AppHandle, heard: &str, target: Option<&(String, String)>) 
     }
     flow::finish(&body, &prepared.snippets)
 }
-

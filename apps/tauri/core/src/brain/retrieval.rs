@@ -561,7 +561,7 @@ pub mod citations {
                 while end < lines.len() && !lines[end].trim().is_empty() && !used(lines[end]).is_empty() {
                     end += 1;
                 }
-                if !(end > index + 1 && !used(lines[end - 1]).is_empty()) {
+                if end <= index + 1 || used(lines[end - 1]).is_empty() {
                     index += 1;
                     continue;
                 }

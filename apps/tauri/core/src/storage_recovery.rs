@@ -99,12 +99,26 @@ pub fn open<T>(path: &Path, open: impl Fn(&Path) -> Result<T, String>) -> Option
                     let moved_to = Some(copy.to_string_lossy().into_owned());
                     match &fresh {
                         Ok(_) => record(Incident { id: 0, file, kind: IncidentKind::Damaged, reason, moved_to, recover_command: None }),
-                        Err(e) => record(Incident { id: 0, file, kind: IncidentKind::Unavailable, reason: e.clone(), moved_to, recover_command: None }),
+                        Err(e) => record(Incident {
+                            id: 0,
+                            file,
+                            kind: IncidentKind::Unavailable,
+                            reason: e.clone(),
+                            moved_to,
+                            recover_command: None,
+                        }),
                     }
                     fresh.ok()
                 }
                 Err(e) => {
-                    record(Incident { id: 0, file, kind: IncidentKind::Unavailable, reason: format!("{reason} ({e})"), moved_to: None, recover_command: None });
+                    record(Incident {
+                        id: 0,
+                        file,
+                        kind: IncidentKind::Unavailable,
+                        reason: format!("{reason} ({e})"),
+                        moved_to: None,
+                        recover_command: None,
+                    });
                     None
                 }
             }
@@ -137,8 +151,22 @@ pub fn read_json<T: Default>(path: &Path, parse: impl Fn(&[u8]) -> Result<T, Str
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let target = aside_name(path, &stamp);
     match std::fs::rename(path, &target) {
-        Ok(()) => record(Incident { id: 0, file, kind: IncidentKind::Damaged, reason, moved_to: Some(target.to_string_lossy().into_owned()), recover_command: None }),
-        Err(e) => record(Incident { id: 0, file, kind: IncidentKind::Unavailable, reason: format!("{reason} ({e})"), moved_to: None, recover_command: None }),
+        Ok(()) => record(Incident {
+            id: 0,
+            file,
+            kind: IncidentKind::Damaged,
+            reason,
+            moved_to: Some(target.to_string_lossy().into_owned()),
+            recover_command: None,
+        }),
+        Err(e) => record(Incident {
+            id: 0,
+            file,
+            kind: IncidentKind::Unavailable,
+            reason: format!("{reason} ({e})"),
+            moved_to: None,
+            recover_command: None,
+        }),
     }
     T::default()
 }
@@ -158,8 +186,13 @@ fn check(path: &Path) -> Result<(), Failure> {
     if !path.exists() {
         return Ok(());
     }
-    let conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|e| if is_damage(&e) { Failure::Damage(e.to_string()) } else { Failure::Other(e.to_string()) })?;
+    let conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| {
+        if is_damage(&e) {
+            Failure::Damage(e.to_string())
+        } else {
+            Failure::Other(e.to_string())
+        }
+    })?;
     let classify = |e: rusqlite::Error| if is_damage(&e) { Failure::Damage(e.to_string()) } else { Failure::Other(e.to_string()) };
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0)).map_err(classify)?;
     let small = std::fs::metadata(path).map(|m| m.len() <= 8 << 20).unwrap_or(false);
@@ -202,7 +235,9 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("nook.sqlite");
         std::fs::write(&path, b"this is not a database at all, but it is long enough to have a header....").unwrap();
-        let opened = open(&path, |p| rusqlite::Connection::open(p).and_then(|c| c.execute_batch("CREATE TABLE t(x)").map(|_| c)).map_err(|e| e.to_string()));
+        let opened = open(&path, |p| {
+            rusqlite::Connection::open(p).and_then(|c| c.execute_batch("CREATE TABLE t(x)").map(|_| c)).map_err(|e| e.to_string())
+        });
         assert!(opened.is_some());
         let incident = incidents().into_iter().find(|i| i.file == path.to_string_lossy()).expect("an incident");
         assert_eq!(incident.kind, IncidentKind::Damaged);
@@ -215,6 +250,9 @@ mod tests {
     #[test]
     fn names_the_copy_by_date() {
         assert_eq!(aside_name(Path::new("/a/nook.sqlite"), "20261120-101500"), PathBuf::from("/a/nook.damaged-20261120-101500.sqlite"));
-        assert_eq!(recover_command("/a/nook.damaged-1.sqlite"), "sqlite3 \"/a/nook.damaged-1.sqlite\" \".recover\" | sqlite3 \"/a/nook.damaged-1.recovered.sqlite\"");
+        assert_eq!(
+            recover_command("/a/nook.damaged-1.sqlite"),
+            "sqlite3 \"/a/nook.damaged-1.sqlite\" \".recover\" | sqlite3 \"/a/nook.damaged-1.recovered.sqlite\""
+        );
     }
 }

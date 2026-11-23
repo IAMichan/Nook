@@ -67,12 +67,8 @@ pub fn from_lrclib(track: LrclibTrack) -> Lyrics {
     if let Some(lines) = track.synced_lyrics.as_deref().map(parse_lrc).filter(|l| !l.is_empty()) {
         return Lyrics { lines, synced: true, instrumental: track.instrumental };
     }
-    let lines = track
-        .plain_lyrics
-        .unwrap_or_default()
-        .lines()
-        .map(|t| LyricLine { at: None, text: t.trim().to_string() })
-        .collect::<Vec<_>>();
+    let lines =
+        track.plain_lyrics.unwrap_or_default().lines().map(|t| LyricLine { at: None, text: t.trim().to_string() }).collect::<Vec<_>>();
     Lyrics { lines, synced: false, instrumental: track.instrumental }
 }
 
@@ -97,6 +93,9 @@ mod tests {
     fn falls_back_to_plain_lyrics_and_asks_with_little() {
         let lyrics = from_lrclib(LrclibTrack { plain_lyrics: Some("a\nb".into()), ..Default::default() });
         assert!(!lyrics.synced && lyrics.lines.len() == 2);
-        assert_eq!(request_url("Song A", "The Band", "", Some(201.6)), "https://lrclib.net/api/get?track_name=Song%20A&artist_name=The%20Band&duration=202");
+        assert_eq!(
+            request_url("Song A", "The Band", "", Some(201.6)),
+            "https://lrclib.net/api/get?track_name=Song%20A&artist_name=The%20Band&duration=202"
+        );
     }
 }

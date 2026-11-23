@@ -243,8 +243,9 @@ mod tests {
     #[test]
     fn answers_become_a_message_that_says_what_they_answer() {
         let item = QuestionItem { question: "Which one?".into(), header: String::new(), options: vec![], multi_select: false };
-        assert_eq!(answer_message(&[item.clone()], &[vec!["A".into(), "B".into()]], false), "Which one? → A, B");
-        assert!(answer_message(&[item], &[vec!["A".into()]], true).starts_with("My answers to the questions you asked before Nook restarted:\n"));
+        assert_eq!(answer_message(std::slice::from_ref(&item), &[vec!["A".into(), "B".into()]], false), "Which one? → A, B");
+        assert!(answer_message(&[item], &[vec!["A".into()]], true)
+            .starts_with("My answers to the questions you asked before Nook restarted:\n"));
     }
 
     fn timed(alive_for: u64, timing: Timing) -> (Outcome, Vec<&'static str>) {

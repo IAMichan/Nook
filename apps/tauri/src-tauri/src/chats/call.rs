@@ -93,16 +93,8 @@ fn emit_changed(app: &AppHandle, snapshot: Option<&CallSnapshot>) {
 fn read_devices() -> CallDevices {
     use cpal::traits::{DeviceTrait, HostTrait};
     let host = cpal::default_host();
-    let microphone = host
-        .default_input_device()
-        .and_then(|d| d.description().ok())
-        .map(|d| d.name().to_string())
-        .filter(|n| !n.is_empty());
-    let speaker = host
-        .default_output_device()
-        .and_then(|d| d.description().ok())
-        .map(|d| d.name().to_string())
-        .filter(|n| !n.is_empty());
+    let microphone = host.default_input_device().and_then(|d| d.description().ok()).map(|d| d.name().to_string()).filter(|n| !n.is_empty());
+    let speaker = host.default_output_device().and_then(|d| d.description().ok()).map(|d| d.name().to_string()).filter(|n| !n.is_empty());
     CallDevices { microphone, speaker, camera: None }
 }
 

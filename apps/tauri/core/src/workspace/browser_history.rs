@@ -47,7 +47,11 @@ pub fn record_in(file: &Path, url: &str, title: &str, at: i64) {
     let title = match visits.iter().position(|v| v.url == url) {
         Some(i) => {
             let old = visits.remove(i);
-            if title.trim().is_empty() { old.title } else { title.trim().to_string() }
+            if title.trim().is_empty() {
+                old.title
+            } else {
+                title.trim().to_string()
+            }
         }
         None => title.trim().to_string(),
     };

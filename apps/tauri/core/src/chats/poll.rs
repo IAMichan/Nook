@@ -115,7 +115,9 @@ impl ChatPoll {
             let mut names: Vec<(bool, String)> =
                 self.ballots.values().filter(|b| b.choice.contains(&o.text)).map(|b| (b.mine, b.name.clone())).collect();
             // You first, then names alphabetically, then the ones known only by their number.
-            names.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.starts_with('+').cmp(&b.1.starts_with('+'))).then(a.1.to_lowercase().cmp(&b.1.to_lowercase())));
+            names.sort_by(|a, b| {
+                b.0.cmp(&a.0).then(a.1.starts_with('+').cmp(&b.1.starts_with('+'))).then(a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+            });
             o.chosen = names.iter().any(|(mine, _)| *mine);
             o.votes = names.len();
             o.voters = Some(names.into_iter().map(|(mine, n)| if mine { YOU.to_string() } else { n }).collect());
@@ -163,8 +165,11 @@ impl ChatPoll {
     /// OpenWA's `poll: {name, options, allowMultipleAnswers}`.
     pub fn openwa(value: &Value) -> Option<ChatPoll> {
         let question = value["name"].as_str()?;
-        let options: Vec<String> =
-            crate::connectors::list(&value["options"]).iter().filter_map(|o| o.as_str().or(o["name"].as_str())).map(str::to_string).collect();
+        let options: Vec<String> = crate::connectors::list(&value["options"])
+            .iter()
+            .filter_map(|o| o.as_str().or(o["name"].as_str()))
+            .map(str::to_string)
+            .collect();
         Some(ChatPoll::new(question, &options, value["allowMultipleAnswers"].as_bool() == Some(true)))
     }
 
@@ -181,7 +186,8 @@ impl ChatPoll {
                 let text = o["text"].as_str().filter(|t| !t.is_empty())?;
                 let ids: Vec<&str> = crate::connectors::list(&o["voters"]).iter().filter_map(Value::as_str).collect();
                 let mine = me.is_some_and(|m| ids.contains(&m));
-                let mut others: Vec<String> = ids.iter().filter(|i| Some(**i) != me).filter_map(|i| name(i)).filter(|n| !n.is_empty()).collect();
+                let mut others: Vec<String> =
+                    ids.iter().filter(|i| Some(**i) != me).filter_map(|i| name(i)).filter(|n| !n.is_empty()).collect();
                 others.sort_by_key(|n| n.to_lowercase());
                 let voters = if mine { [vec![YOU.to_string()], others].concat() } else { others };
                 Some(PollOption { text: text.into(), votes: ids.len(), chosen: mine, voters: Some(voters) })
@@ -303,7 +309,9 @@ mod tests {
 
     #[test]
     fn the_gateways_and_the_helper_say_polls_their_own_way() {
-        let (made, _) = ChatPoll::gowa(&json!({"type": "creation", "question": "Q", "options": [{"name": "A"}, {"name": "B"}], "selectable_options_count": 0}));
+        let (made, _) = ChatPoll::gowa(
+            &json!({"type": "creation", "question": "Q", "options": [{"name": "A"}, {"name": "B"}], "selectable_options_count": 0}),
+        );
         let made = made.unwrap();
         assert!(made.multiple && made.options.len() == 2);
         let (_, vote) = ChatPoll::gowa(&json!({"type": "vote", "poll_id": "P1", "selected_options": ["A"]}));

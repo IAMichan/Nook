@@ -107,7 +107,11 @@ impl DecayedCounter {
 
     fn faded(&self, e: &Entry, now: DateTime<Utc>) -> Entry {
         let elapsed = (now - e.last).num_milliseconds() as f64 / 1000.0;
-        Entry { score: decay(e.score, elapsed, self.half_life), negative: decay(e.negative, elapsed, self.half_life), last: now.max(e.last) }
+        Entry {
+            score: decay(e.score, elapsed, self.half_life),
+            negative: decay(e.negative, elapsed, self.half_life),
+            last: now.max(e.last),
+        }
     }
 
     pub fn add(&mut self, key: &str, positive: f64, negative: f64, now: DateTime<Utc>) {
@@ -116,7 +120,14 @@ impl DecayedCounter {
         entry.negative += negative;
         self.entries.insert(key.to_string(), entry);
         if self.entries.len() > self.limit {
-            let mut all: Vec<(String, f64)> = self.entries.iter().map(|(k, e)| { let f = self.faded(e, now); (k.clone(), f.score + f.negative) }).collect();
+            let mut all: Vec<(String, f64)> = self
+                .entries
+                .iter()
+                .map(|(k, e)| {
+                    let f = self.faded(e, now);
+                    (k.clone(), f.score + f.negative)
+                })
+                .collect();
             all.sort_by(|a, b| b.1.total_cmp(&a.1));
             let keep: std::collections::HashSet<String> = all.into_iter().take(self.limit).map(|(k, _)| k).collect();
             self.entries.retain(|k, _| keep.contains(k));
@@ -124,7 +135,13 @@ impl DecayedCounter {
     }
 
     pub fn points(&self, key: &str, now: DateTime<Utc>) -> (f64, f64) {
-        self.entries.get(key).map(|e| { let f = self.faded(e, now); (f.score, f.negative) }).unwrap_or((0.0, 0.0))
+        self.entries
+            .get(key)
+            .map(|e| {
+                let f = self.faded(e, now);
+                (f.score, f.negative)
+            })
+            .unwrap_or((0.0, 0.0))
     }
 }
 
@@ -209,7 +226,11 @@ pub fn score(item: &AttentionItem, feedback: &AttentionFeedback, now: DateTime<U
     if let Some(deadline) = item.deadline {
         let ahead = (deadline - now).num_seconds() as f64;
         score += if ahead < 0.0 {
-            if item.needs_you == NeedsYou::Info { 0.0 } else { 20.0 }
+            if item.needs_you == NeedsYou::Info {
+                0.0
+            } else {
+                20.0
+            }
         } else if ahead <= 3600.0 {
             25.0
         } else if ahead <= 3.0 * 3600.0 {
@@ -233,7 +254,8 @@ pub fn score(item: &AttentionItem, feedback: &AttentionFeedback, now: DateTime<U
 
 /// The items, most important first; equal scores keep their order.
 pub fn rank(items: Vec<AttentionItem>, feedback: &AttentionFeedback, now: DateTime<Utc>) -> Vec<AttentionItem> {
-    let mut scored: Vec<(usize, f64, AttentionItem)> = items.into_iter().enumerate().map(|(i, it)| (i, score(&it, feedback, now), it)).collect();
+    let mut scored: Vec<(usize, f64, AttentionItem)> =
+        items.into_iter().enumerate().map(|(i, it)| (i, score(&it, feedback, now), it)).collect();
     scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     scored.into_iter().map(|(_, _, it)| it).collect()
 }
@@ -278,14 +300,27 @@ mod tests {
     use chrono::Duration;
 
     fn item(id: &str, need: NeedsYou) -> AttentionItem {
-        AttentionItem { source: "agents".into(), id: id.into(), app: String::new(), subject: String::new(), needs_you: need, deadline: None, since: None, actionable: true }
+        AttentionItem {
+            source: "agents".into(),
+            id: id.into(),
+            app: String::new(),
+            subject: String::new(),
+            needs_you: need,
+            deadline: None,
+            since: None,
+            actionable: true,
+        }
     }
 
     #[test]
     fn needs_come_in_the_macs_order_and_deadlines_lift() {
         let now = Utc::now();
         let f = AttentionFeedback::default();
-        let ranked = rank(vec![item("i", NeedsYou::Info), item("r", NeedsYou::Reply), item("a", NeedsYou::Approval), item("q", NeedsYou::Question)], &f, now);
+        let ranked = rank(
+            vec![item("i", NeedsYou::Info), item("r", NeedsYou::Reply), item("a", NeedsYou::Approval), item("q", NeedsYou::Question)],
+            &f,
+            now,
+        );
         assert_eq!(ranked.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), vec!["a", "q", "r", "i"]);
         let mut soon = item("soon", NeedsYou::Info);
         soon.deadline = Some(now + Duration::minutes(30));

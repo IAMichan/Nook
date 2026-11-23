@@ -117,7 +117,10 @@ mod tests {
         assert_eq!(reject("You could batch your mail in one go.", true, screen, &[], today), Some("not about what is on screen"));
         assert_eq!(reject("The Acme Corp invoice renews on 2027-09-20.", true, screen, &[], today), Some("about something far off"));
         let earlier = vec!["Shall I add the Acme invoice to your tasks?".to_string()];
-        assert_eq!(reject("Shall I put the Acme invoice in your tasks?", true, screen, &earlier, today), Some("said before in other words"));
+        assert_eq!(
+            reject("Shall I put the Acme invoice in your tasks?", true, screen, &earlier, today),
+            Some("said before in other words")
+        );
     }
 
     #[test]

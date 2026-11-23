@@ -127,7 +127,10 @@ mod tests {
         let store = ConnectorStore::open(file.clone());
         assert!(store.is_on("x"));
         // Set aside under a dated name (`connectors.damaged-<date>.json`), never overwritten.
-        let aside = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().starts_with("connectors.damaged-"));
+        let aside = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| e.file_name().to_string_lossy().starts_with("connectors.damaged-"));
         assert!(aside && !file.exists());
         let _ = std::fs::remove_dir_all(dir);
     }

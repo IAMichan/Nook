@@ -183,8 +183,24 @@ export function parseDetailsBlock(lines: string[], index: number): { summary: st
       text = afterOpen.slice(sClose.index + sClose[0].length);
     }
   }
-  summary = summary.replace(/<\/?[a-zA-Z][^>]*>/g, "").trim();
+  summary = stripHtmlTags(summary).trim();
   return { summary, body: text.trim(), next: end };
+}
+
+function stripHtmlTags(input: string): string {
+  let out = "";
+  let depth = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    if (ch === "<") {
+      depth += 1;
+    } else if (ch === ">") {
+      if (depth > 0) depth -= 1;
+    } else if (depth === 0) {
+      out += ch;
+    }
+  }
+  return out;
 }
 
 function indentColumns(line: string): number {
@@ -604,7 +620,8 @@ export function stripCellMarkdown(text: string): string {
 }
 
 export function tableToMarkdown(header: string[], rows: string[][]): string {
-  const line = (cells: string[]) => `| ${cells.map((c) => c.replace(/\|/g, "\\|")).join(" | ")} |`;
+  const line = (cells: string[]) =>
+    `| ${cells.map((c) => c.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")).join(" | ")} |`;
   return [line(header), line(header.map(() => "---")), ...rows.map(line)].join("\n");
 }
 

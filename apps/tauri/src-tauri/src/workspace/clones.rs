@@ -124,7 +124,15 @@ pub fn clone(app: &AppHandle, git: &Git, url: &str, parent: &str) -> Result<Stri
     result
 }
 
-fn run(app: &AppHandle, id: u64, git: &Git, url: &str, parent: &str, target: &Path, slot: &Arc<Mutex<Option<Child>>>) -> Result<String, String> {
+fn run(
+    app: &AppHandle,
+    id: u64,
+    git: &Git,
+    url: &str,
+    parent: &str,
+    target: &Path,
+    slot: &Arc<Mutex<Option<Child>>>,
+) -> Result<String, String> {
     let mut command = Command::new(&git.executable);
     command
         .args(["clone", "--progress", "--", url])
