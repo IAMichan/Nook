@@ -718,9 +718,16 @@ extension RowProject {
     /// folder not known yet goes by its folder's name; one without a project gets none.
     @MainActor
     static func of(_ item: AgentListItem, settings: WorkspaceSettings, projects: [String: String]) -> RowProject? {
-        let key = InboxProject.key(folder: item.folder, path: item.path)
+        of(folder: item.folder, path: item.path, local: item.machine == MachineName.local, settings: settings, projects: projects)
+    }
+
+    /// The same for a session known by its folder and path only (a search result).
+    @MainActor
+    static func of(folder: String, path itemPath: String, local: Bool, settings: WorkspaceSettings,
+                   projects: [String: String]) -> RowProject? {
+        let key = InboxProject.key(folder: folder, path: itemPath)
         guard key != InboxProject.none else { return nil }
-        let path = projects[key] ?? (item.machine == MachineName.local && (item.path as NSString).lastPathComponent == key ? item.path : nil)
+        let path = projects[key] ?? (local && (itemPath as NSString).lastPathComponent == key ? itemPath : nil)
         let name = path.map(settings.projectDisplayName) ?? key
         let own = path.flatMap(settings.projectIcon)
         let icon = own ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))

@@ -107,7 +107,9 @@ extension AppModel {
             let subtitle = [run.provider.displayName, run.projectName, run.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
             return SearchDocument(id: "run:" + run.id.uuidString, kind: .session, title: run.title, subtitle: subtitle,
                                   date: run.updatedAt, facets: facets, flags: flags, passages: passages,
-                                  boost: run.status.isActive ? 0.3 : 0, icon: .agent(run.provider.displayName))
+                                  boost: run.status.isActive ? 0.3 : 0, icon: .agent(run.provider.displayName,
+                                               project: SearchProject(folder: run.projectName, path: run.workingDirectory,
+                                                                      machine: run.remote?.name)))
         }
         let followed = hub.sessions.filter { !$0.id.hasPrefix("run:") }.map { session -> SearchDocument in
             var flags: Set<String> = []
@@ -142,7 +144,8 @@ extension AppModel {
             }
             let subtitle = [agent, past.project, past.branch].filter { !$0.isEmpty }.joined(separator: " · ")
             return SearchDocument(id: "past:" + past.id, kind: .session, title: AgentFormat.title(past.title), subtitle: subtitle,
-                                  date: past.ended, facets: facets, flags: flags, passages: passages, icon: .agent(agent))
+                                  date: past.ended, facets: facets, flags: flags, passages: passages,
+                                  icon: .agent(agent, project: SearchProject(folder: past.project, path: past.cwd)))
         }
         return runs + followed + earlier
     }
@@ -151,7 +154,8 @@ extension AppModel {
         SearchDocument(id: "agent:" + session.id, kind: .session, title: session.project.isEmpty ? session.name : session.project,
                        subtitle: [session.name, AgentPathFormat.tilde(session.cwd)].filter { !$0.isEmpty }.joined(separator: " · "),
                        date: session.updated ?? session.started, facets: ["agent": session.name, "project": session.project],
-                       flags: flags, passages: passages, icon: .agent(session.name))
+                       flags: flags, passages: passages,
+                       icon: .agent(session.name, project: SearchProject(folder: session.project, path: session.cwd)))
     }
 
     /// The transcript files of the agents Nook follows now, newest first, with the agent that wrote each: what

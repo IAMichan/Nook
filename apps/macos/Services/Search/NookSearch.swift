@@ -97,11 +97,21 @@ extension SearchDocument {
 
 /// Who or what a search result is, as its row draws it.
 enum SearchIcon: Equatable, Sendable {
-    /// A coding agent, by its display name ("Claude Code", "Codex"): its logo.
-    case agent(String)
+    /// A coding agent, by its display name ("Claude Code", "Codex"): its logo. With the session's project, the
+    /// project's icon with the agent's logo as a badge, as on the session tabs.
+    case agent(String, project: SearchProject? = nil)
     /// A chat: its own picture from its app (a file path) or the contact's photo, else initials, with the app's badge.
     /// `app` is the messaging app's source id ("whatsapp", "telegram"); `handle` a private WhatsApp chat's number.
     case chat(app: String, name: String, avatar: String?, handle: String?)
+}
+
+/// The project a session result works in, as the Agents list groups it: the folder it is listed under and its path,
+/// so the row can draw the same project icon (`RowProject`).
+struct SearchProject: Equatable, Sendable {
+    var folder: String
+    var path: String
+    /// The other machine it runs on; nil for this Mac. A session elsewhere has no folder of its own here.
+    var machine: String? = nil
 }
 
 // MARK: - The query
