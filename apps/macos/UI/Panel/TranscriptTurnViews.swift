@@ -295,7 +295,7 @@ struct TurnDiffPanel: View {
     /// buttons that fold every file or show the tree.
     private func toolbar(_ current: TurnDiff, files: [StackedDiffFile]) -> some View {
         SidePanelToolbar {
-            ComposerDropdown(width: 300) {
+            ComposerDropdown(width: 300, shrinks: true) {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Text(title(of: selection, current: current))
                         .lineLimit(1)
@@ -327,10 +327,17 @@ struct TurnDiffPanel: View {
                     }
                 }
             }
-            Text(tr("agents.turn.changedFiles", files.count))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
+            // First to get room: what is shown is what the bar is about. The display buttons fold into a menu before
+            // its title is cut, and the count of files goes before either.
+            .layoutPriority(1)
+            ViewThatFits(in: .horizontal) {
+                Text(tr("agents.turn.changedFiles", files.count))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+                Color.clear.frame(width: 0, height: 0)
+            }
             Spacer(minLength: NookTheme.Spacing.xs)
             if git.isRepository {
                 ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh")) { Task { await git.refresh() } }

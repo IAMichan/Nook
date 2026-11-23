@@ -5,6 +5,7 @@ import Foundation
 
 let diffReviewTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.diff.options": "Weergave van de diff",
         "agents.diff.showWhitespace": "Toon wijzigingen in witruimte",
         "agents.diff.hideWhitespace": "Verberg wijzigingen in witruimte",
         "agents.diff.showTests": "Toon testbestanden",
@@ -48,6 +49,7 @@ let diffReviewTranslations: [AppLanguage: [String: String]] = [
         "inbox.autoSettle.allow": "Automatisch afronden toestaan",
     ],
     .en: [
+        "agents.diff.options": "Diff display",
         "agents.diff.showWhitespace": "Show whitespace changes",
         "agents.diff.hideWhitespace": "Hide whitespace changes",
         "agents.diff.showTests": "Show test files",
@@ -91,6 +93,7 @@ let diffReviewTranslations: [AppLanguage: [String: String]] = [
         "inbox.autoSettle.allow": "Allow settling automatically",
     ],
     .de: [
+        "agents.diff.options": "Diff-Darstellung",
         "agents.diff.showWhitespace": "Leerzeichenänderungen zeigen",
         "agents.diff.hideWhitespace": "Leerzeichenänderungen ausblenden",
         "agents.diff.showTests": "Testdateien zeigen",
@@ -134,6 +137,7 @@ let diffReviewTranslations: [AppLanguage: [String: String]] = [
         "inbox.autoSettle.allow": "Automatisch erledigen erlauben",
     ],
     .fr: [
+        "agents.diff.options": "Affichage du diff",
         "agents.diff.showWhitespace": "Afficher les changements d’espaces",
         "agents.diff.hideWhitespace": "Masquer les changements d’espaces",
         "agents.diff.showTests": "Afficher les fichiers de test",
@@ -177,6 +181,7 @@ let diffReviewTranslations: [AppLanguage: [String: String]] = [
         "inbox.autoSettle.allow": "Autoriser la clôture automatique",
     ],
     .es: [
+        "agents.diff.options": "Vista del diff",
         "agents.diff.showWhitespace": "Mostrar cambios de espacios",
         "agents.diff.hideWhitespace": "Ocultar cambios de espacios",
         "agents.diff.showTests": "Mostrar archivos de prueba",

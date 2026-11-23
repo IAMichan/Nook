@@ -615,6 +615,7 @@ targets:
       - path: Services/Workspace/KeybindingEdits.swift
       - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift
+      - path: Services/Workspace/SessionTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: ../../packages/protocol/Sources/DictationContext.swift
       - path: Services/Workspace/RowSweepRange.swift

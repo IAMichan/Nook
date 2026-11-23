@@ -48,7 +48,8 @@ extension EnvironmentValues {
 }
 
 /// The toolbar's right end over a `StackedDiffList`: the total lines, how the diff is shown (wrap, side by side, without
-/// whitespace changes, without tests), fold or unfold every file, the tree of files.
+/// whitespace changes, without tests), fold or unfold every file, the tree of files. In a narrow panel the display
+/// options fold into one menu, then the lines go too, so the bar never runs wider than the panel it sits in.
 struct StackedDiffToolbar: View {
     let files: [StackedDiffFile]
     @Binding var expanded: Set<String>
@@ -62,30 +63,79 @@ struct StackedDiffToolbar: View {
 
     var body: some View {
         let files = hideTests ? files.filter { !DiffFileFilter.isTest($0.path) } : files
-        let allOpen = !files.isEmpty && files.allSatisfy { expanded.contains($0.id) }
-        HStack(spacing: NookTheme.Spacing.xs) {
-            EditLinesLabel(lines: EditLines(added: files.reduce(0) { $0 + ($1.additions ?? 0) },
-                                            removed: files.reduce(0) { $0 + ($1.deletions ?? 0) }), size: 11)
-                .padding(.trailing, NookTheme.Spacing.xs)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                lines(files)
+                displayButtons
+                foldAndTree(files)
+            }
+            HStack(spacing: NookTheme.Spacing.xs) {
+                lines(files)
+                displayMenu
+                foldAndTree(files)
+            }
+            HStack(spacing: NookTheme.Spacing.xs) {
+                displayMenu
+                foldAndTree(files)
+            }
+        }
+    }
+
+    private func lines(_ files: [StackedDiffFile]) -> some View {
+        EditLinesLabel(lines: EditLines(added: files.reduce(0) { $0 + ($1.additions ?? 0) },
+                                        removed: files.reduce(0) { $0 + ($1.deletions ?? 0) }), size: 11)
+            .fixedSize()
+            .padding(.trailing, NookTheme.Spacing.xs)
+    }
+
+    @ViewBuilder
+    private var displayButtons: some View {
+        if hidesWhitespace {
+            ToolbarIconButton("text.word.spacing", tr(ignoreWhitespace ? "agents.diff.showWhitespace" : "agents.diff.hideWhitespace"),
+                              height: 28, width: 28, selected: ignoreWhitespace, symbolSize: 13) { ignoreWhitespace.toggle() }
+        }
+        ToolbarIconButton("testtube.2", tr(hideTests ? "agents.diff.showTests" : "agents.diff.hideTests"),
+                          height: 28, width: 28, selected: hideTests, symbolSize: 13) { hideTests.toggle() }
+        ToolbarIconButton("arrow.turn.down.left", tr(wrap ? "agents.diff.noWrap" : "agents.diff.wrap"),
+                          height: 28, width: 28, selected: wrap, symbolSize: 13) { wrap.toggle() }
+        ToolbarIconButton(split ? "rectangle.split.2x1" : "rectangle", tr(split ? "agents.diff.unified" : "agents.diff.split"),
+                          height: 28, width: 28, selected: split, symbolSize: 13) { split.toggle() }
+    }
+
+    /// The same four options as `displayButtons`, as rows that stay lit while on; the menu stays open for a second pick.
+    private var displayMenu: some View {
+        let anyOn = ignoreWhitespace && hidesWhitespace || hideTests || split
+        return ComposerDropdown(width: 240) {
+            Image(icon: "slider.horizontal.3")
+                .font(NookTheme.font(13, .medium))
+                .foregroundStyle(anyOn ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 28, height: 28)
+                .roundedBackground(anyOn ? NookTheme.rowSelected : Color.clear, radius: NookTheme.Radius.chip)
+                .contentShape(Rectangle())
+        } content: {
             if hidesWhitespace {
-                ToolbarIconButton("text.word.spacing", tr(ignoreWhitespace ? "agents.diff.showWhitespace" : "agents.diff.hideWhitespace"),
-                                  height: 28, width: 28, selected: ignoreWhitespace, symbolSize: 13) { ignoreWhitespace.toggle() }
+                DropdownRow(symbol: "text.word.spacing", title: tr("agents.diff.hideWhitespace"), chosen: ignoreWhitespace,
+                            staysOpen: true) { ignoreWhitespace.toggle() }
             }
-            ToolbarIconButton("testtube.2", tr(hideTests ? "agents.diff.showTests" : "agents.diff.hideTests"),
-                              height: 28, width: 28, selected: hideTests, symbolSize: 13) { hideTests.toggle() }
-            ToolbarIconButton("arrow.turn.down.left", tr(wrap ? "agents.diff.noWrap" : "agents.diff.wrap"),
-                              height: 28, width: 28, selected: wrap, symbolSize: 13) { wrap.toggle() }
-            ToolbarIconButton(split ? "rectangle.split.2x1" : "rectangle", tr(split ? "agents.diff.unified" : "agents.diff.split"),
-                              height: 28, width: 28, selected: split, symbolSize: 13) { split.toggle() }
-            ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                              tr(allOpen ? "agents.diff.collapseAll" : "agents.diff.expandAll"), height: 28, width: 28, enabled: !files.isEmpty, symbolSize: 13) {
-                // Not animated: fading every diff in at once laid all of them out on each frame.
-                expanded = allOpen ? [] : Set(files.map(\.id))
-            }
-            ToolbarIconButton(showsTree ? "sidebar.trailing" : "sidebar.right",
-                              tr(showsTree ? "agents.diff.hideFiles" : "agents.diff.showFiles"), height: 28, width: 28, symbolSize: 13) {
-                withAnimation(NookTheme.reveal) { showsTree.toggle() }
-            }
+            DropdownRow(symbol: "testtube.2", title: tr("agents.diff.hideTests"), chosen: hideTests, staysOpen: true) { hideTests.toggle() }
+            DropdownRow(symbol: "arrow.turn.down.left", title: tr("agents.diff.wrap"), chosen: wrap, staysOpen: true) { wrap.toggle() }
+            DropdownRow(symbol: "rectangle.split.2x1", title: tr("agents.diff.split"), chosen: split, staysOpen: true) { split.toggle() }
+        }
+        .nookTip(tr("agents.diff.options"))
+        .accessibilityLabel(tr("agents.diff.options"))
+    }
+
+    @ViewBuilder
+    private func foldAndTree(_ files: [StackedDiffFile]) -> some View {
+        let allOpen = !files.isEmpty && files.allSatisfy { expanded.contains($0.id) }
+        ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                          tr(allOpen ? "agents.diff.collapseAll" : "agents.diff.expandAll"), height: 28, width: 28, enabled: !files.isEmpty, symbolSize: 13) {
+            // Not animated: fading every diff in at once laid all of them out on each frame.
+            expanded = allOpen ? [] : Set(files.map(\.id))
+        }
+        ToolbarIconButton(showsTree ? "sidebar.trailing" : "sidebar.right",
+                          tr(showsTree ? "agents.diff.hideFiles" : "agents.diff.showFiles"), height: 28, width: 28, symbolSize: 13) {
+            withAnimation(NookTheme.reveal) { showsTree.toggle() }
         }
     }
 }

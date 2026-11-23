@@ -17,6 +17,8 @@ struct AgentSessionDetail: View {
     /// In the notch: the terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
     @Environment(\.sessionHeaderInset) private var headerInset
+    /// The sessions open as tabs: the header shows them where the folder and title were.
+    @Environment(\.sessionTabs) private var sessionTabs
     /// What you type, held without being observed: as state of this view, every key drew the whole conversation above
     /// the composer again. Only the composer watches it (`Observing`), as in `AgentRunPanel`.
     @State private var composerState = SessionDraftState()
@@ -111,18 +113,23 @@ struct AgentSessionDetail: View {
 
     // MARK: Header
 
-    /// "nook / Agents-pagina rustiger maken" (click the folder for a new session in it) with the branch button on the right.
+    /// The open session tabs (`SessionTabStrip`), or without them "nook / Agents-pagina rustiger maken" (click the
+    /// folder for a new session in it), with the branch button on the right.
     private func header(folder: String, title: String, directory: String, agentWorking: Bool, usage: SessionUsageSource) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
-            // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
-            // pushing the header past the conversation.
-            FolderCrumb(name: folder, directory: directory)
-                .layoutPriority(1)
-            Text("/").foregroundStyle(NookTheme.textTertiary)
-            Text(title)
-                .font(NookTheme.TextStyle.strong)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
+            if let sessionTabs {
+                SessionTabStrip(context: sessionTabs, folder: folder, title: title, directory: directory) { EmptyView() }
+            } else {
+                // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
+                // pushing the header past the conversation.
+                FolderCrumb(name: folder, directory: directory)
+                    .layoutPriority(1)
+                Text("/").foregroundStyle(NookTheme.textTertiary)
+                Text(title)
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 8)
             if !app.demoMode, directory.isEmpty {
                 // No folder, so no branch button: the ring alone opens the session's usage.
