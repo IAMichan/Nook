@@ -229,7 +229,8 @@ Nook does, and every step lands in the audit log.
   never read or touched, including its subdomains. **Pause** stops Nook in the whole browser until you resume, and the
   toolbar icon shows a badge while it is paused. While Nook acts on a page, its edges glow and a strip with **Stop**
   shows at the bottom. When a coding agent drives the page (`nook_use`, or `browser_*` with `in: "user"`), the glow
-  breathes in the colors of that agent's logo and the strip names it, as in Nook's own browser (`command.by`, from
+  breathes in the colors of that agent's logo, the cursor that shows its clicks and typing takes the first of them,
+  and the strip names it, as in Nook's own browser (`command.by`, from
   `BrowserExtensionConnector.driver`); Nook's own steps glow in Nook's violet. Stop pauses Nook in that browser.
 - **Pages the browser keeps to itself.** `chrome://` and the other browsers' own pages, `file://`, and the web stores
   are refused (`isRestricted` in `lib/core.js`).

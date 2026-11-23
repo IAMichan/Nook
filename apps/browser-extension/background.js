@@ -267,7 +267,7 @@ async function perform(method, params, tab, command) {
       return agent(tab.id, method, params);
     case 'scroll': {
       await use(tab);
-      const [, result] = await Promise.all([presence(tab.id, 'busy', command?.by), agent(tab.id, method, { ...params, _from: cursors.get(tab.id) })]);
+      const [, result] = await Promise.all([presence(tab.id, 'busy', command?.by), agent(tab.id, method, { ...params, _from: cursors.get(tab.id), _by: driverOf(command?.by) })]);
       keepCursor(tab.id, result);
       return result;
     }
@@ -288,7 +288,7 @@ async function perform(method, params, tab, command) {
       let after;
       try {
         // The strip goes up while the cursor already moves: the hold on the user's input is there long before the click.
-        [, result] = await Promise.all([presence(tab.id, 'busy', command?.by), agent(tab.id, method, { ...params, _from: cursors.get(tab.id) })]);
+        [, result] = await Promise.all([presence(tab.id, 'busy', command?.by), agent(tab.id, method, { ...params, _from: cursors.get(tab.id), _by: driverOf(command?.by) })]);
         keepCursor(tab.id, result);
         // Typing a password or a sign-in code is the user's: Nook waits for them to sign in, then goes on.
         if (!result.ok && result.signIn) return waitForSignIn(tab.id, command, '');

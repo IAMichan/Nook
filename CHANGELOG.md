@@ -13,7 +13,8 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 ### Changed
 
 - When a coding agent drives a page in your own browser through the Nook extension, the page now glows in the colors
-  of that agent's logo and the strip at the bottom names it, the same as in Nook's own browser.
+  of that agent's logo, the cursor that shows where it clicks and types takes its color, and the strip at the bottom
+  names it, the same as in Nook's own browser.
 - A session tab whose agent is working now shows a grey dot that gently pulses, instead of a still blue one.
 - The session tabs also show above a new session, so the sessions you have open stay a click away while you start
   another.
