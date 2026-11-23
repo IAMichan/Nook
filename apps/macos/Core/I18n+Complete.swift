@@ -552,6 +552,8 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.new.branch": "Neuer Branch",
         "ws.new.change": "Ändern…",
         "ws.new.chooseFolder": "Ordner wählen…",
+        "ws.new.addExisting": "Bestehendes Projekt hinzufügen…",
+        "ws.new.addExistingDetail": "Einen Ordner auf diesem Mac als Projekt öffnen",
         "ws.new.chooseMessage": "In welchem Ordner soll der Agent arbeiten?",
         "ws.new.choosePrompt": "Wählen",
         "ws.new.clean": "sauber",
