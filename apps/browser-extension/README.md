@@ -2,7 +2,7 @@
 
 The extension for Chrome, Brave, Edge, Arc, Vivaldi and Chromium. It lets you ask Nook about the page you are on from
 the browser's side panel. It also lets Nook Chat and your coding agents read your tabs and act in them, after you
-approve each action.
+approve each action, or at once on a site you let Nook act on without asking.
 
 - Set it up in Nook: **Settings › Editor & browser › Nook in your browser**.
 - How it works, the tools, and what keeps it safe: [`docs/BROWSER-EXTENSION.md`](../../docs/BROWSER-EXTENSION.md).

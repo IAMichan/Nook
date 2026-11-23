@@ -4,7 +4,7 @@
 // it reaches this file. The user keeps two brakes here: pausing Nook in this browser, and switching it off per site.
 import {
   ACT_METHODS, GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, approvalCard, approvalDecision, browserName,
-  cleanLook, commandError, consoleText, mustAsk,
+  approvalNeeded, cleanLook, commandError, consoleText, mustAsk, pointOfNoReturn,
   describeTabs, elementsCopy, isAnswering, isBlocked, isRestricted, looksLikePdf, mayPick, normalizeURL, panelMessageAllowed,
   pdfCrop, pdfPointCopy, questionImages, reconnectDelay, serial, siteOf
 } from './lib/core.js';
@@ -236,16 +236,19 @@ async function run(command) {
     if (command.method !== 'tabs' && !opensNew) tab = await targetTab(params);
     const error = commandError(command, { ...(await settings()), url: tab ? tab.url || tab.pendingUrl || '' : undefined })
       || await approve(command, tab);
-    outcome = error ? { ok: false, error } : await perform(command.method, params, tab, command);
+    if (!error) await trustFromNook(command, tab);
+    outcome = error ? (typeof error === 'string' ? { ok: false, error } : error) : await perform(command.method, params, tab, command);
   } catch (error) {
     outcome = { ok: false, error: String(error?.message || error) };
   }
   const site = siteOf(outcome.url || tab?.url || '');
-  if (command.method !== 'tabs') {
+  // A step Nook only asked about (`ask.trusted`) and that did not run is no activity: Nook asks the user and sends it again.
+  if (command.method !== 'tabs' && !outcome.approval) {
     await remember(activityLine(command, { ok: !!outcome.ok, site, error: outcome.ok ? undefined : outcome.error, element: outcome.element }));
   }
   try {
-    await request({ kind: 'result', id: command.id, ok: !!outcome.ok, text: outcome.text || '', error: outcome.error || '', image: outcome.image || '' });
+    await request({ kind: 'result', id: command.id, ok: !!outcome.ok, text: outcome.text || '', error: outcome.error || '', image: outcome.image || '',
+      ...(outcome.approval ? { approval: outcome.approval } : {}) });
   } catch {
     // Nook went away while this ran; it already told the asker.
   }
@@ -790,8 +793,9 @@ async function consoleMessages(tab, params) {
 
 // A task the user gives Nook in the side panel runs live (BrowserTask in Nook): each step comes with `ask`, and waits
 // here for the user's yes in the side panel, unless they let Nook act on that site without asking and the step is not
-// one that cannot be undone. Steps from anywhere else (Nook Chat on the Mac, a coding agent) already passed Nook's own
-// approval card and come without `ask`.
+// one that cannot be undone. A step of a coding agent comes with `ask.trusted` first: it runs at once on such a site,
+// and otherwise does not run and says so (`approval`), so Nook asks the user in its own approval card and sends it again
+// without `ask` (with `trust` when they chose "Always on <site>" there).
 
 /** The steps waiting for the user, by command id. */
 const approvals = new Map();
@@ -805,14 +809,12 @@ async function approve(command, tab) {
   const params = command.params || {};
   const url = tab ? tab.url || tab.pendingUrl || '' : normalizeURL(params.url) || '';
   // What the step touches, in the page's own words: a send or pay button always asks.
-  let words = typeof params.text === 'string' ? params.text : '';
-  if (tab && ['click', 'type', 'key'].includes(command.method) && await mayRead(tab.id)) {
-    const seen = await withTimeout(agent(tab.id, 'intent', params), 1_500);
-    if (seen?.ok && typeof seen.words === 'string') words += ' · ' + seen.words;
-  }
+  const words = await stepWords(command, tab);
   const { trusted } = await settings();
   const verdict = mustAsk({ url, trusted, submits: ask.submits === true, words });
   if (!verdict.ask) return null;
+  // Nook asks the user itself: the step does not run, and Nook hears where it would have and whether it is final.
+  if (ask.trusted === true) return approvalNeeded(siteOf(url), verdict.final);
   const card = approvalCard(command.id, ask, siteOf(url), verdict.final);
   if (!card) return 'This step could not be shown to the user; it did not run.';
   // Nook's deadline for the command moves on while the user decides.
@@ -850,11 +852,38 @@ function refuseAll() {
   for (const id of [...approvals.keys()]) decide(id, 'deny');
 }
 
+/**
+ * The user chose "Always on <site>" in Nook's own approval card: the step comes again with `trust`, and the site acts
+ * without asking from now on. Only the site the step itself is on, and never for a step that cannot be undone.
+ */
+async function trustFromNook(command, tab) {
+  const site = typeof command.trust === 'string' ? command.trust : '';
+  if (!site || !ACT_METHODS.has(command.method)) return;
+  const url = tab ? tab.url || tab.pendingUrl || '' : normalizeURL(command.params?.url) || '';
+  if (siteOf(url) !== site) return;
+  if (command.method === 'type' && command.params?.submit === true) return;
+  if (pointOfNoReturn(await stepWords(command, tab))) return;
+  await trustSite(site, true);
+}
+
+/** What a step touches, in the page's own words (the button's text), for `pointOfNoReturn`. */
+async function stepWords(command, tab) {
+  const params = command.params || {};
+  let words = typeof params.text === 'string' ? params.text : '';
+  if (tab && ['click', 'type', 'key'].includes(command.method) && await mayRead(tab.id)) {
+    const seen = await withTimeout(agent(tab.id, 'intent', params), 1_500);
+    if (seen?.ok && typeof seen.words === 'string') words += ' · ' + seen.words;
+  }
+  return words;
+}
+
 async function trustSite(site, allowed) {
   if (!site) return;
   const { trusted } = await settings();
   const next = allowed ? [...new Set([...trusted, site])] : trusted.filter((entry) => entry !== site);
   await chrome.storage.local.set({ trusted: next });
+  // The next step reads it at once, before storage.onChanged has come round.
+  cachedSettings = null;
 }
 
 // MARK: - The side panel and the page's Stop button

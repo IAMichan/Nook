@@ -26,8 +26,22 @@ final class BrowserTask: @unchecked Sendable {
 
     /// Whether the extension that says `version` in its hello asks before a step.
     static func supported(extensionVersion version: String) -> Bool {
+        atLeast(version, firstVersion)
+    }
+
+    /// The first version of the extension that knows `ask.trusted` (run a step only on a site that acts without asking,
+    /// else hand it back for Nook's own approval card) and `trust` ("Always on <site>" chosen in Nook). An older one
+    /// would ask in its side panel, or run the step without asking at all.
+    static let firstTrustedVersion = [1, 5, 0]
+
+    /// Whether the extension that says `version` in its hello may get a coding agent's step with `ask.trusted`.
+    static func asksOnlyIfTrusted(extensionVersion version: String) -> Bool {
+        atLeast(version, firstTrustedVersion)
+    }
+
+    private static func atLeast(_ version: String, _ first: [Int]) -> Bool {
         let parts = version.split(separator: ".").map { Int($0) ?? 0 }
-        for (index, wanted) in firstVersion.enumerated() {
+        for (index, wanted) in first.enumerated() {
             let have = index < parts.count ? parts[index] : 0
             if have != wanted { return have > wanted }
         }
@@ -61,8 +75,12 @@ final class BrowserTask: @unchecked Sendable {
 
     /// The line the extension's approval card shows for a step, and whether Nook itself already knows it cannot be
     /// undone (typing that submits a form). The extension adds what it sees on the page (the button's own words).
-    static func ask(_ definition: BrowserExtensionTools.Definition, _ input: [String: Any], summary: String) -> [String: Any] {
+    /// `trusted`: the step runs only on a site that acts without asking, and otherwise comes back for Nook's own card.
+    static func ask(_ definition: BrowserExtensionTools.Definition, _ input: [String: Any], summary: String,
+                    trusted: Bool = false) -> [String: Any] {
         let submits = definition.method == "type" && BridgeArgs.bool(input["submit"]) == true
-        return ["summary": summary, "submits": submits]
+        var ask: [String: Any] = ["summary": summary, "submits": submits]
+        if trusted { ask["trusted"] = true }
+        return ask
     }
 }

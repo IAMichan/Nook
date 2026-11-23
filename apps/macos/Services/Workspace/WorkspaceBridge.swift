@@ -21,6 +21,9 @@ struct BridgeRequest: Identifiable, Equatable {
     var signInURL: URL? = nil
     /// Whether the typed value may be kept in Nook's keychain (never for a sudo password).
     var secretKeepable = true
+    /// A step in the user's browser: "Always" lets Nook act on this site without asking from now on (the extension's
+    /// own per-site switch). nil: the card has no "Always".
+    var alwaysSite: String? = nil
 }
 
 /// A secret's value typed on the request itself, and whether to keep it in Nook's keychain.
@@ -57,6 +60,8 @@ final class WorkspaceBridge: ObservableObject {
     private var allowedHosts: [String: Set<String>] = [:]
     /// Values typed on a secret request, until the call that asked picks them up.
     private var secretAnswers: [String: BridgeSecretAnswer] = [:]
+    /// Requests answered with "Always", until the call that asked picks the answer up.
+    private var alwaysAnswers: Set<String> = []
     /// Simulators each session opened with device_open, most recent last.
     private var openDevices: [String: [String]] = [:]
     /// Answers to calls that carried a client_request_id (see WorkspaceBridge+Tools).
@@ -138,7 +143,11 @@ final class WorkspaceBridge: ObservableObject {
 
     // MARK: Decisions
 
-    func decide(_ id: String, allow: Bool) { finish(id, allowed: allow) }
+    /// `always`: "Always" on a card that offers it (`BridgeRequest.alwaysSite`).
+    func decide(_ id: String, allow: Bool, always: Bool = false) {
+        if allow, always, pending.contains(where: { $0.id == id && $0.alwaysSite != nil }) { alwaysAnswers.insert(id) }
+        finish(id, allowed: allow)
+    }
 
     /// The value typed on a waiting secret request, given just before it is allowed; a denied request drops it.
     func give(_ id: String, _ secret: BridgeSecretAnswer) {
@@ -179,6 +188,16 @@ final class WorkspaceBridge: ObservableObject {
                                     signInURL: signInURL, secretKeepable: keepable)
         let allowed = await wait(request)
         return (allowed, secretAnswers.removeValue(forKey: id))
+    }
+
+    /// As `ask`, for a step in the user's browser whose card also offers "Always on `site`".
+    func ask(_ caller: BridgeCaller, tool: BridgeTool, title: String, detail: String, note: String, connection: String,
+             alwaysSite: String) async -> (allowed: Bool, always: Bool) {
+        let id = String(UUID().uuidString.prefix(8)).lowercased()
+        let request = BridgeRequest(id: id, caller: caller, tool: tool, title: title, detail: detail, note: note,
+                                    danger: false, created: Date(), connection: connection, alwaysSite: alwaysSite)
+        let allowed = await wait(request)
+        return (allowed, alwaysAnswers.remove(id) != nil && allowed)
     }
 
     private func wait(_ request: BridgeRequest) async -> Bool {
