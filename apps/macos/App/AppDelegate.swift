@@ -31,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         UpdateTrialRunner.startWatching()
         if let rollback = UpdateTrialRunner.rollbackToReport { AppUpdater.shared.reportRollback(rollback) }
         installStatusItem()
+        #if DEBUG
+        ResponderCensus.start()
+        #endif
         // Hold ⌘Q to quit, when it is on (Settings › General); only the key is held, never a quit from a menu or macOS.
         QuitHoldMonitor.shared.start()
         // Restarted into an update: the main window opens on the screen the update was started from.
@@ -410,3 +413,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.demoMode.toggle()
     }
 }
+
+#if DEBUG
+/// Debug builds only: how many SwiftUI responders the key window holds, and where. When the window has focus, SwiftUI walks
+/// every responder on each focus update (`AccessibilityNode.updateFocusResponder`), and in a long agent session that walk
+/// was a third of the busy main thread; it only happens in a key window, so it cannot be measured offscreen. Logs a line
+/// when the count changed by more than a twentieth, read with
+/// `log show --predicate 'subsystem == "nl.imdigital.nook" AND category == "app"' --info --last 10m | grep responders`.
+/// Reads SwiftUI's private responder tree by reflection: a diagnostic, not something to build on.
+@MainActor
+enum ResponderCensus {
+    private static var timer: Timer?
+    private static var lastTotal = 0
+
+    static func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+            MainActor.assumeIsolated { take() }
+        }
+    }
+
+    private static func take() {
+        guard NSApp.isActive, let window = NSApp.keyWindow, let content = window.contentView else { return }
+        let started = Date()
+        var tally = Tally()
+        var views: [(String, Int)] = []
+        visit(content) { view, root in
+            let before = tally.total
+            tally.count(root)
+            views.append((String(describing: type(of: view)).prefix(60).description, tally.total - before))
+        }
+        guard tally.total > 0, abs(tally.total - lastTotal) * 20 > lastTotal else { return }
+        lastTotal = tally.total
+        let took = Int(Date().timeIntervalSince(started) * 1000)
+        let types = tally.types.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+        let hosts = views.sorted { $0.1 > $1.1 }.prefix(6).map { "\($0.0)=\($0.1)" }.joined(separator: " ")
+        let rows = tally.rows.sorted(by: >)
+        let median = rows.isEmpty ? 0 : rows[rows.count / 2]
+        let line = "responders total=\(tally.total) walk=\(took)ms hosts: \(hosts) | "
+            + "scroll rows=\(rows.count) biggest=\(rows.prefix(8).map(String.init).joined(separator: ",")) median=\(median) | types: \(types)"
+        Log.app.notice("\(line, privacy: .public)")
+    }
+
+    /// Every hosting view in the window with the root of its responder tree (built lazily, so a view not hit yet has none).
+    private static func visit(_ view: NSView, _ found: (NSView, AnyObject) -> Void) {
+        if let root = responderRoot(view) { found(view, root) }
+        for sub in view.subviews { visit(sub, found) }
+    }
+
+    private static func responderRoot(_ view: NSView) -> AnyObject? {
+        var mirror: Mirror? = Mirror(reflecting: view)
+        while let current = mirror {
+            if let cached = current.children.first(where: { $0.label == "cachedResponderNode" })?.value {
+                return Mirror(reflecting: cached).children.first?.value as AnyObject?
+            }
+            mirror = current.superclassMirror
+        }
+        return nil
+    }
+
+    private struct Tally {
+        var total = 0
+        var types: [String: Int] = [:]
+        /// Responders per row of each scroll view: the children of the scroll's layout, after the chain of single children
+        /// that wraps them.
+        var rows: [Int] = []
+
+        mutating func count(_ node: AnyObject) {
+            total += 1
+            let name = String(describing: type(of: node)).components(separatedBy: "<")[0]
+            types[name, default: 0] += 1
+            for child in Self.children(of: node) { count(child) }
+            guard let layout = Self.layout(of: node) else { return }
+            count(layout)
+            if name == "HostingScrollViewResponder" {
+                var level = Self.children(of: layout)
+                while level.count == 1 { level = Self.children(of: level[0]) }
+                rows += level.map(Self.size(of:))
+            }
+        }
+
+        static func size(of node: AnyObject) -> Int {
+            children(of: node).reduce(1) { $0 + size(of: $1) } + (layout(of: node).map(size(of:)) ?? 0)
+        }
+
+        static func children(of node: AnyObject) -> [AnyObject] {
+            field("_children", of: node).flatMap { $0 as? [AnyObject] } ?? []
+        }
+
+        /// A scroll view keeps its content's responders under its layout responder, not its children.
+        static func layout(of node: AnyObject) -> AnyObject? {
+            field("layoutResponder", of: node).map { $0 as AnyObject }
+        }
+
+        static func field(_ label: String, of node: AnyObject) -> Any? {
+            var mirror: Mirror? = Mirror(reflecting: node)
+            while let current = mirror {
+                if let value = current.children.first(where: { $0.label == label })?.value { return value }
+                mirror = current.superclassMirror
+            }
+            return nil
+        }
+    }
+}
+#endif
