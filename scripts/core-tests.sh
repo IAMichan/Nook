@@ -106,6 +106,14 @@ import Foundation
 // Combine's names for the few core files that mention them (Linux has no Combine).
 #if !canImport(Combine)
 public protocol ObservableObject: AnyObject {}
+/// Nothing observes a core object on Linux: announcing a change does nothing.
+public struct ObservableObjectPublisher {
+    public init() {}
+    public func send() {}
+}
+extension ObservableObject {
+    public var objectWillChange: ObservableObjectPublisher { ObservableObjectPublisher() }
+}
 @propertyWrapper public struct Published<Value> {
     public var wrappedValue: Value
     public init(wrappedValue: Value) { self.wrappedValue = wrappedValue }

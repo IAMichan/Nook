@@ -15,7 +15,9 @@ choices, and the round send button on the right, which turns into a stop button 
 | `src/Composer.svelte` | The composer. Colors come from the surface as `--nc-*` variables; parts of its own go in the `top`, `controls`, `extras` and `under` snippets |
 | `src/draft.svelte.ts` | What is typed or attached but not sent yet. A surface that can read documents passes a reader; without one it takes pictures only |
 | `src/recall.ts` | Up in an empty field brings back an earlier question |
-| `src/ModelPicker.svelte` | The model chip for the composer's row, as the Mac's `BrainChip`: the model in use and a menu grouped per agent or place. Colors are the composer's `--nc-*` |
+| `src/ModelPicker.svelte` | The model chip for the composer's row, as the Mac's `BrainChip` and `ModelPicker`: the agent's logo and model, and a panel with a rail of places (this Mac first, then the agents) and the shown place's models with a search. Colors are the composer's `--nc-*` |
+| `src/AgentMark.svelte`, `src/brands.ts` | An agent's or model's mark as the Mac's `AgentLogo` and `BrandMark` draw it |
+| `src/brandLogos.ts` | The brand marks as SVG paths, generated from the Mac's `BrandLogo.swift` by `node scripts/brand-logos.mjs` |
 | `src/Transcript.svelte` | A conversation as Nook Chat on the Mac draws it: questions in bubbles, answers as Markdown, the plan as a checklist, where Nook looked, and what it does now. Colors come as `--nt-*` variables. Used by the browser extension's side panel |
 | `src/markdown.ts` | The safe Markdown renderer for answers (everything escaped first). The Tauri app (`src/lib/markdown.ts`) and the transcript use it |
 

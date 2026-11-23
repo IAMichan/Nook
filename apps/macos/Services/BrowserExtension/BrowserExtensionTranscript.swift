@@ -123,7 +123,9 @@ enum BrowserExtensionBrain {
             "ok": true,
             "label": chosen?.title ?? app.settings.brainLabel,
             "group": chosen?.group ?? "",
-            "choices": list.map { ["id": $0.id, "title": $0.title, "group": $0.group, "chosen": $0.chosen] }
+            // `local`: a model on this Mac, drawn with a laptop and first in the rail, as in `BrainChip`'s picker.
+            "choices": list.map { ["id": $0.id, "title": $0.title, "group": $0.group, "chosen": $0.chosen,
+                                   "local": $0.selection.isLocal] }
         ]
     }
 

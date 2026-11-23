@@ -58,12 +58,15 @@ final class ScrollBackStaysPut: Scenario {
         return best
     }
 
-    /// The blank guard's "recovering" lines this process logged since `date` (`recoversBlankRows`).
+    /// The blank guard's "recovering" lines this process logged since `date` (`recoversBlankRows`). The store's position
+    /// for a date is only a place to start reading and also hands out earlier lines: those of the scenario before this one
+    /// in the same test process (its conversation going away) failed this one on CI, so the date is checked per line.
     private static func blankRecoveries(since date: Date) throws -> [String] {
         let store = try OSLogStore(scope: .currentProcessIdentifier)
         return try store.getEntries(at: store.position(date: date))
             .compactMap { $0 as? OSLogEntryLog }
-            .filter { $0.subsystem == "nl.imdigital.nook" && $0.composedMessage.contains("Blank conversation, recovering") }
+            .filter { $0.date >= date && $0.subsystem == "nl.imdigital.nook"
+                      && $0.composedMessage.contains("Blank conversation, recovering") }
             .map(\.composedMessage)
     }
 }
