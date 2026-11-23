@@ -11,6 +11,9 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
     var width: CGFloat = 264
     /// The trigger is a logo pill that may show its text in the room a crowded composer row has left.
     var takesRoom = false
+    /// The trigger may be narrower than its label asks (a toolbar in a narrow side panel): its text is cut instead of
+    /// pushing the bar wider than the panel.
+    var shrinks = false
     /// The keybinding command that opens and closes it (the model picker's ⇧⌘M).
     var command: String? = nil
     /// More commands that open it too (the model picker also holds access and effort: ⇧⌘A and ⇧⌘E).
@@ -26,7 +29,7 @@ struct ComposerDropdown<Trigger: View, Content: View>: View {
         let flexible = takesRoom && density.logosTakeRoom
         Button { open.toggle() } label: { trigger() }
             .buttonStyle(.nookPlain)
-            .fixedSize(horizontal: !flexible, vertical: true)
+            .fixedSize(horizontal: !flexible && !shrinks, vertical: true)
             .modifier(DropdownKeyCommand(command: command, others: alsoOpenedBy, open: $open))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 // The panel takes the height its rows ask for at this width, so wrapped text grows it instead of
