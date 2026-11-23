@@ -48,6 +48,42 @@ final class AgentCommandsTests: XCTestCase {
         XCTAssertTrue(names(.claude).contains("plan"))
     }
 
+    func testMcpIsNooksForTheAgentsThatReportTheirServers() {
+        for p in RunProvider.allCases {
+            let mcp = AgentCommands.commands(for: p, hasProject: true).first { $0.name == "mcp" }
+            XCTAssertEqual(mcp?.action, AgentCommands.reportsMcpStatus(p) ? .mcp : nil, p.rawValue)
+        }
+        XCTAssertTrue(AgentCommands.reportsMcpStatus(.claude))
+        XCTAssertTrue(AgentCommands.reportsMcpStatus(.codex))
+        XCTAssertTrue(AgentCommands.reportsMcpStatus(.opencode))
+        // An agent that announces its own /mcp keeps it when Nook cannot ask for the list.
+        let own = [AgentSlashCommand(name: "mcp", detail: "List servers", takesInput: false)]
+        XCTAssertEqual(AgentCommands.commands(for: .gemini, hasProject: true, offered: own).first { $0.name == "mcp" }?.action, .insert)
+        XCTAssertFalse(names(.claude, surface: .chat).contains("mcp"))
+    }
+
+    func testClaudeCommandsFromItsInitializeReply() {
+        let raw: [[String: Any]] = [
+            ["name": "context", "description": "Show current context usage", "argumentHint": "", "builtin": true],
+            ["name": "mcp", "description": "Manage MCP servers", "argumentHint": "[reconnect|enable|disable [<server>|all]]"],
+            ["name": "model", "description": "Set the AI model for Claude Code", "argumentHint": "<model>"],
+            ["name": "agents", "description": "(removed) Ask Claude to create/manage subagents", "argumentHint": ""],
+            ["name": "__remote-workflow", "description": "internal"],
+            ["name": "deploy", "description": "Deploy the site (user)", "argumentHint": "<env>"],
+            ["name": "context", "description": "duplicate"],
+        ]
+        let commands = AgentSlashCommand.claude(raw)
+        XCTAssertEqual(commands.map(\.name), ["context", "mcp", "deploy"])
+        XCTAssertEqual(commands.first?.detail, "Show current context usage")
+        XCTAssertFalse(commands[0].takesInput)
+        XCTAssertTrue(commands[2].takesInput)
+        // Nook's own /mcp stays Nook's; the agent's others go to it as a prompt.
+        let list = AgentCommands.commands(for: .claude, hasProject: true, offered: commands)
+        XCTAssertEqual(list.filter { $0.name == "mcp" }.map(\.action), [.mcp])
+        XCTAssertEqual(list.first { $0.name == "context" }?.insertion, "/context")
+        XCTAssertEqual(list.first { $0.name == "deploy" }?.insertion, "/deploy ")
+    }
+
     func testDescriptionKey() {
         let c = ComposerCommand(name: "goal", insertion: "/goal ", action: .insert)
         XCTAssertEqual(AgentCommands.descriptionKey(for: c), "composer.command.goal.description")

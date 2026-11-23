@@ -25,49 +25,21 @@ extension AgentRunPanel {
         }
     }
 
-    /// "nook / Agents-pagina rustiger maken" (click the folder for a new session in it, double-click the name to rename it) with the branch button on the right.
+    /// The open session tabs (`SessionTabStrip`), or without them "nook / Agents-pagina rustiger maken" (click the
+    /// folder for a new session in it); double-click the name to rename it. The branch button on the right.
     func header(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
-            // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
-            // of pushing the header past it (under a wide side panel).
-            FolderCrumb(name: run.projectName, directory: run.projectPath, workingDirectory: run.workingDirectory,
-                        local: run.remote == nil)
-                .layoutPriority(1)
-            Text("/").foregroundStyle(NookTheme.textTertiary)
-            if renaming {
-                TextField(tr("ws.title.placeholder"), text: $titleDraft)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.paper)
-                    .onSubmit {
-                        workspace.rename(runID, to: titleDraft)
-                        renaming = false
-                    }
-                    .onExitCommand { renaming = false }
-                    .focused($titleFocused)
-                    .focusOnAppear($titleFocused)
-            } else {
-                Text(run.title)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .nookTipWhenCut(run.title)
-                    .onTapGesture(count: 2) {
-                        titleDraft = run.title
-                        renaming = true
-                    }
-                // Nook's own dropdown panel, not a system menu: a system submenu (Connectors) closed under the pointer
-                // whenever the running session redrew the header.
-                ComposerDropdown(width: 248, scrolls: true) {
-                    Image(icon: "chevron.down")
-                        .font(NookTheme.font(9, .bold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                } content: {
-                    sessionActions(run)
+            if let sessionTabs, !renaming {
+                SessionTabStrip(context: sessionTabs, folder: run.projectName, title: run.title,
+                                directory: run.remote == nil ? run.projectPath : "",
+                                rename: {
+                                    titleDraft = run.title
+                                    renaming = true
+                                }) {
+                    sessionMenu(run)
                 }
-                .nookTip(tr("chat.more"))
-                .accessibilityLabel(tr("chat.more"))
+            } else {
+                crumb(run)
             }
             if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
             if let launcher = app.launcher(of: run) { LauncherLink(launcher: launcher) }
@@ -106,6 +78,56 @@ extension AgentRunPanel {
         .frame(height: 30)
         .padding(.leading, headerInset)
         .conversationHeaderBackground()
+    }
+
+    /// "nook / Agents-pagina rustiger maken", or the field that renames it.
+    @ViewBuilder
+    private func crumb(_ run: WorkspaceRun) -> some View {
+        // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
+        // of pushing the header past it (under a wide side panel).
+        FolderCrumb(name: run.projectName, directory: run.projectPath, workingDirectory: run.workingDirectory,
+                    local: run.remote == nil)
+            .layoutPriority(1)
+        Text("/").foregroundStyle(NookTheme.textTertiary)
+        if renaming {
+            TextField(tr("ws.title.placeholder"), text: $titleDraft)
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.paper)
+                .onSubmit {
+                    workspace.rename(runID, to: titleDraft)
+                    renaming = false
+                }
+                .onExitCommand { renaming = false }
+                .focused($titleFocused)
+                .focusOnAppear($titleFocused)
+        } else {
+            Text(run.title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+                .nookTipWhenCut(run.title)
+                .onTapGesture(count: 2) {
+                    titleDraft = run.title
+                    renaming = true
+                }
+            sessionMenu(run)
+        }
+    }
+
+    /// The chevron beside the session's name with its actions. Nook's own dropdown panel, not a system menu: a system
+    /// submenu (Connectors) closed under the pointer whenever the running session redrew the header.
+    func sessionMenu(_ run: WorkspaceRun) -> some View {
+        ComposerDropdown(width: 248, scrolls: true) {
+            Image(icon: "chevron.down")
+                .font(NookTheme.font(9, .bold))
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        } content: {
+            sessionActions(run)
+        }
+        .nookTip(tr("chat.more"))
+        .accessibilityLabel(tr("chat.more"))
     }
 
     /// What goes into the message: a file, the stash, the terminal's last lines. The session's own actions are in the

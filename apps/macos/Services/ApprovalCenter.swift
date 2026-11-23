@@ -126,8 +126,10 @@ final class ApprovalCenter {
             origin: .bridge(requestID: request.id), agentName: request.caller.agent,
             project: (request.caller.directory as NSString).lastPathComponent, tool: request.tool.rawValue,
             title: request.title, command: request.detail, diff: [], note: request.note, danger: request.danger,
-            canAlways: false, canTerminal: false, created: request.created, prose: request.tool.approvalReadsAsProse,
-            secretName: request.secretName, signInURL: request.signInURL, secretKeepable: request.secretKeepable
+            canAlways: request.alwaysSite != nil, canTerminal: false, created: request.created,
+            prose: request.tool.approvalReadsAsProse, secretName: request.secretName, signInURL: request.signInURL,
+            secretKeepable: request.secretKeepable,
+            alwaysScope: request.alwaysSite.map { tr("browserExt.approval.always", $0) }
         )
     }
 
@@ -170,7 +172,7 @@ final class ApprovalCenter {
             case .deny, .terminal: workspace.decide(runID, requestID: request, .deny, reason: reason)
             }
         case .bridge(let request):
-            bridge.decide(request, allow: decision == .allow || decision == .always)
+            bridge.decide(request, allow: decision == .allow || decision == .always, always: decision == .always)
         }
     }
 }

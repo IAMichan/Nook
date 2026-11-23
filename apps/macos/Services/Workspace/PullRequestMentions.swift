@@ -15,19 +15,62 @@ enum PullRequestMentions {
     private static let hashNumber = try? NSRegularExpression(pattern: #"(?<![\w#/&])#(\d{1,7})\b"#)
     private static let link = try? NSRegularExpression(pattern: #"https?://[^\s<>()\[\]"'`]+"#, options: [.caseInsensitive])
 
+    /// A pull request a command acts on, with the folder the command moved to first (`cd ../app && gh pr view 12`).
+    /// Nil `directory`: the session's own folder.
+    struct Found: Equatable, Sendable {
+        var ref: PullRequestRef
+        var directory: String? = nil
+    }
+
+    /// `cd` or `pushd` into a folder, with its flags; the folder is group 1.
+    private static let changeDirectory = try? NSRegularExpression(
+        pattern: #"(?:^|[\s;&|(])(?:cd|pushd)\s+(?:-[LPe@]+\s+)*("[^"]*"|'[^']*'|[^\s;&|()]+)"#)
+
     /// The pull requests a tool call's command acts on, in order, each once. A number without `--repo` means the
-    /// session's own repository ("#12").
-    static func inCommand(_ parts: [String]) -> [PullRequestRef] {
+    /// repository of the folder the command is in: the one its last `cd` before it moved to, else the session's own
+    /// ("#12"). A number after a `cd` to a folder that cannot be read from the command (`cd -`, `cd "$DIR"`) is left
+    /// out: guessing the session's repository would link another project's pull request with the same number.
+    /// `directory`: the folder the tool call itself ran in, when the agent gave one (`workdir`, see `folder(in:)`).
+    static func inCommand(_ parts: [String], directory base: String? = nil) -> [Found] {
         guard let command else { return [] }
-        var found: [PullRequestRef] = []
+        var found: [Found] = []
         for text in parts {
             let range = NSRange(text.startIndex..., in: text)
+            let moves = changeDirectory?.matches(in: text, range: range) ?? []
             for match in command.matches(in: text, range: range) {
-                guard let rest = Range(match.range(at: 1), in: text) else { continue }
-                if let ref = target(arguments: String(text[rest])) { found.append(ref) }
+                guard let rest = Range(match.range(at: 1), in: text),
+                      let ref = target(arguments: String(text[rest])) else { continue }
+                guard ref.repository == nil, ref.url == nil,
+                      let move = moves.last(where: { $0.range.location < match.range.location }),
+                      let folder = Range(move.range(at: 1), in: text) else {
+                    found.append(Found(ref: ref, directory: ref.repository == nil && ref.url == nil ? base : nil))
+                    continue
+                }
+                guard let directory = directory(String(text[folder])) else { continue }
+                found.append(Found(ref: ref, directory: base.map { SessionProjects.absolute(directory, cwd: $0) } ?? directory))
             }
         }
-        return unique(found)
+        var seen = Set<String>()
+        return found.filter { seen.insert(($0.directory ?? "") + "\n" + key($0.ref)).inserted }
+    }
+
+    /// The folder a shell tool call runs in when the agent names one: Codex's `workdir`, Gemini CLI's `dir_path` or
+    /// `directory`, Antigravity's `Cwd`, a `cwd`. Nil: the session's own folder.
+    static func folder(in input: [String: Any]) -> String? {
+        for key in ["workdir", "cwd", "Cwd", "dir_path", "directory"] {
+            if let folder = input[key] as? String, let found = directory(folder) { return found }
+        }
+        return nil
+    }
+
+    /// The folder a `cd` names, unquoted, with `~` expanded; nil when the shell decides it (`-`, a variable, a command).
+    private static func directory(_ word: String) -> String? {
+        var folder = word
+        if folder.count >= 2, let first = folder.first, first == "\"" || first == "'", folder.last == first {
+            folder = String(folder.dropFirst().dropLast())
+        }
+        guard !folder.isEmpty, folder != "-", !folder.contains("$"), !folder.contains("`") else { return nil }
+        return (folder as NSString).expandingTildeInPath
     }
 
     /// The pull requests you named in a message: links to one, and "#12" (this project's). A "#12" can be an issue;
@@ -91,6 +134,8 @@ enum PullRequestMentions {
 
     private static func unique(_ refs: [PullRequestRef]) -> [PullRequestRef] {
         var seen = Set<String>()
-        return refs.filter { seen.insert(($0.url?.absoluteString ?? $0.reference).lowercased()).inserted }
+        return refs.filter { seen.insert(key($0)).inserted }
     }
+
+    private static func key(_ ref: PullRequestRef) -> String { (ref.url?.absoluteString ?? ref.reference).lowercased() }
 }

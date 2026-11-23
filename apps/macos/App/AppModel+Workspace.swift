@@ -487,7 +487,11 @@ extension AppModel {
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
-        CompanionNotifier.shared.turnFinished(run)
+        // A turn the agent woke up for by itself (a background command or subagent ended) gives no "done" notice, here
+        // or on the phone (`AgentWake`); its other bookkeeping below still runs.
+        let woke = TimelinePresentation.lastTurn(workspace.timeline(run.id)).first.map(TimelinePresentation.isWake) ?? false
+        let announces = AgentWake.announces(run.status == .failed ? .failed : .done, byYou: !woke)
+        if announces { CompanionNotifier.shared.turnFinished(run) }
         recap.turnEnded(session: "run-" + run.id.uuidString)
         // An agent may have pushed or opened a pull request: the list reads it again shortly (see `followTurn`).
         PullRequestStore.shared.followTurn()
@@ -499,6 +503,7 @@ extension AppModel {
         // These agents report no subscription limits (see QuotaService).
         case .gemini, .opencode, .cursor, .grok, .pi, .acp: break
         }
+        guard announces else { return }
         let state: AgentAttention = run.status == .failed ? (run.limitedAt != nil ? .limited : .failed) : .ready
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.

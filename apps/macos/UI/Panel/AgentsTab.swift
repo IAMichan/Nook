@@ -13,6 +13,11 @@ struct AgentsTab: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    /// The sessions open as tabs in the session's header (`SessionTabStrip`).
+    @ObservedObject private var sessionTabs = SessionTabs.shared
+    /// The pull requests of the sessions, for the status on their tabs.
+    @ObservedObject private var pullRequestSync = PullRequestSync.shared
+    @ObservedObject private var pullRequestStatuses = PullRequestStatusStore.shared
     @State private var palette = false
     /// The palette opened by the new-session button, on the projects to start in.
     @State private var paletteOnProjects = false
@@ -95,6 +100,7 @@ struct AgentsTab: View {
                                              usageProfileID: app.profile(for: session)?.id) { tools in
                                 AgentSessionDetail(selection: .live(session), headerAccessory: tools)
                             }
+                            .environment(\.sessionOtherProjects, session.otherProjects)
                             .id(session.id)
                         case .past(let session):
                             SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
@@ -137,6 +143,7 @@ struct AgentsTab: View {
                     }
                 }
                 .environment(\.sessionHeaderInset, collapsed ? PanelSidebarMetrics.collapsedHeaderInset : 0)
+                .environment(\.sessionTabs, tabsContext(entries, selection: selection))
                 // A page without a session's header starts under the title bar's row, clear of the traffic lights.
                 .padding(.top, collapsed && !workbench(selection) ? PanelSidebarMetrics.titleBand - PanelSidebarMetrics.contentTop : 0)
                 .padding(.leading, listShown ? 10 : collapsed ? PanelSidebarMetrics.collapsedContentLeading : 0)
@@ -166,22 +173,32 @@ struct AgentsTab: View {
         // The agent works in a chat you had marked as finished: it is not finished after all, unless you marked it
         // during this very busy spell. Also while the list is put away.
         .onChange(of: entries.busyKeys) { _, keys in finishedMarks.reconcile(busy: keys) }
+        // A tab goes when its chat is settled, once you are not looking at it.
+        .onChange(of: finishedMarks.keys) { _, _ in closeSettledTabs(entries, current: selectedID(selection)) }
         .onAppear {
             finishedMarks.reconcile(busy: entries.busyKeys)
             if let openLive { viewModel.lastOpenLiveSession = openLive }
-            if Self.isSession(selectedID(selection)) { SessionHistory.shared.opened(selectedID(selection)) }
+            if Self.isSession(selectedID(selection)) {
+                SessionHistory.shared.opened(selectedID(selection))
+                sessionTabs.open(selectedID(selection))
+            }
         }
         .onChange(of: openLive) { _, session in
             if let session { viewModel.lastOpenLiveSession = session }
         }
         .onChange(of: selectedID(selection)) { _, new in
-            if Self.isSession(new) { SessionHistory.shared.opened(new) }
+            if Self.isSession(new) {
+                SessionHistory.shared.opened(new)
+                sessionTabs.open(new)
+            }
+            closeSettledTabs(entries, current: new)
             // The session you left is marked seen by `PanelViewModel.selectedAgentID`. The one you open, and the reads
             // of its neighbours, wait until its first frame is drawn: each visit redraws the whole tab.
             Task { @MainActor in
                 await Task.yield()
                 visits.visit(new)
                 prefetchNeighbours(of: new, in: entries)
+                prefetchTabNeighbours(of: new)
             }
         }
         // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
@@ -308,6 +325,87 @@ struct AgentsTab: View {
         return true
     }
 
+    // MARK: Session tabs
+
+    /// Reads the sessions of the tabs beside the one that opened, as the list does for its rows, so the next tab
+    /// you click is ready.
+    private func prefetchTabNeighbours(of id: String) {
+        let ids = sessionTabs.list.ids
+        guard let index = ids.firstIndex(of: id) else { return }
+        for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) { prefetch(ids[neighbour]) }
+    }
+
+    /// The tabs for the open session's header, and for the new-session composer's (there none of them is open, so the
+    /// sessions you have open stay a click away while you start another); not on a footer page. A tab whose session
+    /// is gone from the list is left out, except the open one, which the header names itself.
+    private func tabsContext(_ entries: AgentListEntries, selection: Selection) -> SessionTabsContext? {
+        let current = selectedID(selection)
+        let composing = current == "new"
+        guard !app.demoMode, Self.isSession(current) || composing else { return nil }
+        var rows: [String: AgentListItem] = [:]
+        for item in entries.running + entries.earlier { rows[item.id] = item }
+        var ids = sessionTabs.list.ids
+        if !composing, !ids.contains(current) { ids.append(current) }
+        let tabs = ids.compactMap { id -> SessionTabsContext.Tab? in
+            // A sub-thread has no row of its own: its tab looks like the row that stands in for it.
+            let item = rows[id] ?? rows[entries.rowID(id)]
+            guard item != nil || id == current else { return nil }
+            return SessionTabsContext.Tab(id: id, item: item, pullRequest: item.flatMap(tabPullRequest))
+        }
+        return SessionTabsContext(
+            tabs: tabs, current: current,
+            select: { id in
+                // A click faster than the hover's rest: the read starts now, before the session's first frame asks for it.
+                if id != current { prefetch(id) }
+                open(id)
+            },
+            prefetch: { prefetch($0) },
+            close: { id in
+                if let next = sessionTabs.close(id, active: current) {
+                    open(next)
+                } else if id == current {
+                    // The last tab: the place to start a new session, as when nothing is open.
+                    open("new")
+                }
+            },
+            closeOthers: { id in
+                sessionTabs.closeOthers(than: id)
+                if id != current { open(id) }
+            },
+            closeRight: { id in
+                let ids = tabs.map(\.id)
+                let index = ids.firstIndex(of: id) ?? 0
+                sessionTabs.closeRight(of: id)
+                if let open = ids.firstIndex(of: current), open > index { self.open(id) }
+            },
+            closeAll: {
+                sessionTabs.closeAll()
+                open("new")
+            },
+            move: { sessionTabs.move($0, onto: $1) },
+            newSession: { viewModel.requestNewSession() })
+    }
+
+    /// The pull request status for a session's tab: the badge of the requests the branch sync found for it.
+    private func tabPullRequest(_ item: AgentListItem) -> PullRequestBadge? {
+        var links: [PullRequestLink] = []
+        if item.id.hasPrefix("run:"), let id = UUID(uuidString: String(item.id.dropFirst(4))) {
+            links = pullRequestSync.links[id] ?? []
+        } else if let branch = item.branch {
+            links = pullRequestSync.folderLinks[PullRequestSync.folderKey(path: item.path, branch: branch)] ?? []
+        }
+        return PullRequestBadge.text(links: pullRequestStatuses.current(links))
+    }
+
+    /// Closes the tabs of chats you settled (not the open one, and not earlier sessions, which are settled by nature).
+    private func closeSettledTabs(_ entries: AgentListEntries, current: String) {
+        for id in sessionTabs.list.ids where id != current && !id.hasPrefix("past:") {
+            guard let item = (entries.running + entries.earlier).first(where: { $0.id == id }),
+                  !item.isBusy, finishedMarks.contains(item.finishKey) else { continue }
+            _ = sessionTabs.close(id, active: current)
+        }
+    }
+
     // MARK: Keys for the open session
 
     /// A session of the list, not a page of the footer or the new-session composer: what back and forward step through.
@@ -401,6 +499,7 @@ struct AgentsTab: View {
                     let target = "run:" + taken.uuidString
                     DispatchQueue.main.async { [viewModel, app] in
                         guard viewModel.selectedAgentID == id else { return }
+                        SessionTabs.shared.replace(id, with: target)
                         if app.workspace.run(taken)?.archived == true { app.workspace.setArchived(taken, false) }
                         app.workspace.selectedRunID = taken
                         viewModel.selectedAgentID = target
@@ -454,21 +553,27 @@ struct AgentsTab: View {
         let ids = (entries.running + entries.earlier).map(\.id)
         guard !app.demoMode, let index = ids.firstIndex(of: id) else { return }
         for neighbour in [index - 1, index + 1] where ids.indices.contains(neighbour) {
-            let next = ids[neighbour]
-            if next.hasPrefix("run:"), let run = UUID(uuidString: String(next.dropFirst(4))) {
-                app.workspace.prefetchTimeline(run)
-            } else if next.hasPrefix("past:") {
-                let key = String(next.dropFirst(5))
-                guard let session = app.history.sessions.first(where: { $0.id == key }) else { continue }
-                // One Nook took over opens as its session (see `resolve`): that timeline is what it shows.
-                if let taken = app.adoptedRun(for: session) {
-                    app.workspace.prefetchTimeline(taken)
-                } else {
-                    TranscriptPrefetch.warm(path: session.path)
-                }
-            } else if let session = app.agentSessions.first(where: { $0.id == next }) {
-                TranscriptPrefetch.warm(path: session.transcriptPath.isEmpty ? (transcript(of: session)?.path ?? "") : session.transcriptPath)
+            prefetch(ids[neighbour])
+        }
+    }
+
+    /// Reads what opening `id` shows, off the main thread: a session Nook runs its timeline, an earlier session the
+    /// session that took it over (else its transcript), a running session its transcript.
+    private func prefetch(_ id: String) {
+        guard !app.demoMode else { return }
+        if id.hasPrefix("run:"), let run = UUID(uuidString: String(id.dropFirst(4))) {
+            app.workspace.prefetchTimeline(run)
+        } else if id.hasPrefix("past:") {
+            let key = String(id.dropFirst(5))
+            guard let session = app.history.sessions.first(where: { $0.id == key }) else { return }
+            // One Nook took over opens as its session (see `resolve`): that timeline is what it shows.
+            if let taken = app.adoptedRun(for: session) {
+                app.workspace.prefetchTimeline(taken)
+            } else {
+                TranscriptPrefetch.warm(path: session.path)
             }
+        } else if let session = app.agentSessions.first(where: { $0.id == id }) {
+            TranscriptPrefetch.warm(path: session.transcriptPath.isEmpty ? (transcript(of: session)?.path ?? "") : session.transcriptPath)
         }
     }
 
@@ -592,6 +697,42 @@ struct RowProject: Equatable {
     var path: String?
     /// You set the icon yourself (Settings › Projects, or a color from the row's menu): it wins over the project's favicon.
     var custom = false
+}
+
+extension RowProject {
+    /// The project folders on this Mac by the name their sessions are listed under (`InboxProject.key`): the projects you
+    /// set something for, your favorites, the recent ones and the last one. Made from settings only; a row never touches
+    /// the disk to find its project.
+    @MainActor
+    static func folders(_ settings: WorkspaceSettings) -> [String: String] {
+        var folders: [String: String] = [:]
+        let known = settings.projectOverrides.projects + settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
+        for path in known where !path.isEmpty {
+            let key = InboxProject.key(folder: (path as NSString).lastPathComponent, path: path)
+            if key != InboxProject.none, folders[key] == nil { folders[key] = path }
+        }
+        return folders
+    }
+
+    /// The project a session names: the name you gave it and its badge, for every session with a project. A session in a
+    /// folder not known yet goes by its folder's name; one without a project gets none.
+    @MainActor
+    static func of(_ item: AgentListItem, settings: WorkspaceSettings, projects: [String: String]) -> RowProject? {
+        of(folder: item.folder, path: item.path, local: item.machine == MachineName.local, settings: settings, projects: projects)
+    }
+
+    /// The same for a session known by its folder and path only (a search result).
+    @MainActor
+    static func of(folder: String, path itemPath: String, local: Bool, settings: WorkspaceSettings,
+                   projects: [String: String]) -> RowProject? {
+        let key = InboxProject.key(folder: folder, path: itemPath)
+        guard key != InboxProject.none else { return nil }
+        let path = projects[key] ?? (local && (itemPath as NSString).lastPathComponent == key ? itemPath : nil)
+        let name = path.map(settings.projectDisplayName) ?? key
+        let own = path.flatMap(settings.projectIcon)
+        let icon = own ?? .monogram(ProjectIcon.initials(name), ProjectIcon.defaultTint(key))
+        return RowProject(name: name, icon: icon, path: path, custom: own != nil)
+    }
 }
 
 /// A project's badge in a session row (the row names the project beside it): the icon you set, else the

@@ -798,6 +798,7 @@ struct WorkspaceSettingsSection: View {
             BrowserImportRow()
             BrowserHistoryRow()
             BrowserPasswordsRow()
+            BrowserSitePermissionsRow()
             TrustedCertificatesRow()
         }
         BrowserExtensionsSettings()

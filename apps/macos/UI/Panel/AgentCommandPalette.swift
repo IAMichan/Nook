@@ -363,6 +363,19 @@ struct AgentCommandPalette: View {
             viewModel.selectedAgentID = "new"
             return false
         })
+        // A folder already on this Mac, kept as a project (the composer's "Add existing project…"). The panel waits a
+        // turn, so it opens after the palette closed.
+        out.append(Entry(id: "p:existing", group: .projects, symbol: "folder.badge.plus", title: tr("ws.new.addExisting"),
+                         detail: tr("ws.new.addExistingDetail"), pinned: true) {
+            DispatchQueue.main.async {
+                guard let path = ProjectFolderPanel.choose() else { return }
+                settings.addProject(path)
+                settings.rememberProject(path)
+                PromptLinkInbox.shared.requestProject(path)
+                viewModel.selectedAgentID = "new"
+            }
+            return false
+        })
         // A new folder with a repository in it, offered to publish on GitHub at once (the composer's "New project…").
         out.append(Entry(id: "p:new", group: .projects, symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"),
                          detail: tr("sc.newProject.detail"), pinned: true) {

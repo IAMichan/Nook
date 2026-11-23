@@ -185,7 +185,7 @@
     {#snippet center()}<span class="t"><strong>{title || tr("Nieuwe chat", "New chat")}</strong><small>Nook</small></span>{/snippet}
     {#snippet trailing()}{#if likeTheMac && digest}<button class="more press" aria-label={tr("Meer acties", "More actions")} onclick={(e) => (menu = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="ellipsis" size={18} stroke={2.4} /></button>{/if}{/snippet}
   </NavBar>
-  <ConversationScroll version={[lines.length, last?.text.length, last?.status, sending]}>
+  <ConversationScroll>
     <div class="lines">
       {#if offline && id && !lines.length && !queued.length}
         <OfflineNote>{tr("Deze chat staat nog niet op deze telefoon. Hij opent zodra je Mac verbonden is.", "This chat is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>

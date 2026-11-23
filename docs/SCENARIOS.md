@@ -82,7 +82,8 @@ and a `result` line. A recording is one JSON object per line (`//` lines are com
 
 - `text` streams as deltas (`chunk` characters every `ms`), then the whole assistant message, as Claude Code does.
 - `tool` is a `tool_use`, then after `ms` its `tool_result` (`"error": true` for a failed one).
-- `sleep` waits `ms`. `turn` starts the next turn. Any other object goes out as is: a raw stream-json line, such as a
+- `sleep` waits `ms`. `turn` starts the next turn. `repeat` plays the last turn again for every message after the
+  recorded turns, so a long session needs only one turn on disk. Any other object goes out as is: a raw stream-json line, such as a
   `control_request` for an approval.
 - `{{cwd}}`, `{{session_id}}`, `{{model}}`, `{{turn}}` and `{{uuid}}` are filled in.
 

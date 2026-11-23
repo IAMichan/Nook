@@ -7,6 +7,7 @@
   import { ask } from "../../lib/confirm.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "../../components/ui/Ico.svelte";
+  import { EndFollow } from "../../lib/end-follow.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import Conversation from "./Conversation.svelte";
   import ActionSuggestionBar from "../../components/ActionSuggestionBar.svelte";
@@ -17,6 +18,8 @@
   import SessionAnnouncer from "../../components/SessionAnnouncer.svelte";
 
   let { session, ontakeover }: { session: AgentSession; ontakeover?: (s: AgentSession, endTerminal: boolean, message?: string) => void } = $props();
+  // Opens at the end of the transcript and follows it while it grows, until you scroll up yourself.
+  const follow = new EndFollow(".msg, .thinking, .step, p");
   let canEnd = $state(false);
   let terminalName = $state("terminal");
   let message = $state("");
@@ -109,7 +112,7 @@
     {/if}
   </header>
 
-  <div class="scroll">
+  <div class="scroll" {@attach follow.attach}>
   <div class="thread-column body">
   {#if approval}<ApprovalCard {approval} />{/if}
   {#if question}{#key question.id}<QuestionCard request={question} />{/key}{/if}

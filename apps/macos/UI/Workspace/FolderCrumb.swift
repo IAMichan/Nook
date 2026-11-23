@@ -52,10 +52,13 @@ struct FolderCrumb: View {
         app.viewModel.selectedAgentID = "new"
     }
 
-    private func start() {
+    private func start() { Self.startNewSession(app: app, project: name, directory: directory) }
+
+    /// The new-session composer on the project a session in `directory` belongs to (its checkout, not its worktree).
+    static func startNewSession(app: AppModel, project: String, directory: String) {
         let settings = app.workspace.settings
         let known = settings.favoriteProjects + settings.recentProjects + [settings.lastProject]
-        let folder = WorktreeOrigin.newSessionFolder(project: (name as NSString).lastPathComponent, paths: [directory], known: known)
+        let folder = WorktreeOrigin.newSessionFolder(project: (project as NSString).lastPathComponent, paths: [directory], known: known)
             ?? WorktreeOrigin.checkoutPath(of: directory)
         PromptLinkInbox.shared.requestProject(folder)
         app.viewModel.selectedAgentID = "new"

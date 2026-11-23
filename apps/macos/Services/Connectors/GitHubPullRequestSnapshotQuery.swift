@@ -12,7 +12,7 @@ enum GitHubPullRequestSnapshotQuery {
       autoMergeRequest { enabledAt }
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
         __typename
-        ... on CheckRun { name status conclusion }
+        ... on CheckRun { name status conclusion startedAt databaseId }
         ... on StatusContext { context state }
       } } } } } }
       reviews(last: 100) { nodes { state body author { __typename login } } }
@@ -77,6 +77,29 @@ enum GitHubPullRequestSnapshotQuery {
         return parse(pull: pull)
     }
 
+    /// Only the newest run of each check counts, as in the REST read (`PullRequestDetailParser.latestRuns`): a workflow
+    /// that runs again on the same commit (an edited description, a re-run) leaves its old failure in the rollup, and
+    /// GitHub's rollup still counts it. Newest by start time (ISO 8601, so the text sorts), then by id. Commit statuses
+    /// already come once per context, with their latest state.
+    static func latestRuns(_ contexts: [[String: Any]]) -> [[String: Any]] {
+        func order(_ run: [String: Any]) -> (String, Int) {
+            ((run["startedAt"] as? String) ?? "", (run["databaseId"] as? NSNumber)?.intValue ?? 0)
+        }
+        var newest: [String: Int] = [:]
+        var result: [[String: Any]] = []
+        for context in contexts {
+            guard context["__typename"] as? String == "CheckRun" else { result.append(context); continue }
+            let name = (context["name"] as? String) ?? "?"
+            if let index = newest[name] {
+                if order(context) > order(result[index]) { result[index] = context }
+            } else {
+                newest[name] = result.count
+                result.append(context)
+            }
+        }
+        return result
+    }
+
     /// The snapshot in the same words the REST read gives, so a watch sees no news when the way in changes.
     static func parse(pull: [String: Any]) -> PullRequestSnapshot {
         let merged = (pull["merged"] as? Bool) ?? false
@@ -85,7 +108,7 @@ enum GitHubPullRequestSnapshotQuery {
         // Check runs (failed: the conclusions the REST read counts) and the older commit statuses.
         let commit = ((((pull["commits"] as? [String: Any])?["nodes"] as? [[String: Any]])?.last)?["commit"] as? [String: Any])
         let rollup = commit?["statusCheckRollup"] as? [String: Any]
-        let contexts = ((rollup?["contexts"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        let contexts = latestRuns(((rollup?["contexts"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? [])
         var failed: [String] = []
         var pending = false
         for context in contexts {

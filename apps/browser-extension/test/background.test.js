@@ -384,3 +384,50 @@ test('a step without ask (approved in Nook already) never waits in the side pane
   assert.equal(ports[0].sent.find((m) => m.kind === 'result' && m.id === 's5')?.ok, true);
   assert.ok(!chrome.storage.session.data.approvals?.length);
 });
+
+// A step of a coding agent comes with `ask.trusted` first: on a site that acts without asking it runs at once; elsewhere
+// it does not run and tells Nook to ask in its own approval card, never with a card in the side panel.
+test('a step asked only if trusted runs on a trusted site and otherwise hands the question back to Nook', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs: shopTabs() });
+  agentSays(chrome, 'button “Next”');
+  ports[0].onMessage.fire(step('t1', { summary: 'Click', trusted: true }));
+  await wait(100);
+  await settle();
+  const handedBack = ports[0].sent.find((m) => m.kind === 'result' && m.id === 't1');
+  assert.equal(handedBack?.ok, false);
+  assert.deepEqual(handedBack.approval, { site: 'shop.example', final: false });
+  assert.ok(!chrome.storage.session.data.approvals?.length, 'no card in the side panel');
+  assert.ok(!(chrome.storage.session.data.activity || []).length, 'nothing happened, so no activity');
+
+  // The user chose "Always on shop.example" in Nook: the step comes again with trust, runs, and the site is trusted.
+  ports[0].onMessage.fire({ kind: 'command', id: 't2', method: 'click', params: { tab: 1, ref: 'e1' }, trust: 'shop.example' });
+  await wait(100);
+  await settle();
+  assert.equal(ports[0].sent.find((m) => m.kind === 'result' && m.id === 't2')?.ok, true);
+  assert.deepEqual(chrome.storage.local.data.trusted, ['shop.example']);
+
+  ports[0].onMessage.fire(step('t3', { summary: 'Click', trusted: true }));
+  await wait(100);
+  await settle();
+  assert.equal(ports[0].sent.find((m) => m.kind === 'result' && m.id === 't3')?.ok, true);
+
+  // Paying still goes back to Nook, as final.
+  agentSays(chrome, 'button “Pay now”');
+  ports[0].onMessage.fire(step('t4', { summary: 'Click', trusted: true }));
+  await wait(100);
+  await settle();
+  assert.deepEqual(ports[0].sent.find((m) => m.kind === 'result' && m.id === 't4')?.approval, { site: 'shop.example', final: true });
+});
+
+test('trust from Nook never covers another site or a step that cannot be undone', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs: shopTabs() });
+  agentSays(chrome, 'button “Next”');
+  ports[0].onMessage.fire({ kind: 'command', id: 'u1', method: 'click', params: { tab: 1, ref: 'e1' }, trust: 'bank.example' });
+  await wait(100);
+  await settle();
+  agentSays(chrome, 'button “Pay now”');
+  ports[0].onMessage.fire({ kind: 'command', id: 'u2', method: 'click', params: { tab: 1, ref: 'e1' }, trust: 'shop.example' });
+  await wait(100);
+  await settle();
+  assert.deepEqual(chrome.storage.local.data.trusted ?? [], []);
+});

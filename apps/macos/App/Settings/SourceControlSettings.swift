@@ -212,7 +212,9 @@ struct ProjectNameRow: View {
 /// Picks (or makes) the folder of a new project.
 @MainActor
 enum ProjectFolderPanel {
-    static func choose() -> String? {
+    /// `near`: a folder to open the panel in, such as the project you are in now.
+    @MainActor
+    static func choose(near: String? = nil) -> String? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -220,8 +222,9 @@ enum ProjectFolderPanel {
         panel.allowsMultipleSelection = false
         panel.prompt = tr("inbox.project.addPrompt")
         panel.message = tr("inbox.project.addMessage")
+        if let near { panel.directoryURL = URL(fileURLWithPath: near) }
         NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return nil }
         return url.path
     }
 }

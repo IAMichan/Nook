@@ -125,6 +125,10 @@ final class AgentHub: ObservableObject {
         /// The files the tool call that is running will write, from its `PreToolUse`: OpenCode's plugin sends no input
         /// with `PostToolUse`, so what it wrote is read from here once it is done.
         var pendingWrites: [String] = []
+        /// Whether you started the turn that runs (`AgentWake`): true after a prompt of yours, false after one the agent
+        /// put in itself and for a turn after `Stop` without a new prompt (it woke up for background work). Nil until the
+        /// agent's hooks sent a prompt: then every finished turn tells you.
+        var turnByYou: Bool? = nil
     }
 
     enum PendingKind {

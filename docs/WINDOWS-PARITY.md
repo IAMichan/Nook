@@ -389,6 +389,8 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [x] **BR-63** Import MCP memory · S
 
+- [ ] **BR-64** A terminal starts its shell at the width it has on screen, not a fixed size: `openpty` in `src-tauri/src/workspace/terminals.rs` uses 100 × 30, so a program that reads the width at launch (devenv, progress bars) draws too wide and its redraws stack (`TerminalSession.shown`, scenario `TerminalStartsAtItsWidth`) · S
+
 ## 4. Coding agents and the workspace (AG)
 
 ### 4.1 MCP bridge (`nook --mcp`)

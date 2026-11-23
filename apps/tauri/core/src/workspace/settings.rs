@@ -96,7 +96,7 @@ pub struct WorkspaceSettings {
     pub agent_tools: bool,
     /// Een bericht terwijl een agent werkt, stuurt de beurt bij (Ctrl+Enter zet het in de wachtrij); uit: andersom.
     pub steer_by_default: bool,
-    /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard uit).
+    /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard aan).
     pub auto_resume_limited: bool,
     /// A session that quitting or restarting Nook stopped goes on by itself when Nook opens again (`continueAfterRelaunch`).
     pub continue_after_relaunch: bool,
@@ -147,7 +147,7 @@ impl Default for WorkspaceSettings {
             show_cost: true,
             agent_tools: true,
             steer_by_default: true,
-            auto_resume_limited: false,
+            auto_resume_limited: true,
             continue_after_relaunch: false,
             last_project: String::new(),
             favorite_projects: vec![],

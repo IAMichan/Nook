@@ -9,6 +9,8 @@
 //   {"replay":"tool","id":"t1","name":"Read","input":{…},"result":"…","ms":300}
 //                                                       a tool call and, after `ms`, its result
 //   {"replay":"sleep","ms":500}                         waits
+//   {"replay":"repeat"}                                 every message after the recorded turns plays the last turn
+//                                                       again, so a long session needs only one turn on disk
 //   any other object                                    is written as is (a raw stream-json line)
 // Placeholders in strings: {{cwd}}, {{session_id}}, {{model}}, {{turn}}, {{uuid}} (a new one each time).
 // Each turn starts with a system init line and ends with a result line, unless the recording writes its own result.
@@ -71,6 +73,7 @@ guard let recordingText = try? String(contentsOf: recordingURL, encoding: .utf8)
     exit(2)
 }
 var turns: [[[String: Any]]] = [[]]
+var repeatsLastTurn = false
 for raw in recordingText.split(separator: "\n", omittingEmptySubsequences: true) {
     let line = raw.trimmingCharacters(in: .whitespaces)
     if line.isEmpty || line.hasPrefix("//") { continue }
@@ -80,6 +83,8 @@ for raw in recordingText.split(separator: "\n", omittingEmptySubsequences: true)
     }
     if object["replay"] as? String == "turn" {
         if !(turns.last ?? []).isEmpty { turns.append([]) }
+    } else if object["replay"] as? String == "repeat" {
+        repeatsLastTurn = true
     } else {
         turns[turns.count - 1].append(object)
     }
@@ -247,6 +252,8 @@ while true {
     let turn = nextTurn()
     if turn < turns.count {
         play(turns[turn], turn: turn)
+    } else if repeatsLastTurn, let last = turns.last {
+        play(last, turn: turn)
     } else {
         play([["replay": "text", "text": "Replay \(model): no more recorded turns."]], turn: turn)
     }

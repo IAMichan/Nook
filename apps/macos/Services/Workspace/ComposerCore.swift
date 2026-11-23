@@ -141,6 +141,10 @@ struct ComposerCommand: Equatable, Sendable, Identifiable {
         case fork
         /// Start a new conversation with the same agent in this session (`WorkspaceManager.clearConversation`).
         case clear
+        /// List the agent's MCP servers and how each one is doing (`WorkspaceManager.showMcpStatus`).
+        case mcp
+        /// One of Nook's own commands for every agent: a picker, a page, a panel or a line (`NookCommand`).
+        case session(NookCommand)
     }
 
     static func filter(_ commands: [ComposerCommand], query: String) -> [ComposerCommand] {

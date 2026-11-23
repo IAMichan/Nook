@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// What the address bar suggests while you type: pages you visited before (`BrowserHistory`). The arrow keys move
+/// What the address bar suggests while you type: pages you starred (`BrowserBookmarks`), then pages you visited before
+/// (`BrowserHistory`). The arrow keys move
 /// through them and Enter opens the one lit; when the best one starts with what you typed (`git` → github.com) it is lit
 /// at once, so Enter opens it as in other browsers. Escape closes the list.
 @MainActor
@@ -17,8 +18,9 @@ final class AddressSuggestions: ObservableObject {
     /// You typed in the address bar.
     func update(for text: String) {
         defer { lastText = text }
-        guard BrowserHistory.isEnabled(), !text.trimmingCharacters(in: .whitespaces).isEmpty else { return close() }
-        let found = BrowserHistory.shared.suggestions(for: text)
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return close() }
+        let visited = BrowserHistory.isEnabled() ? BrowserHistory.shared.suggestions(for: text) : []
+        let found = BrowserBookmarks.merged(bookmarks: BrowserBookmarks.shared.suggestions(for: text), history: visited, limit: 6)
         items = found
         // Lit at once only while you add letters: after a backspace, Enter opens what you typed.
         let growing = text.count > lastText.count && text.hasPrefix(lastText)
@@ -79,7 +81,7 @@ private struct AddressSuggestionRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: NookTheme.Spacing.sm) {
-                SiteIcon(domain: host, fallback: "clock", tint: NookTheme.textTertiary, size: 14)
+                SiteIcon(domain: host, fallback: item.isBookmark ? "star" : "clock", tint: NookTheme.textTertiary, size: 14)
                 Text(item.title.isEmpty ? item.shortAddress : item.title)
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
@@ -92,6 +94,12 @@ private struct AddressSuggestionRow: View {
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
+                if item.isBookmark && !hovering {
+                    Image(icon: "star.fill")
+                        .font(NookTheme.font(9, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .accessibilityLabel(tr("browser.bookmarks.title"))
+                }
             }
             .padding(.horizontal, NookTheme.Spacing.sm)
             .frame(height: 28)
@@ -100,7 +108,8 @@ private struct AddressSuggestionRow: View {
         }
         .buttonStyle(.nookPlain)
         .overlay(alignment: .trailing) {
-            if hovering {
+            // A bookmark goes with its star, not from here.
+            if hovering && !item.isBookmark {
                 ToolbarIconButton("xmark", tr("browser.history.forgetPage"), height: 20, width: 20, symbolSize: 9, forget)
                     .padding(.trailing, NookTheme.Spacing.xs)
             }

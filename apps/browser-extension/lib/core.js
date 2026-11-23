@@ -100,6 +100,18 @@ export function mustAsk({ url, trusted, submits = false, words = '' }) {
   return { ask: !siteOf(url) || !isBlocked(url, trusted), final: false };
 }
 
+/**
+ * A step Nook only asked about (`ask.trusted`) that must wait for the user: it did not run, and Nook asks in its own
+ * approval card. `site` names the step's site for "Always on <site>" there, never offered for a `final` step.
+ */
+export function approvalNeeded(site, final) {
+  return {
+    ok: false,
+    error: 'This step waits for the user\'s approval in Nook; it did not run.',
+    approval: { site: typeof site === 'string' ? site.slice(0, 120) : '', final: !!final }
+  };
+}
+
 /** A step waiting for the user, as the side panel's card shows it: only plain, clipped text. */
 export function approvalCard(id, ask, site, final) {
   if (typeof id !== 'string' || !id) return null;
@@ -696,4 +708,22 @@ export function pdfCrop(point, imageWidth, imageHeight, size = { width: 560, hei
   const left = Math.round(Math.min(Math.max(0, x - width / 2), imageWidth - width));
   const top = Math.round(Math.min(Math.max(0, y - height / 2), imageHeight - height));
   return { left, top, width, height, scale, spot: { x: x - left, y: y - top } };
+}
+
+// MARK: - The agent that drives the page
+
+/** At most this many logo colors go round the glow (Antigravity has three). */
+export const DRIVER_COLORS = 4;
+
+/**
+ * The coding agent that takes a step (`command.by`, from `BrowserExtensionConnector.driver` on the Mac): its name for
+ * the strip and its logo's colors for the glow, as Nook's own browser draws it. Only `#RRGGBB` colors pass, so nothing
+ * else reaches the page's style. null for Nook itself, which keeps its own violet.
+ */
+export function driverOf(by) {
+  if (!by || typeof by !== 'object') return null;
+  const name = typeof by.name === 'string' ? by.name.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  const colors = Array.isArray(by.colors) ? by.colors.filter((color) => typeof color === 'string' && HEX.test(color)).slice(0, DRIVER_COLORS) : [];
+  if (!name && !colors.length) return null;
+  return { name, colors };
 }

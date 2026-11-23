@@ -100,6 +100,23 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertNil(thought)
     }
 
+    func testAStepThatJustEndedIsOnlyOnTheLiveLineWhileHeld() {
+        let messages = [
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "git status"), step("b", "Bash", "swift build")], at: 2)
+        ]
+        XCTAssertEqual(TranscriptPresentation.endedStep(messages), "b")
+        let held = TranscriptPresentation.rows(messages, working: true, held: "b")
+        XCTAssertEqual(held.map(\.id), ["u1", "working", "step:a", "live"], "not also a row right above the live line")
+        guard case .live(let current, _) = held[3] else { return XCTFail("\(held)") }
+        XCTAssertEqual(current?.id, "b")
+        let released = TranscriptPresentation.rows(messages, working: true)
+        XCTAssertEqual(released.map(\.id), ["u1", "working", "group:s1", "live"], "back in the rows once let go")
+        XCTAssertNil(TranscriptPresentation.endedStep(messages + [message("t1", .thinking, "Next", at: 3)]), "something came after it")
+        XCTAssertNil(TranscriptPresentation.endedStep([message("u1", .user, "Fix"),
+                                                       message("s1", .tools, steps: [step("a", "Bash", "ls", .running)])]))
+    }
+
     func testWithParallelStepsTheOneStillRunningStaysTheLiveLine() {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Fix de test", at: 0),

@@ -280,7 +280,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var customAgentModels: [String: [AgentModel]] = [:]
     /// The thinking levels each ACP agent offers (its "thought_level" config option), by `effortKey`.
     @Published var agentEfforts: [String: [AgentModel]] = [:]
-    /// The `/` commands each ACP session announced (`available_commands_update`).
+    /// The `/` commands each session's agent offers itself: an ACP agent's `available_commands_update`, OpenCode's
+    /// commands, Claude Code's `initialize` reply.
     @Published var acpCommands: [UUID: [AgentSlashCommand]] = [:]
     /// What fills each session's context window, as its agent last said it (`refreshContextUsage`), with the session's
     /// context size at that moment: an answer from before a later turn is not shown.
@@ -544,6 +545,9 @@ final class WorkspaceManager: ObservableObject {
         var acpContinuations = 0
         /// ACP: what the agent thought this turn, kept for a turn whose only words went into its thinking.
         var acpThought = ""
+        /// ACP: the start of what the agent wrote since its last tool call, to tell a reply that only says a limit stopped it
+        /// (`FailureClassifier.limitReply`).
+        var acpReply = ""
         /// ACP: file reads still open, settled once the agent moves on (see AcpOpenReads).
         var acpOpenReads = AcpOpenReads()
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
@@ -620,6 +624,8 @@ final class WorkspaceManager: ObservableObject {
         applyAutoArchive()
         // Sessions that were waiting for a usage limit to reset go on waiting.
         for run in loaded where run.autoResume == true { armLimitResume(run.id) }
+        // And those whose last turn ended on a limit notice that was not noted as a limit.
+        recheckLimitReplies()
         reattachKeptRuns()
         restoreWaiting(waiting)
         // Guest links that still work connect again (within their 24 hours).
@@ -786,6 +792,8 @@ final class WorkspaceManager: ObservableObject {
         if events[id] == nil, !shown {
             timelineStore.readingToSend.insert(id)
             let continues = QueuedMessage.Origin.continuesWork(origin)
+            // Shown now, while the timeline is read (the bubble joins it once it is here).
+            let early = showWhilePreparing(id, clean)
             whenTimelineLoaded(id) { [weak self] in
                 guard let self, self.timelineStore.readingToSend.remove(id) != nil, let run = self.run(id) else { return }
                 // A turn started meanwhile: the message goes after it, as it would have had it come a moment later.
@@ -793,13 +801,27 @@ final class WorkspaceManager: ObservableObject {
                     self.enqueue(id, text: clean, origin: origin)
                     return
                 }
+                // Stopped while it was read: the message stays in the conversation, unsent.
+                if early, run.status != .preparing { return }
                 if continues { self.continuingTurns.insert(id) }
                 defer { self.continuingTurns.remove(id) }
-                self.startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+                self.startTurn(id, sending: clean, shown: shown || early, run: run, executable: executable)
             }
             return true
         }
         return startTurn(id, sending: clean, shown: shown, run: run, executable: executable)
+    }
+
+    /// Your message shows in the conversation at once and the session reads as working while Nook gets it ready for the
+    /// turn (its removed worktree made again, its released timeline read back), as it does while the last snapshot is
+    /// made: it never sits unseen for seconds. A chat you settled comes back right away. False for a goal command, which
+    /// Codex shows its own way (`codexGoalTurn`): that one waits unseen as before.
+    func showWhilePreparing(_ id: UUID, _ clean: String) -> Bool {
+        guard let run = run(id), run.canContinue, SessionGoals.command(in: clean) == nil else { return false }
+        append(id, RunEvent(kind: .user, text: shownMessage(id, clean)))
+        update(id) { $0.move(to: .preparing) }
+        FinishedSessions.shared.reopen(FinishedSessions.key(run: run))
+        return true
     }
 
     /// The end of `send`, once the timeline is in memory: the turn for the message `clean` starts.
@@ -833,9 +855,17 @@ final class WorkspaceManager: ObservableObject {
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
         // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
         // other agent (Codex over `codex exec` too) ahead of the message.
-        let appContext = usesCodexServer(run, executable) ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        let codexServer = usesCodexServer(run, executable)
+        let appContext = codexServer ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        // `/init` and `/review` for an agent without them: the prompt its own would send; the timeline keeps your words.
+        var message = clean
+        if let prompt = SessionCommands.prompt(for: clean, provider: run.provider, offered: acpCommands[id] ?? [],
+                                               nativeReview: codexServer) {
+            message = prompt
+            displayPrompt[id] = visible
+        }
         turnPrompts[id] = clean
-        launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
+        launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: message), executable: executable,
                    showPrompt: !shown)
         return true
     }

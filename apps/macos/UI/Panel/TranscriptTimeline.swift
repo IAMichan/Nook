@@ -48,6 +48,8 @@ struct TranscriptConversation: View {
     @State private var reading = TimelineReadingAnchor()
     /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
     @State private var timelineBuild = 0
+    /// The step that just ended, held on the live line a moment and kept out of the rows meanwhile.
+    @State private var endedHold = EndedStepHold<String>()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -120,7 +122,9 @@ struct TranscriptConversation: View {
 
     var body: some View {
         // Only a conversation read from the transcript is kept for the next visit, not the fallback shown before it.
-        let _ = derived.update(shown, working: working, directory: directory, path: transcriptMessages.isEmpty ? "" : path)
+        let ended = working && !compacting ? TranscriptPresentation.endedStep(shown) : nil
+        let _ = derived.update(shown, working: working, held: endedHold.held(ended), directory: directory,
+                               path: transcriptMessages.isEmpty ? "" : path)
         let allRows = derived.rows
         // Only the latest turns of a long conversation are drawn, from the turn the window starts at.
         let perTurn = TranscriptPresentation.rowsPerTurn(allRows)
@@ -334,6 +338,13 @@ struct TranscriptConversation: View {
         .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs, turns: turns, pullRequest: derived.pullRequest))
         // VoiceOver hears the step, the finished replies and what waits on you, as for a session Nook runs.
         .announcesAgentProgress(key: "transcript:" + path, author: author, snapshot: announcement)
+        // The step that just ended goes back into the rows once its moment on the live line is over.
+        .task(id: ended) {
+            guard let ended else { return }
+            try? await Task.sleep(for: .seconds(AgentActivity.stepDwell))
+            guard !Task.isCancelled else { return }
+            endedHold.release(ended)
+        }
         // A compaction between turns is followed too, until its notice is in the transcript.
         .task(id: path + (working || compactingSince != nil ? "#working" : "")) {
             // Another session in the same place: its conversation as read last time shows at once (never the previous
@@ -420,10 +431,9 @@ struct TranscriptConversation: View {
         DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(match.rowID, anchor: .center) } }
     }
 
+    /// At once, as `AgentRunPanel.toggleBlock`: animated, every row of a long conversation moved for each frame of it.
     private func toggle(_ key: String) {
-        withAnimation(NookTheme.reveal) {
-            if open.contains(key) { open.remove(key) } else { open.insert(key) }
-        }
+        if open.contains(key) { open.remove(key) } else { open.insert(key) }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -441,6 +451,15 @@ struct TranscriptConversation: View {
             // size change in the same frame as your step no longer pulls the view back to the end.
             guard scroll.shouldFollowEnd, scrollPhase.value == .idle,
                   new.maxOffset - new.offset > 0.5 else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+            return
+        }
+        // The scroll view put back an old offset by itself, thousands of points up (`ScrollModel.movedBySelf`): back to
+        // the end while following, also while a scroll of yours toward it still runs out.
+        if ScrollModel.movedBySelf(from: old, to: new) {
+            guard scroll.shouldFollowEnd, scrollPhase.value != .animating else { return }
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -662,7 +681,7 @@ private struct TranscriptRowView: View, Equatable {
 /// the whole transcript. Comparing the same array again is cheap: Swift sees it is the same storage.
 @MainActor
 private final class TranscriptDerived {
-    private var key: (messages: [AgentChatMessage], working: Bool, directory: String?)?
+    private var key: (messages: [AgentChatMessage], working: Bool, held: String?, directory: String?)?
     private(set) var rows: [TranscriptRow] = []
     private(set) var outputs: [SessionOutput] = []
     private(set) var turns: [TurnDiff] = []
@@ -703,7 +722,7 @@ private final class TranscriptDerived {
     private static var order: [String] = []
     private static let limit = 12
 
-    func update(_ messages: [AgentChatMessage], working: Bool, directory: String?, path: String) {
+    func update(_ messages: [AgentChatMessage], working: Bool, held: String? = nil, directory: String?, path: String) {
         if key == nil, !path.isEmpty, let known = Self.byPath[path], let knownKey = known.key {
             key = knownKey
             rows = known.rows
@@ -717,10 +736,10 @@ private final class TranscriptDerived {
             rowCards = known.rowCards
             rowOpenKeys = known.rowOpenKeys
         }
-        if let key, key.working == working, key.directory == directory, key.messages == messages { return }
+        if let key, key.working == working, key.held == held, key.directory == directory, key.messages == messages { return }
         defer { remember(path) }
-        key = (messages, working, directory)
-        rows = TranscriptPresentation.rows(messages, working: working)
+        key = (messages, working, held, directory)
+        rows = TranscriptPresentation.rows(messages, working: working, held: held)
         outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
         turns = TurnDiff.collect(messages)
         marks = TranscriptPresentation.promptMarks(rows)

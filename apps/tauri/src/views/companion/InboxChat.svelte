@@ -300,7 +300,7 @@
     {/snippet}
   </NavBar>
 
-  <ConversationScroll version={[lines.length, lines[lines.length - 1]?.id, typing.length]} land={newFrom ? "chat-new-messages" : null}>
+  <ConversationScroll land={newFrom ? "chat-new-messages" : null}>
     {#if offline && !lines.length && !queued.length}
       <OfflineNote>{tr("Deze chat staat nog niet op deze telefoon. Hij opent zodra je Mac verbonden is.", "This chat is not kept on this phone yet. It opens once your Mac is connected.")}</OfflineNote>
     {:else if !loaded && !lines.length}<div class="spinner"></div>{/if}

@@ -138,8 +138,12 @@ extension WorkspaceManager {
         if !appContexts.isEmpty {
             params["additionalContext"] = Dictionary(uniqueKeysWithValues: appContexts.map { ($0.key, ["kind": "untrusted", "value": $0.text]) })
         }
+        // `/review`: Codex's own review of the changes (`review/start`), as a turn on this thread; its findings come back
+        // as the turn's answer (an `agentMessage`).
+        let review = SessionCommands.codexReviewTarget(prompt)
+        let method = review == nil ? "turn/start" : "review/start"
         // Going back to before a message dropped later turns: Codex forgets them before this turn starts.
-        let startParams = params
+        let startParams: [String: Any] = review.map { ["threadId": thread, "target": $0] } ?? params
         applyCodexRollback(id, client, thread: thread) { [weak self] failure in
             guard let self else { return }
             if let failure {
@@ -152,7 +156,7 @@ extension WorkspaceManager {
                     self.failCodexTurn(id, failure)
                     return
                 }
-                client.request("turn/start", startParams, timeout: RPCDeadline.startTurn) { [weak self] result in
+                client.request(method, startParams, timeout: RPCDeadline.startTurn) { [weak self] result in
                     Task { @MainActor in
                         guard let self else { return }
                         switch result {

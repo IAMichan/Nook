@@ -405,15 +405,30 @@ struct SearchPanel: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
-    /// A chat's photo (or initials) with its app's badge, an agent's logo, else the kind's symbol; all in the same slot so
-    /// the titles line up.
+    /// A chat's photo (or initials) with its app's badge, a session's project icon with its agent's logo (else the logo
+    /// alone), else the kind's symbol; all in the same slot so the titles line up.
     @ViewBuilder
     private func face(_ document: SearchDocument, selected: Bool) -> some View {
         switch document.icon {
         case .chat(let app, let name, let avatar, let handle):
             ChatsAvatar(name: name, app: app, photo: photo(avatar: avatar, handle: handle, name: name), size: Self.faceSize)
-        case .agent(let agent):
-            AgentLogo(agent: agent, size: Self.faceSize - 4).frame(width: Self.faceSize, height: Self.faceSize)
+        case .agent(let agent, let place):
+            // As on the session tabs: the project's icon with the agent's logo as a badge on its corner.
+            if let place, let project = RowProject.of(folder: place.folder, path: place.path, local: place.machine == nil,
+                                                       settings: app.workspace.settings,
+                                                       projects: RowProject.folders(app.workspace.settings)) {
+                ProjectBadge(project: project, size: Self.faceSize - 6)
+                    .overlay(alignment: .bottomTrailing) {
+                        AgentLogo(agent: agent, size: 11)
+                            .padding(1.5)
+                            // Ringed in the row's own fill, so the logo stands free of the project's icon.
+                            .background(Circle().fill(selected ? NookTheme.smoke : NookTheme.graphite))
+                            .offset(x: 4, y: 4)
+                    }
+                    .frame(width: Self.faceSize, height: Self.faceSize)
+            } else {
+                AgentLogo(agent: agent, size: Self.faceSize - 4).frame(width: Self.faceSize, height: Self.faceSize)
+            }
         case nil:
             NookSymbol(Self.symbol(document), size: 13)
                 .font(NookTheme.font(12, .medium))

@@ -127,14 +127,16 @@ extension AgentRunPanel {
                                                 project: run.map { ($0.workingDirectory as NSString).lastPathComponent },
                                                 lastAnswer: workspace.lastAnswer(runID))
         }
-        config.onCommand = { [workspace, app, runID] command in
+        config.onCommand = { [workspace, app, runID, self] command in
             switch command.action {
+            case .session(let session): runSessionCommand(session, rest: "")
             case .plan: workspace.configure(runID, mode: .plan)
             case .fork:
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             // The next message starts the new conversation, also while a turn runs; the strip above the
             // box takes it back.
             case .clear: workspace.armFreshConversation(runID)
+            case .mcp: workspace.showMcpStatus(runID)
             case .insert, .compact, .new: break
             }
         }
@@ -190,12 +192,77 @@ extension AgentRunPanel {
     // MARK: Composer
 
     /// `/btw` or `/side` (with a question): a side chat beside this session, which keeps working (see `SideChat`). It
-    /// opens selected; the question is its first message. False for any other message.
+    /// opens selected; the question is its first message. `/mcp` on its own lists the agent's MCP servers, and Nook's own
+    /// commands (`NookCommand`) do what Nook has for them. False for any other message.
     private func openSideChat(_ text: String) -> Bool {
+        // `/status`, `/model`, `/resume`… typed out and sent: what Nook has for it, as when it is picked from the list.
+        if let (command, rest) = SessionCommands.action(in: text) {
+            draft = ""
+            runSessionCommand(command, rest: rest)
+            return true
+        }
+        // `/mcp` typed out and sent: Nook's list of the agent's servers, as when it is picked from the `/` list.
+        if McpStatus.isRequest(text), AgentCommands.reportsMcpStatus(workspace.run(runID)?.provider ?? .acp) {
+            draft = ""
+            workspace.showMcpStatus(runID)
+            return true
+        }
         guard let question = SideChat.question(in: text), workspace.canOpenSideChat(runID) else { return false }
         draft = ""
         if let id = workspace.openSideChat(runID, question: question) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
         return true
+    }
+
+    /// One of Nook's own commands (`NookCommand`), for every agent: what the agent's terminal app shows on its own
+    /// screen, Nook shows with what it has. `rest`: the words after it (a new name for `/rename`).
+    func runSessionCommand(_ command: NookCommand, rest: String) {
+        // After the composer let go of the key: the picker or palette it opens takes the keyboard.
+        let key = { (name: String) -> Bool in
+            let window = NSApp.keyWindow
+            guard KeyCommandCenter.shared.offers(name, in: window) else { return false }
+            DispatchQueue.main.async { KeyCommandCenter.shared.run(name, in: window) }
+            return true
+        }
+        guard let run = workspace.run(runID) else { return }
+        switch command {
+        case .status:
+            workspace.showStatus(runID)
+        case .help:
+            // The `/` list is the help: every command this session has, with what it does.
+            DispatchQueue.main.async { draft = "/" }
+        case .model:
+            _ = key("modelPicker.toggle")
+        case .effort:
+            if !key("effortPicker.toggle") { _ = key("modelPicker.toggle") }
+        case .permissions:
+            if !key("permissionPicker.toggle") { _ = key("modelPicker.toggle") }
+        case .resume:
+            // ⌘K: every session, the settled ones too.
+            _ = key("search.toggle")
+        case .rename:
+            if !rest.isEmpty { workspace.rename(runID, to: rest) } else { _ = key("session.rename") }
+        case .diff:
+            if !key("diff.toggle") {
+                workspace.markReviewed(runID)
+                if sideLink.hasPanel { app.viewModel.sessionTool = .changes } else { app.viewModel.open(.changes(runID, file: nil)) }
+            }
+        case .memory:
+            // A folder on another machine is not on this Mac: the agent there reads its instructions itself.
+            guard run.remote == nil else {
+                workspace.append(runID, RunEvent(kind: .system, text: tr("ws.memory.remote")))
+                return
+            }
+            guard let file = SessionCommands.existingInstructions(run.provider, folder: run.workingDirectory) else {
+                let name = SessionCommands.instructionFiles(run.provider).first ?? "AGENTS.md"
+                workspace.append(runID, RunEvent(kind: .system, text: tr("ws.memory.missing", name)))
+                return
+            }
+            if sideLink.hasPanel { sideLink.showFile(file) } else { NSWorkspace.shared.open(URL(fileURLWithPath: file)) }
+        case .login:
+            app.openSettings(section: .agents)
+        case .review, .initialize:
+            break
+        }
     }
 
     /// The same composer a new session starts with: the agent and its model, mode and permissions for the next turn,
@@ -396,15 +463,19 @@ extension AgentRunPanel {
                                             shown: ([pullRequest] + branches.map(\.pullRequest)).compactMap { $0 },
                                             aliases: aliases)
         let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil || !others.isEmpty
-        if hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
+        // What it will do by itself later: the scheduled tasks that continue this session, above its pull requests.
+        let scheduled = SessionScheduledTaskRow.tasks(for: runID, in: scheduledTasks.tasks)
+        if !scheduled.isEmpty || hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if !quotes.isEmpty {
                         ComposerQuoteChips(quotes: quotes.items, remove: { id in quotes.remove(id) },
                                            setNote: { id, note in quotes.setNote(note, for: id) },
                                            jump: { quote in jumpToQuote(quote) })
-                        if hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
+                        if !scheduled.isEmpty || hasPullRequests || !waiting.isEmpty { ComposerTrayDivider() }
                     }
+                    ForEach(scheduled) { task in SessionScheduledTaskRow(task: task) }
+                    if !scheduled.isEmpty && (hasPullRequests || !waiting.isEmpty) { ComposerTrayDivider() }
                     ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases) }
                     if !branches.isEmpty {
                         RunBranchTray(rows: branches, watches: watches, canWatchCurrent: watchable != nil, runID: runID, workspace: workspace,

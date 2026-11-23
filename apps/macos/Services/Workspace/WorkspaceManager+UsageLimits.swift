@@ -55,6 +55,47 @@ extension WorkspaceManager {
         armLimitResume(id)
     }
 
+    /// How far back a launch looks for a turn that ended on a limit notice without being noted as a limit.
+    static let limitRecheckAge: TimeInterval = 24 * 3_600
+
+    /// After launch: a session whose last turn ended normally with only a limit notice as its reply (an ACP agent's
+    /// "Usage Limit Reached … reset in 3 hours" from before Nook read that as a limit) becomes a limited session, with
+    /// the limit card, its reset, and "Resume at reset" as the setting says. Only sessions active within
+    /// `limitRecheckAge`, so an old conversation does not wake; their timelines are read off the main thread and kept
+    /// nowhere.
+    func recheckLimitReplies(now: Date = Date()) {
+        let candidates = runs.filter {
+            $0.status == .completed && $0.limitedAt == nil && !$0.archived
+                && now.timeIntervalSince($0.updatedAt) <= Self.limitRecheckAge
+        }.map(\.id)
+        guard !candidates.isEmpty else { return }
+        let loaded = candidates.compactMap { id in events[id].map { (id, $0) } }
+        let store = store
+        Task { [weak self] in
+            let found = await Task.detached(priority: .utility) { () -> [(UUID, FailureClassifier.LimitReply, Date)] in
+                var timelines = Dictionary(uniqueKeysWithValues: loaded)
+                for id in candidates where timelines[id] == nil { timelines[id] = store.peekEvents(id) }
+                return candidates.compactMap { id in
+                    timelines[id].flatMap(FailureClassifier.endedOnLimitReply).map { (id, $0.reply, $0.at) }
+                }
+            }.value
+            for (id, reply, at) in found { self?.noteLimitReply(id, reply, endedAt: at) }
+        }
+    }
+
+    /// Checked again on the main actor: a turn may have started meanwhile.
+    private func noteLimitReply(_ id: UUID, _ reply: FailureClassifier.LimitReply, endedAt: Date) {
+        guard let run = run(id), run.status == .completed, run.limitedAt == nil, !run.archived else { return }
+        let auto = settings.autoResumeLimited
+        update(id) {
+            $0.move(to: .failed, detail: tr("agents.notice.limit"), now: run.updatedAt)
+            $0.limitedAt = endedAt
+            $0.limitResetAt = reply.resetAt
+            $0.autoResume = auto
+        }
+        armLimitResume(id)
+    }
+
     /// "Resume at reset" on or off for this session.
     func setAutoResume(_ id: UUID, _ on: Bool) {
         guard let run = run(id), run.limitedAt != nil else { return }

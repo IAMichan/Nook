@@ -555,11 +555,16 @@ extension WorkspaceManager {
             switch event {
             case .messageChunk(let text):
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { turns[id]?.acpReplied = true }
+                if let reply = turns[id]?.acpReply, reply.count <= FailureClassifier.limitReplyLength {
+                    turns[id]?.acpReply = reply + text
+                }
                 feed(id, .textDelta(text))
             case .thoughtChunk(let text):
                 turns[id]?.acpThought += text
                 feed(id, .thinkingDelta(text))
             case .toolCall(let call):
+                // Only the words after the last tool call can be a limit notice that ends the turn.
+                turns[id]?.acpReply = ""
                 // An edit's changes go in as the input Nook's edit rows read (see AcpToolCall.editInput), a read's file as its path.
                 let input = call.subagentInput ?? call.editInput ?? call.readInput
                 feed(id, .toolStarted(AgentToolCall(id: call.id, name: call.toolName, title: call.title.isEmpty ? call.toolName : call.title,
@@ -645,14 +650,28 @@ extension WorkspaceManager {
         if usage.durationSeconds == nil, let started = state?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
         turns[id] = nil
         let stopped = (state?.stopping ?? false) || reason == "cancelled"
-        let failed = !stopped && reason == "refusal"
+        // Antigravity ends a turn its quota stopped as a normal one, with the limit as its reply ("Usage Limit Reached…
+        // Your limit will reset in 4 hours"): that turn failed on a usage limit, as a Claude Code turn would.
+        let limit = stopped ? nil : state.flatMap { FailureClassifier.limitReply($0.acpReply) }
+        let refused = !stopped && reason == "refusal"
+        let failed = refused || limit != nil
         update(id) { run in
             run.usage.add(usage)
-            if stopped { run.move(to: .stopped) } else if failed { run.move(to: .failed, detail: reason) } else { run.move(to: .completed) }
+            if stopped {
+                run.move(to: .stopped)
+            } else if failed {
+                run.move(to: .failed, detail: limit != nil ? tr("agents.notice.limit") : reason)
+            } else {
+                run.move(to: .completed)
+            }
         }
         if stopped { append(id, RunEvent(kind: .system, text: tr("ws.event.stopped"))) }
         if reason == "max_tokens" || reason == "max_turn_requests" { append(id, RunEvent(kind: .system, text: tr("ws.acp.limit"))) }
-        if failed { append(id, RunEvent(kind: .error, text: tr("ws.acp.refused"))) }
+        if refused { append(id, RunEvent(kind: .error, text: tr("ws.acp.refused"))) }
+        if let limit {
+            limitedTurns[id] = .some(limit.resetAt)
+            append(id, RunEvent(kind: .system, text: Self.limitText(limit.resetAt), tool: "limit"))
+        }
         // A turn that ends without a word should not look like an answer.
         if !stopped, !failed, let state, !state.acpReplied, !state.unprompted {
             append(id, RunEvent(kind: .system, text: tr("ws.acp.silent", run(id)?.provider.displayName ?? "")))

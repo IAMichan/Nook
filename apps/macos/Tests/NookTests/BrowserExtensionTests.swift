@@ -463,6 +463,34 @@ final class BrowserExtensionTests: XCTestCase {
         XCTAssertFalse(BrowserTask.supported(extensionVersion: "0.9"))
     }
 
+    func testOnlyAnExtensionThatKnowsTrustedGetsAnAgentsStepUnasked() throws {
+        XCTAssertTrue(BrowserTask.asksOnlyIfTrusted(extensionVersion: "1.5.0"))
+        XCTAssertTrue(BrowserTask.asksOnlyIfTrusted(extensionVersion: "2.0"))
+        XCTAssertFalse(BrowserTask.asksOnlyIfTrusted(extensionVersion: "1.4.0"), "it would ask in its side panel instead")
+        XCTAssertFalse(BrowserTask.asksOnlyIfTrusted(extensionVersion: "1.3.0"), "it would run the step without asking")
+        XCTAssertFalse(BrowserTask.asksOnlyIfTrusted(extensionVersion: ""))
+        let click = try XCTUnwrap(BrowserExtensionTools.definition("chrome_click"))
+        XCTAssertEqual(BrowserTask.ask(click, [:], summary: "Click", trusted: true)["trusted"] as? Bool, true)
+        XCTAssertNil(BrowserTask.ask(click, [:], summary: "Click")["trusted"], "a side panel task asks there")
+    }
+
+    func testAStepThatWaitsForNookComesBackWithItsSiteAndTrustGoesAlong() {
+        let hub = BrowserExtensionHub()
+        send(hub, "c1", ["kind": "hello", "protocol": 1, "browser": "Google Chrome", "version": "1.5.0"])
+        XCTAssertEqual(hub.client(nil)?.version, "1.5.0")
+        let poll = send(hub, "c1", ["kind": "poll"])
+        var outcome: BrowserExtensionOutcome?
+        hub.send("click", params: ["ref": "e1"], browser: nil, timeout: 5, ask: ["summary": "Click", "trusted": true]) { outcome = $0 }
+        let id = poll.object?["id"] as? String ?? ""
+        send(hub, "c1", ["kind": "result", "id": id, "ok": false, "error": "waits", "approval": ["site": "shop.example", "final": false]])
+        XCTAssertEqual(outcome?.approval, BrowserExtensionApproval(site: "shop.example", final: false))
+
+        let again = send(hub, "c1", ["kind": "poll"])
+        hub.send("click", params: ["ref": "e1"], browser: nil, timeout: 5, trust: "shop.example") { _ in }
+        XCTAssertEqual(again.object?["trust"] as? String, "shop.example")
+        XCTAssertNil(again.object?["ask"])
+    }
+
     func testAStepsResultNamesTheElementsForTheNextApproval() throws {
         let refs = BrowserExtensionRefs()
         refs.learn("Shop | https://shop.example/\n[e1] link \"Shoes\"", tab: 2)

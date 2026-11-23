@@ -11,10 +11,12 @@ struct BrowserHistoryEntry: Codable, Equatable, Sendable {
     var lastVisit: Date
 }
 
-/// One line under the address bar: a page you visited before.
+/// One line under the address bar: a page you visited before, or one you starred.
 struct BrowserSuggestion: Equatable, Identifiable, Sendable {
     let url: String
     let title: String
+    /// A page you starred (`BrowserBookmarks`) rather than one you only visited.
+    var isBookmark = false
     var id: String { url }
 
     /// The address as the bar shows it: without `https://` and `www.`, and without a lone trailing slash.
@@ -110,6 +112,25 @@ final class BrowserHistory: @unchecked Sendable {
         let all = Array(entries.values)
         lock.unlock()
         return Self.rank(all, for: input, limit: limit, now: now)
+    }
+
+    /// The history window (⌘Y): pages newest visit first, only those whose address or title holds every word of
+    /// `query` (all of them for an empty query).
+    func recent(matching query: String = "", limit: Int = 500) -> [BrowserHistoryEntry] {
+        lock.lock()
+        loadIfNeeded()
+        let all = Array(entries.values)
+        lock.unlock()
+        return Self.recent(all, matching: query, limit: limit)
+    }
+
+    static func recent(_ entries: [BrowserHistoryEntry], matching query: String, limit: Int) -> [BrowserHistoryEntry] {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let fitting = words.isEmpty ? entries : entries.filter { entry in
+            let address = bare(entry.url).lowercased(), title = entry.title.lowercased()
+            return words.allSatisfy { address.contains($0) || title.contains($0) }
+        }
+        return Array(fitting.sorted { $0.lastVisit > $1.lastVisit }.prefix(limit))
     }
 
     // MARK: Ranking

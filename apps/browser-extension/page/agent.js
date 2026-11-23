@@ -64,7 +64,7 @@
 
   // MARK: - The cursor the user sees
 
-  const cursor = { host: null, wrap: null, badge: null, ring: null, x: null, y: null, timer: null };
+  const cursor = { host: null, wrap: null, badge: null, ring: null, x: null, y: null, timer: null, ink: null };
 
   function ensureCursor() {
     if (cursor.host?.isConnected) return;
@@ -74,6 +74,9 @@
     root.innerHTML = `
       <style>
         :host { all: initial; }
+        /* In the color of the coding agent that drives the page (its logo's first color), Nook's iris otherwise. */
+        .cursor, .ring { --ink: #7c6cf0; }
+        path { fill: var(--ink); }
         .cursor { position: fixed; left: 0; top: 0; opacity: 0; transition: opacity .2s ease-out; will-change: transform; }
         .cursor.on { opacity: 1; }
         svg { display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,.35)); transform-origin: 2px 2px; transition: transform .12s ease-out; }
@@ -83,9 +86,9 @@
                  font: 600 12px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; white-space: nowrap;
                  box-shadow: 0 4px 14px rgba(0,0,0,.28); }
         .badge span { overflow: hidden; text-overflow: ellipsis; }
-        .badge i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #7c6cf0; }
+        .badge i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ink); }
         .ring { position: fixed; left: 0; top: 0; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
-                border: 2px solid #7c6cf0; background: rgba(124,108,240,.22); opacity: 0; }
+                border: 2px solid var(--ink); background: color-mix(in srgb, var(--ink) 22%, transparent); opacity: 0; }
         .ring.go { animation: ripple .55s ease-out; }
         @keyframes ripple { from { opacity: 1; transform: var(--at) scale(.4); } to { opacity: 0; transform: var(--at) scale(1.9); } }
         @media (prefers-reduced-motion: reduce) { .cursor, svg { transition: none; } .ring.go { animation-duration: .01s; } }
@@ -93,7 +96,7 @@
       <div class="ring"></div>
       <div class="cursor">
         <svg width="22" height="24" viewBox="0 0 22 24" aria-hidden="true">
-          <path d="M2 1.5 L2 19.5 L6.8 15 L10.3 22.6 L13.6 21.1 L10.2 13.6 L16.8 13.6 Z" fill="#7c6cf0" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M2 1.5 L2 19.5 L6.8 15 L10.3 22.6 L13.6 21.1 L10.2 13.6 L16.8 13.6 Z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
         </svg>
         <div class="badge" role="status"><i></i><span></span></div>
       </div>`;
@@ -101,6 +104,7 @@
     cursor.badge = root.querySelector('.badge span');
     cursor.ring = root.querySelector('.ring');
     cursor.host = host;
+    paintCursor();
     document.documentElement.appendChild(host);
   }
 
@@ -882,7 +886,20 @@
     return { ok: true, words: clip(words.join(' · '), 400) };
   }
 
+  /** The cursor, its badge's dot and the click ring in `cursor.ink`, or Nook's iris without one. */
+  function paintCursor() {
+    for (const element of [cursor.wrap, cursor.ring]) {
+      if (!element) continue;
+      if (cursor.ink) element.style.setProperty('--ink', cursor.ink);
+      else element.style.removeProperty('--ink');
+    }
+  }
+
   async function run(method, params) {
+    // `_by`: the coding agent that takes this step (`driverOf` in the service worker); only a #RRGGBB color passes.
+    const ink = params?._by?.colors?.[0];
+    cursor.ink = typeof ink === 'string' && /^#[0-9a-f]{6}$/i.test(ink) ? ink : null;
+    paintCursor();
     try {
       const handler = { find, read, click, type, scroll, key, condition, quiet, glance, signin, form, fill, after, intent }[method];
       if (!handler) return { ok: false, error: `The page agent has no ${method}.` };

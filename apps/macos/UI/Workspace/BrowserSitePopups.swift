@@ -35,7 +35,7 @@ final class BrowserSitePopup: NSObject, NSWindowDelegate, WKNavigationDelegate, 
     private init(configuration: WKWebViewConfiguration, features: WKWindowFeatures, over parent: NSWindow?) {
         let size = NSSize(width: min(max(features.width?.doubleValue ?? 500, 360), 1200),
                           height: min(max(features.height?.doubleValue ?? 640, 420), 1000))
-        webView = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: configuration)
+        webView = BrowserWebView(frame: NSRect(origin: .zero, size: size), configuration: configuration)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered, defer: false)
@@ -70,6 +70,7 @@ final class BrowserSitePopup: NSObject, NSWindowDelegate, WKNavigationDelegate, 
 
     /// Web pages only, as in the browser; on Google's sign-in pages the window calls itself Firefox (`WebSignInAgent`).
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        if navigationAction.shouldPerformDownload { return .download }
         let scheme = navigationAction.request.url?.scheme?.lowercased() ?? ""
         guard ["http", "https", "about", "blob", "data"].contains(scheme) else {
             if scheme == "mailto", let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
@@ -78,7 +79,50 @@ final class BrowserSitePopup: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         return webView.presentsItself(for: navigationAction, otherwise: nil) ? .cancel : .allow
     }
 
+    /// Downloads, dialogs and file fields work here as in the browser's tabs (`BrowserDownloads`, `BrowserPageDialogs`).
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        BrowserDownloads.policy(for: navigationResponse)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        BrowserDownloads.shared.track(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        BrowserDownloads.shared.track(download)
+    }
+
+    @objc(_webView:contextMenuDidCreateDownload:)
+    func contextMenuDidCreate(_ webView: WKWebView, download: WKDownload) {
+        BrowserDownloads.shared.track(download)
+    }
+
     // MARK: WKUIDelegate
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async {
+        await BrowserPageDialogs.alert(message, frame: frame, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async -> Bool {
+        await BrowserPageDialogs.confirm(message, frame: frame, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo) async -> String? {
+        await BrowserPageDialogs.prompt(prompt, defaultText: defaultText, frame: frame, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo) async -> [URL]? {
+        await BrowserPageDialogs.chooseFiles(parameters, in: webView)
+    }
+
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+        await BrowserPageDialogs.media(type, origin: origin, in: webView)
+    }
 
     /// A window this window opens in turn (a second step of a sign-in) opens in this one.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

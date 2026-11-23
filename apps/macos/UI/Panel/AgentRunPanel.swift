@@ -55,6 +55,8 @@ struct AgentRunPanel: View {
     @State var reading = TimelineReadingAnchor()
     /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
     @State var timelineBuild = 0
+    /// The step that just ended, held on the live line a moment and kept out of the rows meanwhile (`EndedStepHold`).
+    @State var endedHold = EndedStepHold<UUID>()
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State var sentCount = 0
@@ -88,10 +90,14 @@ struct AgentRunPanel: View {
     @ObservedObject var workspaceSettings = WorkspaceSettings.shared
     /// The pull requests of the session's branches, for the tray above the box.
     @ObservedObject var pullRequestSync = PullRequestSync.shared
+    /// The scheduled tasks that run in this session, shown in the tray above its composer.
+    @ObservedObject var scheduledTasks = ScheduledTaskStore.shared
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) var outputsLink
     @Environment(\.sessionSide) var sideLink
     @Environment(\.sessionHeaderInset) var headerInset
+    /// The sessions open as tabs: the header shows them where the folder and title were.
+    @Environment(\.sessionTabs) var sessionTabs
     /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State var seenOutputs: Set<String>?
     /// The subagents (`Subagents.signature`) you have seen, for the dot on the Subagents tab; nil until the session shows.

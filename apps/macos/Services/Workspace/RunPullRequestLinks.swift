@@ -51,6 +51,46 @@ final class RunPullRequestLinks {
         last(in: events[...])
     }
 
+    /// The last link of a growing conversation's first events, read again only from where they may have changed since
+    /// the last call: the oldest recent call that still ran, else the last event read (it may have grown). Reading every
+    /// event again on each new one cost a long session (thousands of calls, megabytes of output) a fifth of a second of
+    /// the main thread per tool call. Events taken away or replaced (going back to before a message) read all again.
+    struct Scan: Sendable {
+        /// How far back a call that still runs keeps its place to be read again: a command left running in the background
+        /// for hours would otherwise bring back a read of nearly the whole session on every event.
+        static let runningReach = 256
+
+        private var count = 0
+        private var lastID: UUID?
+        /// The first event to read again, and the last link of the events before it.
+        private var resume = 0
+        private var settled: URL?
+
+        init() {}
+
+        /// The last link in `events[..<end]`.
+        mutating func last(in events: [RunEvent], upTo end: Int) -> URL? {
+            let end = min(max(end, 0), events.count)
+            let valid = count > 0 && count <= end && events[count - 1].id == lastID && resume < count
+            let start = valid ? resume : 0
+            if !valid { settled = nil }
+            let reach = max(start, end - Self.runningReach)
+            let nextResume = (reach..<end).first { events[$0].state == .running } ?? max(start, end - 1)
+            var newest = settled
+            var nextSettled = settled
+            for index in start..<end {
+                guard let url = RunPullRequestLinks.pullRequest(in: events[index]) else { continue }
+                newest = url
+                if index < nextResume { nextSettled = url }
+            }
+            count = end
+            lastID = end > 0 ? events[end - 1].id : nil
+            resume = nextResume
+            settled = nextSettled
+            return newest
+        }
+    }
+
     nonisolated static func last(in events: ArraySlice<RunEvent>) -> URL? {
         events.reversed().lazy.compactMap(pullRequest(in:)).first
     }

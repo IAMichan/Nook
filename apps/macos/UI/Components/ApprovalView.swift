@@ -54,22 +54,82 @@ struct ApprovalView: View {
         }
     }
 
-    /// In a conversation, where the composer was: a conversation card like a question's, so what waits on you reads as
-    /// one calm block (what it wants, the command, then what Always reaches beside the buttons).
+    /// In a conversation, where the composer was, in the shape of the stopped marker and the usage limit card: a pill
+    /// between two hairlines that says what the agent wants, then one quiet card with why, the whole command, and a
+    /// row with what Always reaches beside compact buttons (Allow the one main action).
     private var inlineBody: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            titleBlock
-            content
-            secretField
-            reasonField
-            AdaptiveActionRow(readable: 160) {
-                // Without a scope the row still spans the card, so the buttons stay on the right.
-                if approval.canAlways, approval.alwaysScope != nil { scopeCaption } else { Color.clear.frame(height: 0) }
-            } actions: {
-                actions
+        VStack(spacing: NookTheme.Spacing.sm) {
+            HairlineMarker(fixed: false, trailing: NookTheme.Spacing.lg) {
+                headerIcon.frame(width: 14, height: 14)
+                inlineTitle
+            }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                if !approval.note.isEmpty {
+                    Text(approval.note)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(approval.danger ? NookTheme.coralSoft : NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                content
+                secretField
+                reasonField
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        scopeCaption
+                        Spacer(minLength: NookTheme.Spacing.sm)
+                        inlineActions(folded: false).fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                        scopeCaption
+                        inlineActions(folded: false).frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                        scopeCaption
+                        inlineActions(folded: true).frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+            }
+            .padding(.leading, NookTheme.Spacing.md)
+            .padding(.trailing, NookTheme.Spacing.xs)
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardBackground(NookTheme.well, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.fieldStroke,
+                            radius: NookTheme.Radius.card)
+        }
+        .padding(.vertical, NookTheme.Spacing.xs)
+    }
+
+    /// "Claude wants to run Bash · 2 more" on one line, cut short where the pill runs out of room.
+    private var inlineTitle: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text(approval.title)
+                .foregroundStyle(NookTheme.textStrong)
+                .truncationMode(.middle)
+            if more > 0 {
+                Text("· " + tr("ws.approval.more", more))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize()
             }
         }
-        .conversationCard(padding: NookTheme.Spacing.lg)
+        .font(NookTheme.TextStyle.caption)
+        .lineLimit(1)
+    }
+
+    /// The approval's buttons at the usage limit card's size: the extras as quiet buttons (in a "…" menu when
+    /// `folded`), Deny, and Allow as the one white button.
+    private func inlineActions(folded: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            if folded {
+                if !extraActions.isEmpty { NookMoreMenu(actions: extraActions, size: 24) }
+            } else {
+                ForEach(Array(extraActions.enumerated()), id: \.offset) { _, action in
+                    NookGhostButton(title: action.label, compact: true, height: 24, action: action.perform)
+                }
+            }
+            NookGhostButton(title: tr("button.deny"), compact: true, height: 24) { deny() }
+            SmallPrimaryButton(title: tr("button.allow"), compact: true) { allow() }
+                .padding(.leading, NookTheme.Spacing.xxs)
+        }
     }
 
     private var cardBody: some View {
@@ -94,8 +154,11 @@ struct ApprovalView: View {
                         radius: NookTheme.Radius.panel)
     }
 
-    /// A text field's fill: the well on the conversation card's field fill, the field on the notch card's surface.
-    private var fieldFill: Color { inline ? NookTheme.well : NookTheme.field }
+    /// A text field's fill: the field, on the inline card's well and on the notch card's surface alike.
+    private var fieldFill: Color { NookTheme.field }
+
+    /// The command, change or text: the field on the inline card's well, the well on the notch card's surface.
+    private var blockFill: Color { inline ? NookTheme.field : NookTheme.well }
 
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
@@ -244,13 +307,18 @@ struct ApprovalView: View {
         NookNoticeActions(
             primary: NookNoticeAction(tr("button.allow")) { allow() },
             secondary: NookNoticeAction(tr("button.deny")) { deny() },
-            extra: (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
-                + (onDenyWithReason != nil && !writingReason
-                    ? [NookNoticeAction(tr("approval.denyReason")) { writingReason = true }] : [])
-                + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
-                // The page where the secret is found or made, as the agent named it (http or https only).
-                + (approval.signInURL.map { url in [NookNoticeAction(tr("secrets.signIn.open")) { NSWorkspace.shared.open(url) }] } ?? [])
+            extra: extraActions
         )
+    }
+
+    /// Everything besides Allow and Deny: Always, deny with a reason, in a terminal, and the secret's sign-in page.
+    private var extraActions: [NookNoticeAction] {
+        (approval.canAlways ? [NookNoticeAction(tr("button.always")) { onDecide(.always) }] : [])
+            + (onDenyWithReason != nil && !writingReason
+                ? [NookNoticeAction(tr("approval.denyReason")) { writingReason = true }] : [])
+            + (approval.canTerminal ? [NookNoticeAction(tr("approval.inTerminal")) { onDecide(.terminal) }] : [])
+            // The page where the secret is found or made, as the agent named it (http or https only).
+            + (approval.signInURL.map { url in [NookNoticeAction(tr("secrets.signIn.open")) { NSWorkspace.shared.open(url) }] } ?? [])
     }
 
     @ViewBuilder
@@ -267,7 +335,7 @@ struct ApprovalView: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxHeight: effectiveMaxHeight)
-            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+            .roundedBackground(blockFill, radius: NookTheme.Radius.card)
             .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
         } else if approval.diff.isEmpty {
             // The whole command: scrolled, never cut off.
@@ -287,7 +355,7 @@ struct ApprovalView: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxHeight: effectiveMaxHeight)
-            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+            .roundedBackground(blockFill, radius: NookTheme.Radius.card)
             .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
         } else {
             ScrollView(showsIndicators: true) {
@@ -305,7 +373,7 @@ struct ApprovalView: View {
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.sm)
             .frame(maxHeight: effectiveMaxHeight)
-            .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+            .roundedBackground(blockFill, radius: NookTheme.Radius.card)
             .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
         }
     }
@@ -325,7 +393,7 @@ struct ApprovalView: View {
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3.5)
-                    .roundedBackground(NookTheme.field, radius: NookTheme.Radius.chip)
+                    .roundedBackground(inline ? NookTheme.well : NookTheme.field, radius: NookTheme.Radius.chip)
                 }
 
                 HStack(spacing: 5) {
@@ -344,7 +412,7 @@ struct ApprovalView: View {
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3.5)
-                .roundedBackground(NookTheme.field, radius: NookTheme.Radius.chip)
+                .roundedBackground(inline ? NookTheme.well : NookTheme.field, radius: NookTheme.Radius.chip)
 
                 if pr.isDraft {
                     NookTag(tr("agents.pr.state.draft"), tint: NookTheme.amber)
@@ -372,7 +440,7 @@ struct ApprovalView: View {
             }
         }
         .padding(NookTheme.Spacing.md)
-        .roundedBackground(NookTheme.well, radius: NookTheme.Radius.card)
+        .roundedBackground(blockFill, radius: NookTheme.Radius.card)
         .roundedStroke(NookTheme.wash.opacity(0.06), radius: NookTheme.Radius.card)
     }
 }

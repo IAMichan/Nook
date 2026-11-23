@@ -324,6 +324,9 @@ extension WorkspaceManager {
         let refreshBase = base.map { shouldRefreshRemoteBase(root: repo, base: $0) } ?? false
         let gone = tr("ws.error.folderGone", path)
         let checkout = worktreeCheckout(git, root: repo)
+        // Your message shows now and the session reads as working while the worktree comes back (a fetch, a checkout,
+        // its dependencies): it then goes out as one already shown.
+        let early = !shown && showWhilePreparing(id, message)
         Task { [weak self] in
             let result: Result<WorktreeCleanup.Reopen, Error>
             do {
@@ -355,6 +358,7 @@ extension WorkspaceManager {
             guard self.run(id) != nil else { return }
             switch result {
             case .failure(let error):
+                if early, self.run(id)?.status == .preparing { self.update(id) { $0.move(to: .failed) } }
                 self.append(id, RunEvent(kind: .error, text: tr("ws.worktree.reopenFailed", error.localizedDescription)))
                 return
             case .success(.newBranch(let name, _)):
@@ -370,18 +374,36 @@ extension WorkspaceManager {
             // The project's setup (nook.json `runOnWorktreeCreate`), as for a new worktree: one with `"async": false` is
             // waited for before the message goes; when it fails, the message stays in the conversation, unsent.
             let setup = ProjectScripts.setup(await Task.detached(priority: .userInitiated) { ProjectScripts.load(folder: path) }.value)
-            if !setup.holdsAgent {
-                if shown { self.sendHidden(id, text: message) } else { self.send(id, text: message) }
-            }
+            if !setup.holdsAgent { self.sendReopened(id, message, shown: shown, early: early) }
             let failure = await self.startSetupScripts(id, path: path, scripts: setup.scripts)
             guard setup.holdsAgent, self.run(id) != nil else { return }
             if let failure {
-                if !shown { self.append(id, RunEvent(kind: .user, text: message)) }
+                if early {
+                    if self.run(id)?.status == .preparing { self.update(id) { $0.move(to: .failed) } }
+                } else if !shown {
+                    self.append(id, RunEvent(kind: .user, text: message))
+                }
                 self.append(id, RunEvent(kind: .error, text: failure))
                 return
             }
-            if shown { self.sendHidden(id, text: message) } else { self.send(id, text: message) }
+            self.sendReopened(id, message, shown: shown, early: early)
         }
+    }
+
+    /// The message that waited for its worktree goes out. One shown at once (`early`) goes as already shown, unless you
+    /// stopped the session meanwhile: then it stays in the conversation, unsent. When it cannot go out it waits in line.
+    private func sendReopened(_ id: UUID, _ message: String, shown: Bool, early: Bool) {
+        guard early else {
+            if shown { sendHidden(id, text: message) } else { send(id, text: message) }
+            return
+        }
+        guard run(id)?.status == .preparing else { return }
+        guard !sendHidden(id, text: message) else { return }
+        if run(id)?.status == .preparing { update(id) { $0.move(to: .stopped) } }
+        var queue = queued[id] ?? MessageQueue()
+        queue.requeueFirst(message)
+        setQueue(queue, for: id)
+        sendQueued(id)
     }
 }
 

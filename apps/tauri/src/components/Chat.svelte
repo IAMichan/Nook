@@ -20,9 +20,10 @@
   import PromptRail from "./PromptRail.svelte";
   import ActionSuggestionBar from "./ActionSuggestionBar.svelte";
   import type { Line, Turn } from "../lib/action-suggestions.svelte";
+  import { EndFollow } from "../lib/end-follow.svelte";
 
   let { compact = false, autofocus = false, onopen }: { compact?: boolean; autofocus?: boolean; onopen?: (target: Target) => void } = $props();
-  let scroller: HTMLDivElement;
+  let scroller = $state<HTMLDivElement>();
   let starters = $state<string[]>([]);
   let onboarding = $state(false);
   /// A note a "For you" row opened, read right here.
@@ -45,22 +46,19 @@
     return () => inbox.stop();
   });
 
-  // Follow the answer down while it comes in, but only while the view is at the bottom: someone who scrolled up to
-  // read keeps their place. A new message of their own, or another Nook, always scrolls down.
-  let atEnd = true;
-  const onScroll = () => {
-    if (scroller) atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 48;
-  };
+  // Follow the answer down while it comes in (see `end-follow.ts`): only scrolling up yourself lets go, so someone
+  // reading back keeps their place. A new message of their own, or another Nook, always scrolls down. The home (no
+  // messages yet) is read from the top.
+  const follow = new EndFollow(".msg");
   let lastCount = 0;
   let lastNook: string | null = null;
   $effect(() => {
     const shown = nook.activeId;
     const count = nook.active?.messages.length ?? 0;
-    for (const id in nook.streaming) void nook.streaming[id]?.length;
-    if (count > lastCount || shown !== lastNook) atEnd = true;
+    if (empty) follow.release();
+    else if (count > lastCount || shown !== lastNook) follow.toEnd();
     lastCount = count;
     lastNook = shown;
-    if (atEnd) queueMicrotask(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
   });
 
   // Nook Chat for suggested steps: its newest message is the turn, your questions and Nook's answers the lines.
@@ -80,7 +78,7 @@
     queueMicrotask(() => {
       const el = scroller?.querySelector(`[data-message-id="${CSS.escape(id)}"]`);
       if (!el) return;
-      atEnd = false;
+      follow.release();
       el.scrollIntoView({ block: "center" });
       chatFocus.messageId = null;
       chatFocus.marked = id;
@@ -125,18 +123,19 @@
   // Measured a frame after a change, not bound: a bound height on the scrolling column feeds back into its own layout.
   $effect(() => {
     void nook.active?.messages.length;
-    if (!scroller) return;
+    const el = scroller;
+    if (!el) return;
     let frame = 0;
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        room = scroller.clientWidth;
-        overflows = scroller.scrollHeight > scroller.clientHeight + 1;
+        room = el.clientWidth;
+        overflows = el.scrollHeight > el.clientHeight + 1;
       });
     };
     const observer = new ResizeObserver(measure);
-    observer.observe(scroller);
-    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
     measure();
     return () => {
       observer.disconnect();
@@ -146,13 +145,13 @@
   const promptMarks = $derived((nook.active?.messages ?? []).filter((m) => m.fromUser && !m.scheduled).map((m) => ({ id: m.id, text: m.text })));
   const readableChat = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--readable-chat")) || 820;
   function jumpTo(id: string) {
-    atEnd = false;
+    follow.release();
     scroller?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 </script>
 
 <div class="chat" class:compact>
-  <div class="messages" bind:this={scroller} onscroll={onScroll}><div class="reading-column" class:filled={!empty}>
+  <div class="messages" bind:this={scroller} {@attach follow.attach}><div class="reading-column" class:filled={!empty}>
     {#if empty}
       <div class="empty" class:home>
         {#if !compact}

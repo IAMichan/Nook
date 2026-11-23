@@ -131,4 +131,38 @@ final class ForgeRateBudgetTests: XCTestCase {
         XCTAssertNil(GitHubPullRequestSnapshotQuery.parse(["data": ["repository": NSNull()]]))
         XCTAssertNil(GitHubPullRequestSnapshotQuery.body(repo: "no-owner", number: 1))
     }
+
+    /// A check that ran again on the same commit (an edited description) leaves its old failure in GitHub's rollup; only
+    /// the newest run counts, as in the REST read and the pull request page, so the tray does not say "CI failed" while
+    /// the page says the checks are still running.
+    func testSnapshotFromGraphQLCountsOnlyTheNewestRunOfACheck() throws {
+        func snapshot(newest: String) throws -> PullRequestSnapshot {
+            let json = """
+        {"data":{"repository":{"pullRequest":{
+          "title":"Fix it","state":"OPEN","merged":false,"isDraft":false,"mergeable":"MERGEABLE",
+          "mergeStateStatus":"BLOCKED","baseRefName":"main","autoMergeRequest":null,
+          "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":[
+            {"__typename":"CheckRun","name":"template","status":"COMPLETED","conclusion":"FAILURE",
+             "startedAt":"2026-11-21T17:50:18Z","databaseId":1},
+            {"__typename":"CheckRun","name":"template","status":"COMPLETED","conclusion":"\(newest)",
+             "startedAt":"2026-11-21T17:53:48Z","databaseId":3},
+            {"__typename":"CheckRun","name":"template","status":"COMPLETED","conclusion":"SUCCESS",
+             "startedAt":"2026-11-21T17:52:21Z","databaseId":2},
+            {"__typename":"CheckRun","name":"build","status":"IN_PROGRESS","conclusion":null,
+             "startedAt":"2026-11-21T17:50:43Z","databaseId":4}]}}}}]},
+          "reviews":{"nodes":[]},"comments":{"nodes":[]},"reviewThreads":{"nodes":[]}
+        }}}}
+        """
+            let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            return try XCTUnwrap(GitHubPullRequestSnapshotQuery.parse(root))
+        }
+        let passing = try snapshot(newest: "SUCCESS")
+        XCTAssertEqual(passing.checks, "pending")
+        XCTAssertEqual(passing.failedChecks, [])
+
+        // The newest run failing still fails.
+        let failed = try snapshot(newest: "FAILURE")
+        XCTAssertEqual(failed.checks, "failure")
+        XCTAssertEqual(failed.failedChecks, ["template"])
+    }
 }

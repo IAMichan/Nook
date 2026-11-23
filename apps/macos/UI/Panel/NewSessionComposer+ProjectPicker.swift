@@ -106,6 +106,10 @@ extension NewSessionComposer {
         DropdownRow(symbol: "tray", title: tr("ws.new.noProject"), detail: tr("ws.new.noProjectDetail"),
                     chosen: remoteMachine == nil && ScratchProjects.isScratch(config.projectPath)) { chooseNoProject() }
         DropdownRow(symbol: "arrow.down.circle", title: tr("ws.new.clone")) { showClone = true }
+        // A folder already on this Mac, kept as a project (pinned in the Agents list and the pickers).
+        DropdownRow(symbol: "folder.badge.plus", title: tr("ws.new.addExisting"), detail: tr("ws.new.addExistingDetail")) {
+            addExistingProject()
+        }
         // A new folder with a repository in it, offered to publish on GitHub at once.
         DropdownRow(symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"), detail: tr("sc.newProject.detail")) {
             chooseNewProject()

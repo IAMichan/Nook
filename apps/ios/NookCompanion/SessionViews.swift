@@ -43,37 +43,107 @@ struct SessionDetailView: View {
 
     var body: some View {
         if let session {
-            ConversationScroll(followKey: followKey(session), floatingRoom: floatingRoom(session)) { scroll in
-                conversation(session, scroll)
-            } floating: {
-                FloatingWorkingControl(
-                    workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
-                    working: session.attention == "working",
-                    snoozed: actions(session).contains(.unsnooze),
-                    onWake: { manage(session, .unsnooze) })
-            } dock: { scroll in
-                dock(session, scroll)
-            }
-            // Pictures, a file, links and text dragged onto the session wait in its composer (`composerDrop`).
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if finding {
-                    FindBar(text: $findText, index: findIndex, count: matches.count,
-                            step: { step in
-                                guard !matches.isEmpty else { return }
-                                findIndex = (findIndex + step + matches.count) % matches.count
-                            },
-                            close: {
-                                withAnimation(Theme.reveal) { finding = false }
-                                findText = ""
-                            })
-                    .readingColumn()
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            sessionScreen(session)
+                // A push about this session arrives without a banner while it is on screen.
+                .onAppear {
+                    client.visibleSession = sessionID
+                    // `-NookDemoFind <words>` with `-NookDemo`: the session opens with find showing those words.
+                    if CompanionClient.isDemo, let words = UserDefaults.standard.string(forKey: "NookDemoFind") {
+                        finding = true
+                        findText = words
+                    }
+                    // Opened to write to it: the keyboard comes up once the screen has slid in. Taken whichever session
+                    // opens, so a request whose screen never came up does not surface later.
+                    let wanted = client.focusComposer == sessionID
+                    client.focusComposer = nil
+                    if wanted, client.allows(.operate), session.canSend != false {
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(350))
+                            composerFocused = true
+                        }
+                    }
                 }
+                // The models of this session's agent, for the model menu in the composer (the same list as a new session's).
+                .task(id: actions(session).contains(.model)) {
+                    if actions(session).contains(.model), client.launchOptions == nil { await client.loadLaunchOptions() }
+                }
+                .onDisappear {
+                    if client.visibleSession == sessionID { client.visibleSession = nil }
+                    Task { await client.unwatchSession(sessionID) }
+                }
+                // While the session is on screen its conversation stays current: live from a Mac that sends it by itself
+                // (`watchSession`), else asked for every few seconds. Leaving the screen ends the loop.
+                .task {
+                    var live = await client.watchSession(sessionID)
+                    while !Task.isCancelled {
+                        // Opened while the Mac could not be reached: once it is back, follow live from then on.
+                        if !live, client.timelineIsLive { live = await client.watchSession(sessionID) }
+                        let following = live && client.timelineIsLive
+                        if !following { await client.loadTimeline(sessionID) }
+                        let working = client.sessions.first { $0.id == sessionID }?.attention == "working"
+                        // Following live costs nothing here; the short wait only notices a dropped connection quickly.
+                        try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
+                    }
+                }
+        } else if !lookedUp {
+            // A session that was just started (or opened from a notification) can be on the Mac before it is in the
+            // phone's list: ask for the list straight away, and once more after a moment, before calling it gone.
+            ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
+                .screen()
+                .task {
+                    await client.refresh()
+                    if client.session(sessionID) == nil {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        if !Task.isCancelled { await client.refresh() }
+                    }
+                    lookedUp = true
+                }
+        } else {
+            WSEmptyState(symbol: "tray", title: String(localized: "This session is gone."), message: String(localized: "It was closed or archived on your Mac."))
+                .screen()
+        }
+    }
+
+    // The screen is put together in steps: as one expression it is more than the type checker manages in time.
+
+    /// The conversation with what floats over it and the dock under it, find on top, and drops into the composer.
+    private func conversationScreen(_ session: SessionDigest) -> some View {
+        ConversationScroll(followKey: followKey(session), floatingRoom: floatingRoom(session)) { scroll in
+            conversation(session, scroll)
+        } floating: {
+            FloatingWorkingControl(
+                workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
+                working: session.attention == "working",
+                snoozed: actions(session).contains(.unsnooze),
+                onWake: { manage(session, .unsnooze) })
+        } dock: { scroll in
+            dock(session, scroll)
+        }
+        // Pictures, a file, links and text dragged onto the session wait in its composer (`composerDrop`).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if finding {
+                FindBar(text: $findText, index: findIndex, count: matches.count,
+                        step: { step in
+                            guard !matches.isEmpty else { return }
+                            findIndex = (findIndex + step + matches.count) % matches.count
+                        },
+                        close: {
+                            withAnimation(Theme.reveal) { finding = false }
+                            findText = ""
+                        })
+                .readingColumn()
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            // New words start at the newest match, where you were reading.
-            .onChange(of: findText) { _, _ in findIndex = max(0, matches.count - 1) }
-            .composerDrop(text: $message, images: dropImages, files: dropFiles,
-                          enabled: client.allows(.operate) && session.canSend != false && session.items.isEmpty)
+        }
+        // New words start at the newest match, where you were reading.
+        .onChange(of: findText) { _, _ in findIndex = max(0, matches.count - 1) }
+        .composerDrop(text: $message, images: dropImages, files: dropFiles,
+                      enabled: client.allows(.operate) && session.canSend != false && session.items.isEmpty)
+    }
+
+    /// The conversation under the session header (folder / title menu, agent and branch) and the Changes button.
+    private func headedScreen(_ session: SessionDigest) -> some View {
+        conversationScreen(session)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // The Mac's session header: "folder / title ⌄", the title opening what you can do with the session, and
@@ -93,6 +163,11 @@ struct SessionDetailView: View {
                     }
                 }
             }
+    }
+
+    /// The screen with its confirmations, rename, the bar width, the workspace menu and the changes review.
+    private func sessionScreen(_ session: SessionDigest) -> some View {
+        headedScreen(session)
             .confirmationDialog("Archive this session?", isPresented: $confirmArchive, titleVisibility: .visible) {
                 Button("Archive", role: .destructive) { manage(session, .archive) }
             }
@@ -121,64 +196,6 @@ struct SessionDetailView: View {
                     message = (current.isEmpty ? intro : current) + "\n\n" + comment
                 }
             }
-            // A push about this session arrives without a banner while it is on screen.
-            .onAppear {
-                client.visibleSession = sessionID
-                // `-NookDemoFind <words>` with `-NookDemo`: the session opens with find showing those words.
-                if CompanionClient.isDemo, let words = UserDefaults.standard.string(forKey: "NookDemoFind") {
-                    finding = true
-                    findText = words
-                }
-                // Opened to write to it: the keyboard comes up once the screen has slid in. Taken whichever session
-                // opens, so a request whose screen never came up does not surface later.
-                let wanted = client.focusComposer == sessionID
-                client.focusComposer = nil
-                if wanted, client.allows(.operate), session.canSend != false {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        composerFocused = true
-                    }
-                }
-            }
-            // The models of this session's agent, for the model menu in the composer (the same list as a new session's).
-            .task(id: actions(session).contains(.model)) {
-                if actions(session).contains(.model), client.launchOptions == nil { await client.loadLaunchOptions() }
-            }
-            .onDisappear {
-                if client.visibleSession == sessionID { client.visibleSession = nil }
-                Task { await client.unwatchSession(sessionID) }
-            }
-            // While the session is on screen its conversation stays current: live from a Mac that sends it by itself
-            // (`watchSession`), else asked for every few seconds. Leaving the screen ends the loop.
-            .task {
-                var live = await client.watchSession(sessionID)
-                while !Task.isCancelled {
-                    // Opened while the Mac could not be reached: once it is back, follow live from then on.
-                    if !live, client.timelineIsLive { live = await client.watchSession(sessionID) }
-                    let following = live && client.timelineIsLive
-                    if !following { await client.loadTimeline(sessionID) }
-                    let working = client.sessions.first { $0.id == sessionID }?.attention == "working"
-                    // Following live costs nothing here; the short wait only notices a dropped connection quickly.
-                    try? await Task.sleep(for: .seconds(following ? 3 : (working ? 2 : 5)))
-                }
-            }
-        } else if !lookedUp {
-            // A session that was just started (or opened from a notification) can be on the Mac before it is in the
-            // phone's list: ask for the list straight away, and once more after a moment, before calling it gone.
-            ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
-                .screen()
-                .task {
-                    await client.refresh()
-                    if client.session(sessionID) == nil {
-                        try? await Task.sleep(for: .seconds(1.5))
-                        if !Task.isCancelled { await client.refresh() }
-                    }
-                    lookedUp = true
-                }
-        } else {
-            WSEmptyState(symbol: "tray", title: String(localized: "This session is gone."), message: String(localized: "It was closed or archived on your Mac."))
-                .screen()
-        }
     }
 
     /// Changes when something new comes in at the end: an entry, text streaming into the last one, what waits on you,

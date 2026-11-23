@@ -36,17 +36,34 @@ extension AgentRunPanel {
     /// Counts the finished turns with git, between the snapshots around them; a turn counted between both of its
     /// snapshots stays as it is, the others are counted again once their snapshot is made. The newest turn first: its
     /// card is the one in view when a session opens, and a long session has many turns before it (two git runs each).
+    ///
+    /// Each change to `countedLines` draws the whole session again, so the counts come in together: the newest turn's
+    /// at once, the rest in batches of `countBatch`, and a count that is what the card already shows changes nothing.
+    /// Without that, opening a session whose turns had no snapshot after them yet redrew it once per turn, for seconds
+    /// after the switch.
     private func countTurns(_ turns: [TurnDiff], run: WorkspaceRun) async {
         guard !run.isRemote else { return }
+        var pending: [String: TurnLines] = [:]
+        var shownNewest = false
         for turn in turns.reversed() where countedLines[turn.id]?.complete != true {
             guard let start = turn.start, let end = turn.end else { continue }
             if let lines = try? await workspace.turnLines(runID, paths: turn.files.map(\.path), start: start, end: end) {
                 guard !Task.isCancelled else { return }
-                countedLines[turn.id] = lines
-                if lines.complete { CountedTurnLines.keep(lines, turn: turn.id, run: runID) }
+                CountedTurnLines.keep(lines, turn: turn.id, run: runID)
+                guard countedLines[turn.id] != lines else { continue }
+                pending[turn.id] = lines
+                if !shownNewest || pending.count >= Self.countBatch {
+                    shownNewest = true
+                    countedLines.merge(pending) { $1 }
+                    pending = [:]
+                }
             }
         }
+        if !pending.isEmpty { countedLines.merge(pending) { $1 } }
     }
+
+    /// How many counted turns `countTurns` hands to the cards at once.
+    private static let countBatch = 16
 
     // MARK: Timeline
 
@@ -112,6 +129,10 @@ extension AgentRunPanel {
         let liveStep = active ? events.last.flatMap {
             ($0.kind == .tool && $0.state == .running) || CompactionProgress.isRunning($0) ? $0.id : nil
         } : nil
+        // A step that just ended stays on the live line a moment (`EndedStepHold`), and out of the rows as long.
+        let ended = active && liveStep == nil ? TimelinePresentation.endedStep(events) : nil
+        let held = endedHold.held(ended?.id)
+        let hidden = liveStep ?? held
         // Only the latest turns of a long session are drawn, from the turn the window starts at.
         let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: memo.rowsPerTurn),
                                           turnCount: memo.rowsPerTurn.count)
@@ -152,8 +173,10 @@ extension AgentRunPanel {
                                      holdsSplit: !scroll.shouldFollowEnd) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
-                            TimelineBlockView(block: block, expanded: openBlocks, context: context.scoped(to: block), toggle: toggleBlock) { event in
-                                if event.id == liveStep { return AnyView(EmptyView()) }
+                            // The held step is in the last block; its block is drawn again when it lets go of it.
+                            TimelineBlockView(block: block, expanded: block.scopedOpen(openBlocks), context: context.scoped(to: block),
+                                              hidden: block.id == shownBlocks.last?.id ? held : nil, toggle: toggleBlock) { event in
+                                if event.id == hidden { return AnyView(EmptyView()) }
                                 return AnyView(
                                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                                         // What the turn changed (its card): under the final answer, inside it, as in an
@@ -186,7 +209,7 @@ extension AgentRunPanel {
                         // The agent's task list, live, right above what it does now: the same live line as in an agent's
                         // own transcript.
                         let turn = TimelinePresentation.runningTurn(events)
-                        TranscriptLiveLine(activity: AgentActivity.current(turn),
+                        TranscriptLiveLine(activity: held != nil ? ended.map(AgentActivity.of) ?? .reviewing : AgentActivity.current(turn),
                                            tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
                                            waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
                                            asking: workspace.questions[runID] != nil,
@@ -228,7 +251,10 @@ extension AgentRunPanel {
             // instead of a `scrollTo` (a layout down to the end and a scroll) for every streamed update.
             // A session opens at its end, also when its timeline arrives after the first frame: never at its first messages.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor((run.status.isActive || landsOnLoad) && scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
+            // Also once the run is done, as in an agent's own transcript: the turn folds to "Worked for …" in the update
+            // that ends the run and its card comes under it, and rows above are measured anew; let go then, the
+            // conversation jumped up by hundreds of points (thousands in a long session) before `keepEnd` caught it.
+            .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
             .scrollIndicators(.never)
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -316,6 +342,13 @@ extension AgentRunPanel {
                 }
             }
             .keyCommand("chat.find") { openFind() }
+            // The step that just ended goes back into the rows once its moment on the live line is over.
+            .task(id: ended?.id) {
+                guard let id = ended?.id else { return }
+                try? await Task.sleep(for: .seconds(AgentActivity.stepDwell))
+                guard !Task.isCancelled else { return }
+                endedHold.release(id)
+            }
             // From a background command's row in the bar: to its call in the conversation, lit up for a moment.
             .onChange(of: conversationFocus) { _, id in
                 guard let id else { return }
@@ -453,7 +486,17 @@ extension AgentRunPanel {
     /// up from its end as it opens. A landing follows the end (`settleAtEnd`), so it ends there too. Only moving while the
     /// sizes stay the same, or a wheel step up, is you scrolling away.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
-        guard new.resized(from: old), !finding else { return }
+        guard !finding else { return }
+        // The scroll view put back an old offset by itself, thousands of points up (`ScrollModel.movedBySelf`): back to
+        // the end while following, also while a scroll of yours toward it still runs out.
+        if ScrollModel.movedBySelf(from: old, to: new) {
+            guard scroll.shouldFollowEnd, scrollPhase.value != .animating else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+            return
+        }
+        guard new.resized(from: old) else { return }
         // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a size
         // change in the same frame as your step no longer pulls the view back to the end.
         guard scroll.shouldFollowEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
@@ -574,10 +617,10 @@ extension AgentRunPanel {
         .opacity(event.rolledBack == true ? 0.45 : 1)
     }
 
+    /// Opens or closes a group or fold at once: animated, every row of a long conversation moved for each frame of it,
+    /// a third of a second of the main thread (more while the agent works) for one click.
     private func toggleBlock(_ key: String) {
-        withAnimation(NookTheme.reveal) {
-            if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
-        }
+        if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
     }
 
     private func toggle(_ id: UUID) {
@@ -585,9 +628,10 @@ extension AgentRunPanel {
     }
 }
 
-/// The turns git counted completely (between the snapshots on both sides), per session, kept across visits: those
-/// snapshots never change, so opening a session again shows its cards whole at once instead of waiting for git to
-/// count every turn again. Only the most recently counted sessions are kept.
+/// The turns git counted, per session, kept across visits, so opening a session again shows its cards counted at once
+/// instead of waiting for git. A turn counted completely (between the snapshots on both sides) stays as it is: those
+/// snapshots never change. One counted without its later snapshot is shown as last counted and counted again
+/// (`countTurns`). Only the most recently counted sessions are kept.
 @MainActor
 enum CountedTurnLines {
     private static var byRun: [UUID: [String: TurnLines]] = [:]
@@ -597,7 +641,6 @@ enum CountedTurnLines {
     static func forRun(_ id: UUID) -> [String: TurnLines] { byRun[id] ?? [:] }
 
     static func keep(_ lines: TurnLines, turn: String, run id: UUID) {
-        guard lines.complete else { return }
         byRun[id, default: [:]][turn] = lines
         if order.last != id {
             order.removeAll { $0 == id }

@@ -142,7 +142,8 @@ targets:
         NSCalendarsFullAccessUsageDescription: Nook reads your calendar to suggest and schedule appointments.
         NSContactsUsageDescription: Nook looks up a contact's email address or phone number when you ask it to.
         NSRemindersFullAccessUsageDescription: Nook creates reminders for you.
-        NSMicrophoneUsageDescription: Nook only listens when you request it, to convert your voice into actions.
+        NSMicrophoneUsageDescription: Nook only listens when you request it, to convert your voice into actions, or when a website in Nook's browser asks for your microphone and you allow it.
+        NSCameraUsageDescription: Nook only uses your camera when a website in Nook's browser asks for it and you allow it, such as for a video call.
         NSSpeechRecognitionUsageDescription: Nook transcribes speech to text, preferably on-device.
         NSAudioCaptureUsageDescription: Nook listens to the sound of Spotify or Music (never records it) to move the equalizer with the music.
         NSAppleEventsUsageDescription: Nook controls Spotify, Apple Music, Messages (to send what you write in Chats), Xcode (to build an update), and select system settings for you.
@@ -151,6 +152,7 @@ targets:
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.device.audio-input: true
+        com.apple.security.device.camera: true
         com.apple.security.automation.apple-events: true
         com.apple.security.personal-information.calendars: true
         com.apple.security.personal-information.addressbook: true
@@ -615,6 +617,7 @@ targets:
       - path: Services/Workspace/KeybindingEdits.swift
       - path: Services/Workspace/SessionNavigation.swift
       - path: Services/Workspace/ClosedTabs.swift
+      - path: Services/Workspace/SessionTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: ../../packages/protocol/Sources/DictationContext.swift
       - path: Services/Workspace/RowSweepRange.swift
@@ -672,6 +675,8 @@ targets:
       - path: Services/Workspace/CustomAgents.swift
       - path: Services/Workspace/BrowserSearch.swift
       - path: Services/Workspace/BrowserHistory.swift
+      - path: Services/Workspace/BrowserBookmarks.swift
+      - path: Services/Workspace/BrowserSitePermissions.swift
       - path: Services/Workspace/BrowserPasswordBook.swift
       - path: Services/Workspace/ChromeWebStore.swift
       - path: Services/Workspace/McpUI.swift
@@ -720,6 +725,8 @@ targets:
       - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/ConnectorSignIn.swift
+      - path: Services/Workspace/McpStatus.swift
+      - path: Services/Workspace/SessionCommands.swift
       - path: Services/Connectors/ConnectorDomains.swift
       - path: Services/Workspace/AgentTimeline.swift
       - path: Services/Workspace/GitService.swift

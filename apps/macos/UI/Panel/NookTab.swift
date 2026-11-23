@@ -506,7 +506,14 @@ struct NookChatView: View {
             } action: { old, frame in
                 viewport.frame = frame
                 let resized = frame.content != old.content || frame.container != old.container || frame.insetBottom != old.insetBottom
-                if resized { followEnd(proxy) }
+                if resized {
+                    followEnd(proxy)
+                } else if ScrollModel.movedBySelf(from: old, to: frame), scroll.shouldFollowEnd, scrollPhase.value != .animating {
+                    // The scroll view put back an old offset by itself, thousands of points up: back to the end.
+                    var still = Transaction()
+                    still.disablesAnimations = true
+                    withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now

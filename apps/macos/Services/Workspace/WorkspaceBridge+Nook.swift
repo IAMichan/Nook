@@ -131,18 +131,54 @@ extension WorkspaceBridge {
             }
         }
 
+        // A step in the user's browser runs at once on a site they let Nook act on without asking (the extension's
+        // switch per site, or "Always" on an earlier card), unless it pays, sends or deletes; any other comes back here
+        // for the card below, which then also offers "Always on <site>".
+        var alwaysSite: String?
+        // The page glows in the colors of the agent that drives it, as Nook's own browser does.
+        let driver = BrowserExtensionConnector.driver(caller.agent)
+        if let step = await BrowserExtensionConnector.$driver.withValue(driver, operation: {
+            await BrowserExtensionConnector.runIfTrusted(name, input, summary: spec.summarize(input))
+        }) {
+            switch step {
+            case .ran(let text):
+                app.store.audit(tool: name, args: AppModel.json(input), result: text)
+                audit(.nookUse, caller, name, "uitgevoerd")
+                return BridgeRPC.ToolResult(text: shielded(text, app))
+            case .failed(let failure):
+                audit(.nookUse, caller, name, "mislukt: \(failure)")
+                return .error(failure)
+            case .needsApproval(let approval):
+                if !approval.final, !approval.site.isEmpty { alwaysSite = approval.site }
+            }
+        }
+
         // What you allow is what runs: the step as Nook Chat would show it, and every argument it gets.
         let detail = "**\(spec.summarize(input))**\n\n```json\n\(Self.prettyJSON(input))\n```"
+        var trust: String?
         if case .ask = verdict(.nookUse, caller, nookAction: true) {
-            let allowed = await ask(caller, tool: .nookUse, title: tr("bridge.approval.nookAction", caller.agent), detail: detail,
-                                    note: tr("bridge.approval.nookActionNote"), danger: false, connection: context.connection)
+            let title = tr("bridge.approval.nookAction", caller.agent), note = tr("bridge.approval.nookActionNote")
+            let allowed: Bool
+            if let alwaysSite {
+                let answer = await ask(caller, tool: .nookUse, title: title, detail: detail, note: note,
+                                       connection: context.connection, alwaysSite: alwaysSite)
+                allowed = answer.allowed
+                if answer.always { trust = alwaysSite }
+            } else {
+                allowed = await ask(caller, tool: .nookUse, title: title, detail: detail, note: note, danger: false,
+                                    connection: context.connection)
+            }
             guard allowed else {
                 audit(.nookUse, caller, name, "niet toegestaan")
                 return .error(Self.refusal(.action))
             }
         }
-        let outcome = await BridgeChats.$withheldApps.withValue(keptOnMac(app)) {
-            await app.perform([PlannedAction(tool: name, input: input)])
+        let outcome = await BrowserExtensionConnector.$driver.withValue(driver) {
+            await BrowserExtensionConnector.$trust.withValue(trust) {
+                await BridgeChats.$withheldApps.withValue(keptOnMac(app)) {
+                    await app.perform([PlannedAction(tool: name, input: input)])
+                }
+            }
         }
         if let failure = outcome.failure {
             audit(.nookUse, caller, name, "mislukt: \(failure)")

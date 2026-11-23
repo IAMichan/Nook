@@ -104,4 +104,47 @@ final class FailureClassifierTests: XCTestCase {
             XCTFail("assistant text is never read as a failure")
         }
     }
+
+    func testAntigravityLimitReplyIsALimit() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let reply = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 4 hours, 23 minutes."
+        let limit = FailureClassifier.limitReply(reply, now: now)
+        XCTAssertEqual(limit?.resetAt, now.addingTimeInterval(4 * 3_600 + 23 * 60))
+        XCTAssertNil(FailureClassifier.limitReply("Done. I fixed the usage limit card.", now: now))
+        let long = String(repeating: "The usage limit reached code path now works. ", count: 20)
+        XCTAssertNil(FailureClassifier.limitReply(long, now: now), "a long answer that mentions a limit is an answer")
+        XCTAssertNil(FailureClassifier.limitReply("", now: now))
+    }
+
+    func testSavedTurnThatEndedOnALimitReplyIsALimit() {
+        let ended = Date(timeIntervalSince1970: 1_800_000_000)
+        let notice = "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 3 hours, 56 minutes."
+        let turn = [
+            RunEvent(kind: .user, text: "Continue where you left off.", date: ended.addingTimeInterval(-6)),
+            RunEvent(kind: .assistant, text: "Let me look at the icons first."),
+            RunEvent(kind: .tool, text: "Running view_file", state: .failed),
+            RunEvent(kind: .assistant, text: notice, state: .done),
+            RunEvent(kind: .result, text: "6s", state: .done, date: ended),
+        ]
+        let found = FailureClassifier.endedOnLimitReply(turn)
+        XCTAssertEqual(found?.at, ended)
+        XCTAssertEqual(found?.reply.resetAt, ended.addingTimeInterval(3 * 3_600 + 56 * 60), "the reset counts from the turn's end")
+
+        // Already noted as a limit, a failed turn, a turn still open, or another answer: nothing to do.
+        var noted = turn
+        noted.insert(RunEvent(kind: .system, text: "Waits for the limit", tool: "limit"), at: 4)
+        XCTAssertNil(FailureClassifier.endedOnLimitReply(noted))
+        var failed = turn
+        failed[4].state = .failed
+        XCTAssertNil(FailureClassifier.endedOnLimitReply(failed))
+        XCTAssertNil(FailureClassifier.endedOnLimitReply(turn + [RunEvent(kind: .user, text: "And now?")]))
+        var answered = turn
+        answered[3].text = "Done: the icons are fixed."
+        XCTAssertNil(FailureClassifier.endedOnLimitReply(answered))
+        // Only the words after the last tool call count: an earlier limit notice in the turn is not the reply.
+        let earlier = [turn[0], RunEvent(kind: .assistant, text: notice), RunEvent(kind: .tool, text: "Running view_file"),
+                       RunEvent(kind: .assistant, text: "All done."), turn[4]]
+        XCTAssertNil(FailureClassifier.endedOnLimitReply(earlier))
+        XCTAssertNil(FailureClassifier.endedOnLimitReply([]))
+    }
 }

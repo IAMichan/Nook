@@ -342,6 +342,14 @@ enum TimelinePresentation {
         return split(Array(events[start...])).last ?? []
     }
 
+    /// The step a working session's events end with, once it ended and nothing came after it: what the live line holds a
+    /// moment (`EndedStepHold`). Not a command or subagent left running in the background: the live line never shows those.
+    static func endedStep(_ events: [RunEvent]) -> RunEvent? {
+        guard let last = events.last, last.kind == .tool, last.state != .running,
+              !Subagents.isBackground(last), !BackgroundCommands.isCommand(last) else { return nil }
+        return last
+    }
+
     /// The turn the agent runs, for its live line: from the last message that started a turn (or wake), across every
     /// message you steered into it since. A steer starts a turn of its own in the timeline, but the agent goes on with
     /// what it did and reads the steer only after the tool that runs returns: the live line keeps showing that tool
@@ -519,10 +527,15 @@ enum Subagents {
     /// The subagents the bar above the composer shows: those started since your last message (a wake after background
     /// work is the same piece of work), and any still running from before it.
     static func current(_ events: [RunEvent]) -> [SubagentInfo] {
+        current(events, listed: list(events))
+    }
+
+    /// The same from `listed`, the session's whole `list` (in its order): only the events since your last message are
+    /// read, not the whole session again.
+    static func current(_ events: [RunEvent], listed: [SubagentInfo]) -> [SubagentInfo] {
         let start = events.lastIndex { $0.kind == .user } ?? events.startIndex
-        let recent = list(Array(events[start...]))
-        let earlier = list(Array(events[..<start])).filter(\.isRunning)
-        return earlier + recent
+        let recent = Set(events[start...].lazy.filter(isLaunch).map(\.id))
+        return listed.filter { !recent.contains($0.id) && $0.isRunning } + listed.filter { recent.contains($0.id) }
     }
 
     /// The event is a subagent the agent started (not a call of a subagent's own).
@@ -639,7 +652,10 @@ enum BackgroundCommands {
 
     /// The event is a command left running in the background, or one that was.
     static func isCommand(_ event: RunEvent) -> Bool {
-        event.kind == .tool && !Subagents.isLaunch(event) && (event.background == true || asksBackground(event))
+        // The cheap test first: almost no call is one, and a session has thousands of them.
+        guard event.kind == .tool,
+              event.background == true || event.detail.map({ SearchText.contains($0, "run_in_background") }) == true else { return false }
+        return !Subagents.isLaunch(event) && (event.background == true || asksBackground(event))
     }
 
     /// A background command still runs, from any turn.
@@ -663,10 +679,15 @@ enum BackgroundCommands {
     /// The commands the bar above the composer shows: those started since your last message, and any still running
     /// from before it (as `Subagents.current`).
     static func current(_ events: [RunEvent]) -> [BackgroundCommandInfo] {
+        current(events, listed: list(events))
+    }
+
+    /// The same from `listed`, the session's whole `list` (in its order): only the events since your last message are
+    /// read, not the whole session again.
+    static func current(_ events: [RunEvent], listed: [BackgroundCommandInfo]) -> [BackgroundCommandInfo] {
         let start = events.lastIndex { $0.kind == .user } ?? events.startIndex
-        let recent = list(Array(events[start...]))
-        let earlier = list(Array(events[..<start])).filter(\.isRunning)
-        return earlier + recent
+        let recent = Set(events[start...].lazy.filter(isCommand).map(\.id))
+        return listed.filter { !recent.contains($0.id) && $0.isRunning } + listed.filter { recent.contains($0.id) }
     }
 
     /// The command a background task stands for: by the call that started it, else by the task id its output names
