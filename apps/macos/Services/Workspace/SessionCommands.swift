@@ -111,7 +111,7 @@ enum SessionCommands {
         if let effort = run.effort, !effort.isEmpty { rows.append([tr("ws.status.effort"), effort]) }
         rows.append([tr("ws.status.mode"), tr("ws.mode." + run.mode.rawValue)])
         rows.append([tr("ws.status.access"), tr("ws.permission." + run.permission.rawValue)])
-        rows.append([tr("ws.status.folder"), (run.workingDirectory as NSString).abbreviatingWithTildeInPath])
+        rows.append([tr("ws.status.folder"), tilde(run.workingDirectory)])
         if let branch = run.branch, !branch.isEmpty { rows.append([tr("ws.status.branch"), branch]) }
         if let remote = run.remote { rows.append([tr("ws.status.machine"), remote.name]) }
         if let session = run.providerSessionID, !session.isEmpty { rows.append([tr("ws.status.conversation"), session]) }
@@ -180,6 +180,14 @@ enum SessionCommands {
 
         (Optional) Add other sections if relevant, such as Security & Configuration Tips, Architecture Overview, or Agent-Specific Instructions.
         """
+    }
+
+    /// The home folder as `~` (NSString's `abbreviatingWithTildeInPath` is not in Foundation on Linux, where the core
+    /// tests also run).
+    static func tilde(_ path: String, home: String = NSHomeDirectory()) -> String {
+        guard !home.isEmpty, home != "/" else { return path }
+        if path == home { return "~" }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 
     // MARK: Parsing

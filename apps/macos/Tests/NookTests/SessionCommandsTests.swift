@@ -82,6 +82,13 @@ final class SessionCommandsTests: XCTestCase {
                        [.messageCompleted(id: "m1", text: "[P1] add() subtracts.")])
     }
 
+    func testTilde() {
+        XCTAssertEqual(SessionCommands.tilde("/Users/me/Code/app", home: "/Users/me"), "~/Code/app")
+        XCTAssertEqual(SessionCommands.tilde("/Users/me", home: "/Users/me"), "~")
+        XCTAssertEqual(SessionCommands.tilde("/Users/meme/app", home: "/Users/me"), "/Users/meme/app")
+        XCTAssertEqual(SessionCommands.tilde("/tmp/x", home: "/"), "/tmp/x")
+    }
+
     func testInstructionFiles() {
         XCTAssertEqual(SessionCommands.instructionFiles(.claude).first, "CLAUDE.md")
         XCTAssertEqual(SessionCommands.instructionFiles(.codex), ["AGENTS.md"])
