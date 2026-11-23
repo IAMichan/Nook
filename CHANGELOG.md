@@ -10,6 +10,11 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+### Fixed
+
+- Scrolling back through a long agent conversation no longer jumps: rows that scrolled back into view were taken for
+  a blank conversation, and the view was pulled back to an earlier row or to the end (and rebuilt) while you read.
+
 ## [0.1.2-beta.2] - 2026-11-21
 
 ### Changed
