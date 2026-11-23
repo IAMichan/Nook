@@ -451,11 +451,18 @@ enum ResponderCensus {
         let took = Int(Date().timeIntervalSince(started) * 1000)
         let types = tally.types.sorted { $0.value > $1.value }.prefix(10).map { "\($0.key)=\($0.value)" }.joined(separator: " ")
         let hosts = views.sorted { $0.1 > $1.1 }.prefix(6).map { "\($0.0)=\($0.1)" }.joined(separator: " ")
-        let rows = tally.rows.sorted(by: >)
-        let median = rows.isEmpty ? 0 : rows[rows.count / 2]
-        let line = "responders total=\(tally.total) walk=\(took)ms hosts: \(hosts) | "
-            + "scroll rows=\(rows.count) biggest=\(rows.prefix(8).map(String.init).joined(separator: ",")) median=\(median) | types: \(types)"
+        let scrolls = tally.scrolls.sorted { $0.total > $1.total }.prefix(6).map { scroll in
+            let rows = scroll.rows.sorted(by: >)
+            return "[x=\(Int(scroll.frame.minX)) w=\(Int(scroll.frame.width)) h=\(Int(scroll.frame.height)) rows=\(rows.count) "
+                + "total=\(scroll.total) biggest=\(rows.prefix(6).map(String.init).joined(separator: ","))]"
+        }.joined(separator: " ")
+        let line = "responders total=\(tally.total) walk=\(took)ms hosts: \(hosts) | scrolls: \(scrolls) | types: \(types)"
         Log.app.notice("\(line, privacy: .public)")
+        // What the biggest rows are made of, to tell which view they are.
+        for (index, row) in tally.biggest.sorted(by: { $0.size > $1.size }).prefix(3).enumerated() {
+            let made = row.types.sorted { $0.value > $1.value }.prefix(12).map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+            Log.app.notice("responders row \(index + 1, privacy: .public): \(row.size, privacy: .public) at x=\(row.x, privacy: .public): \(made, privacy: .public)")
+        }
     }
 
     /// Every hosting view in the window with the root of its responder tree (built lazily, so a view not hit yet has none).
@@ -476,11 +483,21 @@ enum ResponderCensus {
     }
 
     private struct Tally {
+        struct Scroll {
+            var frame: CGRect
+            var total: Int
+            /// Responders per row: the children of the scroll's layout, after the chain of single children that wraps them.
+            var rows: [Int]
+        }
+        struct Row {
+            var size: Int
+            var x: Int
+            var types: [String: Int]
+        }
         var total = 0
         var types: [String: Int] = [:]
-        /// Responders per row of each scroll view: the children of the scroll's layout, after the chain of single children
-        /// that wraps them.
-        var rows: [Int] = []
+        var scrolls: [Scroll] = []
+        var biggest: [Row] = []
 
         mutating func count(_ node: AnyObject) {
             total += 1
@@ -492,8 +509,22 @@ enum ResponderCensus {
             if name == "HostingScrollViewResponder" {
                 var level = Self.children(of: layout)
                 while level.count == 1 { level = Self.children(of: level[0]) }
-                rows += level.map(Self.size(of:))
+                let rows = level.map(Self.size(of:))
+                let view = Self.field("hostView", of: node).flatMap { $0 as? NSView }
+                let frame = view.map { $0.convert($0.bounds, to: nil) } ?? .zero
+                scrolls.append(Scroll(frame: frame, total: rows.reduce(0, +), rows: rows))
+                for (row, size) in zip(level, rows) where size >= 40 {
+                    var made: [String: Int] = [:]
+                    Self.types(of: row, into: &made)
+                    biggest.append(Row(size: size, x: Int(frame.minX), types: made))
+                }
             }
+        }
+
+        static func types(of node: AnyObject, into made: inout [String: Int]) {
+            made[String(describing: type(of: node)).components(separatedBy: "<")[0], default: 0] += 1
+            for child in children(of: node) { types(of: child, into: &made) }
+            if let layout = layout(of: node) { types(of: layout, into: &made) }
         }
 
         static func size(of node: AnyObject) -> Int {

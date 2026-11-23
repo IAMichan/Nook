@@ -20,10 +20,11 @@ struct PullRequestChangeBreakdown: Equatable, Sendable {
 
     init(files: [(path: String, additions: Int, deletions: Int)]) {
         for file in files {
-            var bucket = self[Self.kind(of: file.path)]
+            let kind = Self.kind(of: file.path)
+            var bucket = self[kind]
             bucket.additions += file.additions
             bucket.deletions += file.deletions
-            lines[Self.kind(of: file.path)] = bucket
+            lines[kind] = bucket
         }
     }
 
@@ -38,8 +39,21 @@ struct PullRequestChangeBreakdown: Equatable, Sendable {
     ]
     private static let testDirectories: Set<String> = ["__tests__", "__test__", "cypress", "e2e", "evals", "spec", "specs", "test", "tests"]
 
-    private static func matches(_ text: String, _ pattern: String, caseInsensitive: Bool = false) -> Bool {
-        text.range(of: pattern, options: caseInsensitive ? [.regularExpression, .caseInsensitive] : .regularExpression) != nil
+    /// The patterns, made once: `String.range(of:options: .regularExpression)` compiled its pattern again on every call,
+    /// and a pull request card asks for every file's kind each time it is drawn.
+    private static func pattern(_ text: String, caseInsensitive: Bool = false) -> NSRegularExpression? {
+        try? NSRegularExpression(pattern: text, options: caseInsensitive ? [.caseInsensitive] : [])
+    }
+    private static let generatedName = pattern(#"(\.generated\.|\.gen\.|\.g\.dart$|\.pb\.go$|_pb2(_grpc)?\.py$|\.pb\.(cc|h)$|\.min\.(js|css)$|\.(js|css)\.map$)"#)
+    private static let mockName = pattern(#"(\.snap$|\.(mocks?|fixtures?|stubs?|fakes?)\.[^.]+$|^(mocks?|fixtures?|stubs?|fakes?)([-_.A-Z]|$))"#)
+    // Case-sensitive for class names: `FooTest.java` is a test class, `Latest.java` is not.
+    private static let testClassName = pattern(#"(Tests?|Spec)\.(java|kt|kts|scala|groovy|cs|php|swift|m)$"#)
+    private static let testName = pattern(#"(\.(test|spec|e2e|eval)\.[^.]+$|_(test|spec)\.[^.]+$|^test_.+\.py$|^conftest\.py$|^(vitest|jest)\.setup\.[^.]+$)"#, caseInsensitive: true)
+    private static let proseName = pattern(#"\.(md|mdx|markdown|rst|adoc|txt)$"#, caseInsensitive: true)
+    private static let configTextName = pattern(#"^(requirements.*|constraints.*|CMakeLists|robots|llms)\.txt$"#, caseInsensitive: true)
+
+    private static func matches(_ text: String, _ pattern: NSRegularExpression?) -> Bool {
+        pattern?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
     static func kind(of path: String) -> Kind {
@@ -48,20 +62,17 @@ struct PullRequestChangeBreakdown: Equatable, Sendable {
         let directories = Set(parts.map { $0.lowercased() })
         func inside(_ names: Set<String>) -> Bool { !directories.isDisjoint(with: names) }
         if generatedFiles.contains(name.lowercased()) || inside(generatedDirectories)
-            || matches(name, #"(\.generated\.|\.gen\.|\.g\.dart$|\.pb\.go$|_pb2(_grpc)?\.py$|\.pb\.(cc|h)$|\.min\.(js|css)$|\.(js|css)\.map$)"#) {
+            || matches(name, generatedName) {
             return .generated
         }
-        if inside(mockDirectories) || matches(name, #"(\.snap$|\.(mocks?|fixtures?|stubs?|fakes?)\.[^.]+$|^(mocks?|fixtures?|stubs?|fakes?)([-_.A-Z]|$))"#) {
+        if inside(mockDirectories) || matches(name, mockName) {
             return .mocks
         }
-        // Case-sensitive for class names: `FooTest.java` is a test class, `Latest.java` is not.
-        if inside(testDirectories) || matches(name, #"(Tests?|Spec)\.(java|kt|kts|scala|groovy|cs|php|swift|m)$"#)
-            || matches(name, #"(\.(test|spec|e2e|eval)\.[^.]+$|_(test|spec)\.[^.]+$|^test_.+\.py$|^conftest\.py$|^(vitest|jest)\.setup\.[^.]+$)"#, caseInsensitive: true) {
+        if inside(testDirectories) || matches(name, testClassName) || matches(name, testName) {
             return .tests
         }
         // Plain-text files that tools read as config or input are not prose.
-        if matches(name, #"\.(md|mdx|markdown|rst|adoc|txt)$"#, caseInsensitive: true),
-           !matches(name, #"^(requirements.*|constraints.*|CMakeLists|robots|llms)\.txt$"#, caseInsensitive: true) {
+        if matches(name, proseName), !matches(name, configTextName) {
             return .docs
         }
         return .code
