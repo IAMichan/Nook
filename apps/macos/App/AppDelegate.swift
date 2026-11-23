@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let rollback = UpdateTrialRunner.rollbackToReport { AppUpdater.shared.reportRollback(rollback) }
         installStatusItem()
         #if DEBUG
-        ResponderCensus.start()
+        if UserDefaults.standard.bool(forKey: ResponderCensus.setting) { ResponderCensus.start() }
         #endif
         // Hold ⌘Q to quit, when it is on (Settings › General); only the key is held, never a quit from a menu or macOS.
         QuitHoldMonitor.shared.start()
@@ -420,9 +420,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 /// was a third of the busy main thread; it only happens in a key window, so it cannot be measured offscreen. Logs a line
 /// when the count changed by more than a twentieth, read with
 /// `log show --predicate 'subsystem == "nl.imdigital.nook" AND category == "app"' --info --last 10m | grep responders`.
-/// Reads SwiftUI's private responder tree by reflection: a diagnostic, not something to build on.
+/// Reads SwiftUI's private responder tree by reflection: a diagnostic, not something to build on. Off unless asked for
+/// (`defaults write nl.imdigital.nook NookResponderCensus -bool YES`, or `-NookResponderCensus YES` as a launch
+/// argument): the walk itself costs the main thread every five seconds.
 @MainActor
 enum ResponderCensus {
+    static let setting = "NookResponderCensus"
     private static var timer: Timer?
     private static var lastTotal = 0
 
