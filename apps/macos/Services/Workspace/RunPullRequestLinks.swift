@@ -102,11 +102,14 @@ final class RunPullRequestLinks {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)
         case .tool:
-            // The link first: a substring check rules out almost every tool call, and the command regex below is dear
-            // when the whole session is read again on each change.
-            guard let output = event.output, let url = MarkdownBlock.lastGitHubPullRequest(in: output),
+            // A byte search of the output first (it rules out almost every call; `String.contains` walked megabytes of
+            // output character by character), then whether the call can show a
+            // pull request at all, and only then the output's links: an agent that searches code full of pull request
+            // links (a project's own tests) printed megabytes of "/pull/", and reading each output with the link pattern
+            // was most of what a long session cost to open.
+            guard let output = event.output, SearchText.contains(output, "/pull/"),
                   PullRequestToolCall.showsPullRequest(tool: event.tool, command: [event.text, event.detail]) else { return nil }
-            return url
+            return MarkdownBlock.lastGitHubPullRequest(in: output)
         default:
             return nil
         }

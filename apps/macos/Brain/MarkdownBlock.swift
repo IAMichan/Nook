@@ -160,7 +160,7 @@ enum MarkdownBlock: Equatable {
 
     /// The last GitHub pull request link in a text, tagged with `<pr-created>` or written out.
     static func lastGitHubPullRequest(in text: String) -> URL? {
-        guard text.contains("/pull/"), let rx = gitHubPullRequestRegex,
+        guard SearchText.contains(text, "/pull/"), let rx = gitHubPullRequestRegex,
               let match = rx.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
               let range = Range(match.range, in: text) else { return nil }
         return URL(string: String(text[range]))

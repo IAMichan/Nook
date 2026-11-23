@@ -61,6 +61,28 @@ final class AgentProgressTests: XCTestCase {
         XCTAssertNil(Verification.check(event(.tool, "Read · test.swift", tool: "Read", state: .done)), "only commands are checks")
     }
 
+    /// A long script is many segments: only one that starts with a checking tool counts, after wrappers too.
+    func testFindsTheCheckInsideALongScript() {
+        let script = "python3 - <<'EOF'\n" + (1...200).map { "print(\($0))" }.joined(separator: "\n") + "\nEOF\nswift build"
+        XCTAssertEqual(Verification.kind(command: script), .build)
+        XCTAssertNil(Verification.kind(command: "python3 - <<'EOF'\nprint('npm test')\nEOF"))
+        XCTAssertEqual(Verification.kind(command: "sudo swift test"), .tests)
+        XCTAssertEqual(Verification.kind(command: "time npm run lint"), .lint)
+        XCTAssertEqual(Verification.kind(command: "env CI=1 npm test"), .tests)
+    }
+
+    /// A call's check is worked out once, but follows the call: its state, and its input when that changes.
+    func testACheckFollowsItsCallAfterTheFirstTime() {
+        var call = bash("npm test", .running)
+        XCTAssertEqual(Verification.check(call)?.outcome, .running)
+        call.state = .failed
+        XCTAssertEqual(Verification.check(call)?.outcome, .failed)
+        let other = bash("npm run build", .done)
+        call.detail = other.detail
+        call.state = .done
+        XCTAssertEqual(Verification.check(call)?.kind, .build, "a call whose input changed is read again")
+    }
+
     func testLatestOutcomePerKindWins() {
         let events = [bash("npm test", .failed, at: 1), bash("npm run build", .done, at: 2), bash("npm test", .done, at: 3)]
         let checks = Verification.checks(events)

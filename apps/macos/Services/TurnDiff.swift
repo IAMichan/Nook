@@ -214,6 +214,8 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
     /// 1 for the first turn of the conversation.
     let number: Int
     var files: [File] = []
+    /// Where each file is in `files`, for `merge`.
+    var fileIndex = TurnFileIndex()
     /// The last answer of the turn: the card goes under it.
     var answerID: String?
     /// When the turn started and ended, for a session Nook runs: its git snapshots around the turn give the real diff.
@@ -404,13 +406,34 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
     }
 
     mutating func merge(_ file: File) {
-        if let index = files.firstIndex(where: { $0.path == file.path }) {
+        // By the index first: a turn of hundreds of edits searched its files for each one, comparing paths as Unicode
+        // text, and that was most of the time a long session's turns took to read as it opened.
+        let known: Int?
+        if let place = fileIndex.places[file.path], place < files.count, files[place].path == file.path {
+            known = place
+        } else if fileIndex.places.count == files.count, fileIndex.places[file.path] == nil {
+            // Every file is in the index (none came in another way): one that is not there is new.
+            known = nil
+        } else {
+            known = files.firstIndex(where: { $0.path == file.path })
+            fileIndex.places = Dictionary(files.enumerated().map { ($1.path, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+        if let index = known {
             files[index].lines = files[index].lines + file.lines
             files[index].patches += file.patches
+            fileIndex.places[file.path] = index
         } else {
+            fileIndex.places[file.path] = files.count
             files.append(file)
         }
     }
+}
+
+/// Where each file of a `TurnDiff` is in its `files`, for `merge`. Not part of what the turn is: two turns with the same
+/// files are equal however they were made, and a place that no longer holds its file is looked up again.
+struct TurnFileIndex: Equatable, Sendable {
+    var places: [String: Int] = [:]
+    static func == (lhs: TurnFileIndex, rhs: TurnFileIndex) -> Bool { true }
 }
 
 /// The finished turns of the last `TurnDiff.collect`, by the id of their first event, to make the next one from.
