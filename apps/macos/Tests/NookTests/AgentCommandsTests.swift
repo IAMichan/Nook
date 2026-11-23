@@ -88,4 +88,25 @@ final class AgentCommandsTests: XCTestCase {
         let c = ComposerCommand(name: "goal", insertion: "/goal ", action: .insert)
         XCTAssertEqual(AgentCommands.descriptionKey(for: c), "composer.command.goal.description")
     }
+
+    func testStartCommandsArePlanAndTheAgentsOwn() {
+        let own = [AgentSlashCommand(name: "brand-voice:enforce-voice", detail: "(brand-voice) Apply guidelines", takesInput: true),
+                   AgentSlashCommand(name: "init", detail: nil, takesInput: false)]
+        let list = AgentCommands.startCommands(for: .claude, offered: own)
+        XCTAssertEqual(list.map(\.name), ["plan", "brand-voice:enforce-voice", "init"])
+        XCTAssertEqual(list[1].insertion, "/brand-voice:enforce-voice ")
+        XCTAssertEqual(list[2].insertion, "/init")
+        XCTAssertFalse(list.contains { $0.name == "status" || $0.name == "fork" }, "session commands need a running session")
+    }
+
+    func testCommandMemoryKeepsTheLastListPerAgent() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "AgentCommandMemoryTests"))
+        defaults.removePersistentDomain(forName: "AgentCommandMemoryTests")
+        let own = [AgentSlashCommand(name: "review-pr", detail: "Review", takesInput: true)]
+        AgentCommandMemory.remember(own, for: .claude, defaults: defaults)
+        AgentCommandMemory.remember([], for: .claude, defaults: defaults)
+        XCTAssertEqual(AgentCommandMemory.recalled(for: .claude, defaults: defaults), own, "an empty list does not wipe it")
+        XCTAssertEqual(AgentCommandMemory.recalled(for: .codex, defaults: defaults), [])
+        defaults.removePersistentDomain(forName: "AgentCommandMemoryTests")
+    }
 }

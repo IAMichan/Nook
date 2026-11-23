@@ -19,6 +19,13 @@ struct ComposerSuggestion: Identifiable, Equatable {
     var detail: String?
     var symbol: String
     var payload: Payload
+
+    /// Whether the detail is a sentence (a command's description), cut off at its end; otherwise it is a folder or a
+    /// place, cut off at its start so its last part stays.
+    var readsFromStart: Bool {
+        if case .command = payload { return true }
+        return false
+    }
 }
 
 /// What a composer can do beyond typing. The chat leaves references off (its question goes to the brain as plain text);
@@ -176,15 +183,19 @@ final class ComposerModel: ObservableObject {
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
             return publish(appRows(query, config, chats: chats))
         }
+        // "/plugin action": a command whose skill and action are joined by a space lists what fits both words.
+        if !config.commands.isEmpty,
+           let spaced = ComposerTrigger.spacedCommand(in: text, caret: caret, names: config.commands.map(\.name)) {
+            let matches = ComposerCommand.filter(config.commands, query: spaced.query)
+            guard !matches.isEmpty else { return close() }
+            trigger = spaced
+            return publish(commandRows(matches))
+        }
         guard let found = ComposerTrigger.detect(in: text, caret: caret) else { return close() }
         trigger = found
         switch found.kind {
         case .command:
-            let matches = ComposerCommand.filter(config.commands, query: found.query)
-            publish(matches.map { command in
-                ComposerSuggestion(id: "cmd:" + command.name, title: "/" + command.name, detail: commandDetail(command),
-                                   symbol: "slash.circle", payload: .command(command))
-            })
+            publish(commandRows(ComposerCommand.filter(config.commands, query: found.query)))
         case .mention:
             if !config.apps.isEmpty {
                 return publish(appRows(EmbeddedAppCatalog.mentionQuery(found.query), config))
@@ -286,6 +297,13 @@ final class ComposerModel: ObservableObject {
                                    symbol: "person.crop.circle",
                                    payload: .command(ComposerCommand(name: "person:" + person.name, insertion: "@" + person.name, action: .insert)))
             }
+    }
+
+    private func commandRows(_ commands: [ComposerCommand]) -> [ComposerSuggestion] {
+        commands.map { command in
+            ComposerSuggestion(id: "cmd:" + command.name, title: "/" + command.name, detail: commandDetail(command),
+                               symbol: "slash.circle", payload: .command(command))
+        }
     }
 
     private func commandDetail(_ command: ComposerCommand) -> String? {
@@ -470,8 +488,33 @@ struct ComposerSuggestionList: View {
     let tint: Color
     let accept: (ComposerSuggestion) -> Void
 
+    /// Rows shown at once; a longer list (an agent with many skills) scrolls inside the box instead of filling the window.
+    static let visibleRows = 8
+    static let rowHeight: CGFloat = 30
+    static let rowSpacing: CGFloat = 1
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        let shown = min(model.suggestions.count, Self.visibleRows)
+        let height = CGFloat(shown) * Self.rowHeight + CGFloat(max(shown - 1, 0)) * Self.rowSpacing
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                rows
+            }
+            .scrollIndicators(model.suggestions.count > Self.visibleRows ? .automatic : .never)
+            .frame(height: height)
+            // The arrow keys move the selection: keep it in view.
+            .onChange(of: model.selection) { _, index in
+                guard model.suggestions.indices.contains(index) else { return }
+                proxy.scrollTo(model.suggestions[index].id)
+            }
+        }
+        .padding(NookTheme.Spacing.sm)
+        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
             ForEach(Array(model.suggestions.enumerated()), id: \.element.id) { index, row in
                 Button { accept(row) } label: {
                     HStack(spacing: NookTheme.Spacing.md) {
@@ -488,21 +531,20 @@ struct ComposerSuggestionList: View {
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .lineLimit(1)
-                                .truncationMode(.head)
+                                // A command's description reads from its start; a file's folder keeps its end.
+                                .truncationMode(row.readsFromStart ? .tail : .head)
                         }
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                    .frame(height: 30)
+                    .frame(height: Self.rowHeight)
                     .roundedBackground(index == model.selection ? NookTheme.smoke : Color.clear, radius: NookTheme.Radius.control)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.nookPlain)
+                .id(row.id)
             }
         }
-        .padding(NookTheme.Spacing.sm)
-        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
-        .accessibilityElement(children: .contain)
     }
 }
 

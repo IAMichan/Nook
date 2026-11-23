@@ -216,6 +216,14 @@ struct NewSessionComposer: View {
         rich.keepsBigPastes = true
         // The session has no id yet: its pasted secrets wait in the composer's own folder. Not for another machine.
         rich.secretScope = remoteMachine == nil ? SecretFiles.composerScope : nil
+        // `/`: Plan mode, and the agent's own commands and skills as it last offered them; one goes to the agent as the
+        // start of the first prompt.
+        rich.commands = AgentCommands.startCommands(
+            for: config.provider,
+            offered: remoteMachine == nil ? workspace.knownCommands(for: config.provider, folder: config.projectPath) : [])
+        rich.onCommand = { command in
+            if command.action == .plan { config.mode = .plan; remember() }
+        }
         rich.situation = { [config] in
             ComposerCompletion.Situation(recipient: config.provider.displayName,
                                          project: config.projectPath.isEmpty ? nil : (config.projectPath as NSString).lastPathComponent)

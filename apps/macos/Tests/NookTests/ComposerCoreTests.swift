@@ -36,7 +36,34 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertEqual(ComposerCommand.filter(all, query: "").map(\.name), ["compact", "plan", "new"])
         XCTAssertEqual(ComposerCommand.filter(all, query: "pl").map(\.name), ["plan"])
         XCTAssertEqual(ComposerCommand.filter(all, query: "a").map(\.name), ["compact", "plan"], "starts first, then contains")
+
+        // A plugin's skill: the colon keeps matching, also when the agent puts the plugin in the description.
+        let skills = [ComposerCommand(name: "brand-voice:enforce-voice", insertion: "", action: .insert),
+                      ComposerCommand(name: "init", insertion: "", action: .insert, detail: "(imcapable) Set up the project")]
+        XCTAssertEqual(ComposerCommand.filter(skills, query: "brand-voice:").map(\.name), ["brand-voice:enforce-voice"])
+        XCTAssertEqual(ComposerCommand.filter(skills, query: "brand-voice:enf").map(\.name), ["brand-voice:enforce-voice"])
+        XCTAssertEqual(ComposerCommand.filter(skills, query: "imcapable:init").map(\.name), ["init"])
+        XCTAssertEqual(ComposerCommand.filter(skills, query: "imcapable:zzz").map(\.name), [])
+        // However the skill and its action are joined.
+        for query in ["brand-voice/enf", "brand.enforce", "brand_voice enforce", "voice enforce", "brand-voice::enf"] {
+            XCTAssertEqual(ComposerCommand.filter(skills, query: query).map(\.name), ["brand-voice:enforce-voice"], query)
+        }
+        for query in ["imcapable/init", "imcapable.init", "imcapable init", "imcapable-init"] {
+            XCTAssertEqual(ComposerCommand.filter(skills, query: query).map(\.name), ["init"], query)
+        }
+        XCTAssertEqual(ComposerCommand.filter(skills, query: "up").map(\.name), [], "one word does not search descriptions")
         XCTAssertTrue(ComposerCommand.filter(all, query: "zzz").isEmpty)
+    }
+
+    func testSpacedCommandQuery() {
+        let names = ["goal", "brand-voice:enforce-voice"]
+        XCTAssertEqual(ComposerTrigger.spacedCommand(in: "/brand enforce", caret: nil, names: names)?.query, "brand enforce")
+        XCTAssertNil(ComposerTrigger.spacedCommand(in: "/goal ship it", caret: nil, names: names), "a whole command takes its text")
+        XCTAssertNil(ComposerTrigger.spacedCommand(in: "/brand", caret: nil, names: names), "no space: the usual trigger")
+        XCTAssertNil(ComposerTrigger.spacedCommand(in: "/brand enforce", caret: 3, names: names), "caret not at the end")
+        XCTAssertNil(ComposerTrigger.spacedCommand(in: "/brand\nenforce", caret: nil, names: names))
+        XCTAssertNil(ComposerTrigger.spacedCommand(in: "/a b c d e", caret: nil, names: names), "a sentence, not a command")
+        XCTAssertNil(ComposerTrigger.spacedCommand(in: "hi /brand x", caret: nil, names: names))
     }
 
     // MARK: Dispatch

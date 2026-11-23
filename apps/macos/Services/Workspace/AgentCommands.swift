@@ -64,6 +64,21 @@ enum AgentCommands {
         return list
     }
 
+    /// The `/` list of a session that has not started yet: Plan mode where the agent has it, and the agent's own commands
+    /// and skills as it last offered them (`AgentCommandMemory`), which go to it as the start of the first prompt. Nook's
+    /// session commands (`/fork`, `/status` …) need a running session and stay out.
+    static func startCommands(for provider: RunProvider, offered: [AgentSlashCommand]) -> [ComposerCommand] {
+        var list: [ComposerCommand] = []
+        if provider.capabilities.planMode {
+            list.append(ComposerCommand(name: "plan", insertion: "", action: .plan))
+        }
+        for command in offered where !list.contains(where: { $0.name == command.name }) {
+            list.append(ComposerCommand(name: command.name, insertion: "/" + command.name + (command.takesInput ? " " : ""),
+                                        action: .insert, detail: command.detail ?? ""))
+        }
+        return list
+    }
+
     static func descriptionKey(for command: ComposerCommand) -> String { "composer.command.\(command.name).description" }
 
     /// Whether Nook can ask the agent for its MCP servers (`WorkspaceManager.showMcpStatus`): Claude Code's `mcp_status`,
@@ -99,7 +114,7 @@ enum AgentCommands {
 
 /// A `/` command an agent offers itself (ACP `available_commands_update`): its name, what it does in the agent's words,
 /// and whether it takes text after it.
-struct AgentSlashCommand: Equatable, Hashable, Sendable {
+struct AgentSlashCommand: Equatable, Hashable, Sendable, Codable {
     var name: String
     var detail: String?
     var takesInput: Bool
@@ -135,5 +150,22 @@ struct AgentSlashCommand: Equatable, Hashable, Sendable {
             return AgentSlashCommand(name: name, detail: detail?.isEmpty == false ? String(detail!.prefix(200)) : nil,
                                      takesInput: entry["input"] is [String: Any])
         }
+    }
+}
+
+/// The `/` commands each agent last offered, kept across launches: a session that has not started has no agent process
+/// to ask yet, so its box lists these (`AgentCommands.startCommands`). One list per agent: the most recent wins.
+enum AgentCommandMemory {
+    static func key(_ provider: RunProvider) -> String { "agentCommands." + provider.rawValue }
+
+    static func remember(_ commands: [AgentSlashCommand], for provider: RunProvider, defaults: UserDefaults = .standard) {
+        guard !commands.isEmpty, recalled(for: provider, defaults: defaults) != commands,
+              let data = try? JSONEncoder().encode(commands) else { return }
+        defaults.set(data, forKey: key(provider))
+    }
+
+    static func recalled(for provider: RunProvider, defaults: UserDefaults = .standard) -> [AgentSlashCommand] {
+        guard let data = defaults.data(forKey: key(provider)) else { return [] }
+        return (try? JSONDecoder().decode([AgentSlashCommand].self, from: data)) ?? []
     }
 }
