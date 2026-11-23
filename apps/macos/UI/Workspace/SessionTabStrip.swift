@@ -190,6 +190,7 @@ private struct SessionTabButton: View {
         // Only the open tab listens for a double-click (rename): on the others a double-click recognizer would hold
         // every click back until the double-click time had passed, and switching would lag behind the click.
         .modifier(SessionTabTap(active: active, select: select, rename: rename))
+        .overlay(MiddleClickCatcher(action: close))
         .trackedHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .nookTip(folderName.isEmpty ? name : folderName + " / " + name)
@@ -261,6 +262,30 @@ private struct SessionTabTap: ViewModifier {
             content.onTapGesture(count: 2, perform: rename)
         } else {
             content.onTapGesture(perform: select)
+        }
+    }
+}
+
+/// Closes on a click with the middle mouse button. The view takes only that button's events (its `hitTest` answers
+/// nil for everything else), so clicks, hover and drags reach the tab beneath it as before.
+private struct MiddleClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView { CatcherView() }
+    func updateNSView(_ view: CatcherView, context: Context) { view.action = action }
+
+    final class CatcherView: NSView {
+        var action: (() -> Void)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let type = NSApp.currentEvent?.type, type == .otherMouseDown || type == .otherMouseUp else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func otherMouseDown(with event: NSEvent) {}
+        override func otherMouseUp(with event: NSEvent) {
+            guard event.buttonNumber == 2, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+            action?()
         }
     }
 }
