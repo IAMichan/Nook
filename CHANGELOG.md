@@ -35,6 +35,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Fixed
 
+- A long agent session in which the agent read, ran and edited a lot no longer turns slow and choppy: each new step no
+  longer reads the whole conversation again, and opening or closing what the agent did while it worked ("Worked for …",
+  "Ran 3 commands") is instant instead of freezing Nook for a moment.
 - Signing in with Google in Nook's browser works again: Google answered "Couldn't sign you in, this browser or app may
   not be secure", because the browser hid passkey support and wrapped the console on Google's sign-in page as well.
 - The model menu in the browser extension's side panel opens again (it collapsed to a bare search field under the

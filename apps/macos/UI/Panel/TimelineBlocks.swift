@@ -94,6 +94,24 @@ extension TimelineRowContext {
 }
 
 extension TimelineBlock {
+    /// The keys of the groups and folds this block draws ("group:<id>", "fold:<id>", "superseded:<id>"), its own and
+    /// those inside it.
+    var containerKeys: [String] {
+        switch self {
+        case .event: return []
+        case .tools(let id, _, _): return ["group:" + id.uuidString]
+        case .fold(let id, _, let blocks, _): return ["fold:" + id.uuidString] + blocks.flatMap(\.containerKeys)
+        case .superseded(let id, let blocks): return ["superseded:" + id.uuidString] + blocks.flatMap(\.containerKeys)
+        }
+    }
+
+    /// Of the open groups and folds, those this block draws: opening one fold then draws that block again, not every
+    /// block of the session (in a long session that was seconds of the main thread), as `TranscriptTimeline` scopes its
+    /// rows' open keys.
+    func scopedOpen(_ open: Set<String>) -> Set<String> {
+        open.isEmpty ? open : Set(containerKeys.filter(open.contains))
+    }
+
     /// The ids of the events this block draws.
     var eventIDs: [UUID] {
         switch self {

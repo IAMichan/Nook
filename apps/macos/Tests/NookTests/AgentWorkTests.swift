@@ -1191,4 +1191,26 @@ final class WakeCompletionTests: XCTestCase {
         command.tool = "Bash"
         XCTAssertFalse(WakeCompletion.holds([user, command, wake, answer]), "a dev server left running holds nothing")
     }
+
+    /// The bar's subagents and background commands, taken from the session's whole list, are the ones reading the
+    /// session again finds: those since your last message, and the earlier ones that still run.
+    func testCurrentFromTheListMatchesReadingTheSession() {
+        let agentDetail = #"{"subagent_type":"Explore","description":"Look"}"#
+        let commandDetail = #"{"command":"npm run dev","run_in_background":true}"#
+        let events = [
+            RunEvent(kind: .user, text: "first"),
+            RunEvent(kind: .tool, text: "Agent", tool: "Agent", detail: agentDetail, state: .running),
+            RunEvent(kind: .tool, text: "Agent", tool: "Agent", detail: agentDetail, state: .done),
+            RunEvent(kind: .tool, text: "Bash", tool: "Bash", detail: commandDetail, state: .running),
+            RunEvent(kind: .tool, text: "Bash", tool: "Bash", detail: commandDetail, state: .done),
+            RunEvent(kind: .user, text: "second"),
+            RunEvent(kind: .tool, text: "Agent", tool: "Agent", detail: agentDetail, state: .done),
+            RunEvent(kind: .tool, text: "Bash", tool: "Bash", detail: commandDetail, state: .done),
+        ]
+        let agents = Subagents.current(events, listed: Subagents.list(events))
+        XCTAssertEqual(agents.map(\.id), [events[1].id, events[6].id])
+        let commands = BackgroundCommands.current(events, listed: BackgroundCommands.list(events))
+        XCTAssertEqual(commands.map(\.id), [events[3].id, events[7].id])
+        XCTAssertEqual(commands, BackgroundCommands.current(events))
+    }
 }
