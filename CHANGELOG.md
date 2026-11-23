@@ -12,6 +12,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Fixed
 
+- The model menu in the browser extension's side panel opens again (it collapsed to a bare search field under the
+  composer) and now looks like the model picker in Nook's own composer: agent logos in a rail on the left, this Mac's
+  models first, and the shown agent's models with their makers' marks, a search field and ↑/↓ and Return.
 - Scrolling back through a long agent conversation no longer jumps: rows that scrolled back into view were taken for
   a blank conversation, and the view was pulled back to an earlier row or to the end (and rebuilt) while you read.
 - When an agent changes files in another repository than its session's own, the session panel now shows that
