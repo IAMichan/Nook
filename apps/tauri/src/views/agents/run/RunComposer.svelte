@@ -3,7 +3,7 @@
   // `QueuedMessagesStrip`): je vervolgbericht, of terwijl de agent werkt bijsturen of in de wachtrij; daaronder de
   // keuzes voor de volgende beurt (model, modus, rechten, denkniveau) en ⋯ voor de rest.
   import {
-    isActive, modeHelp, workspaceApi, type PermissionPolicy, type RunProvider, type WorkspaceRun,
+    effortLevels, isActive, modeHelp, workspaceApi, type PermissionPolicy, type RunProvider, type WorkspaceRun,
   } from "../../../lib/workspace/api";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { agentApi, type AgentProfile } from "../../../lib/agents";
@@ -23,6 +23,11 @@
   import { compose, fileRef, isPicture, project, timeline, type ContextRef } from "../../../lib/workspace/context-refs";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { tr } from "../../../lib/i18n.svelte";
+  import { onCommands } from "../../../lib/commands";
+  import { keyFlags } from "../../../lib/key-context";
+  import { stashKey } from "../../../lib/workspace/draft-stash";
+  import { nook } from "../../../lib/state.svelte";
+  import { listening } from "../../../lib/listening.svelte";
   import { oneLine } from "../../../lib/workspace/timeline";
 
   let { run, onsidechat }: { run: WorkspaceRun; onsidechat?: (question: string) => void } = $props();
@@ -233,18 +238,81 @@
       if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") { e.preventDefault(); pickCommand(matching[Math.min(commandIndex, matching.length - 1)]); return; }
       if (e.key === "Escape") { e.preventDefault(); draft = ""; return; }
     }
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Ctrl+Enter, Ctrl+Shift+Enter and Ctrl+. are rules (`composer.send`, `composer.sendAlternate`, `queue.steerFirst`,
+    // `session.interrupt`) the shell resolves, so a rebound key works; the commands are below.
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
-      // Ctrl+Enter doet het andere: in de wachtrij in plaats van bijsturen, of andersom.
-      if (active && (e.ctrlKey || e.metaKey) && sideDraft === null) deliver(steers ? "queue" : "steer");
-      else send();
+      send();
     } else if (e.key === "Escape" && editing) {
       cancelEdit();
-    } else if (e.key === "." && (e.ctrlKey || e.metaKey) && active) {
-      e.preventDefault();
-      workspace.act(() => workspaceApi.stop(run.id));
     }
   }
+
+  // What the shell's key rules ask of this composer (`SessionComposer.baseKeyHandlers` on the Mac).
+  $effect(() => {
+    keyFlags.turnRunning = active;
+    keyFlags.composerDraft = !!draft.trim();
+    return () => { keyFlags.turnRunning = false; keyFlags.composerDraft = false; };
+  });
+  const sent = $derived(events.filter((e) => e.kind === "user").map((e) => timeline(e.text ?? "", run.workingDirectory).words).filter((w) => w.trim()));
+  let walking = -1;
+  function walkHistory(delta: number): boolean {
+    if (!sent.length || editing) return false;
+    const next = walking < 0 ? (delta < 0 ? sent.length - 1 : -1) : walking + delta;
+    if (next < 0 || next >= sent.length) { walking = -1; if (delta > 0) draft = ""; return delta > 0 || walking === -1; }
+    walking = next;
+    draft = sent[next];
+    return true;
+  }
+  const access: PermissionPolicy[] = ["ask", "acceptEdits", "bypass"];
+  function stepEffort(delta: number): boolean {
+    const levels = effortLevels(run.provider);
+    if (!levels.length || !caps) return false;
+    const at = run.effort ? levels.indexOf(run.effort) : -1;
+    const next = Math.min(levels.length - 1, Math.max(0, at + delta));
+    if (next !== at) setEffort(levels[next]);
+    return true;
+  }
+  $effect(() => onCommands({
+    "composer.send": () => {
+      if (active || (!draft.trim() && !hasAttachments)) return false;
+      send();
+    },
+    "composer.sendAlternate": () => {
+      if (!active || !draft.trim() || sideDraft !== null) return false;
+      deliver(steers ? "queue" : "steer");
+    },
+    "queue.steerFirst": () => {
+      const first = queue?.messages[0];
+      if (!active || !first || !canSteer) return false;
+      queueAction(() => workspaceApi.queueSteer(run.id, first.id));
+    },
+    "session.interrupt": () => {
+      if (!active) return false;
+      workspace.act(() => workspaceApi.stop(run.id));
+    },
+    "composer.stash": () => { draft = stashKey(draft); textarea?.focus(); },
+    "composer.pasteAsText": () => {
+      navigator.clipboard.readText().then((text) => {
+        const at = textarea?.selectionStart ?? draft.length;
+        const to = textarea?.selectionEnd ?? at;
+        draft = draft.slice(0, at) + text + draft.slice(to);
+      }).catch(() => {});
+    },
+    "composer.startInBackground": () => {
+      if (editing || (!draft.trim() && !hasAttachments)) return false;
+      (active ? deliver(steers ? "steer" : "queue") : send()).then(() => agents.select("new"));
+    },
+    "composer.historyPrevious": () => walkHistory(-1),
+    "composer.historyNext": () => walkHistory(1),
+    "composer.access": () => {
+      const at = access.indexOf(run.permission);
+      setPermission(access[(at + 1) % access.length]);
+    },
+    "composer.dictate": () => { if (!nook.info?.capabilities.microphone) return false; listening.toggle(); },
+    "effort.increase": () => stepEffort(1),
+    "effort.decrease": () => stepEffort(-1),
+  }));
 
   function beginEdit(id: string, text: string) {
     if (!editing) savedDraft = draft;

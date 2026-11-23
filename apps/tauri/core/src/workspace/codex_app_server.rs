@@ -293,6 +293,11 @@ impl CodexDriver {
                     self.thread = Some(id.into());
                 }
             }
+            "turn/plan/updated" => {
+                if let Some(steps) = super::tasks::codex(p) {
+                    step.events.push(DriverEvent::Tasks(steps));
+                }
+            }
             "turn/started" => {
                 if let Some(id) = p.pointer("/turn/id").and_then(Value::as_str) {
                     self.turn = Some(id.into());

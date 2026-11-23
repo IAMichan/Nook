@@ -45,9 +45,15 @@
         <option value="floating">{tr("Zwevend op het scherm", "Floating on the screen")}</option>
       </select>
     </label>
+    {#if s.placement !== "floating"}
+      <label class="row">
+        <span>{tr("Toon Nook op elk scherm", "Show Nook on every screen")}<br /><small>{tr("Elk aangesloten scherm krijgt een balk. Nook opent op het scherm waar je muis is.", "Every connected screen gets a bar. Nook opens on the screen your mouse is on.")}</small></span>
+        <input type="checkbox" role="switch" checked={!!s.barOnAllScreens} onchange={(e) => nook.saveSettings({ barOnAllScreens: e.currentTarget.checked })} />
+      </label>
+    {/if}
     <label class="row">
       <span>{tr("Scherm", "Screen")}</span>
-      <select value={s.screenChoice || "auto"} onchange={(e) => nook.saveSettings({ screenChoice: e.currentTarget.value })}>
+      <select disabled={s.placement !== "floating" && !!s.barOnAllScreens} value={s.screenChoice || "auto"} onchange={(e) => nook.saveSettings({ screenChoice: e.currentTarget.value })}>
         <option value="auto">{tr("Automatisch", "Automatic")}</option>
         <option value="main">{tr("Hoofdscherm", "Main display")}</option>
         <option value="mouse">{tr("Volgt je muis", "Follows mouse")}</option>
@@ -56,6 +62,7 @@
       </select>
     </label>
     <label class="row"><span>{tr("Verberg Nook als er niets is", "Hide Nook when idle")}</span><input type="checkbox" role="switch" checked={s.hideWhenIdle} onchange={(e) => nook.saveSettings({ hideWhenIdle: e.currentTarget.checked })} /></label>
+    <label class="row"><span>{tr("Open het paneel als ik naar de balk wijs", "Open panel when hovering over the bar")}</span><input type="checkbox" role="switch" checked={s.openOnHover !== false} onchange={(e) => nook.saveSettings({ openOnHover: e.currentTarget.checked })} /></label>
     <label class="row">
       <span>{tr("Open het hoofdvenster als Nook start", "Open the main window when Nook starts")}<br /><small>{tr("Elke keer dat Nook start, ook als je het venster had gesloten. Bij het inloggen opent het op de achtergrond, zonder het toetsenbord over te nemen.", "Every time Nook starts, also when you had closed it. At login it opens in the background, without taking the keyboard.")}</small></span>
       <input type="checkbox" role="switch" checked={s.openWindowAtLaunch !== false} onchange={(e) => nook.saveSettings({ openWindowAtLaunch: e.currentTarget.checked })} />

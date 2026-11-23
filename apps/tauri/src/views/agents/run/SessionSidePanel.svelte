@@ -3,6 +3,9 @@
   // sits flat on the canvas to the right of the conversation with a draggable hairline divider, a 32 px tab strip
   // (Plans/Outputs, Subagents, Terminal, Browser, Changes, Pull request, File), `+` to open a tool, hover close cross
   // on each tab, maximize/restore, and an empty-state launcher with keyboard shortcuts.
+  import FileViewer from "./FileViewer.svelte";
+  import OutputsPanel from "./OutputsPanel.svelte";
+  import { collectOutputs } from "../../../lib/workspace/session-outputs";
   import Ico from "../../../components/ui/Ico.svelte";
   import Dropdown from "../../../components/ui/Dropdown.svelte";
   import DropdownRow from "../../../components/ui/DropdownRow.svelte";
@@ -14,7 +17,7 @@
   import Changes from "./Changes.svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import { toast } from "../../../lib/toast.svelte";
-  import { workspaceApi, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
+  import { isActive, workspaceApi, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
   import { oneLine } from "../../../lib/workspace/timeline";
   import { SIDE_TOOLS, sidePanel, type SideTool } from "./side-panel.svelte";
 
@@ -35,21 +38,10 @@
   const hasRepo = $derived(!!run.repoRoot);
 
   // Derived session outputs (plans & changed files) and subagents from the session's live timeline.
-  const plans = $derived(events.filter((e) => e.kind === "assistant" && e.tool === "plan" && !e.rolledBack));
-  const touchedFiles = $derived.by(() => {
-    const seen = new Map<string, RunEvent>();
-    for (const e of events) {
-      if (e.kind === "fileChange" && !e.rolledBack) {
-        const key = e.detail ?? e.text;
-        seen.set(key, e);
-      }
-    }
-    return [...seen.values()].reverse();
-  });
+  const outputs = $derived(collectOutputs(events, run.tasks, run.workingDirectory));
   const subagents = $derived(
     events.filter((e) => e.kind === "tool" && !e.rolledBack && (e.tool === "Task" || e.tool === "Agent")),
   );
-  const selectedPlan = $derived(plans.find((p) => p.id === panel.outputId) ?? plans[plans.length - 1] ?? null);
   let openSubagents = $state(new Set<string>());
 
   // File tab search backed by workspace_files.
@@ -383,70 +375,7 @@
           <PullRequests session={run.id} />
         </div>
       {:else if panel.active === "outputs"}
-        <div class="pane-scroll">
-          {#if !plans.length && !touchedFiles.length}
-            <EmptyState
-              symbol="clipboard-list"
-              title={tr("Nog geen plannen of bestanden", "No plans or files yet")}
-              message={tr("Plannen en bestanden die de agent in deze sessie maakt verschijnen hier.", "Plans and files the agent creates in this session show up here.")}
-            />
-          {:else}
-            {#if plans.length}
-              <section class="section">
-                <div class="section-head">
-                  <span>{tr("Plannen", "Plans")}</span>
-                  <span class="count">{plans.length}</span>
-                </div>
-                {#if plans.length > 1}
-                  <div class="pill-row">
-                    {#each plans as p, idx (p.id)}
-                      <button
-                        type="button"
-                        class="pill"
-                        class:on={selectedPlan?.id === p.id}
-                        onclick={() => sidePanel.setOutput(run.id, p.id)}
-                      >
-                        {tr("Plan {n}", "Plan {n}", { n: idx + 1 })}
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-                {#if selectedPlan}
-                  <div class="plan-preview">
-                    <MarkdownBody text={selectedPlan.text} baseFolder={run.workingDirectory} {onrun} />
-                  </div>
-                {/if}
-              </section>
-            {/if}
-
-            {#if touchedFiles.length}
-              <section class="section">
-                <div class="section-head">
-                  <span>{tr("Bestanden", "Files")}</span>
-                  <span class="count">{touchedFiles.length}</span>
-                </div>
-                <div class="item-list">
-                  {#each touchedFiles as f (f.id)}
-                    {@const target = f.detail ?? f.text}
-                    <button
-                      type="button"
-                      class="list-row"
-                      title={target}
-                      onclick={() => {
-                        if (hasRepo) sidePanel.openTool(run.id, "changes", { changesFile: target });
-                        else sidePanel.openTool(run.id, "file", { filePath: target });
-                      }}
-                    >
-                      <Ico name="file-text" size={13} stroke={1.9} />
-                      <span class="mono truncate">{f.text}</span>
-                      <span class="badge">{f.tool ?? "modified"}</span>
-                    </button>
-                  {/each}
-                </div>
-              </section>
-            {/if}
-          {/if}
-        </div>
+        <OutputsPanel {outputs} selected={panel.outputId} onselect={(id) => sidePanel.setOutput(run.id, id)} folder={run.workingDirectory} live={isActive(run.status)} {onrun} />
       {:else if panel.active === "subagents"}
         <div class="pane-scroll">
           {#if !subagents.length}
@@ -493,7 +422,7 @@
           {/if}
         </div>
       {:else if panel.active === "file"}
-        <div class="file-pane">
+        <div class="file-pane" class:viewing={!!panel.filePath && !fileQuery.trim()}>
           {#if hasFolder}
             <div class="file-search">
               <Ico name="search" size={13} stroke={2} />
@@ -509,31 +438,9 @@
               {/if}
             </div>
 
-            {#if panel.filePath}
-              <div class="selected-file">
-                <div class="selected-meta">
-                  <Ico name="file-text" size={14} stroke={1.9} />
-                  <span class="mono truncate" title={panel.filePath}>{panel.filePath}</span>
-                </div>
-                <div class="selected-actions">
-                  <button type="button" class="action-chip" onclick={() => openInEditor(fullPath(panel.filePath!))}>
-                    <Ico name="external-link" size={12} stroke={2} />
-                    <span>{tr("Open in editor", "Open in editor")}</span>
-                  </button>
-                  {#if hasRepo}
-                    <button
-                      type="button"
-                      class="action-chip"
-                      onclick={() => sidePanel.openTool(run.id, "changes", { changesFile: panel.filePath })}
-                    >
-                      <Ico name="diff" size={12} stroke={2} />
-                      <span>{tr("Wijzigingen bekijken", "View changes")}</span>
-                    </button>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-
+            {#if panel.filePath && !fileQuery.trim()}
+              <FileViewer runId={run.id} path={fullPath(panel.filePath)} line={panel.fileLine ?? undefined} endLine={panel.fileEndLine ?? undefined} opened={panel.fileOpened} folder={run.workingDirectory} />
+            {:else}
             <div class="file-list">
               {#if fileLoading && !fileHits.length}
                 <span class="faint-note">{tr("Bestanden laden…", "Loading files…")}</span>
@@ -559,6 +466,9 @@
                 {/each}
               {/if}
             </div>
+            {/if}
+          {:else if panel.filePath}
+            <FileViewer runId={run.id} path={panel.filePath} line={panel.fileLine ?? undefined} endLine={panel.fileEndLine ?? undefined} opened={panel.fileOpened} />
           {:else}
             <EmptyState
               symbol="file-text"
@@ -1008,6 +918,8 @@
     min-height: 0;
     padding: var(--space-12);
   }
+  .file-pane.viewing { padding: 0; gap: 0; }
+  .file-pane.viewing .file-search { margin: var(--space-8) var(--space-12); }
   .file-search {
     display: flex;
     align-items: center;
@@ -1040,44 +952,6 @@
     color: var(--text3);
   }
   .clear-btn:hover {
-    background: var(--smoke);
-    color: var(--paper);
-  }
-  .selected-file {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
-    padding: var(--space-12);
-    border: 1px solid var(--line2);
-    border-radius: var(--radius-card);
-    background: var(--surface);
-    flex: none;
-  }
-  .selected-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-8);
-    font: var(--text-detail);
-    color: var(--paper);
-    min-width: 0;
-  }
-  .selected-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-6);
-  }
-  .action-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-6);
-    padding: var(--space-4) var(--space-8);
-    border: 1px solid var(--line2);
-    border-radius: var(--radius-control);
-    background: var(--well);
-    font: var(--text-label);
-    color: var(--text2);
-  }
-  .action-chip:hover {
     background: var(--smoke);
     color: var(--paper);
   }

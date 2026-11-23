@@ -1,22 +1,13 @@
 <script lang="ts">
-  // Settings › Coding agents (`AgentsSettingsSection` + `SkillsSettingsSection` on the Mac):
-  // Top segmented tab bar (Agents | Skills).
-  // - Agents: list-and-detail layout covering every coding agent (installed status, version & update check, CLI path,
-  //   install/update command, Antigravity ACP server setup, default model, Nook hook linking with diff preview, and
-  //   extra accounts for Claude Code & Codex).
-  // - Skills: global & per-project discovered skills across agents, scope/agent filters, inline SKILL.md preview with
-  //   script inspection, non-destructive enable/disable toggle, and direct folder opening.
+  // Settings › Coding agents (`AgentsSettingsPanel` on the Mac): every agent in one card, the agents on the left (logo,
+  // name, version, and where it stands in a dot and a word) and the one picked on the right with its own scroll: its
+  // link with Nook (each settings file a row with a switch that shows the change and makes a backup before writing),
+  // its program and update, how Nook talks to it (Antigravity's ACP server), and its accounts. Skills and Usage & costs
+  // are the page's other subjects (AgentsSkills.svelte, AgentsUsage.svelte).
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { ask } from "../../lib/confirm.svelte";
-  import {
-    agentApi,
-    agentNames,
-    type AgentKind,
-    type AgentProfile,
-    type Integration,
-    type LinkPreview,
-  } from "../../lib/agents";
+  import { agentApi, agentNames, type AgentKind, type AgentProfile, type Integration, type LinkPreview } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
   import { nook } from "../../lib/state.svelte";
   import { workspaceApi, type RunProvider, type WorkspaceSettings } from "../../lib/workspace/api";
@@ -24,46 +15,15 @@
   import DiffView from "../agents/DiffView.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import AgentMark from "../companion/ui/AgentMark.svelte";
-
-  type TopTab = "agents" | "skills";
+  import Ico from "../../components/ui/Ico.svelte";
+  import ConnectionRow from "./ConnectionRow.svelte";
+  import AgentUpdates from "../agents/AgentUpdates.svelte";
 
   interface AgentVersionInfo {
     provider: RunProvider;
     executable: string | null;
     version: string | null;
     installCommand: string;
-  }
-
-  interface SkillCatalogEntry {
-    name: string;
-    description: string;
-    path: string;
-    folder: string;
-    source: string;
-    scope: "user" | "project";
-    providers: RunProvider[];
-    enabled: boolean;
-  }
-
-  interface SkillFolderInfo {
-    path: string;
-    label: string;
-    scope: "user" | "project";
-    exists: boolean;
-    count: number;
-  }
-
-  interface SkillsCatalogView {
-    skills: SkillCatalogEntry[];
-    folders: SkillFolderInfo[];
-  }
-
-  interface SkillDocument {
-    path: string;
-    name: string;
-    description: string;
-    content: string;
-    scripts: string[];
   }
 
   interface AntigravitySetup {
@@ -89,10 +49,12 @@
     extraIntegrations: Integration[];
   }
 
+  type Tone = "linked" | "attention" | "idle";
+
   const RUNNABLE_ORDER: RunProvider[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok"];
 
-  let tab = $state<TopTab>("agents");
-  let selectedId = $state<string>("claude");
+  /** Nil until you pick one, which shows the first linked agent (as on the Mac). */
+  let selectedId = $state<string | null>(null);
 
   let integrations = $state<Integration[]>([]);
   let profiles = $state<AgentProfile[]>([]);
@@ -104,23 +66,12 @@
   let status = $state<string | null>(null);
   let error = $state<string | null>(null);
   let copiedPath = $state(false);
+  let adding = $state(false);
   let newLabel = $state<Record<string, string>>({});
   let keyInput = $state<Record<string, string>>({});
 
-  // Antigravity ACP server setup state.
   let agSetup = $state<AntigravitySetup | null>(null);
   let agProgress = $state<AntigravityProgress | null>(null);
-
-  // Skills tab state.
-  let skillProject = $state<string>("");
-  let skillAgents = $state<RunProvider[]>([]);
-  let skillQuery = $state("");
-  let skillsCatalog = $state<SkillsCatalogView | null>(null);
-  let skillsLoading = $state(false);
-  let previewPath = $state<string | null>(null);
-  let previewDoc = $state<SkillDocument | null>(null);
-  let previewLoading = $state(false);
-  let previewError = $state<string | null>(null);
 
   const local = $derived(nook.info?.capabilities.localAgents ?? false);
 
@@ -129,7 +80,7 @@
     try {
       versions = await invoke<Record<string, AgentVersionInfo>>("workspace_agent_versions");
     } catch {
-      // Command may not be wired yet in older builds.
+      // Older builds have no version command; the list then shows what the workspace found.
     } finally {
       checkingVersions = false;
     }
@@ -152,21 +103,6 @@
     loadAntigravity();
   }
 
-  async function loadSkills() {
-    if (!local) return;
-    skillsLoading = true;
-    try {
-      skillsCatalog = await invoke<SkillsCatalogView>("workspace_skills_catalog", {
-        project: skillProject || null,
-        providers: skillAgents.length > 0 ? skillAgents : null,
-      });
-    } catch (e) {
-      error = String(e);
-    } finally {
-      skillsLoading = false;
-    }
-  }
-
   $effect(() => {
     load();
     const off = listen<AntigravityProgress>("antigravity-install", (e) => {
@@ -182,114 +118,59 @@
     };
   });
 
-  $effect(() => {
-    if (tab === "skills" && local) {
-      // Re-run whenever scope or agent filter changes.
-      const _p = skillProject;
-      const _a = skillAgents.join(",");
-      void _p;
-      void _a;
-      loadSkills();
-    }
-  });
-
   const agentEntries = $derived.by<AgentEntry[]>(() => {
     const entries: AgentEntry[] = [];
-    const claimedTargets = new Set<string>();
-
+    const claimed = new Set<string>();
     for (const provider of RUNNABLE_ORDER) {
       const kind = provider as AgentKind;
-      const info = workspace.provider(provider);
-      const name = info?.name ?? agentNames[kind] ?? provider;
-      const own = integrations.filter((i) => !i.profileId && i.agent === kind);
-      const extra = integrations.filter((i) => !!i.profileId && i.agent === kind);
-      for (const i of own) claimedTargets.add(i.target);
-      entries.push({
-        id: provider,
-        name,
-        provider,
-        agentKind: kind,
-        integrations: own,
-        extraIntegrations: extra,
-      });
+      const name = workspace.provider(provider)?.name ?? agentNames[kind] ?? provider;
+      const own = integrations.filter((i) => !i.profileId && (i.agent === kind || (!i.agent && i.title === name)));
+      for (const i of own) claimed.add(i.target);
+      entries.push({ id: provider, name, provider, agentKind: kind, integrations: own, extraIntegrations: integrations.filter((i) => !!i.profileId && i.agent === kind) });
     }
-
-    // Followed-only agents (Copilot CLI, Muse Code, Amp, Hermes, etc.) from integrations without a runnable provider.
+    // The agents Nook only follows through their settings file (Copilot CLI, Muse Code, Amp, Hermes, …).
     for (const i of integrations) {
-      if (i.profileId || claimedTargets.has(i.target)) continue;
-      entries.push({
-        id: `follow:${i.target}`,
-        name: i.title,
-        provider: null,
-        agentKind: i.agent,
-        integrations: [i],
-        extraIntegrations: [],
-      });
+      if (i.profileId || claimed.has(i.target)) continue;
+      entries.push({ id: `follow:${i.target}`, name: i.title, provider: null, agentKind: i.agent, integrations: [i], extraIntegrations: [] });
     }
-
     return entries;
   });
 
-  const selectedEntry = $derived(agentEntries.find((e) => e.id === selectedId) ?? agentEntries[0] ?? null);
+  const isLinked = (i: Integration) => i.state.kind === "installed" || i.state.kind === "outdated";
+
+  const selectedEntry = $derived(
+    agentEntries.find((e) => e.id === selectedId) ?? agentEntries.find((e) => e.integrations.some(isLinked)) ?? agentEntries[0] ?? null,
+  );
 
   function linkWord(i: Integration): string {
     switch (i.state.kind) {
-      case "installed":
-        return tr("Gekoppeld", "Linked");
-      case "outdated":
-        return tr("Verouderd", "Outdated");
-      case "unreadable":
-        return tr("Instellingen niet leesbaar", "Can't read its settings");
-      default:
-        return tr("Niet gekoppeld", "Not linked");
+      case "installed": return tr("Gekoppeld", "Linked");
+      case "outdated": return tr("Verouderd", "Outdated");
+      case "unreadable": return tr("Instellingen niet leesbaar", "Can't read its settings");
+      default: return tr("Niet gekoppeld", "Not linked");
     }
   }
 
-  function stateText(i: Integration): string {
-    switch (i.state.kind) {
-      case "installed":
-        return tr("klaar · {path}", "ready · {path}", { path: i.path });
-      case "outdated":
-        return tr(
-          "Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de balk",
-          "Linked with an older version: update for permissions and questions in the bar",
-        );
-      case "unreadable":
-        return i.state.detail;
-      default:
-        return i.detail;
-    }
+  function entryExecutable(entry: AgentEntry): string | null {
+    if (!entry.provider) return null;
+    return versions[entry.provider]?.executable ?? workspace.provider(entry.provider)?.executable ?? null;
   }
 
-  function entryStanding(entry: AgentEntry): { tone: "installed" | "outdated" | "unreadable" | "idle"; label: string } {
-    const primary = entry.integrations[0];
-    if (primary) {
-      if (primary.state.kind === "installed") return { tone: "installed", label: tr("Gekoppeld", "Linked") };
-      if (primary.state.kind === "outdated") return { tone: "outdated", label: tr("Verouderd", "Outdated") };
-      if (primary.state.kind === "unreadable") return { tone: "unreadable", label: tr("Onleesbaar", "Unreadable") };
-    }
-    if (entry.provider) {
-      const ver = versions[entry.provider];
-      const prov = workspace.provider(entry.provider);
-      if (ver?.executable || prov?.executable) {
-        return { tone: "installed", label: tr("Geïnstalleerd", "Installed") };
-      }
-      return { tone: "idle", label: tr("Niet geïnstalleerd", "Not installed") };
+  /** Where the agent stands, in a word and a color: a link to renew, linked, found on this computer, or not yet. */
+  function standing(entry: AgentEntry): { tone: Tone; label: string } {
+    if (entry.integrations.some((i) => i.state.kind === "outdated")) return { tone: "attention", label: tr("Verouderd", "Outdated") };
+    if (entry.integrations.some((i) => i.state.kind === "installed")) return { tone: "linked", label: tr("Gekoppeld", "Linked") };
+    if (entry.integrations.length === 0 && entry.provider) {
+      return entryExecutable(entry)
+        ? { tone: "linked", label: tr("Geïnstalleerd", "Installed") }
+        : { tone: "idle", label: tr("Niet gevonden op deze computer", "Not found on this computer") };
     }
     return { tone: "idle", label: tr("Niet gekoppeld", "Not linked") };
   }
 
   function entryVersion(entry: AgentEntry): string | null {
     if (!entry.provider) return null;
-    if (entry.provider === "antigravity" && agSetup?.installed && agSetup.version) {
-      return agSetup.version;
-    }
     return versions[entry.provider]?.version ?? null;
-  }
-
-  function entryExecutable(entry: AgentEntry): string | null {
-    if (!entry.provider) return null;
-    return versions[entry.provider]?.executable ?? workspace.provider(entry.provider)?.executable ?? null;
   }
 
   function entryInstallCommand(entry: AgentEntry): string {
@@ -349,7 +230,7 @@
       copiedPath = true;
       setTimeout(() => (copiedPath = false), 1500);
     } catch {
-      // Clipboard unavailable.
+      // No clipboard: the path stays selectable.
     }
   }
 
@@ -373,6 +254,11 @@
   }
 
   async function uninstallAntigravity() {
+    if (!(await ask({
+      question: tr("“{title}” verwijderen?", "Remove “{title}”?", { title: "Antigravity" }),
+      detail: tr("Nook verwijdert de gedownloade server. Antigravity-sessies starten pas weer als je hem opnieuw downloadt; je accounts en de koppeling blijven.", "Nook deletes the downloaded server. Antigravity sessions can't start until you download it again; your accounts and its link stay."),
+      confirmTitle: tr("Verwijderen", "Remove"),
+    }))) return;
     error = null;
     try {
       await invoke("antigravity_uninstall");
@@ -388,6 +274,7 @@
     try {
       await agentApi.addProfile(kind, newLabel[kind] ?? "");
       newLabel[kind] = "";
+      adding = false;
     } catch (e) {
       error = String(e);
     }
@@ -395,19 +282,11 @@
   }
 
   async function removeProfile(p: AgentProfile) {
-    if (
-      !(await ask({
-        question: tr("{title} uit Nook halen?", "Remove {title} from Nook?", { title: p.title }),
-        detail: tr(
-          "De map {folder} en de inlog blijven op je computer staan.",
-          "The folder {folder} and the login stay on your computer.",
-          { folder: p.displayHome },
-        ),
-        confirmTitle: tr("Haal weg", "Remove"),
-      }))
-    ) {
-      return;
-    }
+    if (!(await ask({
+      question: tr("{title} uit Nook halen?", "Remove {title} from Nook?", { title: p.title }),
+      detail: tr("De map {folder} en de inlog blijven op je computer staan.", "The folder {folder} and the login stay on your computer.", { folder: p.displayHome }),
+      confirmTitle: tr("Haal weg", "Remove"),
+    }))) return;
     try {
       await agentApi.removeProfile(p.id);
     } catch (e) {
@@ -422,107 +301,25 @@
     load();
   }
 
-  function account(p: AgentProfile): string {
+  function account(p: AgentProfile): string | null {
     const a = agents.history?.accounts[p.id];
-    if (!a) return tr("niet ingelogd", "not signed in");
+    if (!a) return null;
     return [a.name, a.organization, a.plan].filter(Boolean).join(" · ");
   }
 
-  // Skills helpers
-  const knownProjects = $derived.by<string[]>(() => {
-    const set = new Set<string>();
-    for (const p of wsSettings?.favoriteProjects ?? []) if (p) set.add(p);
-    for (const p of wsSettings?.recentProjects ?? []) if (p) set.add(p);
-    return [...set];
-  });
-
-  const filteredSkills = $derived.by<SkillCatalogEntry[]>(() => {
-    const list = skillsCatalog?.skills ?? [];
-    const q = skillQuery.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.source.toLowerCase().includes(q),
-    );
-  });
-
-  function toggleSkillAgent(p: RunProvider) {
-    if (skillAgents.includes(p)) {
-      skillAgents = skillAgents.filter((x) => x !== p);
-    } else {
-      skillAgents = [...skillAgents, p];
-    }
-  }
-
-  async function toggleSkillEnabled(skill: SkillCatalogEntry, enabled: boolean) {
-    error = null;
-    try {
-      await invoke<boolean>("workspace_toggle_skill", { path: skill.path, enabled });
-      if (skillsCatalog) {
-        skillsCatalog = {
-          ...skillsCatalog,
-          skills: skillsCatalog.skills.map((s) => (s.path === skill.path ? { ...s, enabled } : s)),
-        };
-      }
-    } catch (e) {
-      error = String(e);
-    }
-  }
-
-  async function inspectSkill(skill: SkillCatalogEntry) {
-    if (previewPath === skill.path) {
-      previewPath = null;
-      previewDoc = null;
-      previewError = null;
-      return;
-    }
-    previewPath = skill.path;
-    previewDoc = null;
-    previewError = null;
-    previewLoading = true;
-    try {
-      previewDoc = await invoke<SkillDocument>("workspace_read_skill", { path: skill.path });
-    } catch (e) {
-      previewError = String(e);
-    } finally {
-      previewLoading = false;
-    }
-  }
-
-  async function openSkillsFolder(path: string) {
-    error = null;
-    try {
-      await invoke("workspace_open_skills_folder", { path });
-    } catch (e) {
-      error = String(e);
-    }
-  }
-
-  function folderBasename(path: string): string {
-    const clean = path.replace(/[\\/]+$/, "");
-    const idx = Math.max(clean.lastIndexOf("/"), clean.lastIndexOf("\\"));
-    return idx >= 0 ? clean.slice(idx + 1) : clean;
-  }
-
-  function onTabKeys(e: KeyboardEvent) {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    tab = tab === "agents" ? "skills" : "agents";
-    (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-tab="${tab}"]`)?.focus();
+  function profileName(p: AgentProfile): string {
+    return p.label || (p.home ? p.title : tr("Hoofdaccount", "Main account"));
   }
 
   const agWorking = $derived(!!agProgress && agProgress.phase !== "done" && agProgress.phase !== "failed");
-  const agPhaseText = $derived(
-    agProgress?.phase === "verifying"
-      ? tr("Controleren…", "Verifying…")
-      : agProgress?.phase === "unpacking"
-        ? tr("Uitpakken…", "Unpacking…")
-        : agProgress?.phase === "checking"
-          ? tr("Proefstart…", "Test start…")
-          : "",
-  );
+  const agStatus = $derived.by(() => {
+    if (agProgress?.phase === "downloading" && agWorking) return tr("Downloaden ({n}%)", "Downloading ({n}%)", { n: Math.round(agProgress.fraction * 100) });
+    if (agProgress?.phase === "verifying") return tr("Controleren…", "Verifying…");
+    if (agProgress?.phase === "unpacking") return tr("Uitpakken…", "Unpacking…");
+    if (agProgress?.phase === "checking") return tr("Proefstart…", "Test start…");
+    if (agProgress?.phase === "failed") return tr("Installeren mislukt", "Install failed");
+    return agSetup?.installed ? tr("Geïnstalleerd", "Installed") : tr("Niet geïnstalleerd", "Not installed");
+  });
 </script>
 
 {#if !local}
@@ -533,105 +330,73 @@
     )}
   </p>
 {:else}
-  <div class="sub-tabs" role="tablist" tabindex="-1" aria-label={tr("Coding-agents en skills", "Coding agents and skills")} onkeydown={onTabKeys}>
-    <button
-      role="tab"
-      data-tab="agents"
-      class:on={tab === "agents"}
-      aria-selected={tab === "agents"}
-      tabindex={tab === "agents" ? 0 : -1}
-      onclick={() => (tab = "agents")}
-    >
-      {tr("Agents", "Agents")}
-    </button>
-    <button
-      role="tab"
-      data-tab="skills"
-      class:on={tab === "skills"}
-      aria-selected={tab === "skills"}
-      tabindex={tab === "skills" ? 0 : -1}
-      onclick={() => (tab = "skills")}
-    >
-      {tr("Skills", "Skills")}
-    </button>
-  </div>
-
   {#if status}<p class="ok note">{status}</p>{/if}
   {#if error}<p class="err">{error}</p>{/if}
 
-  {#if tab === "agents"}
-    <div class="split">
-      <div class="agent-list" role="listbox" aria-label={tr("Je agents", "Your agents")}>
-        {#each agentEntries as entry (entry.id)}
-          {@const standing = entryStanding(entry)}
-          {@const ver = entryVersion(entry)}
-          <button
-            type="button"
-            role="option"
-            class="list-item"
-            class:selected={selectedEntry?.id === entry.id}
-            aria-selected={selectedEntry?.id === entry.id}
-            onclick={() => (selectedId = entry.id)}
-          >
-            <span class="mark"><AgentMark agent={entry.name} size={22} /></span>
-            <span class="item-body">
-              <span class="item-head">
-                <span class="item-name">{entry.name}</span>
-                {#if ver}<span class="ver">{ver}</span>{/if}
-              </span>
-              <span class="status {standing.tone}"><span class="dot"></span>{standing.label}</span>
-            </span>
-          </button>
-        {/each}
-      </div>
+  <h3>{tr("Je agents", "Your agents")}</h3>
+  <p class="section-info">{tr("Koppelen zet de hooks van Nook in de eigen instellingen van een agent, zodat zijn voortgang en vragen in Nook verschijnen. De schakelaar koppelt of ontkoppelt; je ziet de wijziging voordat er iets wordt geschreven.", "Linking adds Nook's hooks to an agent's own settings, so its progress and questions show in Nook. The switch links or unlinks it; you see the change before anything is written.")}</p>
 
-      {#if selectedEntry}
-        {@const standing = entryStanding(selectedEntry)}
-        {@const ver = entryVersion(selectedEntry)}
-        {@const exe = entryExecutable(selectedEntry)}
-        {@const installCmd = entryInstallCommand(selectedEntry)}
-        <div class="agent-detail">
+  <div class="panel">
+    <div class="agent-list" role="listbox" aria-label={tr("Je agents", "Your agents")}>
+      {#each agentEntries as entry (entry.id)}
+        {@const place = standing(entry)}
+        {@const ver = entryVersion(entry)}
+        <button type="button" role="option" class="list-item" class:selected={selectedEntry?.id === entry.id} aria-selected={selectedEntry?.id === entry.id} onclick={() => (selectedId = entry.id)}>
+          <span class="mark"><AgentMark agent={entry.name} size={24} /></span>
+          <span class="item-body">
+            <span class="item-head">
+              <span class="item-name">{entry.name}</span>
+              {#if ver}<span class="ver">{ver}</span>{/if}
+            </span>
+            <span class="place {place.tone}"><span class="dot"></span>{place.label}</span>
+          </span>
+        </button>
+      {/each}
+    </div>
+
+    {#if selectedEntry}
+      {@const entry = selectedEntry}
+      {@const place = standing(entry)}
+      {@const ver = entryVersion(entry)}
+      {@const exe = entryExecutable(entry)}
+      {@const installCmd = entryInstallCommand(entry)}
+      <div class="agent-detail">
+        {#key entry.id}
           <div class="detail-head">
-            <span class="mark"><AgentMark agent={selectedEntry.name} size={32} /></span>
-            <div class="info">
-              <div class="detail-title">
-                <span>{selectedEntry.name}</span>
-                {#if ver}<span class="badge ver-badge">{ver}</span>{/if}
-              </div>
-              <span class="status {standing.tone}"><span class="dot"></span>{standing.label}</span>
-            </div>
+            <span class="mark"><AgentMark agent={entry.name} size={32} /></span>
+            <span class="head-text">
+              <span class="detail-title">{entry.name}</span>
+              <span class="place {place.tone}"><span class="dot"></span>{place.label}</span>
+            </span>
+            {#if ver}<span class="head-ver">{ver}</span>{/if}
           </div>
 
-          {#if selectedEntry.integrations.length > 0}
-            <h4>{tr("Koppeling met Nook", "Link with Nook")}</h4>
+          {#if entry.integrations.length > 0}
+            <h3>{tr("Koppelen met Nook", "Link with Nook")}</h3>
+            <p class="section-info">{tr("Nook zet zijn hooks in de eigen instellingen van de agent, zodat voortgang en vragen bij Nook komen. De schakelaar koppelt of ontkoppelt; je ziet de wijziging eerst.", "Nook adds its hooks to the agent’s own settings, so its progress and questions reach Nook. The switch links or unlinks it; you see the change first.")}</p>
             <div class="group">
-              {#each selectedEntry.integrations as i (i.target)}
-                {@const linked = i.state.kind === "installed" || i.state.kind === "outdated"}
-                <div class="row">
-                  <div class="info">
-                    <div class="name">{i.title}</div>
-                    <div class="faint small">{stateText(i)}</div>
-                    <span class="status {i.state.kind}"><span class="dot"></span>{linkWord(i)}</span>
-                  </div>
-                  <div class="inline">
+              {#each entry.integrations as i (i.target)}
+                <ConnectionRow
+                  title={i.title}
+                  status={i.state.kind === "unreadable" ? `${linkWord(i)} · ${i.state.detail}` : isLinked(i) ? `${linkWord(i)} · ${i.path}` : linkWord(i)}
+                  attention={i.state.kind === "outdated" ? "amber" : i.state.kind === "unreadable" ? "coral" : null}
+                  on={i.state.kind === "unreadable" ? null : isLinked(i)}
+                  onToggle={(on) => prepare(i, on)}
+                  menu={i.state.kind === "outdated" ? [{ label: tr("Koppeling bijwerken…", "Update link…"), onselect: () => prepare(i, true) }] : []}
+                >
+                  {#snippet icon()}<AgentMark agent={i.title} size={22} />{/snippet}
+                  {#snippet expanded()}
+                    {#if i.detail}<p class="text">{i.detail}</p>{/if}
+                    <div class="kv"><span>{tr("Instellingenbestand", "Settings file")}</span><span class="mono">{i.path}</span></div>
                     {#if i.state.kind === "outdated"}
-                      <button class="small" onclick={() => prepare(i, true)}>{tr("Koppeling bijwerken…", "Update link…")}</button>
+                      <p class="warn">{tr("Gekoppeld met een oudere versie: werk bij voor toestemming en vragen in de balk", "Linked with an older version: update for permissions and questions in the bar")}</p>
+                      <div><button class="small" onclick={() => prepare(i, true)}>{tr("Koppeling bijwerken…", "Update link…")}</button></div>
+                    {:else if i.state.kind === "unreadable"}
+                      <p class="err">{i.state.detail}</p>
                     {/if}
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      aria-label={i.title}
-                      title={stateText(i)}
-                      checked={linked}
-                      disabled={i.state.kind === "unreadable"}
-                      onchange={(e) => {
-                        const on = e.currentTarget.checked;
-                        e.currentTarget.checked = linked;
-                        prepare(i, on);
-                      }}
-                    />
-                  </div>
-                </div>
+                    <p class="text">{tr("Koppelen of ontkoppelen laat eerst precies zien wat er in dit bestand verandert, en bewaart er een reservekopie van.", "Linking or unlinking first shows the exact change to this file, and keeps a backup of it.")}</p>
+                  {/snippet}
+                </ConnectionRow>
               {/each}
             </div>
             <p class="note">
@@ -642,199 +407,150 @@
             </p>
           {/if}
 
-          {#if selectedEntry.provider}
-            {@const provider = selectedEntry.provider}
-            <h4>{tr("Programma en updates", "Program & updates")}</h4>
+          {#if entry.provider === "antigravity" && agSetup?.supported}
+            <h3>{tr("Hoe Nook ermee praat", "How Nook talks to it")}</h3>
             <div class="group">
-              <div class="row">
-                <div class="info">
-                  <div class="name">{tr("Status en versie", "Status and version")}</div>
-                  <div class="faint small">
-                    {#if exe}
-                      {ver
-                        ? tr("Geïnstalleerd · versie {version}", "Installed · version {version}", { version: ver })
-                        : tr("Geïnstalleerd", "Installed")}
-                    {:else}
-                      {tr("Niet gevonden op deze computer", "Not found on this computer")}
-                    {/if}
-                  </div>
-                </div>
-                <button class="small" disabled={checkingVersions} onclick={checkUpdates}>
-                  {checkingVersions ? tr("Controleren…", "Checking…") : tr("Zoek naar updates", "Check for updates")}
-                </button>
-              </div>
-
-              {#if exe}
-                <div class="row">
-                  <div class="info">
-                    <div class="name">{tr("CLI-pad", "CLI path")}</div>
-                    <div class="path">{exe}</div>
-                  </div>
-                  <div class="inline">
-                    <button class="small" onclick={() => copyCliPath(exe)}>
-                      {copiedPath ? tr("Gekopieerd", "Copied") : tr("Kopiëren", "Copy")}
-                    </button>
-                    <button class="small" onclick={() => revealPath(exe)}>
-                      {tr("Map openen", "Open folder")}
-                    </button>
-                  </div>
-                </div>
-              {/if}
-
-              {#if installCmd}
-                <div class="row">
-                  <div class="info">
-                    <div class="name">{exe ? tr("Bijwerken", "Update") : tr("Installeren", "Install")}</div>
-                    <div class="path">{installCmd}</div>
-                  </div>
-                  <button class="small" onclick={() => agentApi.runInTerminal(installCmd)}>
-                    {tr("Draai in terminal", "Run in terminal")}
-                  </button>
-                </div>
-              {/if}
-
-              {#if provider === "antigravity" && agSetup?.supported}
-                <div class="row">
-                  <div class="info">
-                    <div class="name">{tr("Antigravity ACP-server", "Antigravity ACP server")}</div>
-                    <div class="faint small">
-                      {#if agSetup.installed}
-                        {tr("ACP-server {version} geïnstalleerd", "ACP server {version} installed", { version: agSetup.version })}
-                      {:else}
-                        {tr(
-                          "Antigravity draait in Nook op Google's eigen ACP-server. Eenmalig installeren ({size} download).",
-                          "Antigravity runs in Nook on Google's own ACP server. Install it once ({size} download).",
-                          { size: `${Math.round(agSetup.downloadBytes / 1_000_000)} MB` },
-                        )}
-                      {/if}
-                    </div>
-                    {#if agProgress?.phase === "failed" && agProgress.error}
-                      <div class="err">{agProgress.error}</div>
-                    {/if}
-                  </div>
-                  <div class="inline">
-                    {#if agWorking && agProgress?.phase === "downloading"}
-                      <progress max="1" value={agProgress.fraction}></progress>
-                      <span class="faint small">{Math.round(agProgress.fraction * 100)}%</span>
-                    {:else if agWorking}
-                      <span class="faint small">{agPhaseText}</span>
-                    {:else if agSetup.installed}
-                      <button class="ghost danger small" onclick={uninstallAntigravity}>{tr("Verwijderen", "Remove")}</button>
-                    {:else}
-                      <button class="small" onclick={installAntigravity}>{tr("Installeren", "Install")}</button>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
-
-              {#if wsSettings}
-                <label class="row">
-                  <div class="info">
-                    <div class="name">{tr("Standaardmodel", "Default model")}</div>
-                    <div class="faint small">
-                      {tr(
-                        "Leeg laat de agent zijn eigen standaardmodel kiezen.",
-                        "Leave empty to let the agent pick its own default model.",
-                      )}
-                    </div>
-                  </div>
-                  <input
-                    class="model-input"
-                    placeholder={tr("standaard", "default")}
-                    value={wsSettings.defaultModels[provider] ?? ""}
-                    onchange={(e) => saveDefaultModel(provider, e.currentTarget.value)}
-                  />
-                </label>
-              {/if}
+              <ConnectionRow
+                title={tr("ACP-server van Antigravity", "Antigravity ACP server")}
+                version={agSetup.installed ? agSetup.version : null}
+                status={agStatus + (agProgress?.phase === "failed" && agProgress.error ? ` · ${agProgress.error}` : !agSetup.installed && !agWorking ? ` · ${Math.round(agSetup.downloadBytes / 1_000_000)} MB` : "")}
+                attention={agProgress?.phase === "failed" ? "coral" : null}
+                menu={!agSetup.installed && !agWorking ? [{ label: tr("Installeren", "Install"), icon: "download", onselect: installAntigravity }] : []}
+                danger={agSetup.installed && !agWorking ? [{ label: tr("Verwijderen…", "Remove…"), icon: "trash-2", onselect: uninstallAntigravity }] : []}
+              >
+                {#snippet icon()}<AgentMark agent="Antigravity" size={22} />{/snippet}
+                {#snippet expanded()}
+                  <p class="text">
+                    {tr(
+                      "Antigravity draait in Nook op Google's eigen ACP-server. Eenmalig installeren ({size} download).",
+                      "Antigravity runs in Nook on Google's own ACP server. Install it once ({size} download).",
+                      { size: `${Math.round(agSetup!.downloadBytes / 1_000_000)} MB` },
+                    )}
+                  </p>
+                  {#if agWorking && agProgress?.phase === "downloading"}
+                    <progress max="1" value={agProgress.fraction}></progress>
+                  {:else if !agSetup!.installed && !agWorking}
+                    <div><button class="small" onclick={installAntigravity}>{tr("Installeren", "Install")}</button></div>
+                  {/if}
+                {/snippet}
+              </ConnectionRow>
             </div>
-          {:else}
-            <p class="note">
-              {tr(
-                "Nook volgt sessies van deze agent via zijn koppeling; je start de agent zelf in een terminal of editor.",
-                "Nook follows sessions of this agent through its link; you start the agent yourself in a terminal or editor.",
-              )}
-            </p>
           {/if}
 
-          {#if selectedEntry.agentKind === "claude" || selectedEntry.agentKind === "codex"}
-            {@const kind = selectedEntry.agentKind}
-            <h4>{tr("Accounts", "Accounts")}</h4>
+          {#if !entry.provider}
+            <p class="note follow">{tr("Nook volgt {name} via zijn instellingenbestand: je ziet voortgang en vragen in Nook, terwijl sessies in de eigen app starten.", "Nook follows {name} through its settings file: you see its progress and questions in Nook, while its sessions start in its own app.", { name: entry.name })}</p>
+          {:else}
+            {@const provider = entry.provider}
+            <h3>{tr("Updates", "Updates")}</h3>
+            <p class="section-info">{tr("Het programma van elke agent en de versie. Bijwerken draait zijn installatieopdracht in een terminal; lopende sessies houden de versie waarmee ze begonnen.", "Each agent's program and its version. Update runs its install command in a terminal; running sessions keep the version they started with.")}</p>
             <div class="group">
-              {#each profiles.filter((p) => p.kind === kind) as p (p.id)}
-                <div class="row">
-                  <div class="info">
-                    <div class="name">
-                      {p.label || (p.home ? p.title : tr("Hoofdaccount", "Main account"))}
-                      {#if p.preferred}<span class="badge">{tr("standaard", "default")}</span>{/if}
+              <ConnectionRow
+                title={entry.name}
+                version={ver}
+                status={exe ? tr("Geïnstalleerd", "Installed") : tr("Niet gevonden op deze computer", "Not found on this computer")}
+                menu={[
+                  ...(installCmd ? [{ label: exe ? tr("Bijwerken", "Update") : tr("Installeren", "Install"), icon: "download", onselect: () => agentApi.runInTerminal(installCmd) }] : []),
+                  { label: checkingVersions ? tr("Controleren…", "Checking…") : tr("Zoek naar updates", "Check for updates"), icon: "refresh-cw", disabled: checkingVersions, onselect: checkUpdates },
+                ]}
+              >
+                {#snippet icon()}<AgentMark agent={entry.name} size={22} />{/snippet}
+                {#snippet expanded()}
+                  {#if exe}
+                    <div class="field">
+                      <span class="field-title">{tr("CLI-pad", "CLI path")}</span>
+                      <span class="mono">{exe}</span>
+                      <span class="inline">
+                        <button class="small" onclick={() => copyCliPath(exe)}>{copiedPath ? tr("Gekopieerd", "Copied") : tr("Kopiëren", "Copy")}</button>
+                        <button class="small" onclick={() => revealPath(exe)}>{tr("Map openen", "Open folder")}</button>
+                      </span>
                     </div>
-                    <div class="faint small">{account(p)} · {p.displayHome}</div>
-                    {#if kind === "claude" && p.auth === "apiKey"}
-                      <div class="inline key">
-                        <input
-                          type="password"
-                          placeholder={p.hasKey ? tr("Sleutel staat in de kluis", "Key is in the keychain") : "sk-ant-…"}
-                          bind:value={keyInput[p.id]}
-                        />
-                        <button onclick={() => saveKey(p)}>
-                          {keyInput[p.id] ? tr("Bewaar", "Save") : p.hasKey ? tr("Wis", "Clear") : tr("Bewaar", "Save")}
-                        </button>
-                      </div>
-                    {/if}
-                  </div>
-                  <div class="inline">
-                    {#if !p.preferred}
-                      <button class="ghost" onclick={() => agentApi.preferProfile(p.id).then(load)}>
-                        {tr("Maak standaard", "Make default")}
-                      </button>
-                    {/if}
-                    {#if kind === "claude"}
-                      <select
-                        value={p.auth ?? "cli"}
-                        onchange={(e) => agentApi.setProfileAuth(p.id, e.currentTarget.value as "cli" | "apiKey").then(load)}
-                      >
-                        <option value="cli">{tr("Abonnement (inloggen)", "Subscription (sign in)")}</option>
-                        <option value="apiKey">{tr("API-sleutel", "API key")}</option>
-                      </select>
-                    {/if}
-                    <button
-                      class="ghost"
-                      title={tr("Inloggen in een terminal", "Sign in in a terminal")}
-                      onclick={() => agentApi.runInTerminal(p.loginCommand)}
-                    >
-                      {tr("Log in…", "Sign in…")}
-                    </button>
-                    {#if p.home}
-                      <button class="ghost danger" onclick={() => removeProfile(p)}>{tr("Haal weg", "Remove")}</button>
-                    {/if}
-                  </div>
+                  {/if}
+                  {#if installCmd}
+                    <div class="field">
+                      <span class="field-title">{exe ? tr("Bijwerken", "Update") : tr("Installeren", "Install")}</span>
+                      <span class="mono">{installCmd}</span>
+                      <span class="inline"><button class="small" onclick={() => agentApi.runInTerminal(installCmd)}>{tr("Draai in terminal", "Run in terminal")}</button></span>
+                    </div>
+                  {/if}
+                  {#if wsSettings}
+                    <label class="field">
+                      <span class="field-title">{tr("Standaardmodel", "Default model")}</span>
+                      <input class="model-input" placeholder={tr("standaard", "default")} value={wsSettings.defaultModels[provider] ?? ""} onchange={(e) => saveDefaultModel(provider, e.currentTarget.value)} />
+                      <span class="text">{tr("Leeg laat de agent zijn eigen standaardmodel kiezen.", "Leave empty to let the agent pick its own default model.")}</span>
+                    </label>
+                  {/if}
+                {/snippet}
+              </ConnectionRow>
+            </div>
+          {/if}
+
+          {#if entry.agentKind === "claude" || entry.agentKind === "codex" || entry.agentKind === "gemini"}
+            {@const kind = entry.agentKind}
+            <div class="section-head">
+              <h3>{tr("Accounts", "Accounts")}</h3>
+              <button type="button" class="head-action" onclick={() => (adding = !adding)}><Ico name="plus" size={14} />{tr("Account toevoegen", "Add account")}</button>
+            </div>
+            <div class="group">
+              {#if adding}
+                <div class="row add-row">
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input autofocus placeholder={tr("Naam van een extra account, bijvoorbeeld Werk", "Name of an extra account, for example Work")} bind:value={newLabel[kind]} onkeydown={(e) => e.key === "Enter" && addProfile(kind)} />
+                  <button class="primary" onclick={() => addProfile(kind)}>{tr("Voeg account toe", "Add account")}</button>
                 </div>
-              {/each}
-
-              {#if selectedEntry.extraIntegrations.length > 0}
-                {#each selectedEntry.extraIntegrations as i (i.target + i.profileId)}
-                  <div class="row">
-                    <div class="info">
-                      <div class="name">{i.title}</div>
-                      <div class="faint small">{stateText(i)}</div>
-                    </div>
-                    {#if i.state.kind === "installed"}
-                      <button class="small" onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
-                    {:else if i.state.kind !== "unreadable"}
-                      <button class="small" onclick={() => prepare(i, true)}>
-                        {i.state.kind === "outdated" ? tr("Werk bij…", "Update…") : tr("Koppel…", "Link…")}
-                      </button>
-                    {/if}
-                  </div>
-                {/each}
               {/if}
-
-              <div class="row">
-                <input
-                  placeholder={tr("Naam van een extra account, bijvoorbeeld Werk", "Name of an extra account, for example Work")}
-                  bind:value={newLabel[kind]}
-                />
-                <button onclick={() => addProfile(kind)}>{tr("Voeg account toe", "Add account")}</button>
-              </div>
+              {#each profiles.filter((p) => p.kind === kind) as p (p.id)}
+                {@const acc = account(p)}
+                {@const links = entry.extraIntegrations.filter((i) => i.profileId === p.id)}
+                <ConnectionRow
+                  title={profileName(p)}
+                  status={[p.preferred ? tr("Standaard", "Default") : null, acc ?? (kind === "gemini" ? null : tr("Nog niet ingelogd", "Not yet logged in"))].filter(Boolean).join(" · ")}
+                  attention={acc || kind === "gemini" ? null : "amber"}
+                  menu={[
+                    { label: tr("Log in…", "Sign in…"), icon: "terminal", onselect: () => agentApi.runInTerminal(p.loginCommand) },
+                    ...(p.preferred ? [] : [{ label: tr("Maak standaard", "Make default"), icon: "star", onselect: () => agentApi.preferProfile(p.id).then(load) }]),
+                  ]}
+                  danger={p.home ? [{ label: tr("Account uit Nook halen…", "Remove account from Nook…"), icon: "trash-2", onselect: () => removeProfile(p) }] : []}
+                >
+                  {#snippet icon()}<AgentMark agent={entry.name} size={22} />{/snippet}
+                  {#snippet expanded()}
+                    {#if p.displayHome}<div class="kv"><span>{tr("Map", "Folder")}</span><span class="mono">{p.displayHome}</span></div>{/if}
+                    {#if kind === "claude"}
+                      <div class="kv">
+                        <span>{tr("Methode", "Method")}</span>
+                        <select value={p.auth ?? "cli"} onchange={(e) => agentApi.setProfileAuth(p.id, e.currentTarget.value as "cli" | "apiKey").then(load)}>
+                          <option value="cli">{tr("Abonnement (inloggen)", "Subscription (sign in)")}</option>
+                          <option value="apiKey">{tr("API-sleutel", "API key")}</option>
+                        </select>
+                      </div>
+                      {#if p.auth === "apiKey"}
+                        <div class="inline key">
+                          <input type="password" placeholder={p.hasKey ? tr("Sleutel staat in de kluis", "Key is in the keychain") : "sk-ant-…"} bind:value={keyInput[p.id]} />
+                          <button class="small" onclick={() => saveKey(p)}>{keyInput[p.id] ? tr("Bewaar", "Save") : p.hasKey ? tr("Wis", "Clear") : tr("Bewaar", "Save")}</button>
+                        </div>
+                      {/if}
+                    {/if}
+                    {#each links as i (i.target + i.profileId)}
+                      <div class="kv">
+                        <span class="link-text"><span>{i.title}</span><span class="text">{linkWord(i)}{isLinked(i) ? ` · ${i.path}` : ""}</span></span>
+                        {#if i.state.kind === "installed"}
+                          <button class="small" onclick={() => prepare(i, false)}>{tr("Ontkoppel…", "Unlink…")}</button>
+                        {:else if i.state.kind !== "unreadable"}
+                          <button class="small" onclick={() => prepare(i, true)}>{i.state.kind === "outdated" ? tr("Werk bij…", "Update…") : tr("Koppel…", "Link…")}</button>
+                        {/if}
+                      </div>
+                    {/each}
+                    <div class="inline">
+                      <button class="small" onclick={() => agentApi.runInTerminal(p.loginCommand)}>{tr("Log in…", "Sign in…")}</button>
+                      {#if !p.preferred}<button class="small" onclick={() => agentApi.preferProfile(p.id).then(load)}>{tr("Maak standaard", "Make default")}</button>{/if}
+                    </div>
+                  {/snippet}
+                </ConnectionRow>
+              {/each}
+              {#each entry.extraIntegrations.filter((i) => !profiles.some((p) => p.id === i.profileId)) as i (i.target + i.profileId)}
+                <ConnectionRow title={i.title} status={linkWord(i)} on={i.state.kind === "unreadable" ? null : isLinked(i)} onToggle={(on) => prepare(i, on)}>
+                  {#snippet icon()}<AgentMark agent={entry.name} size={22} />{/snippet}
+                </ConnectionRow>
+              {/each}
             </div>
             <p class="faint note">
               {tr(
@@ -843,176 +559,12 @@
               )}
             </p>
           {/if}
-        </div>
-      {/if}
-    </div>
-  {:else}
-    <!-- Skills tab (`SkillsSettingsSection` on the Mac) -->
-    <h3>{tr("Waar skills komen", "Where skills go")}</h3>
-    <p class="section-info">
-      {tr(
-        "Een skill is een map met een SKILL.md die een agent vertelt hoe iets moet. Nook zet hem in de map die elke agent leest: voor jezelf krijgt elk project hem; voor één project komt hij in dat project en gaat hij mee in de commits.",
-        "A skill is a folder with a SKILL.md that tells an agent how to do something. Nook puts it in the folder each agent reads: for yourself, every project gets it; for one project, it goes in that project and is committed with it.",
-      )}
-    </p>
-    <div class="group">
-      <label class="row">
-        <span>
-          {tr("Bereik", "Scope")}<br />
-          <small>
-            {skillProject
-              ? tr("In de map van dit project; hij gaat mee in de commits", "In this project's folder; it is committed with the project")
-              : tr("In je eigen skill-mappen, voor elk project", "In your own skills folders, for every project")}
-          </small>
-        </span>
-        <select bind:value={skillProject}>
-          <option value="">{tr("Jezelf (elk project)", "Yourself (every project)")}</option>
-          {#each knownProjects as project (project)}
-            <option value={project}>{folderBasename(project)} ({project})</option>
-          {/each}
-        </select>
-      </label>
-
-      <div class="row stacked-row">
-        <span>
-          {tr("Agents", "Agents")}<br />
-          <small>{tr("Agents die dezelfde map lezen, delen één kopie", "Agents that read the same folder share one copy")}</small>
-        </span>
-        <div class="chip-row">
-          <button type="button" class="chip" class:active={skillAgents.length === 0} onclick={() => (skillAgents = [])}>
-            {tr("Alle agents", "All agents")}
-          </button>
-          {#each RUNNABLE_ORDER as p (p)}
-            {@const label = workspace.provider(p)?.name ?? agentNames[p as AgentKind] ?? p}
-            <button type="button" class="chip" class:active={skillAgents.includes(p)} onclick={() => toggleSkillAgent(p)}>
-              <AgentMark agent={label} size={13} />{label}
-            </button>
-          {/each}
-        </div>
-      </div>
-    </div>
-
-    <h3>{tr("Ontdekte skills", "Discovered skills")}</h3>
-    <div class="group">
-      <div class="row">
-        <input
-          type="search"
-          class="skill-search"
-          placeholder={tr("Skills filteren…", "Filter skills…")}
-          aria-label={tr("Skills filteren…", "Filter skills…")}
-          bind:value={skillQuery}
-        />
-        <button class="small" disabled={skillsLoading} onclick={loadSkills}>
-          {skillsLoading ? tr("Laden…", "Loading…") : tr("Vernieuwen", "Refresh")}
-        </button>
-      </div>
-
-      {#if skillsLoading && !skillsCatalog}
-        <div class="row"><span class="faint">{tr("Laden…", "Loading…")}</span></div>
-      {:else if filteredSkills.length === 0}
-        <div class="row">
-          <div class="info">
-            <div class="name">{tr("Geen skills gevonden", "No skills found")}</div>
-            <div class="faint small">
-              {tr(
-                "Zet een map met een SKILL.md in een van de skill-mappen hieronder en klik op Vernieuwen.",
-                "Place a folder with a SKILL.md in one of the skill folders below and click Refresh.",
-              )}
-            </div>
-          </div>
-        </div>
-      {:else}
-        {#each filteredSkills as skill (skill.path)}
-          <div class="skill-block">
-            <div class="row skill-row">
-              <div class="info">
-                <div class="name">
-                  <span class:disabled-name={!skill.enabled}>{skill.name}</span>
-                  <span class="badge">
-                    {skill.scope === "project" ? tr("Project", "Project") : tr("Globaal", "Global")}
-                  </span>
-                  <span class="badge source-badge">{skill.source}</span>
-                </div>
-                {#if skill.description}
-                  <div class="faint small">{skill.description}</div>
-                {/if}
-                <div class="faint small">
-                  {skill.providers.map((p) => workspace.provider(p)?.name ?? p).join(" · ")}
-                </div>
-              </div>
-              <div class="inline">
-                <button class="small" onclick={() => inspectSkill(skill)}>
-                  {previewPath === skill.path ? tr("Verbergen", "Hide") : tr("Bekijken", "Inspect")}
-                </button>
-                <button class="small" onclick={() => openSkillsFolder(skill.folder)}>
-                  {tr("Map openen", "Open folder")}
-                </button>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label={skill.name}
-                  checked={skill.enabled}
-                  onchange={(e) => toggleSkillEnabled(skill, e.currentTarget.checked)}
-                />
-              </div>
-            </div>
-
-            {#if previewPath === skill.path}
-              <div class="skill-preview">
-                {#if previewLoading}
-                  <p class="faint small">{tr("Laden…", "Loading…")}</p>
-                {:else if previewError}
-                  <p class="err">{previewError}</p>
-                {:else if previewDoc}
-                  <div class="preview-meta">
-                    <span class="path">{previewDoc.path}</span>
-                    {#if previewDoc.scripts.length > 0}
-                      <span class="scripts-warn">
-                        {tr("Bevat {n} scripts die een agent kan uitvoeren.", "Comes with {n} scripts an agent can run.", {
-                          n: previewDoc.scripts.length,
-                        })}
-                        ({previewDoc.scripts.join(", ")})
-                      </span>
-                    {:else}
-                      <span class="faint small">{tr("Geen scripts: alleen instructies.", "No scripts: instructions only.")}</span>
-                    {/if}
-                  </div>
-                  <pre class="skill-doc">{previewDoc.content}</pre>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        {/each}
-      {/if}
-    </div>
-
-    {#if skillsCatalog && skillsCatalog.folders.length > 0}
-      <h3>{tr("Skill-mappen", "Skill folders")}</h3>
-      <div class="group">
-        {#each skillsCatalog.folders as folder (folder.path)}
-          <div class="row">
-            <div class="info">
-              <div class="name">
-                <span>{folder.label}</span>
-                <span class="badge">
-                  {folder.scope === "project" ? tr("Project", "Project") : tr("Globaal", "Global")}
-                </span>
-                <span class="faint small">
-                  {folder.count === 1
-                    ? tr("1 skill", "1 skill")
-                    : tr("{n} skills", "{n} skills", { n: folder.count })}
-                </span>
-              </div>
-              <div class="path">{folder.path}</div>
-            </div>
-            <button class="small" onclick={() => openSkillsFolder(folder.path)}>
-              {folder.exists ? tr("Map openen", "Open folder") : tr("Aanmaken en openen", "Create and open")}
-            </button>
-          </div>
-        {/each}
+        {/key}
       </div>
     {/if}
-  {/if}
+  </div>
+  <!-- Every agent program with its version and Update (`AgentUpdatesSection`). -->
+  <AgentUpdates />
 {/if}
 
 {#if pending}
@@ -1046,314 +598,78 @@
 {/if}
 
 <style>
-  .sub-tabs {
-    display: inline-flex;
-    align-self: flex-start;
-    gap: var(--space-2);
-    background: var(--graphite);
-    border: 1px solid var(--line2);
-    border-radius: var(--radius-control);
-    padding: var(--space-2);
-    margin-bottom: var(--space-12);
-  }
-  .sub-tabs button {
-    flex: none;
-    border: none;
-    background: none;
-    color: var(--text2);
-    padding: var(--space-4) var(--space-12);
-    border-radius: var(--radius-chip);
-    font: var(--text-detail);
-    font-weight: 500;
-  }
-  .sub-tabs button:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--paper) 6%, transparent);
-    color: var(--paper);
-  }
-  .sub-tabs button.on,
-  .sub-tabs button.on:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--paper) 14%, transparent);
-    color: var(--paper);
-  }
-
-  .split {
+  /* The one card: the list and the agent picked, each with its own scroll (the Mac's 540 pt card, list 250 pt wide). */
+  .panel {
     display: grid;
-    grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
-    gap: var(--space-16);
-    align-items: start;
-  }
-  .agent-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    background: var(--graphite);
-    border: 1px solid var(--line2);
+    grid-template-columns: 250px minmax(0, 1fr);
+    height: 540px;
+    margin-top: var(--space-8);
+    background: var(--surface);
+    border: 1px solid var(--separator);
     border-radius: var(--radius-panel);
-    padding: var(--space-6);
+    overflow: hidden;
   }
+  .agent-list { overflow-y: auto; scrollbar-width: none; border-right: 1px solid var(--separator); }
   .list-item {
     display: flex;
     align-items: center;
-    gap: var(--space-8);
+    gap: var(--space-12);
     width: 100%;
+    height: auto;
     text-align: left;
     border: none;
+    border-radius: 0;
     background: transparent;
-    padding: var(--space-8);
-    border-radius: var(--radius-control);
-    color: var(--text2);
+    padding: var(--space-12) var(--space-16);
   }
-  .list-item:hover {
-    background: color-mix(in srgb, var(--paper) 6%, transparent);
-  }
-  .list-item.selected {
-    background: color-mix(in srgb, var(--paper) 12%, transparent);
-    color: var(--paper);
-  }
-  .mark {
-    flex: none;
-    display: grid;
-  }
-  .item-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    min-width: 0;
-    flex: 1;
-  }
-  .item-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-6);
-  }
-  .item-name {
-    font: var(--text-emphasis);
-    color: var(--paper);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .ver {
-    font: var(--text-code);
-    color: var(--text3);
-    flex: none;
-  }
+  .list-item:hover { background: var(--row-hover); }
+  .list-item.selected { background: color-mix(in srgb, var(--paper) 8%, transparent); }
+  .mark { flex: none; display: grid; }
+  .item-body { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; flex: 1; }
+  .item-head { display: flex; align-items: baseline; gap: var(--space-4); min-width: 0; }
+  .item-name { font: var(--text-emphasis); color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ver { font: var(--text-caption); font-family: var(--mono); color: var(--text3); flex: none; }
 
-  .agent-detail {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .agent-detail h4 {
-    margin: var(--space-16) 0 var(--space-6);
-    font: var(--text-emphasis);
-    color: var(--text2);
-  }
-  .detail-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-12);
-    padding-bottom: var(--space-8);
-    border-bottom: 1px solid var(--separator);
-  }
-  .detail-title {
-    display: flex;
-    align-items: center;
-    gap: var(--space-8);
-    font: var(--text-title);
-    color: var(--paper);
-  }
+  .place { display: inline-flex; align-items: center; gap: var(--space-4); font: var(--text-detail); color: var(--text2); white-space: nowrap; }
+  .place .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); flex: none; }
+  .place.linked .dot { background: var(--mint); }
+  .place.attention .dot { background: var(--amber); }
 
-  .status {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-6);
-    font: var(--text-detail);
-    color: var(--text2);
-  }
-  .status .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text3);
-  }
-  .status.installed .dot {
-    background: var(--mint);
-  }
-  .status.outdated .dot {
-    background: var(--amber);
-  }
-  .status.outdated {
-    color: var(--amber);
-  }
-  .status.unreadable .dot {
-    background: var(--coral);
-  }
+  .agent-detail { overflow-y: auto; padding: var(--space-16) var(--space-24) var(--space-24); min-width: 0; }
+  .detail-head { display: flex; align-items: center; gap: var(--space-16); }
+  .head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .detail-title { font: var(--text-heading); color: var(--paper); }
+  .head-ver { font: var(--text-code); color: var(--text3); user-select: text; }
+  .agent-detail > h3 { margin-top: var(--space-24); }
+  .agent-detail .section-head { margin-top: var(--space-24); }
+  .agent-detail .group { margin-top: var(--space-8); }
+  .note.follow { margin-top: var(--space-24); }
 
-  .info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    min-width: 0;
-    flex: 1;
-  }
-  .name {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-6);
-    color: var(--paper);
-  }
-  .small {
-    font: var(--text-detail);
-  }
-  .path {
-    font: var(--text-code);
-    color: var(--text2);
-    word-break: break-all;
-    user-select: text;
-  }
-  .badge {
-    font: var(--text-caption);
-    background: var(--smoke);
-    border-radius: var(--radius-chip);
-    padding: var(--space-2) var(--space-6);
-    color: var(--text2);
-  }
-  .ver-badge {
-    font: var(--text-code);
-  }
-  .source-badge {
-    font: var(--text-code);
-  }
-  .ok {
-    color: var(--mint);
-  }
-  .err {
-    color: var(--coral);
-    font: var(--text-detail);
-  }
-  .inline {
-    display: flex;
-    align-items: center;
-    gap: var(--space-8);
-    flex-wrap: wrap;
-  }
-  .key input {
-    width: 220px;
-  }
-  .model-input {
-    width: 200px;
-  }
-  .row input:not([type="checkbox"]) {
-    flex: 1;
-  }
-  progress {
-    width: 90px;
-    accent-color: var(--paper);
-  }
+  .text { margin: 0; font: var(--text-detail); line-height: 1.4; color: var(--text2); }
+  .warn { margin: 0; font: var(--text-detail); color: var(--amber); }
+  .kv { display: flex; justify-content: space-between; align-items: center; gap: var(--space-16); font: var(--text-body); color: var(--paper); }
+  .mono { font: var(--text-code); color: var(--text2); word-break: break-all; user-select: text; }
+  .kv .mono { text-align: right; }
+  .link-text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4); }
+  .field-title { font: var(--text-emphasis); color: var(--paper); }
+  .inline { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }
+  .small { font: var(--text-detail); }
+  .key input { width: 220px; }
+  .model-input { width: 220px; }
+  .add-row { flex-wrap: nowrap; }
+  .add-row input { flex: 1; }
+  progress { width: 160px; accent-color: var(--paper); }
+  .ok { color: var(--mint); }
+  .err { color: var(--coral); font: var(--text-detail); }
 
-  .stacked-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-8);
-  }
-  .chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-6);
-  }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-4);
-    border: 1px solid var(--line2);
-    background: var(--graphite);
-    color: var(--text2);
-    border-radius: var(--radius-pill);
-    padding: var(--space-4) var(--space-10);
-    font: var(--text-detail);
-  }
-  .chip.active {
-    background: color-mix(in srgb, var(--paper) 14%, transparent);
-    border-color: var(--paper);
-    color: var(--paper);
-  }
-
-  .skill-search {
-    min-width: 180px;
-  }
-  .skill-block {
-    display: flex;
-    flex-direction: column;
-  }
-  .disabled-name {
-    color: var(--text3);
-    text-decoration: line-through;
-  }
-  .skill-preview {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
-    padding: var(--space-10) var(--space-12);
-    margin-bottom: var(--space-8);
-    background: var(--graphite);
-    border: 1px solid var(--line2);
-    border-radius: var(--radius-control);
-  }
-  .preview-meta {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-  .scripts-warn {
-    font: var(--text-detail);
-    color: var(--amber);
-  }
-  .skill-doc {
-    margin: 0;
-    max-height: 280px;
-    overflow: auto;
-    font: var(--text-code);
-    color: var(--text2);
-    white-space: pre-wrap;
-    word-break: break-word;
-    user-select: text;
-  }
-
-  .modal {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, black 55%, transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 20;
-  }
-  .sheet {
-    background: var(--graphite);
-    border: 1px solid var(--line2);
-    border-radius: var(--radius-composer);
-    padding: var(--space-16) var(--space-18);
-    width: min(720px, 92vw);
-    max-height: 86vh;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-10);
-  }
-  .sheet h3 {
-    margin: 0;
-    color: var(--paper);
-    font: var(--text-title);
-  }
-  .end {
-    justify-content: flex-end;
-  }
+  .modal { position: fixed; inset: 0; background: color-mix(in srgb, black 55%, transparent); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .sheet { background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius-composer); padding: var(--space-16) var(--space-16); width: min(720px, 92vw); max-height: 86vh; display: flex; flex-direction: column; gap: var(--space-12); }
+  .sheet h3 { margin: 0; color: var(--paper); font: var(--text-title); }
+  .end { justify-content: flex-end; }
 
   @media (max-width: 700px) {
-    .split {
-      grid-template-columns: 1fr;
-    }
+    .panel { grid-template-columns: 1fr; height: auto; }
+    .agent-list { max-height: 220px; border-right: none; border-bottom: 1px solid var(--separator); }
   }
 </style>

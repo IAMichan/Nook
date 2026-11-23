@@ -2,7 +2,9 @@
 //! Notetaker, Vandaag en het weekoverzicht. Eigen staat (`Services`), eigen vensters, eigen sneltoetsen; de regels
 //! staan in `nook_core::services`, het platform in `crate::platform`.
 
+pub mod attention;
 pub mod autocomplete;
+pub mod buddy;
 pub mod energy;
 pub mod flow;
 pub mod lyrics;
@@ -118,6 +120,8 @@ pub fn start(app: &AppHandle) {
         media::start(app);
         voice::start_wake_word(app);
         quiet::start(app);
+        // Nook's own moments (SV-19).
+        buddy::start(app);
     }
     speech::listen(app);
     // "Hé Nook" volgt de instelling.
@@ -147,7 +151,9 @@ pub fn register_shortcuts(app: &AppHandle) {
     if !prefs.notes_shortcut.trim().is_empty() {
         keys.push((prefs.notes_shortcut.clone(), "notes"));
     }
-    if flow.enabled && !flow.key.trim().is_empty() {
+    // A held modifier alone goes through the keyboard hook (SV-46); any other key is a global shortcut.
+    flow::sync_hold_key(app, flow.enabled.then_some(flow.key.as_str()));
+    if flow.enabled && !flow.key.trim().is_empty() && nook_core::services::flow_hold::HoldKey::parse(&flow.key).is_none() {
         keys.push((flow.key.clone(), "flow"));
     }
     for (accelerator, action) in keys {

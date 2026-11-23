@@ -713,6 +713,11 @@ impl OtlpExporter {
         Ok(Some(status))
     }
 
+    /// Posts an OTLP/HTTP JSON body with `headers` and returns the HTTP status (`NookTelemetry`'s batched export).
+    pub async fn post(&self, url: &str, body: Vec<u8>, headers: &[OtlpHeader]) -> Result<u16, String> {
+        self.post_json(url, body, headers).await
+    }
+
     async fn post_json(&self, url: &str, body: Vec<u8>, headers: &[OtlpHeader]) -> Result<u16, String> {
         let mut req = self.client.post(url);
         for h in headers {

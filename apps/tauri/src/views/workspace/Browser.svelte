@@ -5,6 +5,7 @@
   import { tr } from "../../lib/i18n.svelte";
   import { nook } from "../../lib/state.svelte";
   import { toolEvents, toolsApi, type BrowserState } from "../../lib/workspace/api";
+  import { openInApi, type Visit } from "../../lib/workspace/open-in";
 
   let browser = $state<BrowserState | null>(null);
   let address = $state("");
@@ -12,6 +13,12 @@
   let page = $state<{ title: string; url: string; text: string } | null>(null);
   let reading = $state(false);
   let editing = false;
+  // Pages you visited before that match what you type (Settings › Sessions › Editor & browser › Remember visited pages).
+  let suggestions = $state<Visit[]>([]);
+  function suggest() {
+    const typed = address;
+    openInApi.suggest(typed).then((found) => address === typed && (suggestions = found)).catch(() => {});
+  }
 
   const available = $derived(nook.info?.capabilities.terminals ?? true);
 
@@ -69,7 +76,8 @@
       <button class="ghost" title={tr("Terug", "Back")} disabled={!browser?.open} onclick={() => step("back")}>‹</button>
       <button class="ghost" title={tr("Vooruit", "Forward")} disabled={!browser?.open} onclick={() => step("forward")}>›</button>
       <button class="ghost" title={tr("Opnieuw laden", "Reload")} disabled={!browser?.open} onclick={() => step("reload")}>↻</button>
-      <input bind:value={address} placeholder={tr("Adres of zoekterm", "Address or search term")} oninput={() => (editing = true)} onkeydown={(e) => e.key === "Enter" && go()} />
+      <input bind:value={address} placeholder={tr("Adres of zoekterm", "Address or search term")} list="nook-browser-visited" oninput={() => { editing = true; suggest(); }} onkeydown={(e) => e.key === "Enter" && go()} />
+      <datalist id="nook-browser-visited">{#each suggestions as v (v.url)}<option value={v.url}>{v.title}</option>{/each}</datalist>
       <button onclick={go} disabled={!address.trim()}>{tr("Ga", "Go")}</button>
     </div>
     {#if browser?.open}

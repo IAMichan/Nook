@@ -79,6 +79,10 @@ pub fn setup(app: &AppHandle) {
     let weak = Arc::downgrade(&whatsapp_accounts);
     whatsapp_accounts.wire(move |link| wire_whatsapp(&app_for_wa, link, weak.clone()));
 
+    {
+        let accounts = whatsapp_accounts.clone();
+        crate::chats::inbox::set_wa_votes(move |chat| accounts.route(chat).can_vote());
+    }
     let chat_helper = crate::chats::helper::setup(app, env.chats.clone());
     app.manage(Connectors {
         env: env.clone(),

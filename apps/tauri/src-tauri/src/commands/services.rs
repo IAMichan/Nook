@@ -508,6 +508,30 @@ pub fn open_sounds_folder(app: AppHandle) -> Res<String> {
 
 // OpenTelemetry export (`TelemetrySettingsSection` on the Mac)
 
+/// Gives Nook's own export (`nook_telemetry`) the configuration in effect: Settings with `OTEL_EXPORTER_OTLP_*` from
+/// Nook's environment on top. The keychain is read only when there is an endpoint to send its headers to.
+pub fn reload_telemetry(app: &AppHandle) {
+    use nook_core::services::telemetry::{OtlpConfig, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings().telemetry;
+    let mut config = OtlpConfig::resolve_process(&settings, "");
+    if !config.is_empty() {
+        let headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+        config = OtlpConfig::resolve_process(&settings, &headers);
+    }
+    let runtime = tauri::async_runtime::handle().inner().clone();
+    nook_core::services::nook_telemetry::shared().reload(config, Some(runtime), &app.package_info().version.to_string());
+}
+
+/// At launch: read the export settings, then record the launch (a span from the process's start until now).
+pub fn telemetry_launched(app: &AppHandle) {
+    use nook_core::services::nook_telemetry;
+    reload_telemetry(app);
+    if let Some(started) = nook_telemetry::process_start() {
+        nook_telemetry::shared().app_launched(started, chrono::Utc::now());
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetrySignalStatus {
@@ -533,6 +557,8 @@ pub struct TelemetryStatusView {
 #[tauri::command]
 pub fn telemetry_status(app: AppHandle) -> TelemetryStatusView {
     use nook_core::services::telemetry::{OtlpConfig, OtlpSignal, OtlpSource, HEADERS_SECRET_ACCOUNT};
+    // Settings › Maintenance asks for this after every change it saves: Nook's own export follows at once.
+    reload_telemetry(&app);
     let state = app.state::<crate::state::AppState>();
     let settings = state.settings().telemetry;
     let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
@@ -569,6 +595,7 @@ pub fn telemetry_save_headers(app: AppHandle, headers: String) -> Res<bool> {
     let trimmed = headers.trim();
     if trimmed.is_empty() {
         state.secrets.remove(HEADERS_SECRET_ACCOUNT)?;
+        reload_telemetry(&app);
         return Ok(false);
     }
     if OtlpHeader::parse(trimmed).is_empty() {
@@ -579,6 +606,7 @@ pub fn telemetry_save_headers(app: AppHandle, headers: String) -> Res<bool> {
         .into());
     }
     state.secrets.write(HEADERS_SECRET_ACCOUNT, trimmed)?;
+    reload_telemetry(&app);
     Ok(true)
 }
 

@@ -629,8 +629,9 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
     );
     // Een groet heeft geen agenda, mail of scherm nodig: een klein model praat daar anders over in plaats van te antwoorden.
     let lean = small && intent.is_small_talk && request.history.is_empty() && request.screen.is_none();
-    let used_context = if lean { request.context.lines().next().unwrap_or("").to_string() } else { request.context.clone() };
-    let screen_text = request.screen.as_ref().map(|s| s.1.clone()).unwrap_or_default();
+    // What Nook gathered goes to an external brain filtered by the privacy level (`settings.shielded` on the Mac).
+    let used_context = settings.shielded(&if lean { request.context.lines().next().unwrap_or("").to_string() } else { request.context.clone() });
+    let screen_text = settings.shielded(&request.screen.as_ref().map(|s| s.1.clone()).unwrap_or_default());
     // Alles moet in het venster passen: schermtekst wijkt eerst, dan context, nooit de vraag zelf.
     let budget = profile.prompt_character_budget() as i64
         - system.chars().count() as i64
@@ -650,6 +651,9 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
 
     let mut tool_runner = runner(offered_with_discovery, profile.rounds, if small { 8 } else { 20 });
     tool_runner.unlocked = unlocked;
+    // What a tool read goes back to the brain through the same filter (`runner.shield` on the Mac).
+    let shield_settings = settings.clone();
+    tool_runner.shield = Some(Box::new(move |text: &str| shield_settings.shielded(text)));
     // Een lokaal model dat kan redeneren, doet dat alleen bij moeilijke vragen.
     let thinking = profile::wants_thinking(text) && !intent.is_small_talk && intent.primary_action().is_none();
     let plan = execute(

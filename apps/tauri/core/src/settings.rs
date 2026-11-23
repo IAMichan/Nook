@@ -100,6 +100,9 @@ pub struct Settings {
     pub screen_choice: String,
     pub accent_hex: u32,
     pub hide_when_idle: bool,
+    /// Resting the pointer on the closed bar opens the panel (Settings › General › Bar & windows, `openOnHover` on the
+    /// Mac); off, only a click opens it. On by default, as on the Mac.
+    pub open_on_hover: bool,
     pub panel_large: bool,
     /// Quitting from the tray asks first while a Workspace session is still at work (Settings › General ›
     /// Confirmations; `nook.quit.confirmWorking` on the Mac). On by default.
@@ -107,6 +110,12 @@ pub struct Settings {
     /// The bar at the top of the screen shows (`showNotch` on the Mac); off, Nook stays out of sight until a shortcut or
     /// the tray opens him, and goes again when he closes. On by default.
     pub show_bar: bool,
+    /// Every connected screen gets a bar; Nook opens on the screen the pointer is on (Settings › General › Bar &
+    /// windows, `notchOnAllScreens` on the Mac). Only for the bar at the top; off by default.
+    pub bar_on_all_screens: bool,
+    /// Apps Nook never reads, as exe names without ".exe" (Settings › Privacy › Apps Nook never reads,
+    /// `neverReadApps` on the Mac): not their screen text, and no suggestions while typing in them.
+    pub never_read_apps: Vec<String>,
     /// The main window opens every time Nook starts, in front when you started Nook and behind your app at login
     /// (Settings › General › Bar & windows, `openWindowAtLaunch` on the Mac). On by default.
     pub open_window_at_launch: bool,
@@ -129,6 +138,10 @@ pub struct Settings {
     pub screen_with_every_question: bool,
     /// Bronnen die alleen een lokaal brein mag lezen.
     pub local_only_sources: BTreeSet<String>,
+    /// How tightly Nook guards what an external brain sees (Settings › Privacy › Privacy level, `privacyLevel` on the
+    /// Mac): open, balanced (secrets taken out; the default) or strict (also contact details, and the screen and the
+    /// clipboard stay here). See `brain::privacy_level`.
+    pub privacy_level: crate::brain::privacy_level::PrivacyLevel,
     /// Settings › Brain › Screen work: the model on this computer that reads the screen while an external brain answers
     /// ("ollama:<model>", "lmstudio:<model>"; "" for none). See `brain::screen_brain`.
     pub screen_brain: String,
@@ -210,6 +223,11 @@ pub struct Settings {
     pub nook_look: NookLook,
     /// Nook as a buddy: the small moments (a hop hello, waking up, a giggle after three pokes, a blush when petted).
     pub buddy_moments: bool,
+    /// How Nook words his moments: "calm", "warm" or "playful" (`BuddyTone` on the Mac; the moments are the same).
+    pub buddy_tone: String,
+    /// Your birthday as "MM-DD" (`NookMonthDay` on the Mac), or empty when not set. A half-filled date ("00-12",
+    /// "06-00") is kept so you can pick the day first, but only counts once both parts are set.
+    pub birthday: String,
     /// The default answer style (`ResponseStyle` on the Mac, Settings › Instructions); see `crate::instructions`.
     pub answer_style: String,
     /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
@@ -316,9 +334,12 @@ impl Default for Settings {
             screen_choice: "auto".into(),
             accent_hex: 0xF4_F3_F7,
             hide_when_idle: false,
+            open_on_hover: true,
             panel_large: false,
             confirm_quit: true,
             show_bar: true,
+            bar_on_all_screens: false,
+            never_read_apps: Vec::new(),
             open_window_at_launch: true,
             agent_notice: "detailed".into(),
             notice_rules: Default::default(),
@@ -330,6 +351,7 @@ impl Default for Settings {
             live_screen: false,
             screen_with_every_question: false,
             local_only_sources: BTreeSet::new(),
+            privacy_level: Default::default(),
             screen_brain: String::new(),
             screen_brain_relays: false,
             evidence_first: false,
@@ -370,6 +392,8 @@ impl Default for Settings {
             action_suggestion_model: String::new(),
             nook_look: NookLook::default(),
             buddy_moments: true,
+            buddy_tone: "warm".into(),
+            birthday: String::new(),
             answer_style: "standard".into(),
             instructions: String::new(),
             worktrees: WorktreeSettings::default(),
@@ -400,6 +424,7 @@ impl Settings {
     pub fn load() -> Self {
         let settings = Self::load_from(&paths::settings_file());
         crate::i18n::set_language(&settings.app_language);
+        crate::services::screen::set_user_excluded(&settings.never_read_apps);
         settings
     }
 
@@ -409,6 +434,7 @@ impl Settings {
 
     pub fn save(&self) -> std::io::Result<()> {
         crate::i18n::set_language(&self.app_language);
+        crate::services::screen::set_user_excluded(&self.never_read_apps);
         self.save_to(&paths::settings_file())
     }
 
@@ -442,7 +468,7 @@ impl Settings {
     /// The model on this computer that does the screen work, while the chosen brain is external and the screen stays
     /// here (`brain::screen_brain::worker`).
     pub fn screen_worker(&self) -> Option<BrainSelection> {
-        crate::brain::screen_brain::worker(&self.selection(), self.local_only_sources.contains("screen"), &self.screen_brain)
+        crate::brain::screen_brain::worker(&self.selection(), self.kept_here().contains("screen"), &self.screen_brain)
     }
 
     /// The screen brain when it writes the chosen brain a note instead of answering itself.
@@ -455,8 +481,21 @@ impl Settings {
         if self.is_local_brain() {
             BTreeSet::new()
         } else {
-            self.local_only_sources.clone()
+            self.kept_here()
         }
+    }
+
+    /// The sources kept on this computer whatever brain answers: chosen by hand and by the privacy level (`keptOnMac`).
+    pub fn kept_here(&self) -> BTreeSet<String> {
+        let mut kept = self.local_only_sources.clone();
+        kept.extend(self.privacy_level.local_only_sources());
+        kept
+    }
+
+    /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged for a brain on
+    /// this computer, filtered by the privacy level when it goes to an external brain (`shielded` on the Mac).
+    pub fn shielded(&self, text: &str) -> String {
+        if self.is_local_brain() { text.to_string() } else { self.privacy_level.apply(text) }
     }
 
     /// Korte naam voor de chip bij het invoerveld: "Ollama · llama3.2".
@@ -629,6 +668,17 @@ mod tests {
         assert!(!s.telemetry.enabled);
         assert!(s.telemetry.traces_endpoint.is_empty());
         assert!(s.disabled_skills.is_empty());
+    }
+
+    #[test]
+    fn old_settings_files_get_the_buddy_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert!(s.buddy_moments);
+        assert_eq!(s.buddy_tone, "warm");
+        assert!(s.birthday.is_empty());
+        let s: Settings = serde_json::from_str(r#"{"buddyTone":"playful","birthday":"06-12"}"#).unwrap();
+        assert_eq!(s.buddy_tone, "playful");
+        assert_eq!(s.birthday, "06-12");
     }
 
     #[test]

@@ -251,6 +251,7 @@ export interface WhatsAppMessage {
   date: string;
   fromMe: boolean;
   receipt?: WhatsAppReceipt | null;
+  poll?: import("./chat-poll").ChatPoll | null;
 }
 
 export interface WhatsAppConversation {
@@ -431,6 +432,12 @@ export interface InboxMessage {
   reactions?: ChatReaction[];
   /** What it said before it was edited or deleted, oldest first. */
   versions?: { text: string; replaced: string }[];
+  /** A poll this message asks. */
+  poll?: import("./chat-poll").ChatPoll | null;
+  /** A line about who came into the group or went out of it (`ChatMembership`). */
+  membership?: import("./chat-notice").ChatMembership | null;
+  /** A line about the group itself changing (`ChatGroupChange`). */
+  groupChange?: import("./chat-notice").ChatGroupChange | null;
 }
 
 /** One emoji on a message and who put it there by name ("" for you). */
@@ -451,16 +458,33 @@ export interface ChatSummary {
   sends: boolean;
 }
 
+/** What a chat's app says about the chat itself (`ChatProfile`); admins by name, "\u0001me" for you. */
+export interface ChatProfile {
+  about?: string;
+  admins?: string[];
+  disappearAfter?: number;
+  username?: string;
+  phone?: string;
+  email?: string;
+  bot?: boolean;
+}
+
 export interface ChatThread extends ChatSummary {
   messages: InboxMessage[];
   people: string[];
   hasOlder: boolean;
+  profile?: ChatProfile;
 }
+
+/** A group you share with a person (`chat_common_groups`). */
+export interface CommonGroup { key: string; app: string; name: string; members: string[] }
 
 /** The shared inbox of every chat app (`src-tauri/src/chats/inbox.rs`), by the inbox's key of a chat. */
 export const chatsApi = {
   list: () => invoke<ChatSummary[]>("chat_inbox_list"),
   thread: (key: string) => invoke<ChatThread | null>("chat_inbox_thread", { key }),
+  commonGroups: (key: string) => invoke<CommonGroup[]>("chat_common_groups", { key }),
+  exportChat: (path: string, contents: string) => invoke<void>("chat_export", { path, contents }),
   markRead: (key: string, inApp: boolean) => invoke<void>("chat_inbox_mark_read", { key, inApp }),
   markUnread: (key: string) => invoke<void>("chat_inbox_mark_unread", { key }),
   markAllRead: (keys: string[]) => invoke<void>("chat_inbox_mark_all_read", { keys }),
@@ -481,6 +505,10 @@ export const chatsApi = {
   /** "@nook …": the message Nook writes for the field (never sent). */
   draft: (key: string, instruction: string) => invoke<string>("chat_draft", { key, instruction }),
   /** The answer you will likely send, for the empty field; null when there is nothing to answer. */
+  /** A poll you wrote (`ChatPollForm`), where the chat's app takes one. */
+  sendPoll: (key: string, poll: { question: string; options: string[]; multiple: boolean }) => invoke<void>("chat_inbox_send_poll", { key, poll }),
+  /** Your vote on a poll: its options' texts, empty takes it back. */
+  vote: (key: string, message: string, choice: string[]) => invoke<void>("chat_inbox_vote", { key, message, choice }),
   suggestReply: (key: string) => invoke<string | null>("chat_suggest_reply", { key }),
   /** A link's picture and title for its bubble; null when it cannot be fetched. */
   linkPreview: (url: string) => invoke<{ title: string | null; image: string | null; video: boolean } | null>("chat_link_preview", { url }),

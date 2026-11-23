@@ -213,6 +213,7 @@ fn an_agent_notice_says_who_where_and_the_gist() {
         started: None,
         updated: None,
         pid: None,
+        launched_by: None,
     };
     let toast = Toast::agent_status(&session).unwrap();
     assert_eq!(toast.title, "Claude Code is done");

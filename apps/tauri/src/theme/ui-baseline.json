@@ -1,9 +1,4 @@
 {
- "src/components/ChartView.svelte": {
-  "color": 0,
-  "font": 6,
-  "radius": 3
- },
  "src/components/MailDraftView.svelte": {
   "color": 0,
   "font": 5,
@@ -11,7 +6,7 @@
  },
  "src/components/Markdown.svelte": {
   "color": 0,
-  "font": 2,
+  "font": 0,
   "radius": 1
  },
  "src/components/MarkdownCode.svelte": {
@@ -21,17 +16,12 @@
  },
  "src/components/MarkdownImage.svelte": {
   "color": 0,
-  "font": 1,
-  "radius": 2
- },
- "src/components/MarkdownTable.svelte": {
-  "color": 0,
-  "font": 1,
+  "font": 0,
   "radius": 2
  },
  "src/components/MessageView.svelte": {
   "color": 0,
-  "font": 5,
+  "font": 4,
   "radius": 3
  },
  "src/components/ModelAdvice.svelte": {
@@ -49,25 +39,10 @@
   "font": 1,
   "radius": 0
  },
- "src/components/Orb.svelte": {
-  "color": 4,
-  "font": 1,
-  "radius": 1
- },
- "src/components/PlanCard.svelte": {
-  "color": 0,
-  "font": 8,
-  "radius": 2
- },
  "src/components/SourcesView.svelte": {
   "color": 0,
-  "font": 8,
+  "font": 6,
   "radius": 2
- },
- "src/components/ui/CountBadge.svelte": {
-  "color": 0,
-  "font": 1,
-  "radius": 0
  },
  "src/components/ui/Dialog.svelte": {
   "color": 6,
@@ -107,11 +82,6 @@
  "src/components/ui/TabBar.svelte": {
   "color": 1,
   "font": 2,
-  "radius": 0
- },
- "src/components/ui/Tag.svelte": {
-  "color": 0,
-  "font": 1,
   "radius": 0
  },
  "src/components/ui/Toggle.svelte": {
@@ -230,9 +200,9 @@
   "radius": 3
  },
  "src/views/agents/run/PlanCard.svelte": {
-  "color": 1,
+  "color": 0,
   "font": 2,
-  "radius": 1
+  "radius": 0
  },
  "src/views/agents/run/RunComposer.svelte": {
   "color": 0,
@@ -241,7 +211,7 @@
  },
  "src/views/agents/run/RunPanel.svelte": {
   "color": 0,
-  "font": 4,
+  "font": 3,
   "radius": 0
  },
  "src/views/agents/run/Timeline.svelte": {
@@ -459,11 +429,6 @@
   "font": 17,
   "radius": 0
  },
- "src/views/connectors/GitLabRow.svelte": {
-  "color": 0,
-  "font": 1,
-  "radius": 0
- },
  "src/views/connectors/GitLabSheet.svelte": {
   "color": 1,
   "font": 6,
@@ -573,11 +538,6 @@
   "color": 1,
   "font": 0,
   "radius": 1
- },
- "src/views/workspace/Usage.svelte": {
-  "color": 0,
-  "font": 1,
-  "radius": 0
  },
  "src/views/workspace/UsagePage.svelte": {
   "color": 0,

@@ -314,7 +314,7 @@ impl ValorantStore {
     }
 
     pub fn open(file: PathBuf) -> Self {
-        let saved: Saved = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let saved: Saved = crate::storage_recovery::read_json_plain(&file);
         Self { file: Some(file), prefs: saved.prefs, current: saved.current, history: saved.history }
     }
 

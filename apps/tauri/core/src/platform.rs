@@ -272,6 +272,11 @@ pub trait WakeWord: Send + Sync {
     fn available(&self) -> bool;
     fn start(&self, on_wake: Box<dyn Fn() + Send + Sync>) -> Result<(), String>;
     fn stop(&self);
+    /// Recognition on or off while the wake word stays set up, so it can follow the loudness of the room
+    /// (`services::wake_gate`). Where this does nothing, recognition runs the whole time.
+    fn listen(&self, _on: bool) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// A rectangle on screen in physical pixels (as UI Automation reports it).
@@ -461,5 +466,9 @@ pub trait PowerMonitor: Send + Sync {
     /// Battery charge (0–100) and whether the computer is on external power, if there is a battery.
     fn battery(&self) -> Option<(u8, bool)> {
         None
+    }
+    /// The screen is locked (the lock screen is all anyone can see).
+    fn screen_locked(&self) -> bool {
+        false
     }
 }

@@ -133,7 +133,7 @@
           <button class="main" onclick={() => run(item, item.actions[0]?.id ?? "")} disabled={busy === item.id} title={item.actions[0]?.label}>
             <span class="chip" title={source.label}><Icon name={source.icon} size={16} /></span>
             <span class="text">
-              <span class="meta">{source.label}{#if time(item)}<span class="sep">·</span>{time(item)}{/if}</span>
+              <span class="meta">{item.sourceLabel ?? source.label}{#if time(item)}<span class="sep">·</span>{time(item)}{/if}</span>
               <span class="title">{item.title}</span>
               {#if item.detail}<span class="detail">{item.detail}</span>{/if}
             </span>

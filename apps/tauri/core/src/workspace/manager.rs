@@ -63,6 +63,8 @@ pub struct PendingQuestion {
     pub items: Vec<QuestionItem>,
     pub input: Value,
     pub created: DateTime<Utc>,
+    /// Asked before Nook restarted: nothing waits for it any more, so the answer goes to the agent as a message.
+    pub restored: bool,
 }
 
 /// De laatste git-stand die Nook voor een sessie zag.
@@ -211,10 +213,17 @@ struct Inner {
     git: HashMap<Uuid, GitSnapshot>,
     worktrees: Vec<WorktreeRow>,
     fork_next: HashSet<Uuid>,
+    /// Sessions whose failed turn is being tried again in a new conversation (`recoveringConversation`): a second
+    /// failure is told as it is.
+    recovering: HashSet<Uuid>,
     generation: u64,
     dirty_runs: bool,
     dirty_events: HashSet<Uuid>,
     dirty_queues: bool,
+    /// Nook is quitting: no turn starts any more.
+    quitting: bool,
+    /// `continue_interrupted` ran this launch.
+    continued_after_launch: bool,
     /// Beurten die op een gebruikslimiet stopten, met de reset als die bekend is.
     limited: HashMap<Uuid, Option<DateTime<Utc>>>,
     /// Het lopende "hervat bij reset" per sessie (een teller, zodat een oud wachten niets meer doet).
@@ -271,6 +280,7 @@ impl Manager {
             recap: RecapSink::default(),
             telemetry_provider: Mutex::new(None),
         });
+        manager.restore_waiting();
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
         let waiting: Vec<Uuid> = manager.runs().iter().filter(|r| r.auto_resume && r.limit_reset_at.is_some()).map(|r| r.id).collect();
         for id in waiting {
@@ -557,6 +567,7 @@ impl Manager {
             agent_name: run.provider.display_name().into(),
             project: run.title.clone(),
             items: q.items.clone(),
+            restored: q.restored,
         }
     }
 
@@ -700,6 +711,8 @@ impl Manager {
             pending_rollback: None,
             goal: None,
             compacting: false,
+            tasks: None,
+            restart: Default::default(),
         };
         if let (Some(path), Some(git)) = (&worktree, &self.git) {
             // De eerste momentopname, voor de agent iets doet: "terug naar hier" bij het eerste bericht.
@@ -826,6 +839,8 @@ impl Manager {
             pending_rollback: None,
             goal: None,
             compacting: false,
+            tasks: None,
+            restart: Default::default(),
         };
         let mut out = Out::default();
         {
@@ -1134,6 +1149,9 @@ impl Manager {
     }
 
     fn launch_turn(self: &Arc<Self>, id: Uuid, prompt: String, executable: String, show_prompt: bool) {
+        if self.lock().quitting {
+            return;
+        }
         if self.wait_for_capacity(id, &prompt, &executable, show_prompt) {
             return;
         }
@@ -1276,6 +1294,9 @@ impl Manager {
             }
         };
         let pid = child.id();
+        if let Some(p) = pid {
+            super::dev_stop::note_agent(p);
+        }
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
         let stdin = child.stdin.take();
@@ -1299,6 +1320,11 @@ impl Manager {
                 }
                 run.move_to(RunStatus::Running, None, now);
                 run.turn_started_at = Some(now);
+                crate::services::nook_telemetry::shared().turn_started(id, &run.usage, now);
+                // A finished task list goes with the work it was for; an unfinished one stays until the agent writes anew.
+                if run.tasks.as_ref().is_some_and(|t| t.iter().all(|x| matches!(x.status, super::tasks::StepStatus::Done | super::tasks::StepStatus::Cancelled))) {
+                    run.tasks = None;
+                }
                 if used_claude_rollback {
                     run.pending_rollback = None;
                 }
@@ -1435,6 +1461,7 @@ impl Manager {
                         driver::DriverEvent::Commands(list) => {
                             s.commands.insert(id, list);
                         }
+                        driver::DriverEvent::Tasks(steps) => Self::update(&mut s, id, |r| r.tasks = Some(steps)),
                         driver::DriverEvent::UserMessageRead(text) => Self::steer_read(&mut s, id, &text, &mut out),
                         driver::DriverEvent::TurnStarted(turn_id) => Self::note_conversation_turn(&mut s, id, turn_id.as_deref()),
                         driver::DriverEvent::RollbackApplied => Self::update(&mut s, id, |r| r.pending_rollback = None),
@@ -1684,7 +1711,15 @@ impl Manager {
                     Self::append(s, id, RunEvent::new(EventKind::Thinking, text), out);
                 }
             }
-            ClaudeEvent::ToolUse { id: call, name, input, nested } => Self::tool_event(s, id, &call, &name, &input, nested, out),
+            ClaudeEvent::ToolUse { id: call, name, input, nested } => {
+                // The agent's own task list (TodoWrite and its likes): the Tasks strip follows it.
+                if !nested && super::tasks::is_todo_tool(&name) {
+                    if let Some(steps) = super::tasks::claude(&input) {
+                        Self::update(s, id, |r| r.tasks = Some(steps));
+                    }
+                }
+                Self::tool_event(s, id, &call, &name, &input, nested, out)
+            }
             ClaudeEvent::ToolResult { id: call, output, is_error } => Self::tool_result(s, id, &call, &output, is_error, out),
             ClaudeEvent::Usage { message_id, tokens, model } => {
                 if let Some(t) = s.turns.get_mut(&id) {
@@ -1702,8 +1737,9 @@ impl Manager {
                 // Een vraag wordt beantwoord, niet goedgekeurd: de antwoorden gaan terug als invoer van de tool.
                 if tool == "AskUserQuestion" {
                     if let Some(items) = question_items(&input) {
-                        let q = PendingQuestion { id: request_id.clone(), run_id: id, items, input, created: Utc::now() };
+                        let q = PendingQuestion { id: request_id.clone(), run_id: id, items, input, created: Utc::now(), restored: false };
                         s.questions.entry(id).or_default().push(q.clone());
+                        Self::sync_waiting(s, id);
                         Self::update(s, id, |r| {
                             r.move_to(RunStatus::WaitingApproval, None, Utc::now());
                         });
@@ -2223,6 +2259,9 @@ impl Manager {
     /// Een beurt is klaar: momentopname (in een eigen worktree), wachtrij, git, en de app laten weten.
     fn turn_did_finish(self: &Arc<Self>, id: Uuid) {
         self.check_usage_limit(id);
+        if self.recover_conversation(id) {
+            return;
+        }
         self.recap.note(|r, now| r.turn_ended(&format!("run-{id}"), now));
         let mut out = Out::default();
         let run = {
@@ -2253,6 +2292,7 @@ impl Manager {
                 .map(|e| e.text.clone())
                 .unwrap_or_default();
             out.push(ManagerEvent::TurnFinished(run.clone(), last));
+            crate::services::nook_telemetry::shared().turn_finished(&run, Utc::now());
             run
         };
         self.emit(out);
@@ -2289,6 +2329,77 @@ impl Manager {
         }
         self.refresh_git(id);
         self.send_queued(id);
+    }
+
+    /// A turn that failed because the agent lost its conversation or it no longer fits the context window
+    /// (`recoverConversation`): a new conversation starts from a summary of the timeline and the turn's words go again.
+    /// Once per failure: a second try that fails again is told as it is. The same for every agent.
+    fn recover_conversation(self: &Arc<Self>, id: Uuid) -> bool {
+        let (run, prompt, carried) = {
+            let mut s = self.lock();
+            if s.recovering.remove(&id) {
+                return false;
+            }
+            let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return false };
+            if run.status != RunStatus::Failed || run.provider_session_id.is_none() {
+                return false;
+            }
+            let Some(recovery) = run.status_detail.as_deref().and_then(super::recovery::recovery) else { return false };
+            let events = s.events.get(&id).cloned().unwrap_or_default();
+            let Some(prompt) = events.iter().rev().find(|e| e.kind == EventKind::User).map(|e| e.text.clone()) else { return false };
+            let before: Vec<RunEvent> = {
+                let last_user = events.iter().rposition(|e| e.kind == EventKind::User).unwrap_or(events.len());
+                events[..last_user].to_vec()
+            };
+            let carried = super::handoff::render(&before, 0, run.provider.display_name(), super::handoff::TOKEN_BUDGET).map(|h| h.text);
+            s.recovering.insert(id);
+            s.fork_next.remove(&id);
+            Self::update(&mut s, id, |r| {
+                r.provider_session_id = None;
+                r.pending_handoff = None;
+                r.usage.context_tokens = None;
+            });
+            let mut out = Out::default();
+            Self::append(&mut s, id, RunEvent::new(EventKind::System, tr("Nieuw gesprek", "New conversation")).with_tool("clear"), &mut out);
+            let agent = run.provider.display_name();
+            let note = match recovery {
+                super::recovery::Recovery::Full => trf(
+                    "Dit gesprek past niet meer in de context van {agent}. Nook begon een nieuw gesprek vanuit de tijdlijn en stuurde je bericht opnieuw.",
+                    "This conversation no longer fits in {agent}'s context. Nook started a new one from the timeline and sent your message again.",
+                    &[("agent", &agent)],
+                ),
+                super::recovery::Recovery::Gone => trf(
+                    "{agent} heeft dit gesprek niet meer. Nook begon een nieuw gesprek vanuit de tijdlijn en stuurde je bericht opnieuw.",
+                    "{agent} no longer has this conversation. Nook started a new one from the timeline and sent your message again.",
+                    &[("agent", &agent)],
+                ),
+            };
+            Self::append(&mut s, id, RunEvent::new(EventKind::System, note), &mut out);
+            drop(s);
+            out.push(ManagerEvent::Changed);
+            self.emit(out);
+            (run, prompt, carried)
+        };
+        let Some(executable) = (self.hooks.executable)(run.provider) else {
+            self.lock().recovering.remove(&id);
+            return false;
+        };
+        let text = match carried {
+            Some(summary) => format!("{summary}\n\n{prompt}"),
+            None => prompt,
+        };
+        // The failed turn's process may still be closing: the new conversation starts once it is gone.
+        let manager = self.clone();
+        self.runtime.spawn(async move {
+            for _ in 0..200 {
+                if !manager.lock().processes.contains_key(&id) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            manager.launch_turn(id, text, executable, false);
+        });
+        true
     }
 
     /// De beurt ging goed en het proces is weg: stuur het volgende bericht uit de wachtrij.
@@ -2472,10 +2583,11 @@ impl Manager {
         for q in s.questions.remove(&run_id).unwrap_or_default() {
             out.push(ManagerEvent::QuestionGone(format!("runq:{run_id}:{}", q.id)));
         }
+        Self::sync_waiting(s, run_id);
     }
 
     /// Beantwoordt een meerkeuzevraag: per vraag de gekozen labels.
-    pub fn answer_question(&self, run_id: Uuid, request_id: &str, selections: &[Vec<String>]) -> Result<(), String> {
+    pub fn answer_question(self: &Arc<Self>, run_id: Uuid, request_id: &str, selections: &[Vec<String>]) -> Result<(), String> {
         let mut out = Out::default();
         {
             let mut s = self.lock();
@@ -2485,6 +2597,19 @@ impl Manager {
                 .and_then(|l| l.iter().find(|q| q.id == request_id))
                 .cloned()
                 .ok_or(tr("Deze vraag bestaat niet meer.", "This question no longer exists."))?;
+            if q.restored {
+                // Nobody waits for it any more: the answer reaches the agent as a message and picks the conversation up.
+                if let Some(l) = s.questions.get_mut(&run_id) {
+                    l.retain(|x| x.id != request_id);
+                }
+                Self::sync_waiting(&mut s, run_id);
+                out.push(ManagerEvent::QuestionGone(format!("runq:{run_id}:{request_id}")));
+                out.push(ManagerEvent::Changed);
+                let text = super::restart::answer_message(&q.items, selections, true);
+                drop(s);
+                self.emit(out);
+                return self.send(run_id, &text);
+            }
             let input = s
                 .processes
                 .get(&run_id)
@@ -2502,6 +2627,7 @@ impl Manager {
             if let Some(l) = s.questions.get_mut(&run_id) {
                 l.retain(|x| x.id != request_id);
             }
+            Self::sync_waiting(&mut s, run_id);
             let event = s
                 .events
                 .get(&run_id)
@@ -2939,6 +3065,34 @@ impl Manager {
         self.emit(out);
     }
 
+    /// A card a bridge tool puts in the session's own timeline (`session_suggest`'s suggestion, `render_page`'s page).
+    pub fn append_event(&self, id: Uuid, event: RunEvent) {
+        let mut out = Out::default();
+        Self::append(&mut self.lock(), id, event, &mut out);
+        self.emit(out);
+    }
+
+    /// Changes one event of a session's timeline in place (a suggestion card after you chose on it). False when the
+    /// session or the event is gone.
+    pub fn change_event(&self, id: Uuid, event_id: Uuid, change: impl FnOnce(&mut RunEvent)) -> bool {
+        let mut out = Out::default();
+        let mut found = false;
+        {
+            let mut s = self.lock();
+            Self::mutate(&mut s, id, event_id, &mut out, |e| {
+                found = true;
+                change(e);
+            });
+        }
+        self.emit(out);
+        found
+    }
+
+    /// One event of a session's timeline by id.
+    pub fn event(&self, id: Uuid, event_id: Uuid) -> Option<RunEvent> {
+        self.lock().events.get(&id).and_then(|l| l.iter().rev().find(|e| e.id == event_id).cloned())
+    }
+
     /// The first line of a session that someone else started ("Started by …", "Delegated by …"): a note tagged
     /// `origin`, so the transcript draws it with the Mac's arrow (`TranscriptWorkLine`) instead of an info mark.
     pub fn note_origin(&self, id: Uuid, text: &str) {
@@ -3348,10 +3502,146 @@ impl Manager {
         }
     }
 
-    /// Bij het afsluiten van Nook: lopende agents netjes stoppen, zodat er geen processen achterblijven.
-    pub fn shutdown(&self) {
+    /// What waits on you in a session, saved with it (`RestartRequests`): the questions come back after a restart.
+    fn sync_waiting(s: &mut Inner, id: Uuid) {
+        let asked: Vec<super::restart::SavedQuestion> = s
+            .questions
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .filter(|q| q.items.iter().any(|i| !i.question.is_empty() || !i.options.is_empty()))
+            .map(|q| super::restart::SavedQuestion { id: q.id.clone(), items: q.items.clone(), created: q.created })
+            .collect();
+        let approvals: Vec<String> = s
+            .approvals
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .map(|p| [p.tool.as_str(), p.summary.as_str()].iter().filter(|t| !t.is_empty()).cloned().collect::<Vec<_>>().join(": ").chars().take(160).collect())
+            .collect();
+        let changed = s.runs.iter().find(|r| r.id == id).is_some_and(|r| r.restart.questions != asked || r.restart.approvals != approvals);
+        if changed {
+            Self::update(s, id, |r| {
+                r.restart.questions = asked;
+                r.restart.approvals = approvals;
+            });
+        }
+    }
+
+    /// After a launch: the questions that waited come back to be answered as a message, and each approval that waited
+    /// leaves a note that it expired (`restoreWaiting`).
+    fn restore_waiting(self: &Arc<Self>) {
+        let mut out = Out::default();
         {
             let mut s = self.lock();
+            let ids: Vec<Uuid> = s.runs.iter().filter(|r| !r.restart.questions.is_empty() || !r.restart.approvals.is_empty()).map(|r| r.id).collect();
+            for id in ids {
+                let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { continue };
+                for q in &run.restart.questions {
+                    let pending = PendingQuestion { id: q.id.clone(), run_id: id, items: q.items.clone(), input: Value::Null, created: q.created, restored: true };
+                    let list = s.questions.entry(id).or_default();
+                    if !list.iter().any(|p| p.id == pending.id) {
+                        list.push(pending);
+                    }
+                }
+                if !run.restart.approvals.is_empty() {
+                    Self::load_timeline(&self.store, &mut s, id);
+                    for summary in &run.restart.approvals {
+                        let text = trf(
+                            "Nook is opnieuw gestart, dus deze goedkeuring is verlopen: {summary}. Stuur een bericht om verder te gaan.",
+                            "Nook restarted, so this approval expired: {summary}. Send a message to go on.",
+                            &[("summary", summary)],
+                        );
+                        Self::append(&mut s, id, RunEvent::new(EventKind::System, text).with_tool("restart"), &mut out);
+                    }
+                    Self::update(&mut s, id, |r| r.restart.approvals.clear());
+                }
+            }
+        }
+        self.emit(out);
+    }
+
+    /// "Continue where you left off." once for each session that quitting or restarting Nook cut off, when
+    /// `enabled` (Settings › Agents › Sessions › Continue after restart). `skip` holds the sessions you settled or
+    /// snoozed. Only the first call after a launch does anything; what is not continued is not continued at a later one.
+    pub fn continue_interrupted(self: &Arc<Self>, enabled: bool, skip: &HashSet<Uuid>) -> usize {
+        let now = Utc::now();
+        let mut go: Vec<(Uuid, bool)> = vec![];
+        {
+            let mut s = self.lock();
+            if s.continued_after_launch {
+                return 0;
+            }
+            s.continued_after_launch = true;
+            let ids: Vec<Uuid> = s.runs.iter().map(|r| r.id).collect();
+            for id in ids {
+                let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { continue };
+                let waits = s.questions.get(&id).into_iter().flatten().any(|q| !q.restored);
+                if super::restart::should_continue(&run, enabled, waits, skip.contains(&id), now) {
+                    // A turn whose result was saved had finished; only its status was not saved yet. Sending it back to
+                    // work would repeat what it did: it waits for you like any stopped session.
+                    Self::load_timeline(&self.store, &mut s, id);
+                    if super::restart::turn_ended(s.events.get(&id).map(Vec::as_slice).unwrap_or(&[])) {
+                        Self::update(&mut s, id, |r| r.status_detail = None);
+                        continue;
+                    }
+                    let chain = super::restart::chain_length(&run, now);
+                    Self::update(&mut s, id, |r| {
+                        r.restart.continuations = chain + 1;
+                        r.restart.last_continued_at = Some(now);
+                        // No longer "interrupted": a second launch before this turn ends must not continue it again.
+                        r.status_detail = None;
+                    });
+                    go.push((id, true));
+                }
+            }
+            // Only the first launch after the quit counts.
+            for id in s.runs.iter().filter(|r| r.restart.stopped_by_quit).map(|r| r.id).collect::<Vec<_>>() {
+                Self::update(&mut s, id, |r| r.restart.stopped_by_quit = false);
+            }
+            s.dirty_runs = true;
+        }
+        for (id, _) in &go {
+            let note = tr("Nook is weer geopend: de sessie gaat verder.", "Nook opened again: the session continues.");
+            {
+                let mut out = Out::default();
+                let mut s = self.lock();
+                Self::append(&mut s, *id, RunEvent::new(EventKind::System, note), &mut out);
+                drop(s);
+                self.emit(out);
+            }
+            let _ = self.send(*id, super::restart::MESSAGE);
+        }
+        self.emit(Out(vec![ManagerEvent::Changed]));
+        go.len()
+    }
+
+    /// Leaves a question that nothing waits for (asked before a restart) unanswered (`dismissQuestion`).
+    pub fn dismiss_question(&self, run_id: Uuid, request_id: &str) {
+        let mut s = self.lock();
+        if !s.questions.get(&run_id).is_some_and(|l| l.iter().any(|q| q.id == request_id && q.restored)) {
+            return;
+        }
+        if let Some(l) = s.questions.get_mut(&run_id) {
+            l.retain(|q| q.id != request_id);
+        }
+        Self::sync_waiting(&mut s, run_id);
+        drop(s);
+        self.emit(Out(vec![ManagerEvent::QuestionGone(format!("runq:{run_id}:{request_id}")), ManagerEvent::Changed]));
+    }
+
+    /// Bij het afsluiten van Nook: lopende agents stoppen en erop wachten (`QuitShutdown`). Eerst een nette vraag om te
+    /// stoppen, na de grace een SIGTERM, op één gedeelde deadline een kill: afsluiten duurt nooit langer dan die
+    /// deadline, hoeveel agents er ook draaien. Wat de sessies bezighield (vragen) wordt bewaard, en de sessies die dit
+    /// afbrak gaan na de volgende start verder als dat aan staat.
+    pub fn shutdown(&self) {
+        let cut: Vec<(Uuid, bool)> = {
+            let mut s = self.lock();
+            s.quitting = true;
+            let cut: Vec<(Uuid, bool)> = s.runs.iter().filter(|r| r.status.is_active()).map(|r| (r.id, r.status == RunStatus::WaitingApproval)).collect();
+            for (id, _) in &cut {
+                Self::sync_waiting(&mut s, *id);
+            }
             let ids: Vec<Uuid> = s.processes.keys().copied().collect();
             for id in ids {
                 if let Some(t) = s.turns.get_mut(&id) {
@@ -3362,12 +3652,61 @@ impl Manager {
                         let _ = i.send(Input::Close);
                     }
                     interrupt(p.pid);
-                    if let Some(k) = p.kill.take() {
-                        let _ = k.send(());
-                    }
                 }
             }
             s.capacity.clear();
+            cut
+        };
+        let running = self.lock().processes.len();
+        let alive = || !self.lock().processes.is_empty();
+        let pids = || -> Vec<Option<u32>> { self.lock().processes.values().map(|p| p.pid).collect() };
+        let kill_all = || {
+            let mut s = self.lock();
+            for p in s.processes.values_mut() {
+                if let Some(k) = p.kill.take() {
+                    let _ = k.send(());
+                }
+            }
+        };
+        let outcome = super::restart::stop_all(
+            running,
+            super::restart::Timing::default(),
+            || {},
+            alive,
+            || {
+                for pid in pids() {
+                    terminate(pid);
+                }
+                // Windows has no polite terminate: the process ends at the deadline.
+            },
+            kill_all,
+            std::thread::sleep,
+            std::time::Instant::now,
+        );
+        // The kill needs a moment to land before the state is saved.
+        if outcome == super::restart::Outcome::Killed {
+            for _ in 0..40 {
+                if !alive() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        }
+        {
+            let mut s = self.lock();
+            for (id, waiting) in cut {
+                // Stopped by the quit (or still active): "interrupted", unless its turn really ended meanwhile.
+                if s.runs.iter().find(|r| r.id == id).is_some_and(|r| matches!(r.status, RunStatus::Completed | RunStatus::Failed)) {
+                    continue;
+                }
+                Self::update(&mut s, id, |r| {
+                    r.status = RunStatus::Stopped;
+                    r.status_detail = Some("interrupted".into());
+                    r.turn_started_at = None;
+                    r.restart.stopped_by_quit = true;
+                    r.restart.interrupted_while_waiting = waiting;
+                });
+            }
             for r in s.runs.iter_mut().filter(|r| r.status.is_active()) {
                 r.status = RunStatus::Stopped;
                 r.status_detail = Some("interrupted".into());

@@ -12,11 +12,32 @@
   import { toast } from "../../lib/toast.svelte";
   import { nook } from "../../lib/state.svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import StatusRow from "./StatusRow.svelte";
+  import Segmented from "./Segmented.svelte";
+  import Fold from "./Fold.svelte";
+  import InfoLabel from "./InfoLabel.svelte";
   import { tip } from "../../components/ui/tip";
 
-  // The Mac's Privacy parts this page has: what Nook may reach (`access`) and the activity log (`log`).
-  let { part = "access" }: { part?: "access" | "log" } = $props();
+  // The Mac's Privacy parts this page has: the privacy level (`level`), what Nook may reach (`access`) and the activity
+  // log (`log`).
+  let { part = "access" }: { part?: "level" | "access" | "log" } = $props();
+  type PrivacyLevel = "open" | "balanced" | "strict";
+  const level = $derived<PrivacyLevel>(nook.settings?.privacyLevel ?? "balanced");
+  function levelDetail(l: PrivacyLevel) {
+    return l === "open"
+      ? tr("Alles gaat mee zoals het is: de beste antwoorden. Wachtwoordmanagers en wachtwoordvelden blijven altijd buiten beeld.", "Everything goes as it is: the best answers. Password managers and password fields always stay out of view.")
+      : l === "balanced"
+        ? tr("Geheimen gaan er eerst uit: wachtwoorden, API-sleutels en tokens, privésleutels, pasnummers, IBAN's en BSN's.", "Secrets are taken out first: passwords, API keys and tokens, private keys, card numbers, IBANs and BSNs.")
+        : tr("Ook e-mailadressen en telefoonnummers gaan eruit, en je scherm en klembord blijven op deze computer. Antwoorden kunnen daardoor minder volledig zijn.", "E-mail addresses and phone numbers are taken out too, and your screen and clipboard stay on this computer. Answers can be less complete.");
+  }
+  // What Nook promises whatever the level, each with its icon and the longer line behind the ⓘ.
+  const promises = $derived([
+    { icon: "eye-off", title: tr("Schermbeelden nooit", "Never screenshots"), detail: tr("Alleen herkende tekst, en alleen als je iets vraagt.", "Only recognized text, and only when you ask something.") },
+    { icon: "key-round", title: tr("Wachtwoorden blijven buiten beeld", "Passwords stay hidden"), detail: tr("Wachtwoordmanagers en verborgen klembord-inhoud worden nooit gelezen.", "Password managers and hidden clipboard contents are never read.") },
+    { icon: "hand", title: tr("Niets zonder jouw klik", "Nothing without your click"), detail: tr("Nook verstuurt nooit zelf mail.", "Nook never sends emails automatically.") },
+    { icon: "lock", title: tr("Sleutels in de beveiligde opslag van je systeem", "Keys in your system's secure storage"), detail: tr("De sleutels en wachtwoorden die Nook bewaart staan in Windows Referentiebeheer, nooit in een bestand of in wat een AI ziet. De eigen aanmelding van een agent (zoals een Codex-API-sleutel) bewaart die agent zelf.", "The keys and passwords Nook keeps stay in Windows Credential Manager, never in a file or in what an AI sees. An agent's own sign-in (such as a Codex API key) is kept by that agent.") },
+  ]);
 
   interface PermissionItem {
     id: string;
@@ -96,6 +117,23 @@
   let overview = $state<Overview | null>(null);
   let cleared = $state(false);
 
+  const neverRead = $derived(nook.settings?.neverReadApps ?? []);
+  async function setNeverRead(next: string[]) {
+    await nook.saveSettings({ neverReadApps: next });
+    // What Nook already read from these apps is dropped at once, not at the next read.
+    await services.screenForget().catch(() => {});
+  }
+  function removeNeverRead(app: string) {
+    setNeverRead(neverRead.filter((a) => a !== app));
+  }
+  async function addNeverRead() {
+    const picked = await openDialog({ multiple: true, filters: [{ name: tr("Apps", "Apps"), extensions: ["exe"] }] }).catch(() => null);
+    const names = (Array.isArray(picked) ? picked : picked ? [picked] : [])
+      .map((p) => (p.split(/[\\/]/).pop() ?? "").replace(/\.exe$/i, "").toLowerCase())
+      .filter((n) => n && !neverRead.includes(n));
+    if (names.length) await setNeverRead([...neverRead, ...names]);
+  }
+
   $effect(() => {
     api.auditEntries(auditQuery).then((a) => (audit = a));
   });
@@ -132,7 +170,23 @@
   }
 </script>
 
-{#if part === "access"}
+{#if part === "level"}
+  <!-- The Mac's `privacyLevelSection`: one choice, what it means, whether it applies now, then the four promises. -->
+  <h3>{tr("Privacyniveau", "Privacy level")}</h3>
+  <div class="group">
+    <div class="row">
+      <InfoLabel label={tr("Wat een AI in de cloud ziet", "What a cloud AI sees")} info={tr("Hoe streng Nook filtert wat hij op je computer verzamelt voordat het naar een extern brein gaat.", "How strictly Nook filters what it gathers on your computer before it goes to an external brain.")} />
+      <Segmented label={tr("Wat een AI in de cloud ziet", "What a cloud AI sees")} value={level} onchange={(v) => nook.saveSettings({ privacyLevel: v as PrivacyLevel })}
+        options={[{ value: "open", label: tr("Open", "Open") }, { value: "balanced", label: tr("Gebalanceerd", "Balanced") }, { value: "strict", label: tr("Strikt", "Strict") }]} />
+    </div>
+    <p class="note">{levelDetail(level)}</p>
+    {#if nook.info?.brainLocal}<p class="note ok"><Ico name="circle-check" size={12} /> {tr("Je brein draait nu op deze computer: er gaat niets weg, dus er hoeft niets gefilterd te worden.", "Your brain runs on this computer right now: nothing leaves it, so nothing needs filtering.")}</p>{/if}
+  </div>
+  <Fold title={tr("Wat je computer verlaat", "What leaves your computer")} summary={tr("Vier beloftes die altijd gelden", "Four promises that always apply")}>
+    {#each promises as p (p.icon)}
+      <div class="row promise"><span class="promise-icon"><Ico name={p.icon} size={15} /></span><span class="promise-title">{p.title}</span><span class="promise-info" use:tip={p.detail}><Ico name="info" size={12} /></span></div>
+    {/each}
+  </Fold>
 {#if nook.info?.capabilities.screenReading}
   <div class="group">
     <div class="row">
@@ -141,8 +195,19 @@
         onconfirm={async () => { await services.screenForget(); toast.success(tr("Schermtekst vergeten.", "Screen text forgotten.")); }} />
     </div>
   </div>
+  <!-- Apps Nook never reads (`neverReadApps` on the Mac): not their screen text, and no suggestions while typing. -->
+  <h3>{tr("Apps die Nook nooit leest", "Apps Nook never reads")}</h3>
+  <p class="section-info">{tr("Nook leest deze apps nooit en doet er geen suggesties, zoals je bank of een privéchat. Wachtwoordmanagers blijven altijd buiten.", "Nook never reads these apps or suggests text in them, like your bank or a private chat. Password managers are always left out.")}</p>
+  <div class="group">
+    {#each neverRead as app (app)}
+      <div class="row"><span><Ico name="eye-off" size={13} /> {app}</span><button class="small" onclick={() => removeNeverRead(app)}>{tr("Verwijder", "Remove")}</button></div>
+    {/each}
+    <div class="row"><span></span><button class="small" onclick={addNeverRead}>{tr("App toevoegen…", "Add App…")}</button></div>
+  </div>
+{/if}
 {/if}
 
+{#if part === "access"}
 {#if permissions.length}
   <!-- The Mac's Permissions (`SystemPermission`): what Windows lets Nook use, with a check once it may, and one-click
        `ms-settings:` deep links to the exact Windows Settings page. -->
@@ -233,6 +298,11 @@
 {/if}
 
 <style>
+  .note.ok { display: inline-flex; align-items: center; gap: var(--space-4); color: var(--mint); }
+  .promise { flex-wrap: nowrap; justify-content: flex-start; gap: var(--space-12); }
+  .promise-icon { display: grid; place-items: center; width: 18px; color: var(--text2); }
+  .promise-title { flex: 0 1 auto; }
+  .promise-info { display: inline-grid; place-items: center; color: var(--text3); }
   .linked { flex-wrap: nowrap; }
   .plain { display: flex; align-items: center; gap: var(--space-12); }
   .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }

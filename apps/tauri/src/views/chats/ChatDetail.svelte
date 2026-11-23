@@ -13,6 +13,7 @@
   import { tick } from "svelte";
   import { listen as listenEvent } from "@tauri-apps/api/event";
   import { chatsApi, connectorEvents, connectorsApi, type ChatThread } from "../../lib/connectors";
+  import { noticeText } from "../../lib/chat-notice";
   import { appName, bubbleOfInbox, callDetail, callOf, callTitle, canForwardTo, dayAndClock, entryAbilities, fillReceipts, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, outgoingKindOfMedia, personTint, QUICK_REACTIONS, readReceiptSummary, typingLine, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
   import Dialog from "../../components/ui/Dialog.svelte";
   import TimelineEarlierRow from "../../components/ui/TimelineEarlierRow.svelte";
@@ -37,14 +38,23 @@
   import Ticks from "./Ticks.svelte";
   import { canCallChat } from "../../lib/chats-call";
   import { activeCall } from "../../lib/chats-call.svelte";
+  import { chatOptions } from "../../lib/chat-options.svelte";
+  import ChatGifShelf from "./ChatGifShelf.svelte";
+  import ChatPollForm from "./ChatPollForm.svelte";
+  import ChatPollView from "./ChatPollView.svelte";
+  import DropdownRow from "../../components/ui/DropdownRow.svelte";
+  import Dropdown from "../../components/ui/Dropdown.svelte";
+  import DropdownTileGrid from "../../components/ui/DropdownTileGrid.svelte";
   import { chatMenu, invokeOrFallback, isChatArchived, isChatMuted, isChatPinned, markReadInApp, markReadInNook, openChatSettings } from "./chat-actions.svelte";
 
-  let { entry, targets = [], onclose, onnook }: {
+  let { entry, targets = [], onclose, onnook, onopenchat }: {
     entry: ChatEntry;
     /** The chats a message can be forwarded to. */
     targets?: ChatEntry[];
     onclose: () => void;
     onnook: (nookId: string) => void;
+    /** Opens another chat by its key (a group you share, in a chat's info). */
+    onopenchat?: (key: string) => void;
   } = $props();
 
   const isWhatsApp = $derived(entry.app === "whatsapp");
@@ -101,7 +111,9 @@
   $effect(() => {
     const key = entry.key;
     const isUnread = entry.read === "unread" || thread?.read.state === "unread";
-    if (!isUnread) return;
+    // "Read in Nook when opened", and "Also read in the app" where its app takes it (Settings › Chat options).
+    const how = chatOptions.readWhenOpened(!!abilities.markRead);
+    if (!isUnread || how === "no") return;
     let newestIncoming = "";
     for (let i = bubbles.length - 1; i >= 0; i--) {
       if (!bubbles[i].fromMe && !bubbles[i].deleted) {
@@ -114,7 +126,7 @@
     const timer = setTimeout(() => {
       if (document.hidden) return;
       autoReadMarker = marker;
-      chatsApi.markRead(key, false)
+      chatsApi.markRead(key, how === "app")
         .then(() => { whatsapp.version++; })
         .catch(() => {});
     }, 550);
@@ -135,18 +147,18 @@
 
   // The messages in runs: a run is one writer's messages in a row on one day. The first carries the tail (and the
   // writer's name in a group), the last the time.
-  type Line = { kind: "day"; id: string; label: string } | { kind: "bubble"; m: Bubble; first: boolean; last: boolean };
+  type Line = { kind: "day"; id: string; label: string } | { kind: "notice"; m: Bubble; text: string } | { kind: "bubble"; m: Bubble; first: boolean; last: boolean };
   // Where what is new begins: the first of the newest `unread` messages from someone else, as the chat opened.
   const unreadAtOpen = (() => entry.unread)();
   const newFrom = $derived.by(() => {
     if (!unreadAtOpen) return null;
-    const theirs = bubbles.filter((b) => !b.fromMe);
+    const theirs = bubbles.filter((b) => !b.fromMe && !noticeText(b));
     return theirs[Math.max(0, theirs.length - unreadAtOpen)]?.id ?? null;
   });
   const lines = $derived.by(() => {
     const now = new Date();
     const out: Line[] = [];
-    const who = (m: Bubble) => (m.fromMe ? "\u0000me" : m.sender);
+    const who = (m: Bubble) => (noticeText(m) ? `\u0000notice:${m.id}` : m.fromMe ? "\u0000me" : m.sender);
     let day = "";
     bubbles.forEach((m, i) => {
       const d = new Date(m.date);
@@ -157,6 +169,12 @@
         const today = new Date().toDateString();
         const allToday = !out.length && bubbles.every((b) => new Date(b.date).toDateString() === today);
         if (!Number.isNaN(d.getTime()) && !allToday) out.push({ kind: "day", id: `day:${key}`, label: dayLabel(d, now) });
+      }
+      // A line about the group stands alone in the middle (`ChatNoticeLine`), its time on hover.
+      const notice = noticeText(m);
+      if (notice) {
+        out.push({ kind: "notice", m, text: notice });
+        return;
       }
       const prev = bubbles[i - 1];
       const next = bubbles[i + 1];
@@ -407,6 +425,56 @@
   const takesFiles = $derived(abilities.send && (abilities.sends?.length ?? 0) > 0);
   const takesVoice = $derived(abilities.send && (abilities.sends ?? []).includes("voice"));
   let picker = $state<HTMLInputElement | null>(null);
+  // Which kinds the "+" menu's tile asked the file picker for ("" is any file).
+  let pickerAccept = $state("");
+  function choose(accept: string) {
+    pickerAccept = accept;
+    tick().then(() => picker?.click());
+  }
+  // The panel open above the field (`ChatComposerModel.Panel`): GIFs or stickers.
+  let panel = $state<"gifs" | "stickers" | "poll" | null>(null);
+  function openPanel(kind: "gifs" | "stickers" | "poll") {
+    emojiOpen = false;
+    panel = panel === kind ? null : kind;
+  }
+  /// A GIF picked in the shelf goes at once, as WhatsApp sends one, with what is typed as its caption.
+  async function sendGif(name: string, mime: string, base64: string) {
+    sending = true;
+    notice = "";
+    try {
+      await chatsApi.sendFile(entry.key, name, mime, base64, draft.trim(), replying?.id ?? null);
+      draft = "";
+      replying = null;
+      whatsapp.version++;
+      await loadThread();
+    } catch (e) {
+      notice = tr("Niet verstuurd: {error}", "Not sent: {error}", { error: String(e) });
+      throw e;
+    } finally {
+      sending = false;
+    }
+  }
+  /// A poll you wrote goes to the chat, where its app takes one (`abilities.polls`).
+  async function sendPoll(poll: { question: string; options: string[]; multiple: boolean }) {
+    await chatsApi.sendPoll(entry.key, poll);
+    whatsapp.version++;
+    if (isWhatsApp) await whatsapp.reload();
+    await loadThread();
+  }
+  /// Your vote on a poll in this chat, where its app takes votes (`abilities.vote`).
+  async function vote(m: Bubble, choice: string[]) {
+    try {
+      await chatsApi.vote(entry.key, m.id, choice);
+      await loadThread();
+    } catch (e) {
+      notice = tr("Je stem kon niet worden verstuurd. Probeer het opnieuw of stem in de app.", "Your vote could not be sent. Try again or vote in the app.");
+      throw e;
+    }
+  }
+  function openChatOptions() {
+    panel = null;
+    openChatSettings();
+  }
   function addFiles(list: FileList | File[] | null | undefined) {
     if (!list || !takesFiles) return;
     files = [...files, ...Array.from(list)].slice(0, 10);
@@ -684,6 +752,8 @@
     {#each lines as line (line.kind === "day" ? line.id : line.m.id)}
       {#if line.kind === "day"}
         <div class="day"><span>{line.label}</span></div>
+      {:else if line.kind === "notice"}
+        <div class="notice-line" data-message-id={line.m.id}><span title={time(line.m.date)}>{line.text}</span></div>
       {:else}
         {@const m = line.m}
         {@const file = m.deleted ? null : fileLabel(m.media)}
@@ -743,6 +813,7 @@
                 <span class="call-words"><span class="call-title" class:missed={missedHere}>{callTitle(call, m.fromMe)}</span><span class="call-detail">{callDetail(call, m.fromMe)}</span></span>
               </span>
             {/if}
+            {#if m.poll && !m.deleted}<ChatPollView poll={m.poll} onvote={abilities.vote ? (choice) => vote(m, choice) : undefined} />{/if}
             {#if link}<LinkCard url={link} />{/if}
             <span class="body">
               {#if text}<span class="text">{text}</span>{/if}
@@ -840,6 +911,11 @@
         {/each}
       </div>
     {/if}
+    {#if panel === "gifs" || panel === "stickers"}
+      <ChatGifShelf kind={panel} onsend={sendGif} onfile={addFiles} onclose={() => (panel = null)} onsettings={openChatOptions} />
+    {:else if panel === "poll"}
+      <ChatPollForm onsend={sendPoll} onclose={() => (panel = null)} />
+    {/if}
     {#if emojiOpen}
       <div class="emoji-grid" role="listbox" aria-label={tr("Emoji", "Emoji")}>
         {#each emojiList as e (e)}<button class="emoji" role="option" aria-selected="false" onclick={() => putEmoji(e)}>{e}</button>{/each}
@@ -851,8 +927,30 @@
       {#if abilities.send}
         <div class="leading" class:hidden={!!recording}>
           {#if takesFiles}
-            <IconButton title={tr("Foto's en bestanden", "Photos and files")} size={28} onclick={() => picker?.click()}><Ico name="plus" size={15} stroke={2.2} /></IconButton>
-            <input class="hidden" type="file" multiple bind:this={picker} onchange={(e) => { addFiles((e.currentTarget as HTMLInputElement).files); (e.currentTarget as HTMLInputElement).value = ""; }} />
+            <!-- "+" (`ChatAttachMenu`, `ChatAttachPanel`): the kinds of file as tiles, the panels below them. -->
+            <Dropdown width={280} label={tr("Toevoegen", "Attach")}>
+              {#snippet trigger({ toggle, open })}
+                <IconButton title={tr("Toevoegen", "Attach")} size={28} onclick={toggle}><Ico name="plus" size={15} stroke={2.2} /></IconButton>
+              {/snippet}
+              {#snippet children({ close })}
+                <div class="dd-header">{tr("Toevoegen aan je bericht", "Add to your message")}</div>
+                <DropdownTileGrid
+                  note={tr("Of sleep bestanden op de chat (hooguit {n})", "Or drop files on the chat (up to {n})", { n: 10 })}
+                  tiles={[
+                    { id: "media", icon: "image", label: tr("Foto & video", "Photo & video"), onselect: () => { close(); choose("image/*,video/*"); } },
+                    { id: "file", icon: "file", label: tr("Bestand", "File"), onselect: () => { close(); choose(""); } },
+                    { id: "audio", icon: "file-audio", label: tr("Audio", "Audio"), onselect: () => { close(); choose("audio/*"); } },
+                    { id: "gif", icon: "file-video", label: tr("GIF", "GIF"), onselect: () => { close(); openPanel("gifs"); } },
+                    { id: "stickers", icon: "smile", label: tr("Stickers", "Stickers"), onselect: () => { close(); openPanel("stickers"); } },
+                  ]}
+                />
+                {#if abilities.polls}
+                  <div class="dd-header">{tr("Delen", "Share")}</div>
+                  <DropdownRow symbol="chart-column" title={tr("Peiling", "Poll")} detail={tr("Stel een vraag met keuzes", "Ask a question with choices")} onclick={() => { close(); openPanel("poll"); }} />
+                {/if}
+              {/snippet}
+            </Dropdown>
+            <input class="hidden" type="file" multiple accept={pickerAccept} bind:this={picker} onchange={(e) => { addFiles((e.currentTarget as HTMLInputElement).files); (e.currentTarget as HTMLInputElement).value = ""; }} />
           {/if}
           <IconButton title={tr("Emoji", "Emoji")} size={28} onclick={() => (emojiOpen = !emojiOpen)}><Ico name="smile" size={15} stroke={2} /></IconButton>
         </div>
@@ -877,7 +975,7 @@
 {#if menuAnchor}<Menu sections={menu} anchor={menuAnchor} onclose={() => (menuAnchor = null)} />{/if}
 {#if messageMenu && (messageItems.length || messageReactions)}<Menu sections={messageItems} reactions={messageReactions} anchor={messageMenu.anchor} onclose={() => (messageMenu = null)} />{/if}
 {#if versionsOf}<Menu title={versionsOf.m.deleted ? tr("Voordat het werd verwijderd", "Before it was deleted") : tr("Eerdere versies", "Earlier versions")} sections={versionRows} anchor={versionsOf.anchor} onclose={() => (versionsOf = null)} />{/if}
-{#if infoAt}<ChatInfo {entry} {people} anchor={infoAt} onclose={() => (infoAt = null)} onclosechat={onclose} />{/if}
+{#if infoAt}<ChatInfo {entry} {people} profile={thread?.profile} bubbles={bubbles} {onopenchat} anchor={infoAt} onclose={() => (infoAt = null)} onclosechat={onclose} />{/if}
 <ChatCallCard />
 {#if forwarding}<ChatForwardSheet sourceKey={entry.key} messageId={forwarding.id} targets={targets} sender={forwarding.fromMe ? tr("Jij", "You") : forwarding.sender || entry.name} text={forwarding.text} media={forwarding.media} onclose={() => (forwarding = null)} />{/if}
 {#if deleting}
@@ -974,6 +1072,8 @@
   .new-divider::before, .new-divider::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--amber) 35%, transparent); }
   .sender-face { width: 28px; flex: none; margin-right: var(--space-8); align-self: flex-start; }
   .day { display: flex; justify-content: center; padding: var(--space-16) 0 var(--space-8); }
+  .notice-line { display: flex; justify-content: center; padding: var(--space-4) var(--space-16); user-select: text; }
+  .notice-line span { padding: var(--space-4) var(--space-12); border-radius: var(--radius-control); background: var(--chat-theirs); font: var(--text-caption); color: var(--text-muted); text-align: center; }
   .day span { padding: var(--space-4) var(--space-12); border-radius: var(--radius-control); background: var(--chat-theirs); font: var(--text-caption); font-weight: 600; color: var(--text-strong); }
 
   .line { display: flex; padding-top: var(--space-2); padding-right: 70px; }

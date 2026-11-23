@@ -10,6 +10,6 @@
 <style>
   .tag { display: inline-flex; align-items: center; border-radius: var(--radius-chip); background: var(--smoke); color: var(--text2); white-space: nowrap; flex: none; }
   .tag.tinted { color: var(--tint); background: color-mix(in srgb, var(--tint) 14%, transparent); }
-  .small { padding: 0 var(--space-6); font: 500 10.5px/16px var(--font); }
+  .small { padding: 0 var(--space-6); font: var(--text-caption); line-height: 16px; }
   .regular { padding: var(--space-2) var(--space-8); font: var(--text-label); }
 </style>

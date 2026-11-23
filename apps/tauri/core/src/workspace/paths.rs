@@ -50,6 +50,10 @@ fn forbidden(path: &str) -> bool {
         "/sbin",
         "/usr",
         "/private",
+        // macOS: /etc, /var and /tmp are links into /private, which canonicalizing follows.
+        "/private/etc",
+        "/private/var",
+        "/private/tmp",
         "/etc",
         "/var",
         "/dev",

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   import { accessOf, type NookAccess } from "../../lib/access";
   // Assistent: wat Nook ziet (je schermen, het klembord, je bestanden, je gesprekken) en of hij meedenkt.
   import { nook } from "../../lib/state.svelte";
@@ -112,7 +113,7 @@
         <span>{tr("Niet meedenken in", "Don't think along in")}</span>
         <span class="chips">
           {#each Object.entries(prefs.thinkAlongMuted) as [id, name] (id)}
-            <button class="chip" title={tr("Weer meedenken", "Think along again")} onclick={() => unmute(id)}>{name} ✕</button>
+            <button class="chip" use:tip={tr("Weer meedenken", "Think along again")} onclick={() => unmute(id)}>{name} ✕</button>
           {/each}
         </span>
       </div>

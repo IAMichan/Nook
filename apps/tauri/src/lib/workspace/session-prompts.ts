@@ -27,3 +27,6 @@ export const ask = (p: SessionPullRequestRef) => `About ${describe(p)}:\n\n${tit
 /** Everything that fails, so one message covers them. */
 export const fixChecks = (p: SessionPullRequestRef, failing: string[]) =>
   `These checks fail on ${describe(p)}. Find out why and fix them:\n\n${untrusted("failing_checks", failing.map((n) => `- ${n}`).join("\n"))}`;
+
+/** A remark on one line of a file you read in the side panel (`SessionPrompts.fileLine`). */
+export const fileLine = (path: string, line: number, code: string, note: string) => `About ${path}:${line}: ${note.trim()}\n\n> ${code}`;

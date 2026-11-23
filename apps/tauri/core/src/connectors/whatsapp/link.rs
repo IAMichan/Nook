@@ -125,7 +125,8 @@ struct Inner {
     refreshing: bool,
     polling: bool,
     /// Chats whose older messages were fetched for the card: once per chat while linked.
-    history_loaded: HashSet<String>,
+    /// How many extra pages of older messages each chat asked for (`load_history`).
+    history_pages: HashMap<String, usize>,
     /// Files the card shows or the user opened, by message id (oldest first in `preview_order`).
     previews: HashMap<String, PathBuf>,
     preview_order: VecDeque<String>,
@@ -388,7 +389,7 @@ impl WhatsAppLink {
             i.last_webhook = None;
             i.naming.clear();
             i.failures = 0;
-            i.history_loaded.clear();
+            i.history_pages.clear();
             i.previews.clear();
             i.preview_order.clear();
             i.previews_loading.clear();
@@ -737,6 +738,12 @@ impl WhatsAppLink {
                 let key = super::Inbox::key_in(&self.account, &chat);
                 self.env.chats.with(|inbox| inbox.withdraw_message(&key, &message));
             }
+            Some(WebhookEvent::PollVote { chat, poll, voter, choice, from_me }) => {
+                let key = super::Inbox::key_in(&self.account, &chat);
+                let (id, name) = if from_me { ("\u{1}me".to_string(), String::new()) } else { (jid::normalized(&voter), self.person_name(&chat, &voter)) };
+                let ballot = crate::chats::poll::Ballot { name, mine: from_me, choice };
+                self.env.chats.with(|inbox| inbox.ballot(&key, &poll, &id, ballot));
+            }
             _ => {}
         }
         self.changed();
@@ -1008,6 +1015,42 @@ impl WhatsAppLink {
         Ok(())
     }
 
+    /// Sends a poll after your own click (`ChatPollForm`); it shows in the chat once the gateway took it.
+    pub async fn send_poll(&self, chat: &str, draft: &crate::chats::poll::PollDraft) -> CResult<()> {
+        let provider =
+            self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
+        if !self.with(|i| i.rate.get_or_insert_with(|| RateLimit::new(6, 60)).allow(Utc::now())) {
+            return Err(ConnectorError::new("Even rustig: Nook stuurt hoogstens 6 WhatsApp-berichten per minuut."));
+        }
+        let (question, options) = (draft.clean_question(), draft.clean_options());
+        let target = jid::normalized(chat);
+        let id = provider.send_poll(&target, &question, &options, draft.multiple).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
+        let me = self.with(|i| i.me.clone()).unwrap_or_default();
+        let mut mine = Message::new(&id.unwrap_or_else(|| format!("nook-{}", uuid::Uuid::new_v4())), &target, &me, "", "", Utc::now(), true);
+        mine.poll = Some(crate::chats::poll::ChatPoll::new(&question, &options, draft.multiple));
+        let filters = self.settings().filters();
+        self.with(|i| i.inbox.add(mine, &filters, None, false));
+        self.changed();
+        Ok(())
+    }
+
+    /// Whether this account's gateway can vote on a poll for you.
+    pub fn can_vote(&self) -> bool {
+        self.is_connected() && self.with(|i| i.provider.as_ref().is_some_and(|p| p.can_vote()))
+    }
+
+    /// Your vote on a poll, after your click; the counts move at once.
+    pub async fn vote(&self, chat: &str, poll: &str, choice: &[String]) -> CResult<()> {
+        let provider =
+            self.with(|i| i.provider.clone()).filter(|_| self.is_connected()).ok_or_else(|| ConnectorError::new(self.status_line()))?;
+        let target = jid::normalized(chat);
+        provider.vote(&target, poll, choice).await.map_err(|e| ConnectorError::new(wa_text(&e)))?;
+        let key = super::Inbox::key_in(&self.account, &target);
+        self.env.chats.with(|inbox| inbox.vote_mine(&key, poll, choice));
+        self.changed();
+        Ok(())
+    }
+
     /// Markeert de chat hier en op WhatsApp als gelezen (tot het nieuwste ontvangen bericht).
     pub fn mark_read(&self, chat: &str) {
         let key = jid::normalized(chat);
@@ -1128,15 +1171,31 @@ impl WhatsAppLink {
         self.with(|i| i.inbox.get(chat)).map(|c| self.keyed(c))
     }
 
-    /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
+    /// How many more messages each scroll back asks the gateway for (`ChatInbox::KEEP` is one page).
+    const HISTORY_STEP: usize = 50;
+    /// The most messages of one chat Nook asks for.
+    const HISTORY_MAX: usize = 1000;
+
+    /// One more page of older messages for a chat (`ChatHistoryBridge`): the gateway hands out the newest `limit`
+    /// messages, so each call asks for a page more than the last. True while it brought something new, false once the
+    /// chat has nothing older (or the gateway stopped giving more).
     pub async fn load_history(&self, chat: &str) -> bool {
         let key = jid::normalized(chat);
-        if !self.is_connected() || !self.with(|i| i.history_loaded.insert(key.clone())) {
+        if !self.is_connected() {
+            return false;
+        }
+        let pages = self.with(|i| {
+            let pages = i.history_pages.entry(key.clone()).or_insert(0);
+            *pages += 1;
+            *pages
+        });
+        let limit = KEEP + pages * Self::HISTORY_STEP;
+        if limit > Self::HISTORY_MAX {
             return false;
         }
         let count = |me: &Self| me.with(|i| i.inbox.get(&key).map(|c| c.messages.len()).unwrap_or(0));
         let before = count(self);
-        let _ = self.messages_of(&key, KEEP).await;
+        let _ = self.messages_of(&key, limit).await;
         count(self) != before
     }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Settings › Agents › Archive (`ArchiveSettingsSection` on the Mac): everything put away, newest first, each with
   // Restore and Delete. Coding agent sessions first (where this computer runs them), then Nook's own conversations. A
   // search narrows both; each list ends in "Delete all archived…" (what the search found, while searching), asked once
@@ -76,7 +77,7 @@
       </span>
       <span class="inline">
         <button class="small" disabled={busy} onclick={restore}>{tr("Terugzetten", "Restore")}</button>
-        <button class="ghost danger icon-btn" disabled={busy} title={tr("Verwijderen", "Delete")} aria-label={tr("Verwijderen", "Delete")} onclick={() => (confirming = key)}><Ico name="trash-2" size={14} /></button>
+        <button class="ghost danger icon-btn" disabled={busy} use:tip={tr("Verwijderen", "Delete")} aria-label={tr("Verwijderen", "Delete")} onclick={() => (confirming = key)}><Ico name="trash-2" size={14} /></button>
       </span>
     {/if}
   </div>

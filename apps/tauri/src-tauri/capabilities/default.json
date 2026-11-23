@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Rechten voor de vensters van Nook",
-  "windows": ["main", "bar", "tab-*"],
+  "windows": ["main", "bar", "bar-mirror-*", "tab-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

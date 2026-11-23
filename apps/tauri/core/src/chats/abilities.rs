@@ -52,6 +52,9 @@ pub struct ChatAbilities {
     pub archived: bool,
     /// A poll in the chat can be voted on from Nook.
     pub vote: bool,
+    /// A poll can be sent to the chat (WhatsApp's gateways; the helper's apps have no polls another app can send).
+    #[serde(default)]
+    pub polls: bool,
     /// "Delete for me" also deletes the message in the app itself (else in Nook only).
     pub delete_for_me: bool,
 }
@@ -109,6 +112,7 @@ impl ChatAbilities {
                 muted,
                 archived,
                 vote: false,
+                polls: connected,
                 delete_for_me: connected,
             }
         } else {
@@ -130,6 +134,7 @@ impl ChatAbilities {
                 muted,
                 archived,
                 vote: connected,
+                polls: false,
                 delete_for_me: false,
             }
         }

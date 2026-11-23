@@ -335,6 +335,8 @@ mod tests {
             pending_rollback: None,
             goal: None,
             compacting: false,
+            tasks: None,
+            restart: Default::default(),
         }
     }
 

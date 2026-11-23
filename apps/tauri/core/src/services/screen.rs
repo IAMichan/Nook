@@ -4,7 +4,7 @@
 //! venster opnieuw gelezen moet worden.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -47,12 +47,29 @@ pub const EXCLUDED_APPS: [&str; 22] = [
     "nook",
 ];
 
+/// The apps you added under Settings › Privacy › Apps Nook never reads (names as `is_excluded` takes them, lowercase).
+static USER_EXCLUDED: RwLock<Vec<String>> = RwLock::new(Vec::new());
+
+/// Replaces the list of apps you chose never to be read; names are compared without ".exe" and case.
+pub fn set_user_excluded(apps: &[String]) {
+    let list = apps.iter().map(|a| normalized(a)).filter(|a| !a.is_empty()).collect();
+    *USER_EXCLUDED.write().unwrap_or_else(|e| e.into_inner()) = list;
+}
+
+fn normalized(app: &str) -> String {
+    let lower = app.trim().to_lowercase();
+    lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
+}
+
 /// Of Nook in deze app nooit mag kijken. `app` is de naam, het exe-bestand of de WM_CLASS.
 pub fn is_excluded(app: &str) -> bool {
     let lower = app.trim().to_lowercase();
     let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
     if stem.is_empty() {
         return false;
+    }
+    if USER_EXCLUDED.read().unwrap_or_else(|e| e.into_inner()).iter().any(|name| stem == name) {
+        return true;
     }
     EXCLUDED_APPS.iter().any(|name| stem == *name || stem.starts_with(&format!("{name} ")) || stem.starts_with(&format!("{name}-")))
         || stem.contains("password")
@@ -313,6 +330,17 @@ mod tests {
 
     fn seen(id: &str, app: &str, title: &str, front: bool) -> SeenWindow {
         SeenWindow { id: id.into(), app: app.into(), title: title.into(), display: "1".into(), frontmost: front }
+    }
+
+    #[test]
+    fn apps_you_choose_are_never_read_either() {
+        assert!(!is_excluded("MyBank.exe"));
+        set_user_excluded(&["MyBank.exe".into(), "  ".into()]);
+        assert!(is_excluded("mybank"));
+        assert!(is_excluded("MyBank.exe"));
+        assert!(!is_excluded("mybank2"));
+        set_user_excluded(&[]);
+        assert!(!is_excluded("mybank"));
     }
 
     #[test]

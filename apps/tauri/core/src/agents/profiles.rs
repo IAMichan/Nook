@@ -60,7 +60,7 @@ impl AgentProfile {
     pub fn environment(&self) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
         if let (Some(home), Some(variable)) = (&self.home, self.kind.home_variable()) {
-            env.insert(variable.into(), home.clone());
+            env.insert(variable.into(), self.kind.home_value(home));
         }
         env
     }
@@ -92,9 +92,9 @@ impl AgentProfile {
         let mut prefix = String::new();
         if let (Some(home), Some(variable)) = (&self.home, self.kind.home_variable()) {
             if cfg!(windows) {
-                prefix = format!("$env:{variable}='{}'; ", home.replace('\'', "''"));
+                prefix = format!("$env:{variable}='{}'; ", self.kind.home_value(home).replace('\'', "''"));
             } else {
-                prefix = format!("{variable}={} ", shell_quote(home));
+                prefix = format!("{variable}={} ", shell_quote(&self.kind.home_value(home)));
             }
         }
         format!("{prefix}{command}")
@@ -235,12 +235,7 @@ impl ProfileStore {
     pub fn add(&mut self, kind: AgentKind, label: &str, home: Option<PathBuf>) -> AgentProfile {
         let name = label.trim();
         let slug = slug(if name.is_empty() { "werk" } else { name });
-        let base = match kind {
-            AgentKind::Claude => ".claude",
-            AgentKind::Codex => ".codex",
-            _ => ".gemini",
-        };
-        let suggested = |s: &str| home_dir().join(format!("{base}-{s}"));
+        let suggested = |s: &str| kind.suggested_home(s);
         let mut folder = home.clone().unwrap_or_else(|| suggested(&slug));
         if home.is_none() {
             let mut counter = 2;
@@ -342,6 +337,14 @@ impl ProfileStore {
                 (AgentKind::Claude, ".claude.json")
             } else if name.starts_with(".codex-") || name.starts_with(".codex_") {
                 (AgentKind::Codex, "auth.json")
+            } else if name.starts_with(".gemini-") || name.starts_with(".gemini_") {
+                // GEMINI_CLI_HOME stands in for the home folder: the account's data is in its `.gemini`.
+                let data = home.join(&name).join(".gemini");
+                let signed_in = ["oauth_creds.json", "google_accounts.json"].iter().any(|f| data.join(f).exists());
+                if signed_in && self.profile_for_home(AgentKind::Gemini, &data.to_string_lossy()).is_none() {
+                    found.push((AgentKind::Gemini, data));
+                }
+                continue;
             } else {
                 continue;
             };
@@ -356,6 +359,8 @@ impl ProfileStore {
 
 /// "~/.claude-werk" → "Werk"; een map zonder achtervoegsel heet naar zichzelf.
 pub fn label_for_folder(path: &Path) -> String {
+    // ~/.gemini-werk/.gemini is named after the folder around it.
+    let path = if path.file_name().is_some_and(|n| n == ".gemini") { path.parent().unwrap_or(path) } else { path };
     let folder = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
     let mut name: String = match folder.find(['-', '_']) {
         Some(i) => folder[i + 1..].to_string(),
@@ -383,6 +388,19 @@ mod tests {
         assert_eq!(slug("   "), "werk");
         assert_eq!(label_for_folder(Path::new("/home/x/.claude-werk")), "Werk");
         assert_eq!(label_for_folder(Path::new("/home/x/.codex_klant-a")), "Klant-a");
+        assert_eq!(label_for_folder(Path::new("/home/x/.gemini-werk/.gemini")), "Werk");
+    }
+
+    #[test]
+    fn gemini_accounts_point_the_variable_at_the_folder_around_dot_gemini() {
+        assert_eq!(AgentKind::Gemini.home_variable(), Some("GEMINI_CLI_HOME"));
+        assert_eq!(AgentKind::Gemini.home_value("/h/.gemini-werk/.gemini"), "/h/.gemini-werk");
+        assert_eq!(AgentKind::Gemini.home_value("/h/other"), "/h/other");
+        assert_eq!(AgentKind::Gemini.home_from_variable("/h/.gemini-werk"), std::path::Path::new("/h/.gemini-werk").join(".gemini").to_string_lossy());
+        assert_eq!(AgentKind::Claude.home_value("/h/.claude-werk"), "/h/.claude-werk");
+        let profile = AgentProfile { id: "gemini-werk".into(), kind: AgentKind::Gemini, label: "Werk".into(), home: Some("/h/.gemini-werk/.gemini".into()), auth: None };
+        assert_eq!(profile.environment().get("GEMINI_CLI_HOME").map(String::as_str), Some("/h/.gemini-werk"));
+        assert!(AgentKind::Gemini.suggested_home("werk").ends_with(".gemini"));
     }
 
     #[test]

@@ -27,6 +27,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
+pub mod cards;
 mod nook;
 mod pulls;
 mod schedule;
@@ -374,6 +375,8 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         BridgeTool::SessionSearch => sessions::session_search(app, a, &caller).await,
         BridgeTool::SessionOrganize => sessions::session_organize(app, a, &caller, context).await,
         BridgeTool::SessionQuestions => sessions::session_questions(app, a, &caller, context).await,
+        BridgeTool::SessionSuggest => cards::session_suggest(app, a, &caller),
+        BridgeTool::RenderPage => cards::render_page(app, a, &caller),
         BridgeTool::ScheduleTask => schedule::schedule_task(app, a, &caller, context).await,
         BridgeTool::ListScheduledTasks => schedule::list_scheduled_tasks(app, a, &caller),
         BridgeTool::UpdateScheduledTask => schedule::update_scheduled_task(app, a, &caller, context).await,

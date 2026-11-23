@@ -26,6 +26,7 @@ export function sectionSubtitle(section: SettingsSectionId): string {
     case "autocompleteStats": return tr("Wat aanvullen je bespaarde", "What completing saved you");
     case "dictation": return tr("Praten in plaats van typen, in elke app", "Talk instead of typing, in any app");
     case "agents": return tr("Je agents koppelen, en hun accounts", "Linking your agents and their accounts");
+    case "skills": return tr("De skills die je agents lezen, voor jezelf en per project", "The skills your agents read, for yourself and per project");
     case "usage": return tr("Wat je agents verbruikten, en hun limieten", "What your agents used, and their limits");
     case "sessions": return tr("Waarmee een nieuwe sessie start, en hoe sessies werken", "What a new session starts with, and how sessions behave");
     case "worktrees": return tr("Waar nieuwe worktrees komen en wanneer Nook ze opruimt", "Where new worktrees go and when Nook cleans them up");
@@ -38,6 +39,7 @@ export function sectionSubtitle(section: SettingsSectionId): string {
     case "connections": return tr("Online diensten, je eigen servers en de apps op deze computer", "Online services, your own servers and the apps on this computer");
     case "iphone": return tr("Nook op je iPhone, ook buitenshuis", "Nook on your iPhone, also away from home");
     case "privacy": return tr("Wat een cloud-AI mag zien, en vergeten wat Nook zag", "What a cloud AI may see, and forgetting what Nook saw");
+    case "permissions": return tr("De machtigingen van de computer en de accounts die Nook bereikt", "The computer's permissions and the accounts Nook can reach");
     case "activityLog": return tr("Wat Nook deed, en wanneer", "What Nook did, and when");
     case "maintenance": return tr("Updates, achtergrondactiviteit en diagnose", "Updates, background activity and diagnostics");
     case "about": return tr("Versie, broncode en licentie", "Version, source code and license");

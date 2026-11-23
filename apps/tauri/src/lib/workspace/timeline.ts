@@ -189,11 +189,14 @@ function present(turn: RunEvent[], open: boolean): TimelineBlock[] {
   const answer = findLastIndex(turn, (e) => e.kind === "assistant");
   // Alleen een beurt die goed afliep vouwt: het antwoord blijft staan, het werk ertussen gaat dicht.
   if (open || first.kind !== "user" || !finished || troubled || answer < 0) return group(turn);
-  const work = turn.filter((e, i) => i !== 0 && i !== answer && e.kind !== "result");
+  // A card the agent put up for you (a suggested session, a page) stays in sight under the answer, never in the fold.
+  const card = (e: RunEvent) => e.kind === "system" && (e.tool === "session_suggestion" || e.tool === "render_page");
+  const work = turn.filter((e, i) => i !== 0 && i !== answer && e.kind !== "result" && !card(e));
+  const cards = turn.filter(card).map(ev);
   if (!work.some((e) => e.kind !== "assistant")) return group(turn);
   const seconds = Math.max(0, (Date.parse(finished.date) - Date.parse(first.date)) / 1000);
   // De vouw krijgt het id van het eerste werk dat hij verbergt: nooit hetzelfde als een blok ernaast.
-  return [ev(first), { type: "fold", id: work[0].id, seconds, blocks: group(work) }, ev(turn[answer]), ev(finished)];
+  return [ev(first), { type: "fold", id: work[0].id, seconds, blocks: group(work) }, ev(turn[answer]), ...cards, ev(finished)];
 }
 
 /// Twee of meer tool-aanroepen achter elkaar worden één blok. De rest staat op zichzelf: het denken blijft leesbaar,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Settings › About Nook (`aboutSection` on the Mac): the version, the source, what's new, reporting a problem, and
   // the legal notices. Every link opens in the browser.
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -17,13 +18,13 @@
 <div class="group">
   <div class="row"><span>{tr("Versie", "Version")}</span><code>{nook.info?.version ?? "–"}</code></div>
   {#each app as link (link.url)}
-    <div class="row"><span>{link.title}</span><button class="small" title={link.url} onclick={() => openUrl(link.url)}>{tr("Openen", "Open")}</button></div>
+    <div class="row"><span>{link.title}</span><button class="small" use:tip={link.url} onclick={() => openUrl(link.url)}>{tr("Openen", "Open")}</button></div>
   {/each}
 </div>
 <h3>{tr("Juridisch", "Legal")}</h3>
 <div class="group">
-  <div class="row"><span>{tr("Licentie", "License")}</span><button class="ghost license-link" title={LINKS.license} onclick={() => openUrl(LINKS.license)}>MIT</button></div>
-  <div class="row"><span>{tr("Opensourcevermeldingen", "Open source notices")}</span><button class="small" title={LINKS.notices} onclick={() => openUrl(LINKS.notices)}>{tr("Openen", "Open")}</button></div>
+  <div class="row"><span>{tr("Licentie", "License")}</span><button class="ghost license-link" use:tip={LINKS.license} onclick={() => openUrl(LINKS.license)}>MIT</button></div>
+  <div class="row"><span>{tr("Opensourcevermeldingen", "Open source notices")}</span><button class="small" use:tip={LINKS.notices} onclick={() => openUrl(LINKS.notices)}>{tr("Openen", "Open")}</button></div>
 </div>
 
 <style>

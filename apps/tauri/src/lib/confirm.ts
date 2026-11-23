@@ -13,6 +13,9 @@ export interface ConfirmRequest {
   confirmTitle: string;
   /** Red for what cannot be undone (the default); `false` for a confirmation that only needs a yes. */
   destructive?: boolean;
+  /** A box under the question ("Don't ask again"); `onRemember` runs when it was ticked and the question was confirmed. */
+  dontAskAgain?: string;
+  onRemember?: () => void;
 }
 
 export interface PendingConfirm extends ConfirmRequest {

@@ -37,11 +37,19 @@ export interface Settings {
   screenChoice: string;
   accentHex: number;
   hideWhenIdle: boolean;
+  /** How tightly Nook guards what an external brain sees (Settings › Privacy › Privacy level). */
+  privacyLevel?: "open" | "balanced" | "strict";
+  /** Resting the pointer on the closed bar opens the panel (`openOnHover` on the Mac). */
+  openOnHover?: boolean;
   panelLarge: boolean;
   /** Quitting asks first while a session is at work (Settings › General › Confirmations). */
   confirmQuit: boolean;
   /** The bar shows at the top of the screen; off, only a shortcut or the tray opens it. */
   showBar: boolean;
+  /** Every connected screen gets a bar (`notchOnAllScreens` on the Mac). */
+  barOnAllScreens?: boolean;
+  /** Apps Nook never reads, as exe names without ".exe". */
+  neverReadApps?: string[];
   /** Settings › Notifications: how chats, Nook and suggestions show, apps switched off, quiet hours (the agents' style is
    *  `agentNotice`). */
   noticeRules: {
@@ -127,6 +135,10 @@ export interface Settings {
   nookLook: NookLook;
   /** Nook as a buddy: the small moments (hello, waking up, a giggle, a blush). */
   buddyMoments: boolean;
+  /** How Nook words his moments: "calm", "warm" or "playful". */
+  buddyTone?: "calm" | "warm" | "playful";
+  /** Your birthday as "MM-DD", empty when not set. */
+  birthday?: string;
   /** The default answer style (Settings › Instructions). */
   answerStyle: "standard" | "concise" | "explanatory" | "formal" | "casual";
   /** The user's own standing instructions, sent with every question. */

@@ -46,6 +46,15 @@ pub struct InboxMessage {
     /// What it said before it was edited or deleted for everyone, oldest first (`ChatVersion`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<MessageVersion>,
+    /// A poll this message asks, with the votes Nook knows (`ChatPoll`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<super::poll::ChatPoll>,
+    /// Someone came into the group or went out of it: the chat shows a centred line, not a message (`text` stays empty).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membership: Option<super::membership::ChatMembership>,
+    /// The group itself changed (a new name, picture...): a centred line like `membership`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_change: Option<super::membership::ChatGroupChange>,
 }
 
 /// One person in a group and how far your message got with them (`ChatReader` on the Mac).
@@ -154,12 +163,34 @@ impl InboxMessage {
             reply_to: None,
             reactions: None,
             versions: vec![],
+            poll: None,
+            membership: None,
+            group_change: None,
         }
     }
 
-    /// Someone else's message: what "unread" and "read" are about.
+    /// A line about who is in the group, as the apps show it (yours when you did it).
+    pub fn membership_notice(id: impl Into<String>, date: DateTime<Utc>, membership: super::membership::ChatMembership) -> Self {
+        let mut line = Self::new(id, String::new(), date, membership.by_me());
+        line.membership = Some(membership);
+        line
+    }
+
+    /// A line about the group itself changing (yours when you did it, unless the app says whose it is).
+    pub fn group_notice(id: impl Into<String>, date: DateTime<Utc>, change: super::membership::ChatGroupChange, from_me: Option<bool>) -> Self {
+        let mut line = Self::new(id, String::new(), date, from_me.unwrap_or_else(|| change.by_me()));
+        line.group_change = Some(change);
+        line
+    }
+
+    /// A line about the group rather than a message.
+    pub fn is_notice(&self) -> bool {
+        self.membership.is_some() || self.group_change.is_some()
+    }
+
+    /// Someone else's message: what "unread" and "read" are about. A change in who is in a group does none of that.
     pub fn is_incoming(&self) -> bool {
-        !self.from_me
+        !self.from_me && !self.is_notice()
     }
 
     /// The message as it shows once deleted for everyone: no words, no file.
@@ -194,6 +225,8 @@ pub struct BridgedChat {
     /// The app's own id for the chat; chats with one are keyed by it, others by their name.
     pub chat_id: Option<String>,
     pub account: Option<String>,
+    /// What the app says of the chat itself (`ChatProfile`); `None` leaves what Nook knows as it is.
+    pub profile: Option<super::ChatProfile>,
     pub kind: Option<ChatKind>,
     /// The person's number or address, for a person's chat.
     pub handle: Option<String>,
@@ -250,6 +283,9 @@ pub struct InboxThread {
     pub account: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ChatKind>,
+    /// What the app says of the chat itself: a group's description and admins, a person's number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<super::ChatProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -297,6 +333,7 @@ impl InboxThread {
             chat_id: None,
             account: None,
             kind: None,
+            profile: None,
             handle: None,
             has_older: None,
             activity: None,
@@ -374,7 +411,7 @@ impl InboxThread {
     /// Whether Nook may automatically suggest a reply in the empty composer field: the newest non-deleted message must
     /// be someone else's AND the thread must not look like phishing or a scam (CH-39).
     pub fn should_suggest_reply(&self) -> bool {
-        let last_is_theirs = self.messages.iter().rev().find(|m| !m.deleted).is_some_and(|m| !m.from_me);
+        let last_is_theirs = self.messages.iter().rev().find(|m| !m.deleted && !m.is_notice()).is_some_and(|m| !m.from_me);
         last_is_theirs && !self.trust().is_suspicious()
     }
 
@@ -707,6 +744,14 @@ impl ChatInbox {
             if message.reactions.is_some() && kept.reactions != message.reactions {
                 kept.reactions = message.reactions.clone();
             }
+            // A poll read again: its app's own counts win; a WhatsApp poll keeps the ballots Nook gathered for it.
+            if let Some(poll) = &message.poll {
+                if poll.ballots.is_empty() && kept.poll.as_ref().is_none_or(|k| k.ballots.is_empty()) && kept.poll.as_ref() != Some(poll) {
+                    kept.poll = Some(poll.clone());
+                } else if kept.poll.is_none() {
+                    kept.poll = Some(poll.clone());
+                }
+            }
         }
         if !chat.deleted.is_empty() {
             let gone: HashSet<&String> = chat.deleted.iter().collect();
@@ -806,6 +851,9 @@ impl ChatInbox {
         }
         if chat.members.is_some() {
             thread.members = chat.members;
+        }
+        if chat.profile.is_some() {
+            thread.profile = chat.profile;
         }
         if chat.account.is_some() {
             thread.account = chat.account;
@@ -977,6 +1025,26 @@ impl ChatInbox {
         if let Some(thread) = self.threads.get_mut(key) {
             thread.messages.retain(|m| m.id != id);
             thread.read_details.remove(id);
+        }
+    }
+
+    /// Someone's vote on a poll in this chat, by the poll's message id (WhatsApp sends votes one by one). False when the
+    /// poll is not here.
+    pub fn ballot(&mut self, key: &str, poll: &str, voter: &str, ballot: super::poll::Ballot) -> bool {
+        let Some(m) = self.message_mut(key, poll) else { return false };
+        let Some(p) = m.poll.as_mut() else { return false };
+        p.apply_ballot(voter, ballot);
+        true
+    }
+
+    /// Your vote shown at once, before the app confirms it (`ChatPoll.voting`).
+    pub fn vote_mine(&mut self, key: &str, poll: &str, choice: &[String]) {
+        if let Some(p) = self.message_mut(key, poll).and_then(|m| m.poll.as_mut()) {
+            if p.ballots.is_empty() {
+                *p = p.voting(choice);
+            } else {
+                p.apply_ballot("\u{1}me", super::poll::Ballot { name: String::new(), mine: true, choice: choice.to_vec() });
+            }
         }
     }
 

@@ -5,17 +5,22 @@
 //! Signal, Slack and the others reach it through the chat helper (CH-02) and their own bridges.
 
 pub mod abilities;
+pub mod apps;
 pub mod bridge;
 pub mod call;
 pub mod chatd;
 pub mod draft;
 pub mod follow_up;
+pub mod giphy;
 pub mod forward;
 pub mod inbox;
 pub mod link;
 pub mod link_preview;
+pub mod membership;
 pub mod person_notes;
+pub mod poll;
 pub mod priority;
+pub mod profile;
 pub mod store;
 pub mod tools;
 pub mod typing;
@@ -27,6 +32,8 @@ pub use abilities::{ChatAbilities, ChatAction, ChatActionRefusal, OutgoingKind};
 pub use bridge::ChatBridge;
 pub use forward::{ChatForward, ForwardAttachment, ForwardParts};
 pub use inbox::{BridgedChat, ChatInbox, ChatReadState, FilledMessage, InboxMessage, InboxThread, MessageReadDetail, MessageReader};
+pub use membership::{ChatGroupChange, ChatMembership, GroupChangeKind, MembershipChange};
+pub use profile::ChatProfile;
 pub use priority::{ChatNoticeMode, NoticePriorityLevel, NoticeScore, PriorityReason};
 pub use store::InboxStore;
 

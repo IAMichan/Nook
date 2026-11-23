@@ -1,250 +1,94 @@
 <script lang="ts">
-  // The card of a chat that just wrote (any app but WhatsApp, which has its own): context with app icon, contact heading,
-  // recent messages as tailed bubbles with timestamps, an integrated reply box, and Read / Later + Open in Nook
-  // (the Mac's notch chat card: `CardView`, `ChatTranscript`, `ChatReplyField`, `NookSplitButton`).
-  import { tr } from "../lib/i18n.svelte";
+  // What a chat that just wrote shows in the bar's card (the Mac's `showChatCard`, the same for every chat app but
+  // WhatsApp, which has its own; the bar puts it beside Nook in a `BarCard`): the app and how many are new, who, the last
+  // messages as bubbles with their time, a field to answer, Read and Later side by side, Let Nook answer, and "…" to open
+  // the chat in Nook.
+  import { tr, locale } from "../lib/i18n.svelte";
   import { arrivedChat } from "../lib/chat-arrived.svelte";
-  import { appName, chatApps, personTint } from "../lib/chats-list";
-  import { time } from "../lib/whatsapp";
+  import { appName, chatApps } from "../lib/chats-list";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
+  import { nook } from "../lib/state.svelte";
+  import Menu from "./ui/Menu.svelte";
   import Ico from "./ui/Ico.svelte";
 
-  let { onopen }: { onopen: (key: string) => void } = $props();
+  // `onnook`: where Let Nook answer goes; by default a new Nook in this window is asked.
+  let { onopen, onnook }: { onopen: (key: string) => void; onnook?: (prompt: string) => void } = $props();
   const thread = $derived(arrivedChat.thread);
-  const recent = $derived((thread?.messages ?? []).filter((m) => !m.deleted).slice(-4));
-  const runs = $derived.by(() => {
-    const list = recent;
-    const who = (m: (typeof list)[number]) => (m.fromMe ? "\u0000me" : m.sender || "");
-    return list.map((m, i) => ({
-      m,
-      first: !list[i - 1] || who(list[i - 1]) !== who(m),
-      last: !list[i + 1] || who(list[i + 1]) !== who(m),
-    }));
-  });
-  const unreadCount = $derived(
-    thread?.read.state === "unread" ? thread.read.count : (arrivedChat.pending?.unread ?? 0)
-  );
-  const canSend = $derived(!!arrivedChat.draft.trim() && !arrivedChat.sending);
+  const recent = $derived((thread?.messages ?? []).filter((m) => !m.deleted).slice(-6));
+  const clock = (iso: string | undefined) => (iso ? new Date(iso).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) : "");
+  const newCount = $derived(thread?.read.state === "unread" ? thread.read.count : 0);
+  let more = $state<DOMRect | null>(null);
+
+  function letNookAnswer() {
+    if (!thread) return;
+    const prompt = tr("Schrijf een kort antwoord aan {name} op {app} dat ik kan versturen.", "Write a short reply to {name} on {app} that I can send.", { name: thread.name, app: appName(thread.app) });
+    arrivedChat.markRead();
+    if (onnook) return onnook(prompt);
+    nook.newNook().then(() => nook.ask(prompt)).catch((e) => (nook.error = String(e)));
+  }
 </script>
 
 {#if thread}
-  <div class="arrived" role="region" aria-label={thread.name}>
+  <div class="arrived">
     <div class="head">
-      <div class="context">
-        <ServiceIcon domain={chatApps[thread.app]?.domain} title={appName(thread.app)} size={16} />
-        <span class="ctx-text">
-          {appName(thread.app)}{#if unreadCount > 0} · {tr("{n} ongelezen", "{n} unread", { n: unreadCount })}{/if}
-        </span>
-      </div>
-      <h3 class="title">{thread.name}</h3>
+      <ServiceIcon domain={chatApps[thread.app]?.domain} title={appName(thread.app)} size={14} />
+      <span class="context">{appName(thread.app)}{#if newCount > 1} · {tr("{n} nieuw", "{n} new", { n: newCount })}{/if}</span>
     </div>
-
+    <div class="title">{thread.name}</div>
     <div class="bubbles">
-      {#each runs as { m, first, last } (m.id)}
-        <div class="line" class:mine={m.fromMe} class:first>
-          <div class="bubble" class:mine={m.fromMe} class:tailed={first} class:joins={!last}>
-            {#if first && !m.fromMe && m.sender && m.sender !== thread.name}
-              <span class="sender" style:color={personTint(m.sender)}>{m.sender}</span>
-            {/if}
-            <span class="msg-body">
-              <span class="text">{m.text || "📎"}</span>
-              {#if last && m.date}<span class="stamp">{time(m.date)}</span>{/if}
-            </span>
-          </div>
+      {#each recent as m (m.id)}
+        <div class="bubble" class:mine={m.fromMe}>
+          {#if !m.fromMe && m.sender && m.sender !== thread.name}<em>{m.sender}</em>{/if}
+          <span class="text">{m.text || "📎"}</span><span class="time">{clock(m.date)}</span>
         </div>
       {/each}
     </div>
-
-    {#if arrivedChat.error}<span class="error">{arrivedChat.error}</span>{/if}
-
     {#if thread.sends}
-      <form class="reply-box" onsubmit={(e) => { e.preventDefault(); arrivedChat.send(); }}>
-        <input
-          bind:value={arrivedChat.draft}
-          placeholder={tr("Antwoord aan {name}", "Reply to {name}", { name: thread.name })}
-          aria-label={tr("Antwoord aan {name}", "Reply to {name}", { name: thread.name })}
-          disabled={arrivedChat.sending}
-        />
-        <button class="send" class:ready={canSend} type="submit" disabled={!canSend} aria-label={tr("Versturen", "Send")}>
-          <Ico name="arrow-up" size={14} stroke={2.5} />
-        </button>
+      <form class="reply" onsubmit={(e) => { e.preventDefault(); arrivedChat.send(); }}>
+        <input bind:value={arrivedChat.draft} placeholder={tr("Antwoord {name}…", "Answer {name}…", { name: thread.name })} aria-label={tr("Antwoord {name}…", "Answer {name}…", { name: thread.name })} disabled={arrivedChat.sending} />
+        <button class="send" type="submit" disabled={!arrivedChat.draft.trim() || arrivedChat.sending} aria-label={tr("Versturen", "Send")}><Ico name="arrow-up" size={13} /></button>
       </form>
     {/if}
-
-    <div class="actions-row">
-      <div class="split-pill">
-        <button class="split-primary" onclick={() => arrivedChat.markRead()}>
-          <Ico name="check" size={13} stroke={2.5} />
-          <span>{tr("Gelezen", "Read")}</span>
-        </button>
-        <button class="split-secondary" onclick={() => arrivedChat.dismiss()}>
-          {tr("Later", "Later")}
-        </button>
+    {#if arrivedChat.error}<span class="error">{arrivedChat.error}</span>{/if}
+    <div class="buttons">
+      <div class="pair">
+        <button class="first" onclick={() => arrivedChat.markRead()}>{tr("Gelezen", "Read")}</button>
+        <button onclick={() => arrivedChat.dismiss()}>{tr("Later", "Later")}</button>
       </div>
-      <button class="extra" onclick={() => onopen(thread.key)}>
-        <Ico name="messages-square" size={13} />
-        <span>{tr("Open in Nook", "Open in Nook")}</span>
-      </button>
+      <button class="nook" onclick={letNookAnswer}><Ico name="sparkles" size={14} />{tr("Laat Nook antwoorden", "Let Nook answer")}</button>
+      <span class="spacer"></span>
+      <button class="icon" aria-label={tr("Meer", "More")} title={tr("Meer", "More")} onclick={(e) => (more = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="ellipsis" size={15} /></button>
     </div>
   </div>
+  {#if more}
+    <Menu anchor={more} onclose={() => (more = null)} sections={[[{ label: tr("Open in Nook", "Open in Nook"), icon: "messages-square", onselect: () => onopen(thread.key) }]]} />
+  {/if}
 {/if}
 
 <style>
-  .arrived {
-    margin: var(--space-8) var(--space-16) var(--space-4);
-    padding: var(--space-12) var(--space-16);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-panel);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
-  }
-  .head { display: flex; flex-direction: column; gap: var(--space-4); }
-  .context { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
-  .ctx-text { font: var(--text-label); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .title { margin: 0; font: var(--text-heading); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  .bubbles { display: flex; flex-direction: column; max-height: 184px; overflow-y: auto; padding: var(--space-2) 0; }
-  .line { display: flex; padding-top: var(--space-2); padding-right: 48px; }
-  .line.first { padding-top: var(--space-6); }
-  .line:first-child { padding-top: 0; }
-  .line.mine { justify-content: flex-end; padding-right: 0; padding-left: 48px; }
-  .bubble {
-    position: relative;
-    max-width: 100%;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-6) 10px;
-    margin-left: 7px;
-    background: var(--chat-theirs);
-    border-radius: var(--radius-chat-bubble);
-    color: var(--paper);
-    user-select: text;
-  }
-  .bubble.mine { margin-left: 0; margin-right: 7px; background: var(--chat-mine); }
-  .bubble:not(.tailed) { border-top-left-radius: var(--radius-chat-join); }
-  .bubble.mine:not(.tailed) { border-top-left-radius: var(--radius-chat-bubble); border-top-right-radius: var(--radius-chat-join); }
-  .bubble.joins { border-bottom-left-radius: var(--radius-chat-join); }
-  .bubble.mine.joins { border-bottom-left-radius: var(--radius-chat-bubble); border-bottom-right-radius: var(--radius-chat-join); }
-  .bubble.tailed { border-top-left-radius: 0; }
-  .bubble.mine.tailed { border-top-left-radius: var(--radius-chat-bubble); border-top-right-radius: 0; }
-  .bubble.tailed::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: -7px;
-    width: 7px;
-    height: 9px;
-    background: inherit;
-    clip-path: polygon(0 0, 100% 0, 100% 100%);
-  }
-  .bubble.mine.tailed::before { left: auto; right: -7px; clip-path: polygon(0 0, 100% 0, 0 100%); }
-  .sender { font: var(--text-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .msg-body { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; column-gap: var(--space-8); }
-  .text { flex: 1 1 auto; min-width: 0; font: var(--text-body); color: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .stamp { margin-left: auto; font: var(--text-caption); font-variant-numeric: tabular-nums; color: var(--chat-stamp); white-space: nowrap; }
-
+  .arrived { display: flex; flex-direction: column; gap: var(--space-8); }
+  .head { display: flex; align-items: center; gap: var(--space-6); }
+  .context { font: var(--text-label); color: var(--text2); }
+  .title { font: var(--text-heading); color: var(--paper); }
+  .bubbles { display: flex; flex-direction: column; gap: var(--space-6); max-height: 220px; overflow-y: auto; padding-bottom: var(--space-8); }
+  .bubble { align-self: flex-start; max-width: 85%; display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-6) var(--space-12); border-radius: var(--radius-chat-bubble); background: var(--chat-theirs); color: var(--paper); font: var(--text-body); }
+  .bubble.mine { align-self: flex-end; background: var(--chat-mine); }
+  .bubble em { flex-basis: 100%; font-style: normal; font: var(--text-label); color: var(--text2); }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .time { font: var(--text-caption); color: var(--text3); }
+  .reply { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); border: 1px solid var(--line2); border-radius: var(--radius-panel); background: var(--field); }
+  .reply input { flex: 1; min-width: 0; border: 0; background: transparent; padding: var(--space-6) 0; font: var(--text-body); }
+  .reply input:focus { outline: none; }
+  .send { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 0; background: var(--smoke); color: var(--paper); }
+  .send:disabled { opacity: 0.5; }
   .error { font: var(--text-detail); color: var(--coral); }
-
-  /* Integrated reply box (`ChatReplyField`): composer tray with the round send button inside its right edge. */
-  .reply-box {
-    display: flex;
-    align-items: center;
-    gap: var(--space-8);
-    padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
-    background: var(--composer-tray);
-    border: 1px solid var(--field-stroke);
-    border-radius: var(--radius-composer);
-    transition: background var(--motion-quick), border-color var(--motion-quick);
-  }
-  .reply-box:focus-within { background: var(--composer); border-color: var(--separator); }
-  .reply-box input {
-    flex: 1;
-    min-width: 0;
-    padding: var(--space-4) 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    outline: none;
-    font: var(--text-body);
-    color: var(--paper);
-  }
-  .reply-box input::placeholder { color: var(--text3); }
-  .send {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: 999px;
-    background: var(--smoke);
-    color: var(--text3);
-    cursor: default;
-    transition: background var(--motion-quick), color var(--motion-quick);
-  }
-  .send.ready { background: var(--iris); color: var(--on-iris); cursor: pointer; }
-  .send.ready:hover:not(:disabled) { background: color-mix(in srgb, var(--iris) 88%, var(--canvas)); }
-
-  /* Bottom action row (`NookNoticeActions` + `NookSplitButton`): primary + secondary in one pill, extra ghost beside it. */
-  .actions-row { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-  .split-pill {
-    display: inline-flex;
-    align-items: center;
-    height: 36px;
-    padding: 3px;
-    box-sizing: border-box;
-    background: var(--smoke);
-    border-radius: var(--radius-control);
-  }
-  .split-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-6);
-    height: 100%;
-    padding: 0 var(--space-16);
-    border: 0;
-    border-radius: var(--radius-chip);
-    background: var(--iris);
-    color: var(--on-iris);
-    font: var(--text-emphasis);
-    font-weight: 600;
-    cursor: pointer;
-    transition: background var(--motion-quick);
-  }
-  .split-primary:hover { background: color-mix(in srgb, var(--iris) 88%, var(--canvas)); }
-  .split-secondary {
-    display: inline-flex;
-    align-items: center;
-    height: 100%;
-    padding: 0 var(--space-16);
-    border: 0;
-    border-radius: var(--radius-chip);
-    background: transparent;
-    color: var(--text2);
-    font: var(--text-emphasis);
-    font-weight: 600;
-    cursor: pointer;
-    transition: color var(--motion-quick);
-  }
-  .split-secondary:hover { color: var(--paper); }
-  .extra {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-6);
-    height: 36px;
-    padding: 0 var(--space-12);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: transparent;
-    color: var(--text2);
-    font: var(--text-control);
-    cursor: pointer;
-    transition: background var(--motion-quick), color var(--motion-quick);
-  }
-  .extra:hover { background: var(--smoke); color: var(--paper); }
+  .buttons { display: flex; align-items: center; gap: var(--space-12); }
+  .pair { display: inline-flex; padding: var(--space-2); border-radius: var(--radius-card); background: var(--graphite); border: 1px solid var(--line2); }
+  .pair button { height: 32px; padding: 0 var(--space-16); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text2); font: var(--text-emphasis); font-weight: 600; }
+  .pair button.first { background: var(--paper); color: var(--ink); }
+  .nook { display: inline-flex; align-items: center; gap: var(--space-6); border: 0; background: transparent; color: var(--text-strong); font: var(--text-emphasis); font-weight: 600; }
+  .nook:hover { color: var(--paper); }
+  .spacer { flex: 1; }
+  .icon { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text3); }
+  .icon:hover { color: var(--paper); background: var(--smoke); }
 </style>

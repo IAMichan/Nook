@@ -170,7 +170,12 @@ pub fn scan() -> Vec<DetectedAgent> {
         if is_nook_owned(&env) {
             continue;
         }
-        let home = env.get("CLAUDE_CONFIG_DIR").or_else(|| env.get("CODEX_HOME")).cloned().unwrap_or_default();
+        let home = env
+            .get("CLAUDE_CONFIG_DIR")
+            .or_else(|| env.get("CODEX_HOME"))
+            .cloned()
+            .or_else(|| env.get("GEMINI_CLI_HOME").filter(|v| !v.is_empty()).map(|v| super::AgentKind::Gemini.home_from_variable(v)))
+            .unwrap_or_default();
         let cwd = process.cwd().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
         found.push(DetectedAgent { pid, name: name.into(), cwd, home });
     }

@@ -2,6 +2,7 @@
 // every chat app, the views by where a chat stands, the groups by when it last moved, and the Chats / Status / Channels
 // tabs. Each chat app only translates its own data into a `ChatEntry` (WhatsApp in `whatsAppEntry`), so a view or a fix
 // here reaches every app at once.
+import { noticeText, type ChatGroupChange, type ChatMembership } from "./chat-notice";
 import { locale as appLocale, tr } from "./i18n.svelte";
 import type { ChatReaction, ChatReadState, ChatSummary, InboxMessage, WhatsAppConversation, WhatsAppMessage, WhatsAppReceipt } from "./connectors";
 
@@ -35,6 +36,8 @@ export interface ChatAbilities {
   muted: boolean;
   archived: boolean;
   vote: boolean;
+  /** A poll can be sent to the chat. */
+  polls?: boolean;
   deleteForMe: boolean;
 }
 
@@ -148,9 +151,13 @@ const dated = (value: string | undefined | null): Date | null => {
   const d = new Date(value ?? "");
   return Number.isNaN(d.getTime()) || d.getTime() <= 0 ? null : d;
 };
-function previewOf(m: { text: string; fromMe: boolean; deleted?: boolean } | undefined, sender: string, isGroup: boolean, media: string): string {
+function previewOf(m: { text: string; fromMe: boolean; deleted?: boolean; poll?: { question: string } | null; membership?: ChatMembership | null; groupChange?: ChatGroupChange | null } | undefined, sender: string, isGroup: boolean, media: string): string {
   if (!m) return "";
-  const text = m.deleted ? tr("Dit bericht is verwijderd", "This message was deleted") : m.text || media;
+  // A line about the group reads as itself in the list ("Ruben added David").
+  const notice = noticeText(m);
+  if (notice) return notice;
+  // A poll in one line, as every chat's list shows it (`ChatPoll.line`).
+  const text = m.deleted ? tr("Dit bericht is verwijderd", "This message was deleted") : m.text || (m.poll ? `📊 ${m.poll.question}` : media);
   return isGroup && !m.fromMe && sender ? `${sender}: ${text}` : text;
 }
 
@@ -233,11 +240,17 @@ export interface Bubble {
   readAt?: string | null;
   readBy?: string[];
   readers?: MessageReader[];
+  /** A poll this message asks (`ChatPoll`). */
+  poll?: import("./chat-poll").ChatPoll | null;
+  /** A line about who came into the group or went out of it (CH-36); `text` stays empty. */
+  membership?: ChatMembership | null;
+  /** A line about the group itself changing. */
+  groupChange?: ChatGroupChange | null;
 }
 
 export const bubbleOfWhatsApp = (m: WhatsAppMessage): Bubble => ({
   id: m.id, sender: m.senderName, text: m.text, date: m.date, fromMe: m.fromMe, media: m.media, receipt: m.receipt ?? null, edited: false, deleted: false, replyTo: null, reactions: [], versions: [],
-  readAt: null, readBy: [], readers: [],
+  readAt: null, readBy: [], readers: [], poll: m.poll ?? null,
 });
 
 export const bubbleOfInbox = (m: InboxMessage): Bubble => {
@@ -245,7 +258,8 @@ export const bubbleOfInbox = (m: InboxMessage): Bubble => {
   return {
     id: m.id, sender: m.sender, text: m.text, date: m.date, fromMe: m.fromMe, media: m.media ?? { kind: "none" }, receipt: m.receipt ?? null,
     edited: !!m.edited, deleted: !!m.deleted, replyTo: m.replyTo ?? null, reactions: m.reactions ?? [], versions: m.versions ?? [],
-    readAt: ext.readAt ?? null, readBy: ext.readBy ?? [], readers: ext.readers ?? [],
+    readAt: ext.readAt ?? null, readBy: ext.readBy ?? [], readers: ext.readers ?? [], poll: m.poll ?? null,
+    membership: m.membership ?? null, groupChange: m.groupChange ?? null,
   };
 };
 
@@ -831,6 +845,7 @@ export function abilitiesForApp(
       muted,
       archived,
       vote: false,
+      polls: connected,
       deleteForMe: connected,
     };
   }
@@ -851,6 +866,7 @@ export function abilitiesForApp(
     muted,
     archived,
     vote: connected,
+    polls: false,
     deleteForMe: false,
   };
 }

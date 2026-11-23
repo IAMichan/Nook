@@ -614,5 +614,8 @@ impl UpdateReceipt {
     }
 }
 
+pub mod tool_updates;
+pub mod trial;
+
 #[cfg(test)]
 mod tests;

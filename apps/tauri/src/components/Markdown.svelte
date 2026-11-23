@@ -12,6 +12,8 @@
   } from "../lib/markdown-blocks";
   import { hasRich, renderKatex, renderMermaid, splitMath } from "../lib/rich";
   import { nook } from "../lib/state.svelte";
+  import { openAgentLink } from "../lib/workspace/open-in";
+  import { OPEN_FILE_EVENT } from "../lib/workspace/file-links";
   import Icon from "./Icon.svelte";
   import Markdown from "./Markdown.svelte";
   import MarkdownCode from "./MarkdownCode.svelte";
@@ -31,7 +33,7 @@
   } = $props();
 
   const blocks = $derived(parseMarkdownBlocks(text));
-  const inlineOpts = $derived<InlineOptions>(citation ? { citation } : {});
+  const inlineOpts = $derived<InlineOptions>({ ...(citation ? { citation } : {}), ...(baseFolder ? { files: true } : {}) });
 
   // Keep `<details>` open state per block index while an answer streams.
   let openDetails = $state<Record<number, boolean>>({});
@@ -118,10 +120,19 @@
   }
 
   function handleClick(e: MouseEvent) {
+    // A file the agent named opens in the session's File tab (`FileLink`); RunPanel takes the event.
+    const file = (e.target as HTMLElement).closest("a[data-file]") as HTMLAnchorElement | null;
+    if (file && baseFolder) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent(OPEN_FILE_EVENT, { detail: { raw: file.dataset.file, base: baseFolder } }));
+      return;
+    }
     const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
     if (a) {
       e.preventDefault();
-      openUrl(a.href);
+      // In an agent's conversation (it has a folder) a link opens where Settings › Sessions › Editor & browser says.
+      if (baseFolder) openAgentLink(a.href, e.ctrlKey || e.metaKey);
+      else openUrl(a.href);
     }
   }
 </script>
@@ -373,7 +384,7 @@
     min-width: 0;
   }
   .callout-title {
-    font-size: 13px;
+    font: var(--text-control);
     font-weight: 600;
   }
   .md-rule {
@@ -386,7 +397,7 @@
     padding: 3px 10px;
     border-radius: 999px;
     background: var(--smoke);
-    font-size: 12px;
+    font: var(--text-detail);
     text-decoration: none;
   }
   .diagram,

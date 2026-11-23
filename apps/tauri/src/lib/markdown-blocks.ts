@@ -3,6 +3,7 @@
 // `<details>` blocks parsed explicitly below, and HTML/SVG code previews run in a sandboxed iframe.
 
 import { escapeHtml } from "@nook/web-ui/markdown";
+import { namedFile, parseFileLink } from "./workspace/file-links";
 
 export interface MarkdownListItem {
   level: number;
@@ -504,6 +505,14 @@ function linkHtml(labelHtml: string, plainLabel: string, parsed: URL): string {
 export interface InlineOptions {
   /** Optional citation group renderer (`[1]`, `[1, 2]`). Defaults to `<sup class="cite" data-cite="1">1</sup>`. */
   citation?: (numbers: number[]) => string;
+  /** In an agent's conversation (it has a folder): a code span that names a file and a link to a file open the file
+   *  viewer (`<a data-file>`), as on the Mac (`FileLink`). */
+  files?: boolean;
+}
+
+function fileAnchor(inner: string, raw: string): string {
+  const attr = escapeHtml(raw);
+  return `<a href="#" class="file-link" data-file="${attr}" title="${attr}">${inner}</a>`;
 }
 
 /** Renders inline Markdown (`code`, `**bold**`, `*italic*`, links with hover title + host suffix, bare URLs, citations). */
@@ -522,6 +531,7 @@ export function renderInlineMarkdown(text: string, options: InlineOptions = {}):
       const href = escapeHtml(url.href);
       return hold(`<a href="${href}" data-external title="${href}"><code>${escaped}</code></a>`);
     }
+    if (options.files && namedFile(code)) return hold(fileAnchor(`<code>${escaped}</code>`, code.trim()));
     return hold(`<code>${escaped}</code>`);
   });
 
@@ -539,7 +549,10 @@ export function renderInlineMarkdown(text: string, options: InlineOptions = {}):
   work = work.replace(/\[([^\]]+)\]\(([^)\s]+(?:\([^)\s]*\)[^)\s]*)*)(?:\s+&quot;[^&]*&quot;)?\)/g, (whole, label: string, rawUrl: string) => {
     const unescapedUrl = rawUrl.replace(/&amp;/g, "&");
     const parsed = isSafeLink(unescapedUrl);
-    if (!parsed) return whole;
+    if (!parsed) {
+      if (options.files && parseFileLink(unescapedUrl)) return hold(fileAnchor(formatInlineStyles(label), unescapedUrl));
+      return whole;
+    }
     const formattedLabel = formatInlineStyles(label);
     return hold(linkHtml(formattedLabel, label, parsed));
   });

@@ -3,6 +3,7 @@
   import { agentApi, type QuestionRequest } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { workspaceApi } from "../../lib/workspace/api";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { compose, project, type ContextRef } from "../../lib/workspace/context-refs";
   import ComposerContext from "./run/ComposerContext.svelte";
@@ -69,6 +70,15 @@
     chosen = chosen.includes(label) ? chosen.filter((c) => c !== label) : [...chosen, label];
   }
 
+  async function dismiss() {
+    try {
+      await workspaceApi.dismissQuestion(request.id);
+    } catch (e) {
+      agents.error = String(e);
+    }
+    agents.refresh();
+  }
+
   async function terminal() {
     try {
       await agentApi.answerInTerminal(request.id);
@@ -84,6 +94,7 @@
     <span class="dot waiting"></span>
     {request.agentName} · {tr("{project} vraagt", "{project} asks", { project: request.project })}{#if item.header} · {item.header}{/if}{#if request.items.length > 1} · {tr("{n} van {total}", "{n} of {total}", { n: index + 1, total: request.items.length })}{/if}
   </div>
+  {#if request.restored}<div class="faint restored">{tr("Gevraagd voordat Nook opnieuw startte. Je antwoord gaat als bericht naar de agent en pakt het gesprek weer op.", "Asked before Nook restarted. Your answer goes to the agent as a message and picks the conversation up again.")}</div>{/if}
   <div class="title">{item.question}</div>
   <div class="options">
     {#each item.options as option (option.label)}
@@ -111,7 +122,11 @@
     </div>
   </div>
   <div class="buttons">
-    <button class="ghost" onclick={terminal}>{tr("In terminal", "In terminal")}</button>
+    {#if request.restored}
+      <button class="ghost" onclick={dismiss}>{tr("Deze vraag onbeantwoord laten", "Leave this question unanswered")}</button>
+    {:else}
+      <button class="ghost" onclick={terminal}>{tr("In terminal", "In terminal")}</button>
+    {/if}
     <span class="spacer"></span>
     {#if item.multiSelect}<button class="primary" disabled={busy || !chosen.length} onclick={() => next(chosen)}>{tr("Verstuur", "Send")}</button>{/if}
   </div>
@@ -133,4 +148,5 @@
   .own-row textarea { flex: 1; min-height: 32px; max-height: 120px; resize: none; field-sizing: content; font: var(--text-body); }
   .own .icon { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; }
   .spacer { flex: 1; }
+  .restored { font: var(--text-detail); }
 </style>

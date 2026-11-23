@@ -32,6 +32,8 @@ export interface InboxItem {
   /// The provider's own key for the thing (a chat, an open item), for its actions.
   ref?: string;
   source: InboxSource;
+  /// The app it came from when the source covers several (a chat in Telegram), shown instead of the source's name.
+  sourceLabel?: string;
   type: InboxType;
   title: string;
   detail?: string;

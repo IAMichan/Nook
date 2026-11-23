@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Settings › Sessions, Worktrees and the workspace for agents (`WorkspaceSettingsSection` on the Mac): one component,
   // shown one part at a time where the Mac has it (`part`).
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -9,12 +10,35 @@
   import { automationApi, type AutomationOverview } from "../../lib/workspace/automation";
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import Fold from "./Fold.svelte";
+  import { catalog } from "../../lib/workspace/models.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import OpenInSettings from "./OpenIn.svelte";
+  import SnoozeOptions from "./SnoozeOptions.svelte";
+  import { TIMELINE_DETAILS, timelineDetail, type TimelineDetail } from "../../lib/workspace/timeline-detail";
+  import { announcementLevel, SCREEN_READER_LEVELS, type ScreenReaderAnnouncements } from "../../lib/workspace/announcements";
+  import { loadRules as loadSettleRules, MAX_DAYS as settleMax, MIN_DAYS as settleMin, saveRules as saveSettleRules, type AutoSettleRules } from "../../lib/auto-settle";
+
+  // The Mac's names for the timeline details and the screen reader levels.
+  const detailNames: Record<TimelineDetail, string> = {
+    everything: tr("Alles", "Everything"),
+    hideSucceeded: tr("Afgeronde stappen verbergen", "Hide finished steps"),
+    noTools: tr("Alle stappen verbergen", "Hide all steps"),
+    zen: tr("Zen: alleen het gesprek", "Zen: only the conversation"),
+  };
+  const readerNames: Record<ScreenReaderAnnouncements, string> = {
+    off: tr("Uit", "Off"),
+    replies: tr("Alleen antwoorden", "Replies only"),
+    everything: tr("Stappen en antwoorden", "Steps and replies"),
+  };
+
+  // Settling old sessions is kept for every window in localStorage, as the snooze options.
+  let settleRules = $state<AutoSettleRules>(loadSettleRules());
+  function setSettleRules(next: AutoSettleRules) {
+    saveSettleRules(next);
+    settleRules = loadSettleRules();
+  }
 
   let { part = "sessions" }: { part?: "sessions" | "worktrees" | "openIn" | "bridge" } = $props();
-  let editors = $state<{ id: string; name: string }[]>([]);
-  $effect(() => {
-    if (part === "openIn") workspaceApi.editors().then((e) => (editors = e)).catch(() => {});
-  });
 
   let s = $state<WorkspaceSettings | null>(null);
   let error = $state<string | null>(null);
@@ -22,6 +46,12 @@
 
   $effect(() => {
     workspace.start().then(() => (s = workspace.settings ? { ...workspace.settings } : null));
+  });
+
+  let modelListDate = $state<string | null>(null);
+  $effect(() => {
+    catalog.load();
+    invoke<string | null>("workspace_model_list_date").then((d) => (modelListDate = d)).catch(() => {});
   });
 
   async function save() {
@@ -101,10 +131,24 @@
 
   <Fold title={tr("Model per agent", "Model per agent")} summary={s.defaultModels[s.defaultProvider] || tr("standaard", "default")}>
     {#each providers as p (p.provider)}
+      {@const saved = s.defaultModels[p.provider] ?? ""}
+      {@const choices = (catalog.byAgent[p.provider] ?? []).filter((m) => m.current || m.id === saved)}
       <label class="row"><span class="agent-name"><AgentMark agent={p.name} size={14} />{p.name}</span>
-        <input class="model" placeholder={tr("standaard", "default")} value={s.defaultModels[p.provider] ?? ""} onchange={(e) => { s!.defaultModels[p.provider] = (e.target as HTMLInputElement).value.trim(); save(); }} />
+        {#if choices.length}
+          <select class="model" value={saved} onchange={(e) => { s!.defaultModels[p.provider] = e.currentTarget.value; save(); }}>
+            <option value="">{tr("standaard", "default")}</option>
+            {#each choices as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+            {#if saved && !choices.some((m) => m.id === saved)}<option value={saved}>{saved}</option>{/if}
+          </select>
+        {:else}
+          <input class="model" placeholder={tr("standaard", "default")} value={saved} onchange={(e) => { s!.defaultModels[p.provider] = (e.target as HTMLInputElement).value.trim(); save(); }} />
+        {/if}
       </label>
     {/each}
+    <!-- Off: the model list that came with the app is used, and nothing goes online for it. -->
+    <label class="row"><span>{tr("Online naar nieuwe modellen zoeken", "Check for new models online")}<br /><small>{tr("Nook haalt zijn lijst met modellen op uit zijn GitHub-opslagplaats, zodat nieuwe modellen en de agent-update die ze vragen tussen versies verschijnen. Uit: alleen de lijst die met de app kwam.", "Nook fetches its model list from its GitHub repository, so new models and the agent update they need appear between releases. Off: only the list that came with the app is used.")}{#if modelListDate} {tr("Lijst van {date}.", "List from {date}.", { date: modelListDate })}{/if}</small></span>
+      <input type="checkbox" role="switch" checked={s.onlineModelList !== false} onchange={(e) => { s!.onlineModelList = e.currentTarget.checked; save(); }} />
+    </label>
   </Fold>
 
   <h3>{tr("Gedrag", "Behavior")}</h3>
@@ -125,6 +169,20 @@
         value={s.agentInstructions ?? ""} onchange={(e) => { s!.agentInstructions = e.currentTarget.value.trim(); save(); }}></textarea>
     </label>
     <label class="row"><span>{tr("Een bericht tijdens een beurt stuurt de agent bij (Ctrl+Enter zet het in de wachtrij)", "A message during a turn steers the agent (Ctrl+Enter queues it)")}</span><input type="checkbox" role="switch" bind:checked={s.steerByDefault} onchange={save} /></label>
+    <!-- How much of the agent's work a timeline shows (`TimelineDetail`; applied in `lib/workspace/timeline-detail.ts`). -->
+    <label class="row">
+      <span>{tr("Werk van de agent in de tijdlijn", "Agent's work in the timeline")}<br /><small>{tr("Hoeveel van de stappen van de agent een sessie laat zien. Verzoeken die op jou wachten en fouten blijven altijd staan.", "How much of the agent's steps a session shows. Requests that wait on you and errors always stay.")}</small></span>
+      <select value={timelineDetail(s.timelineDetail)} onchange={(e) => { s!.timelineDetail = e.currentTarget.value; save(); }}>
+        {#each TIMELINE_DETAILS as d (d)}<option value={d}>{detailNames[d]}</option>{/each}
+      </select>
+    </label>
+    <!-- Only heard while a screen reader runs, and only from the session on screen (`components/SessionAnnouncer.svelte`). -->
+    <label class="row">
+      <span>{tr("Meldingen voor schermlezers", "Screen reader announcements")}<br /><small>{tr("Wat een schermlezer hoort van de sessie die je bekijkt, alleen terwijl een schermlezer draait. Alleen antwoorden leest elk antwoord dat de agent afmaakt en zegt wanneer hij je goedkeuring nodig heeft of je iets vraagt. Stappen en antwoorden zegt ook de stap waarmee hij bezig is, zoals het bestand dat hij bewerkt; stappen komen met tussenpozen, dus een snelle stap kan wegvallen. Zijn denkwerk wordt nooit voorgelezen.", "What a screen reader hears from the session you are looking at, only while a screen reader runs. Replies only reads each reply the agent finishes and says when it needs your approval or asks you something. Steps and replies also says the step it is on, such as the file it edits; steps are spaced out, so a quick one can be skipped. Its thinking is never read.")}</small></span>
+      <select value={announcementLevel(s.screenReaderAnnouncements)} onchange={(e) => { s!.screenReaderAnnouncements = e.currentTarget.value; save(); }}>
+        {#each SCREEN_READER_LEVELS as l (l)}<option value={l}>{readerNames[l]}</option>{/each}
+      </select>
+    </label>
     <label class="row">
       <span>{tr("Sessies tegelijk aan het werk", "Sessions working at once")}<br /><small>{tr("Hooguit zoveel sessies werken tegelijk; een nieuwe beurt daarboven wacht en start zodra de beurt van een andere sessie klaar is.", "At most this many sessions work at the same time; a new turn past it waits and starts as soon as another session's turn ends.")}</small></span>
       <select value={s.maxWorkingSessions ?? 0} onchange={(e) => { s!.maxWorkingSessions = Number(e.currentTarget.value); save(); }}>
@@ -137,10 +195,22 @@
   <h3>{tr("Als een sessie stopt of Nook herstart", "When a session stops or Nook restarts")}</h3>
   <div class="group">
     <label class="row"><span>{tr("Na een gebruikslimiet vanzelf verdergaan zodra die vrij is", "Resume automatically once a usage limit resets")}</span><input type="checkbox" role="switch" bind:checked={s.autoResumeLimited} onchange={save} /></label>
+    <label class="row"><span>{tr("Een sessie die stopte doordat je Nook afsloot of herstartte gaat vanzelf verder zodra je Nook weer opent", "Continue a session that quitting or restarting Nook stopped when you open Nook again")}</span><input type="checkbox" role="switch" bind:checked={s.continueAfterRelaunch} onchange={save} /></label>
   </div>
 
   <h3>{tr("Opruimen", "Tidying up")}</h3>
   <div class="group">
+    <!-- `AutoSettleRulesRows` on the Mac; applied by the Agents list (`lib/auto-settle.ts`). -->
+    <label class="row"><span>{tr("Oude sessies automatisch afhandelen", "Settle old sessions automatically")}</span>
+      <input type="checkbox" role="switch" checked={settleRules.enabled} onchange={(e) => setSettleRules({ ...settleRules, enabled: e.currentTarget.checked })} />
+    </label>
+    {#if settleRules.enabled}
+      <label class="row"><span>{tr("Na {n} dagen stil", "After {n} days of quiet", { n: settleRules.inactivityDays })}</span>
+        <input class="days" type="number" min={settleMin} max={settleMax} value={settleRules.inactivityDays}
+          aria-label={tr("Dagen stil", "Days of quiet")}
+          onchange={(e) => { setSettleRules({ ...settleRules, inactivityDays: Number(e.currentTarget.value) }); e.currentTarget.value = String(settleRules.inactivityDays); }} />
+      </label>
+    {/if}
     <label class="row"><span>{tr("Automatisch archiveren na", "Archive automatically after")}</span>
       <select bind:value={s.autoArchiveDays} onchange={save}>
         <option value={0}>{tr("Nooit", "Never")}</option><option value={1}>{tr("1 dag", "1 day")}</option>{#each [7, 30, 90] as n (n)}<option value={n}>{tr("{n} dagen", "{n} days", { n })}</option>{/each}
@@ -148,6 +218,9 @@
     </label>
   </div>
   {#if error}<p class="err">{error}</p>{/if}
+
+  <!-- What every snooze menu offers, last on the page as on the Mac (`SnoozeOptionsSection`). -->
+  <SnoozeOptions />
 {:else if s && part === "worktrees"}
   <!-- Worktrees (part worktrees): where a new worktree goes. -->
   <h3>{tr("Nieuwe worktrees", "New worktrees")}</h3>
@@ -166,18 +239,9 @@
     </div>
   </div>
   {#if error}<p class="err">{error}</p>{/if}
-{:else if s && part === "openIn"}
-  <!-- Editor & browser (part openIn): where a session's folder opens. Nook's browser has no settings of its own here yet. -->
-  <h3>{tr("Openen in", "Open in")}</h3>
-  <div class="group">
-    <label class="row"><span>{tr("Editor", "Editor")}</span>
-      <select bind:value={s.editor} onchange={save}>
-        <option value="">{tr("Verkenner", "File Explorer")}</option>
-        {#each editors as e (e.id)}<option value={e.id}>{e.name}</option>{/each}
-        {#if s.editor && !editors.some((e) => e.id === s!.editor)}<option value={s.editor}>{s.editor}</option>{/if}
-      </select>
-    </label>
-  </div>
+{:else if part === "openIn"}
+  <!-- Editor & browser (part openIn): its own component, with Nook's browser. -->
+  <OpenInSettings />
 {:else if s && part === "bridge"}
   <!-- Workspace for agents (`bridge`, on Automation): Nook's terminal, browser and pull requests for agents. -->
   <h3>{tr("Werkruimte voor agents", "Workspace for agents")}</h3>
@@ -187,7 +251,7 @@
     <div class="row"><span>{tr("Ook voor agents buiten Nook", "Also for agents outside Nook")}</span>
       <span class="inline">
         {#each ["claude", "codex", "gemini"] as p (p)}
-          <button class="agent small" disabled={!s.agentTools} title={tr("Draait het koppelcommando zichtbaar in een terminal van Nook", "Runs the link command visibly in a Nook terminal")} onclick={() => link(p as RunProvider)}><AgentMark agent={workspace.provider(p)?.name ?? p} size={12} />{workspace.provider(p)?.name ?? p}</button>
+          <button class="agent small" disabled={!s.agentTools} use:tip={tr("Draait het koppelcommando zichtbaar in een terminal van Nook", "Runs the link command visibly in a Nook terminal")} onclick={() => link(p as RunProvider)}><AgentMark agent={workspace.provider(p)?.name ?? p} size={12} />{workspace.provider(p)?.name ?? p}</button>
         {/each}
       </span>
     </div>
@@ -203,6 +267,7 @@
   .path { font: var(--text-code); color: var(--text2); }
   .model { width: 220px; }
   .prefix { width: 160px; }
+  .days { width: 64px; }
   .stacked textarea, .stacked input { width: 100%; resize: vertical; font: var(--text-body); }
   .example { color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .agent-name { display: inline-flex; align-items: center; gap: var(--space-6); }

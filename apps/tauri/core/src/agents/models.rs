@@ -109,6 +109,10 @@ pub struct AgentSession {
     pub updated: Option<DateTime<Utc>>,
     /// Het proces achter een gevonden sessie.
     pub pid: Option<u32>,
+    /// The session whose shell started this one (`LaunchedSessions` on the Mac): "Started by an agent in …". Found from
+    /// the processes the hook came from, so an agent's test run or helper is not read as a chat you started.
+    #[serde(default)]
+    pub launched_by: Option<String>,
 }
 
 impl AgentSession {
@@ -151,6 +155,7 @@ impl Serialize for AgentSession {
             started: Option<DateTime<Utc>>,
             updated: Option<DateTime<Utc>>,
             pid: Option<u32>,
+            launched_by: &'a Option<String>,
             compacting: bool,
         }
         Wire {
@@ -178,6 +183,7 @@ impl Serialize for AgentSession {
             started: self.started,
             updated: self.updated,
             pid: self.pid,
+            launched_by: &self.launched_by,
             compacting: self.is_compacting(),
         }
         .serialize(serializer)
@@ -340,6 +346,9 @@ pub struct QuestionRequest {
     pub agent_name: String,
     pub project: String,
     pub items: Vec<QuestionItem>,
+    /// Asked before Nook restarted: your answer goes to the agent as a message and picks the conversation up again.
+    #[serde(default)]
+    pub restored: bool,
 }
 
 impl QuestionRequest {

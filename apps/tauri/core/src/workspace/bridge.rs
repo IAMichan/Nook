@@ -45,6 +45,8 @@ pub enum BridgeTool {
     SessionSearch,
     SessionOrganize,
     SessionQuestions,
+    SessionSuggest,
+    RenderPage,
     // Scheduled tasks (`schedule` / `scheduler`).
     ScheduleTask,
     ListScheduledTasks,
@@ -78,7 +80,7 @@ pub const SERVER_NAME: &str = "nook";
 pub const TOOL_PREFIX: &str = "mcp__nook__";
 
 impl BridgeTool {
-    pub const ALL: [BridgeTool; 42] = [
+    pub const ALL: [BridgeTool; 44] = [
         Self::WorkspaceInfo,
         Self::TerminalRun,
         Self::TerminalRead,
@@ -107,6 +109,8 @@ impl BridgeTool {
         Self::SessionSearch,
         Self::SessionOrganize,
         Self::SessionQuestions,
+        Self::SessionSuggest,
+        Self::RenderPage,
         Self::ScheduleTask,
         Self::ListScheduledTasks,
         Self::UpdateScheduledTask,
@@ -153,6 +157,8 @@ impl BridgeTool {
             Self::SessionSearch => "session_search",
             Self::SessionOrganize => "session_organize",
             Self::SessionQuestions => "session_questions",
+            Self::SessionSuggest => "session_suggest",
+            Self::RenderPage => "render_page",
             Self::ScheduleTask => "schedule_task",
             Self::ListScheduledTasks => "list_scheduled_tasks",
             Self::UpdateScheduledTask => "update_scheduled_task",
@@ -192,6 +198,8 @@ impl BridgeTool {
             | Self::SessionSend
             | Self::SessionOrganize
             | Self::SessionQuestions
+            | Self::SessionSuggest
+            | Self::RenderPage
             | Self::ScheduleTask
             | Self::UpdateScheduledTask
             | Self::RunScheduledTaskNow
@@ -254,6 +262,8 @@ impl BridgeTool {
             Self::SessionSearch => tr("Zoek in sessies", "Search sessions"),
             Self::SessionOrganize => tr("Organiseer sessies", "Organize sessions"),
             Self::SessionQuestions => tr("Vragen van sessies", "Session questions"),
+            Self::SessionSuggest => tr("Sessie voorstellen", "Suggest a session"),
+            Self::RenderPage => tr("Pagina tonen", "Show a page"),
             Self::ScheduleTask => tr("Taak inplannen", "Schedule task"),
             Self::ListScheduledTasks => tr("Geplande taken", "Scheduled tasks"),
             Self::UpdateScheduledTask => tr("Geplande taak aanpassen", "Update scheduled task"),
@@ -326,6 +336,8 @@ impl BridgeTool {
             Self::SessionRead => "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed.",
             Self::SessionSearch => "Searches across Nook sessions' titles, folders, branches and conversation timelines, returning matching sessions and redacted excerpts.",
             Self::SessionOrganize => "Organizes Nook sessions: pin, unpin, settle, reopen, snooze, wake, archive, unarchive, mark_unread, mark_read, or rename. Waits for the user's approval unless full rights.",
+            Self::SessionSuggest => "Places a side-task suggestion card in your timeline for the user to start, hand back or dismiss. Do not wait for it; prompt must stand alone.",
+            Self::RenderPage => "Renders a sandboxed, offline HTML chart, diagram, table or mock-up inline in your timeline (html, or path to an .html file in your working directory; inline CSS/JS/SVG/data URLs; <=512 KB; fixed height 80-1200 pt, default 360; no network or navigation). Use it to show, not to ask: the page cannot send anything back.",
             Self::SessionQuestions => "Lists or reads pending multiple-choice questions (and read-only notices of pending permission prompts) across Nook sessions, or answers a pending multiple-choice question (never approves permission prompts).",
             Self::ScheduleTask => "Creates a scheduled task in Nook (interval, fixed time, one-shot, or webhook). Always waits for the user's approval in Nook; scheduled runs never get full bypass rights.",
             Self::ListScheduledTasks => "Lists scheduled tasks in Nook (defaults to tasks for your folder or session; pass all: true for all tasks).",
@@ -453,7 +465,9 @@ impl BridgeTool {
                     "agent": {"type": "string", "description": "Agent id (default: Nook's default agent)."},
                     "model": {"type": "string", "description": "Model id (default: the agent's)."},
                     "plan": {"type": "boolean", "description": "Start in Plan mode."},
-                    "sessions": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object"}, "description": "Batch of session objects with task, title, agent, model, plan."},
+                    "account": {"type": "string", "description": "Account id or label (default: agent's; see orchestrator_capabilities)."},
+                    "rights": {"type": "string", "enum": ["ask", "acceptEdits", "bypass"], "description": "Starting rights (default ask; never above yours)."},
+                    "sessions": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object"}, "description": "Batch of session objects with task, title, agent, model, plan, account, rights."},
                     "folder": {"type": "string", "description": "Absolute folder path (default: yours)."},
                     "worktree": {"type": "boolean", "description": "Create a new git worktree per session."},
                     "base": {"type": "string", "description": "Worktree base ref (e.g. origin/main)."},
@@ -499,6 +513,25 @@ impl BridgeTool {
                     "until": {"type": "string", "description": "When action is snooze: tonight, tomorrow, next_week, or an ISO-8601 timestamp."}
                 }),
                 &["action"],
+            ),
+            Self::SessionSuggest => object(
+                json!({
+                    "title": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "summary": {"type": "string", "description": "One sentence."},
+                    "agent": {"type": "string", "description": "Another agent (default: yours)."},
+                    "worktree": {"type": "boolean", "description": "Default: project's choice."}
+                }),
+                &["prompt"],
+            ),
+            Self::RenderPage => object(
+                json!({
+                    "html": {"type": "string", "description": "HTML document/fragment with inline CSS/JS (<=512 KB)."},
+                    "path": {"type": "string", "description": "Or .html file path in your working directory."},
+                    "title": {"type": "string", "description": "Short title above the page."},
+                    "height": {"type": "integer", "description": "Height in points (default 360, 80...1200)."}
+                }),
+                &[],
             ),
             Self::SessionQuestions => object(
                 json!({

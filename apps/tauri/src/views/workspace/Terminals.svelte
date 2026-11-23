@@ -41,12 +41,23 @@
     }
   }
 
+  let serverNote = $state<string | null>(null);
+  /// Stops a server Nook started; for any other it says why not, as stopping something you run elsewhere would take it away
+  /// behind your back.
+  async function stopServer(s: DevServer) {
+    const notOurs = tr("{command} op poort {port} is niet door Nook of een van zijn sessies gestart. Stop hem waar je hem startte, zodat niets wat je elders draait achter je rug verdwijnt.", "{command} on port {port} was not started by Nook or one of its sessions. Stop it where you started it, so nothing you run elsewhere disappears behind your back.", { command: s.command, port: s.port });
+    if (!s.startedByNook || !folder) { serverNote = serverNote ? null : notOurs; return; }
+    const stopped = await toolsApi.stopDevServer(folder, s.pid, s.port).catch(() => false);
+    serverNote = stopped ? null : notOurs;
+    setTimeout(loadFolder, 700);
+  }
+
   async function loadFolder() {
     if (!folder) return;
     try {
       const t = await toolsApi.folderTools(folder);
       scripts = t.scripts;
-      servers = t.servers;
+      servers = await toolsApi.devServers(folder).catch(() => t.servers);
     } catch {
       scripts = [];
       servers = [];
@@ -150,10 +161,16 @@
     {#if servers.length}
       <div class="servers">
         {#each servers as s (s.port)}
-          <button class="server" title={`${s.command} (pid ${s.pid})`} onclick={() => toolsApi.go(s.url)}>◍ {s.url}</button>
+          <span class="server-chip">
+            <button class="server" title={`${s.command} (pid ${s.pid})`} onclick={() => toolsApi.go(s.url)}>◍ {s.url}</button>
+            <button class="stop" class:muted={!s.startedByNook} aria-label={tr("Stop de server op poort {port}", "Stop the server on port {port}", { port: s.port })}
+              title={s.startedByNook ? tr("Stop de server op poort {port}", "Stop the server on port {port}", { port: s.port }) : tr("Nook heeft deze server niet gestart en kan hem dus niet stoppen", "Nook did not start this server, so it can't stop it")}
+              onclick={() => stopServer(s)}><Ico name="square" size={8} stroke={3} fill="currentColor" /></button>
+          </span>
         {/each}
       </div>
     {/if}
+    {#if serverNote}<p class="faint note">{serverNote}</p>{/if}
     {#if error}<p class="err">{error}</p>{/if}
     {#if shown}
       {#key shown.id}<TerminalView id={shown.id} />{/key}
@@ -187,6 +204,10 @@
   .menu button:hover { background: var(--smoke); }
   .servers { display: flex; gap: 6px; flex-wrap: wrap; }
   .server { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; }
+  .server-chip { display: inline-flex; align-items: center; gap: var(--space-2); }
+  .stop { display: grid; place-items: center; width: 18px; height: 22px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--text2); }
+  .stop.muted { color: var(--text3); }
+  .note { margin: 0; font: var(--text-detail); }
   .empty { text-align: center; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .err { color: var(--coral); font-size: 12px; margin: 0; }
   /* The page's card: the terminals on a surface under the title, inset from the window's edges. */

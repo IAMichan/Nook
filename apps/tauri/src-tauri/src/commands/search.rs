@@ -383,64 +383,16 @@ pub fn search_open_note(app: AppHandle, id: String) -> Res<String> {
     Ok(conversation)
 }
 
-static BUDDY: std::sync::OnceLock<Mutex<nook_core::services::buddy::BuddyService>> = std::sync::OnceLock::new();
-
-fn buddy_service() -> &'static Mutex<nook_core::services::buddy::BuddyService> {
-    BUDDY.get_or_init(|| Mutex::new(nook_core::services::buddy::BuddyService::open_default()))
-}
-
-/// Evaluates and returns Nook's current buddy moment (SV-19), or `None` when quiet/disabled/none due.
-/// Pass `dismiss_id` to dismiss a currently surfaced moment.
+/// Nook's buddy moment shown last (SV-19), or `None` when quiet/disabled/none due. Pass `dismiss_id` to dismiss a
+/// currently surfaced moment. The moments themselves are planned by the half-minute timer in `services::buddy`.
 #[tauri::command]
 pub fn buddy_moment(app: AppHandle, dismiss_id: Option<String>) -> Option<nook_core::services::buddy::BuddyMomentView> {
-    let settings = app.state::<AppState>().settings();
-    if !settings.buddy_moments {
-        return None;
-    }
+    crate::services::buddy::current(&app, dismiss_id.as_deref())
+}
 
-    let mut svc = buddy_service().lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(id) = dismiss_id.as_deref().filter(|s| !s.is_empty()) {
-        svc.dismiss(id);
-        return None;
-    }
-
-    // Feed completed runs and historical agent sessions into milestone & while-you-were-away counters.
-    if let Some(ws) = app.try_state::<crate::workspace::WorkspaceState>() {
-        use nook_core::workspace::models::RunStatus;
-        for run in ws.manager.runs() {
-            if run.status == RunStatus::Completed {
-                svc.note_finished_agent(&format!("run:{}", run.id), run.updated_at);
-            }
-        }
-    }
-    if let Some(agents) = app.try_state::<AgentsState>() {
-        use nook_core::agents::models::AgentStatus;
-        for s in agents.hub.sessions() {
-            if s.status == AgentStatus::Done {
-                svc.note_finished_agent(&s.id, s.updated.unwrap_or_else(chrono::Utc::now));
-            }
-        }
-        let past = crate::agents::lock(&agents.last_history).sessions.clone();
-        for p in past {
-            svc.note_finished_agent(&p.session_id, p.ended);
-        }
-    }
-
-    // Feed Flow word count into word milestones and check quiet mode (meetings / screen sharing).
-    let mut in_event = false;
-    if let Some(services) = app.try_state::<Services>() {
-        let words = services.flow.lock().unwrap_or_else(|e| e.into_inner()).stats.total_words();
-        svc.sync_words_total(words);
-        in_event = crate::services::quiet::silent(&app);
-    }
-
-    svc.current_moment(
-        0.0,
-        chrono::Local::now().fixed_offset(),
-        nook_core::services::buddy::BuddyTone::Warm,
-        in_event,
-        0,
-        None,
-    )
+/// "Breathe with Nook now" (Settings › Appearance) and "Breathe along" on a break: a minute of slow breathing in the bar.
+#[tauri::command]
+pub fn buddy_breathe(app: AppHandle) {
+    crate::services::buddy::breathe(&app);
 }
 

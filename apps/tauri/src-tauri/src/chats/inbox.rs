@@ -57,6 +57,9 @@ pub struct ChatThread {
     /// A group's people by name.
     people: Vec<String>,
     has_older: bool,
+    /// What the chat's app says of the chat itself (`ChatProfile`), when it says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<nook_core::chats::ChatProfile>,
 }
 
 fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSummary {
@@ -68,7 +71,11 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
     let pinned = thread.pinned || thread.pinned_in_app.unwrap_or(false);
     let muted = thread.muted_in_app.unwrap_or(false);
     let archived = thread.archived;
-    let abilities = ChatAbilities::for_app(&thread.app, sends, pinned, muted, archived);
+    let mut abilities = ChatAbilities::for_app(&thread.app, sends, pinned, muted, archived);
+    if thread.app == whatsapp::APP {
+        // Voting is the gateway's: OpenWA votes, GOWA has no call for it.
+        abilities.vote = wa_votes(thread);
+    }
     let scored = super::notify::score_thread(thread);
     let priority = (scored.raises || (thread.unread > 0 && scored.score > 0)).then_some(scored);
     ChatSummary {
@@ -90,6 +97,17 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
         priority,
         typing,
     }
+}
+
+static WA_VOTES: std::sync::OnceLock<Box<dyn Fn(&str) -> bool + Send + Sync>> = std::sync::OnceLock::new();
+
+/// Whether the WhatsApp account of this chat can vote on a poll (set once the connectors are up).
+fn wa_votes(thread: &InboxThread) -> bool {
+    WA_VOTES.get().is_some_and(|f| f(thread.chat_id.as_deref().unwrap_or("")))
+}
+
+pub(crate) fn set_wa_votes(f: impl Fn(&str) -> bool + Send + Sync + 'static) {
+    let _ = WA_VOTES.set(Box::new(f));
 }
 
 /// The app's own id of the chat behind a key, for asking its app.
@@ -149,6 +167,7 @@ pub fn chat_inbox_thread(c: State<'_, Connectors>, key: String) -> Option<ChatTh
             messages: t.filled_messages(),
             people: t.members.clone().unwrap_or_default(),
             has_older: t.has_older.unwrap_or(false),
+            profile: t.profile.clone(),
         })
     })
 }
@@ -354,6 +373,40 @@ pub async fn chat_inbox_message(app: AppHandle, c: State<'_, Connectors>, key: S
             "deleteForMe" => inbox.forget_message(&key, &message),
             _ => inbox.react_mine(&key, &message, &text),
         });
+    }
+    changed(&app);
+    Ok(())
+}
+
+/// Sends a poll you wrote (`ChatPollForm`), where the chat's app takes one: WhatsApp's gateways. The helper's apps have
+/// no polls another app can send.
+#[tauri::command]
+pub async fn chat_inbox_send_poll(app: AppHandle, c: State<'_, Connectors>, key: String, poll: nook_core::chats::poll::PollDraft) -> Res<()> {
+    let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    if let Some(problem) = poll.problem() {
+        return Err(serde_json::to_value(problem).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default());
+    }
+    if source != whatsapp::APP {
+        return Err(nook_core::i18n::tr("Deze app kan vanuit Nook geen peiling ontvangen.", "This app cannot take a poll from Nook.").into());
+    }
+    c.wa(&chat).send_poll(&chat, &poll).await.map_err(|e| e.message)?;
+    changed(&app);
+    Ok(())
+}
+
+/// Your vote on a poll (`ChatPollView`): its options' texts, an empty choice takes it back. WhatsApp through a gateway
+/// that votes (OpenWA), the helper's apps through the helper.
+#[tauri::command]
+pub async fn chat_inbox_vote(app: AppHandle, c: State<'_, Connectors>, key: String, message: String, choice: Vec<String>) -> Res<()> {
+    let (source, chat) = chat_id(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+    if source == whatsapp::APP {
+        c.wa(&chat).vote(&chat, &message, &choice).await.map_err(|e| e.message)?;
+    } else {
+        let net = network_id(&message, &chat).unwrap_or_else(|| message.clone());
+        let client = c.chat_helper.bridge.client().ok_or_else(helper_off)?;
+        client.vote(&chat, &net, &choice).await.map_err(|_| nook_core::i18n::tr("De stem kwam niet aan.", "The vote did not go through.").to_string())?;
+        c.env.chats.with(|inbox| inbox.vote_mine(&key, &message, &choice));
+        c.chat_helper.bridge.changed(&chat, Some(&net));
     }
     changed(&app);
     Ok(())

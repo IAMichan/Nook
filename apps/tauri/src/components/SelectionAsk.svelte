@@ -5,6 +5,7 @@
   // pointer going up, and reads the selection once when one was just made. The card's question goes through the same
   // `ask` command as the chat.
   import { onMount } from "svelte";
+  import { onCommands } from "../lib/commands";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { api, events } from "../lib/api";
   import { tr } from "../lib/i18n.svelte";
@@ -203,6 +204,18 @@
   function scrolled(e: Event) {
     if (stage === "bar" && !inside(e.target)) hide();
   }
+
+  // The keys for the bar that shows over a selection (`selection.ask`, `selection.quote`), from the shell's key rules.
+  $effect(() => onCommands({
+    "selection.ask": () => {
+      if (stage !== "bar" || !selection) return false;
+      ask("answer");
+    },
+    "selection.quote": () => {
+      if (stage !== "bar" || !selection || !quoteTarget) return false;
+      quote();
+    },
+  }));
 
   onMount(() => {
     const opts = { capture: true } as const;

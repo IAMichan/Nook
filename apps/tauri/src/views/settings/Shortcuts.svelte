@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Settings › Shortcuts (`SettingsView+Shortcuts` on the Mac): the shortcuts that work anywhere, set by pressing them,
   // and the keys inside Nook's window, searchable, as the Mac's "Panel keys".
   import { api } from "../../lib/api";
@@ -105,7 +106,7 @@
     {#if prefs && nook.info?.capabilities.screenPart}
       <div class="row">
         <span>{tr("Vraag over een deel van het scherm", "Ask about a part of the screen")}</span>
-        <span class="inline"><button class="small" title={tr("Trek een kader om een stuk van je scherm; dat gaat als afbeelding naar de chat.", "Draw a frame around part of your screen; it goes to the chat as an image.")} onclick={() => services.partBegin()}>{tr("Kader trekken", "Draw a frame")}</button><ShortcutField value={prefs.screenPartShortcut} onchange={(next) => savePrefs({ screenPartShortcut: next })} /></span>
+        <span class="inline"><button class="small" use:tip={tr("Trek een kader om een stuk van je scherm; dat gaat als afbeelding naar de chat.", "Draw a frame around part of your screen; it goes to the chat as an image.")} onclick={() => services.partBegin()}>{tr("Kader trekken", "Draw a frame")}</button><ShortcutField value={prefs.screenPartShortcut} onchange={(next) => savePrefs({ screenPartShortcut: next })} /></span>
       </div>
     {/if}
     {#if prefs && nook.info?.capabilities.microphone}

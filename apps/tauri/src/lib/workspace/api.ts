@@ -68,6 +68,8 @@ export interface WorkspaceRun {
   goal?: string | null;
   /** True while the agent is compacting/summarizing the conversation (AG-65). */
   compacting?: boolean;
+  /** The agent's own task list of the current work (TodoWrite, a Codex plan, an ACP plan). */
+  tasks?: { text: string; status: "pending" | "active" | "done" | "cancelled" }[] | null;
 }
 
 export type ContextLevel = "normal" | "warning" | "critical";
@@ -177,6 +179,7 @@ export interface WorkspaceSettings {
   agentTools: boolean;
   steerByDefault: boolean;
   autoResumeLimited: boolean;
+  continueAfterRelaunch?: boolean;
   lastProject: string;
   favoriteProjects?: string[];
   recentProjects: string[];
@@ -192,6 +195,12 @@ export interface WorkspaceSettings {
   editor?: string;
   /// At most this many sessions may work at once (`ws.maxWorkingSessions` on macOS, AG-75); 0 = no limit.
   maxWorkingSessions?: number;
+  /** Look for new models online (`ws.onlineModelList` on the Mac); off, only the list that came with the app. */
+  onlineModelList?: boolean;
+  /// How much of the agent's work a timeline shows (`ws.timelineDetail`; `timeline-detail.ts`); absent: everything.
+  timelineDetail?: string;
+  /// What a screen reader hears from the open session (`ws.screenReaderAnnouncements`; `announcements.ts`).
+  screenReaderAnnouncements?: string;
 }
 
 /// Answer to a quick side question (`/btw`, `/side`, AG-61) asked while a session keeps running.
@@ -394,6 +403,8 @@ export const workspaceApi = {
   queueSteer: (id: string, message: string) => invoke<void>("workspace_queue_steer", { run: run(id), message }),
   stop: (id: string) => invoke<void>("workspace_stop", { run: run(id) }),
   retry: (id: string) => invoke<void>("workspace_retry", { run: run(id) }),
+  continueInterrupted: (skip: string[]) => invoke<number>("workspace_continue_interrupted", { skip }),
+  dismissQuestion: (id: string) => invoke<void>("workspace_dismiss_question", { id }),
   setAutoResume: (id: string, on: boolean) => invoke<void>("workspace_set_auto_resume", { run: run(id), on }),
   continueLive: (sessionId: string, message: string | null, endingTerminal: boolean) =>
     invoke<string>("workspace_continue_live", { sessionId, message, endingTerminal }),
@@ -405,6 +416,9 @@ export const workspaceApi = {
   usage: (filter: UsageFilter) => invoke<UsageReport>("workspace_usage", { filter }),
   git: (id: string, refresh = false) => invoke<GitView>("workspace_git", { run: run(id), refresh }),
   diff: (id: string, file: FileChange) => invoke<string>("workspace_diff", { run: run(id), file }),
+  /** Stages or discards one hunk of a file's diff (`HunkPatch`), counted from the first. */
+  applyHunk: (id: string, file: FileChange, index: number, action: "stage" | "discard") =>
+    invoke<void>("workspace_apply_hunk", { run: run(id), file, index, action }),
   commit: (id: string, message: string, paths: string[]) => invoke<string>("workspace_commit", { run: run(id), message, paths }),
   clone: (url: string, near: string | null) => invoke<string>("workspace_clone", { url, near }),
   quick: (id: string) => invoke<QuickView>("workspace_quick", { run: run(id) }),
@@ -538,7 +552,7 @@ export interface TerminalInfo {
 }
 
 export interface ProjectScript { id: string; name: string; command: string; runOnWorktreeCreate: boolean; previewUrl: string | null; autoOpenPreview: boolean }
-export interface DevServer { pid: number; command: string; port: number; url: string }
+export interface DevServer { pid: number; command: string; port: number; url: string; /** Started by Nook: only such a server can be stopped from here (AG-134). */ startedByNook?: boolean }
 export interface BrowserState { open: boolean; url: string; title: string; loading: boolean; openedBy: string | null; lastError: string | null; unavailable?: string }
 
 export const toolsApi = {
@@ -550,6 +564,9 @@ export const toolsApi = {
   replay: (id: string) => invoke<string>("terminal_replay", { id }),
   interrupt: (id: string) => invoke<void>("terminal_interrupt", { id }),
   closeTerminal: (id: string) => invoke<void>("terminal_close", { id }),
+  devServers: (folder: string) => invoke<DevServer[]>("workspace_dev_servers", { folder }),
+  /** True when it was stopped; false for a server Nook did not start. */
+  stopDevServer: (folder: string, pid: number, port: number) => invoke<boolean>("workspace_stop_dev_server", { folder, pid, port }),
   folderTools: (folder: string) => invoke<{ scripts: ProjectScript[]; servers: DevServer[] }>("workspace_folder_tools", { folder }),
   linkBridge: (provider: RunProvider) => invoke<TerminalInfo>("workspace_link_bridge", { provider }),
   browser: () => invoke<BrowserState>("browser_state"),

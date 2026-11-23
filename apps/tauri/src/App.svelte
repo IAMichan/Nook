@@ -18,6 +18,7 @@
   // Keep auxiliary windows and their route imports out of main-window startup.
   const windows = {
     "#bar": retryableView(() => import("./views/Bar.svelte")),
+    "#mirror": retryableView(() => import("./views/BarMirror.svelte")),
     "#aside": retryableView(() => import("./views/services/Aside.svelte")),
     "#recbadge": retryableView(() => import("./views/services/RecordingBadge.svelte")),
     "#screenpart": retryableView(() => import("./views/services/ScreenPart.svelte")),
@@ -89,6 +90,8 @@
 
 {#if isBar}
   <LazyView load={windows["#bar"]} label={tr("Nook-balk", "Nook bar")} />
+{:else if location.hash === "#mirror"}
+  <LazyView load={windows["#mirror"]} label="Nook" />
 {:else if location.hash === "#aside"}
   <LazyView load={windows["#aside"]} label={tr("Suggesties", "Suggestions")} />
 {:else if location.hash === "#recbadge"}

@@ -77,8 +77,13 @@ pub struct PageText {
     pub text: String,
 }
 
-/// Wat je typt: een adres, of anders een zoekopdracht (DuckDuckGo). Alleen http en https.
+/// Wat je typt: een adres, of anders een zoekopdracht met de zoekmachine uit Instellingen › Sessies › Editor & browser.
+/// Alleen http en https.
 pub fn address(input: &str) -> Option<String> {
+    address_with(input, nook_core::workspace::open_in::OpenInPrefs::current().search_engine)
+}
+
+fn address_with(input: &str, engine: nook_core::workspace::open_in::SearchEngine) -> Option<String> {
     let text = input.trim();
     if text.is_empty() {
         return None;
@@ -96,7 +101,7 @@ pub fn address(input: &str) -> Option<String> {
         };
         return web_address(&full);
     }
-    Some(format!("https://duckduckgo.com/?q={}", nook_core::workspace::source_control::encode(text)))
+    Some(engine.url(text))
 }
 
 /// The address itself when it parses as http or https with a host; anything else (javascript:, file:) never reaches
@@ -167,6 +172,11 @@ impl Browser {
                             if let Ok(title) = ws.browser.evaluate(&app, "document.title").await {
                                 lock(&ws.browser.state).title = title;
                                 let _ = app.emit("browser-changed", ());
+                            }
+                            // "Remember visited pages": the pages you visit, never the ones an agent opened.
+                            let s = ws.browser.state();
+                            if s.opened_by.is_none() && nook_core::workspace::open_in::OpenInPrefs::current().remember_history {
+                                tauri::async_runtime::spawn_blocking(move || nook_core::workspace::browser_history::record(&s.url, &s.title));
                             }
                         });
                     }
@@ -344,6 +354,9 @@ mod tests {
 
     #[test]
     fn addresses_and_searches() {
+        use nook_core::workspace::open_in::SearchEngine;
+        let address = |input: &str| address_with(input, SearchEngine::DuckDuckGo);
+        assert_eq!(address_with("nook settings", SearchEngine::Google).as_deref(), Some("https://www.google.com/search?q=nook%20settings"));
         assert_eq!(address("example.com").as_deref(), Some("https://example.com"));
         assert_eq!(address("localhost:5173").as_deref(), Some("http://localhost:5173"));
         assert_eq!(address("http://localhost:3000/x").as_deref(), Some("http://localhost:3000/x"));

@@ -14,6 +14,7 @@
   import { untrack } from "svelte";
   import { locale, tr } from "../../lib/i18n.svelte";
   import { greeting } from "../../lib/companion";
+  import { rankBy } from "../../lib/attention-rank";
   import PanelHeader from "./ui/PanelHeader.svelte";
   import ConnectionLine from "./ui/ConnectionLine.svelte";
   import Ico from "../../components/ui/Ico.svelte";
@@ -51,7 +52,12 @@
   const chatsAllowed = $derived(has(view, Feature.inbox) && may(view, "chats"));
   let home = $state<HomeDigest | null>(null);
   const needs = (s: SessionDigest) => s.items.length > 0 || needsYouState(s.attention);
-  const waiting = $derived(view.sessions.filter(needs).sort((a, b) => b.updated - a.updated));
+  // What waits on you in the shared ranking's order (the Mac's `AttentionScorer`): a permission request before a
+  // question, a question before a failure, the one that waited longer first.
+  const waiting = $derived(rankBy(view.sessions.filter(needs).sort((a, b) => b.updated - a.updated), (s) => ({
+    source: "agents", id: s.id, app: s.agent, subject: s.id, since: s.updated * 1000,
+    needsYou: s.attention === "approval" ? "approval" : s.attention === "input" || s.items.length ? "question" : "failure",
+  }), new Map(), Date.now()));
   const working = $derived(view.sessions.filter((s) => s.attention === "working" && !needs(s)).length);
   const unread = $derived(chatsAllowed ? inbox.filter((c) => c.unread > 0).sort((a, b) => b.last - a.last) : []);
   const forYou = $derived([...waiting.map((s) => ({ kind: "session" as const, s })), ...unread.map((c) => ({ kind: "chat" as const, c }))].slice(0, 6));

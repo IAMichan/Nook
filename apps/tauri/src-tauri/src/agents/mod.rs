@@ -4,6 +4,7 @@
 //! `agent-attention` en `agent-usage`.
 
 pub mod terminal;
+pub mod updates;
 pub mod usage;
 
 use std::collections::HashMap;

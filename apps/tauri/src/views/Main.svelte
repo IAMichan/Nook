@@ -35,8 +35,10 @@
   import { keys as keyRules } from "../lib/keybindings.svelte";
   import { onCommands, runCommand } from "../lib/commands";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { connectorEvents } from "../lib/connectors";
   import { trayLive, type TrayEvent } from "../lib/tray-live";
+  import { loadWeights } from "../lib/attention-rank";
   import { locale } from "../lib/i18n.svelte";
   import { QuitHold, quitInput, type QuitHint } from "../lib/quit-hold";
   import { companion } from "../lib/companion";
@@ -424,9 +426,23 @@
       chatTerminal = t;
       api.takeChatTerminal();
     });
+    // Quit from the tray while sessions work: Nook's own question with the "Don't ask again" box (`request_quit`).
+    const unQuit = listen<number>("quit-ask", async (e) => {
+      const n = e.payload;
+      const yes = await ask({
+        question: n === 1 ? tr("Er werkt nog een sessie", "A session is still working") : tr("Er werken nog {n} sessies", "{n} sessions are still working", { n }),
+        detail: tr("Als je Nook stopt, stoppen zij ook. Je kunt ze voortzetten zodra je Nook weer opent.", "Quitting Nook stops them. You can continue them after you open Nook again."),
+        confirmTitle: tr("Toch stoppen", "Quit Anyway"),
+        destructive: false,
+        dontAskAgain: tr("Niet meer vragen", "Don't ask again"),
+        onRemember: () => { nook.saveSettings({ confirmQuit: false }).catch(() => {}); },
+      });
+      if (yes) invoke("quit_now").catch(() => {});
+    });
     return () => {
       unNav.then((f) => f());
       unTerm.then((f) => f());
+      unQuit.then((f) => f());
     };
   });
 
@@ -572,9 +588,17 @@
     const timer = setInterval(() => (trayTick = Date.now()), 60_000);
     return () => clearInterval(timer);
   });
+  // How welcome each agent is from what you did with its notices, for the tray's "Needs you" (the shared ranking).
+  let trayWeights = $state(new Map<string, number>());
+  $effect(() => {
+    if (!nook.info?.capabilities.tray) return;
+    const items = agents.sessions.map((s) => ({ source: "agents", id: s.id, app: s.name, subject: s.id, needsYou: "question" as const }));
+    void trayTick;
+    loadWeights(items).then((w) => (trayWeights = w));
+  });
   const trayInfo = $derived(nook.info?.capabilities.tray ? trayLive({
     now: trayTick, locale: locale(), events: trayEvents, sessions: agents.sessions, nooks: nook.nooks, playing,
-    update: updateState, updateVersion: updater.status?.candidate?.version ?? null,
+    update: updateState, updateVersion: updater.status?.candidate?.version ?? null, weights: trayWeights,
   }) : null);
   const trayKey = $derived(trayInfo ? JSON.stringify(trayInfo) : "");
   $effect(() => {

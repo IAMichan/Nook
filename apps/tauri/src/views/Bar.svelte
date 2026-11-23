@@ -37,7 +37,9 @@
   import BarCard from "../components/shell/BarCard.svelte";
   import BarAgentCard from "../components/shell/BarAgentCard.svelte";
   import { arrivedChat, showChat } from "../lib/chat-arrived.svelte";
+  import { recordAttention } from "../lib/attention-rank";
   import Home from "./home/Home.svelte";
+  import { buddy } from "../lib/buddy.svelte"; // Nook as a buddy (SV-19): his moments as a strip in the bar.
   import type { Target } from "../lib/inbox";
 
   type Tab = "home" | "nook" | "chats" | "agents" | "workspace" | "music" | "commands";
@@ -248,7 +250,61 @@
     services.asideShow();
   }
 
+  // Open on hover (`scheduleHoverOpen` on the Mac): the pointer has to rest on the closed bar a moment (shorter while an
+  // agent works), so sweeping across the top edge opens nothing; a move starts the wait again, leaving cancels it. The
+  // panel it opens closes again when the pointer leaves, as a hover-opened notch does.
+  // --- Nook as a buddy (SV-19, `momentStrip` on the Mac) ---
+  // A moment of his own (or breathing along) widens the closed bar into one line, as a compact agent notice does; an
+  // agent notice, a card or the open panel go first. Hovering holds it. Window size follows it in and out.
+  const momentStrip = $derived(!expanded && !strip && !cardOpen && !!buddy.moment);
+  $effect(() => {
+    buddy.start();
+  });
+  $effect(() => {
+    buddy.hovering = inside;
+  });
+  let momentSized = false;
+  $effect(() => {
+    const want = momentStrip;
+    untrack(() => {
+      if (want && !momentSized) {
+        momentSized = true;
+        api.barExpand(false, true);
+      } else if (!want && momentSized) {
+        momentSized = false;
+        if (!expanded && !strip && !cardOpen) api.barExpand(false, false, chipVisible);
+      }
+    });
+  });
+  function momentAction() {
+    const action = buddy.moment?.action;
+    if (action === "breathe") return buddy.requestBreathe();
+    buddy.dismiss();
+    if (action === "agents") void open("agents");
+    else if (action === "today") { pickSide("today"); void open(); }
+  }
+  // --- end buddy ---
+
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  function hoverWait() {
+    clearTimeout(hoverTimer);
+    if (nook.settings?.openOnHover === false || expanded || strip || momentStrip || cardKind !== null) return;
+    const working = nook.nooks.some((n) => n.status === "working") || agents.sessions.some((x) => x.status === "running");
+    hoverTimer = setTimeout(() => {
+      if (inside && !expanded && !strip && cardKind === null) open();
+    }, working ? 140 : 260);
+  }
+  function enter() {
+    inside = true;
+    hoverWait();
+  }
+  function moveInside() {
+    if (hoverTimer !== undefined && !expanded) hoverWait();
+  }
+
   function leave() {
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
     inside = false;
     // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
     if (resizing || pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat || arrivedChat.thread) return;
@@ -482,7 +538,10 @@
       clock.advance((now - last) / 1000, inside);
       last = now;
       noticeLeft = clock.fraction;
-      if (clock.done && agents.attention === card) agents.attention = null;
+      if (clock.done && agents.attention === card) {
+        recordAttention("timedOut", { source: "agents", app: card.name, subject: card.id });
+        agents.attention = null;
+      }
     }, 100);
     return () => {
       clearInterval(timer);
@@ -501,11 +560,16 @@
     };
   });
 
+  // What you do with a notice teaches the shared ranking (the Mac's `AttentionFeedback`): View opens, OK dismisses.
   function dismissNotice() {
+    const card = agents.attention;
+    if (card) recordAttention("dismissed", { source: "agents", app: card.name, subject: card.id });
     agents.attention = null;
   }
 
   function viewNotice(id: string) {
+    const card = agents.attention;
+    if (card) recordAttention("opened", { source: "agents", app: card.name, subject: card.id });
     agents.select(id);
     select("agents");
     pinnedOpen = true;
@@ -582,7 +646,7 @@
   // "Hide Nook when idle" (Settings › General › Bar & windows): closed, without a notice, card or chip and with nothing
   // working or waiting, the bar hides; anything new shows it again, as do a shortcut and the tray.
   // "Nook on the bar" off (`showBar`): closed, he is out of sight altogether until a shortcut or the tray opens him.
-  const idleHidden = $derived(!expanded && (nook.settings?.showBar === false || (!!nook.settings?.hideWhenIdle && !strip && !cardOpen && !chipVisible && mood === "idle")));
+  const idleHidden = $derived(!expanded && (nook.settings?.showBar === false || (!!nook.settings?.hideWhenIdle && !strip && !momentStrip && !cardOpen && !chipVisible && mood === "idle")));
   $effect(() => {
     api.barVisible(!idleHidden).catch(() => {});
   });
@@ -625,7 +689,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={blurClose} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
-<div class="bar" class:expanded class:floating class:hasChip={chipVisible} role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating class:hasChip={chipVisible} role="region" onmouseenter={enter} onmousemove={moveInside} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
     {@const card = agents.attention}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -676,6 +740,21 @@
           {/if}
         </div>
       </BarCard>
+    </div>
+  {:else if momentStrip && buddy.moment}
+    <!-- Nook as a buddy (SV-19): his moment in one line, the agent strip's look. -->
+    {@const moment = buddy.moment}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="pill strip" aria-live="polite" onmousedown={drag}>
+      <span class="strip-mark"><Orb size={18} mood={moment.mood} /></span>
+      <span class="message">{buddy.line}</span>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
+        {#if moment.action && moment.actionTitle}
+          <span class="strip-action-bar"><button class="strip-action" onclick={momentAction}>{moment.actionTitle}</button></span>
+        {/if}
+        <NoticeOk compact left={buddy.left} onclick={() => buddy.dismiss()} />
+      </span>
     </div>
   {:else if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->

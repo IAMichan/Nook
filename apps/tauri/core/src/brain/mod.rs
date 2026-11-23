@@ -69,6 +69,7 @@ pub mod network_guard;
 pub mod open_browser_tab;
 pub mod prepare;
 pub mod private_brief;
+pub mod privacy_level;
 pub mod profile;
 pub mod quality;
 pub mod query_plan;

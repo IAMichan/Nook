@@ -29,6 +29,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     create_tray(app)?;
     register_shortcuts(app);
     watch_fullscreen(app);
+    follow_pointer(app);
     let settings = app.state::<AppState>().settings();
     if settings.start_local_brain {
         start_local_brain(app, settings.provider);
@@ -244,7 +245,7 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool, chip: bool
         // Over a full-screen game the closed bar lets clicks through; the open panel must take them right away.
         set_clicks_pass(&window, false);
     }
-    let monitor = chosen_monitor(app, &settings.screen_choice)
+    let monitor = chosen_monitor(app, effective_screen_choice(&settings))
         .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| window.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else { return };
@@ -289,6 +290,106 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool, chip: bool
     if !expanded {
         let _ = window.set_max_size(Some(LogicalSize::new(w, h)));
     }
+    sync_mirrors(app);
+}
+
+/// The screen choice that counts: with the bar on every screen (and at the top), Nook follows the pointer.
+fn effective_screen_choice(settings: &nook_core::settings::Settings) -> &str {
+    if bar_on_every_screen(settings) {
+        "mouse"
+    } else {
+        &settings.screen_choice
+    }
+}
+
+fn bar_on_every_screen(settings: &nook_core::settings::Settings) -> bool {
+    settings.bar_on_all_screens && settings.placement != "floating"
+}
+
+const MIRROR_PREFIX: &str = "bar-mirror-";
+
+/// The screens that get a resting bar next to the real one: every screen but the one the bar is on.
+pub(crate) fn mirror_targets(screens: &[(i32, i32, u32, u32)], bar_on: usize) -> Vec<usize> {
+    (0..screens.len()).filter(|&i| i != bar_on).collect()
+}
+
+/// Puts a display-only resting bar on every other screen while "Show Nook on every screen" is on, and takes them away
+/// otherwise (also while the bar is hidden: off, or hidden when idle).
+pub fn sync_mirrors(app: &AppHandle) {
+    let settings = app.state::<AppState>().settings();
+    let wanted = bar_on_every_screen(&settings) && settings.show_bar && !settings.hide_when_idle;
+    let existing: Vec<_> = app.webview_windows().into_iter().filter(|(label, _)| label.starts_with(MIRROR_PREFIX)).collect();
+    let (Some(bar), true) = (app.get_webview_window(BAR), wanted) else {
+        for (_, window) in existing {
+            let _ = window.close();
+        }
+        return;
+    };
+    let monitors = app.available_monitors().unwrap_or_default();
+    let here = bar.current_monitor().ok().flatten();
+    let screens: Vec<(i32, i32, u32, u32)> = monitors.iter().map(|m| (m.position().x, m.position().y, m.size().width, m.size().height)).collect();
+    let bar_on = here
+        .as_ref()
+        .and_then(|h| monitors.iter().position(|m| m.position() == h.position() && m.size() == h.size()))
+        .unwrap_or(0);
+    let targets = mirror_targets(&screens, bar_on);
+    for (label, window) in &existing {
+        let keep = label.strip_prefix(MIRROR_PREFIX).and_then(|n| n.parse::<usize>().ok()).is_some_and(|n| targets.contains(&n));
+        if !keep {
+            let _ = window.close();
+        }
+    }
+    for n in targets {
+        let monitor = &monitors[n];
+        let label = format!("{MIRROR_PREFIX}{n}");
+        let scale = monitor.scale_factor();
+        let area = monitor.work_area();
+        let x = area.position.x as f64 / scale + (area.size.width as f64 / scale - COLLAPSED.0) / 2.0;
+        let y = area.position.y as f64 / scale;
+        let window = match app.get_webview_window(&label) {
+            Some(window) => window,
+            None => match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html#mirror".into()))
+                .title("Nook")
+                .inner_size(COLLAPSED.0, COLLAPSED.1)
+                .decorations(false)
+                .transparent(true)
+                .shadow(false)
+                .resizable(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .focused(false)
+                .visible(false)
+                .build()
+            {
+                Ok(window) => window,
+                Err(e) => {
+                    log::warn!("Bar on another screen: {e}");
+                    continue;
+                }
+            },
+        };
+        let _ = window.set_ignore_cursor_events(true);
+        let _ = window.set_position(LogicalPosition::new(x, y));
+        let _ = window.show();
+    }
+}
+
+/// With the bar on every screen, Nook moves to the screen the pointer is on while the panel is closed
+/// (`followMouseIfNeeded`). Polled twice a second; a hop re-places the bar and the resting copies.
+fn follow_pointer(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let settings = app.state::<AppState>().settings();
+        if !bar_on_every_screen(&settings) || PANEL_OPEN.load(Ordering::Relaxed) {
+            continue;
+        }
+        let (Some(bar), Some(under)) = (app.get_webview_window(BAR), chosen_monitor(&app, "mouse")) else { continue };
+        let moved = bar.current_monitor().ok().flatten().is_none_or(|here| here.position() != under.position() || here.size() != under.size());
+        if moved {
+            place_bar(&app, false);
+        }
+    });
 }
 
 /// The screen the bar sits on (Settings › General › Bar & windows, `screenChoice` on the Mac): "auto" keeps it where it
@@ -478,6 +579,15 @@ pub fn request_quit(app: &AppHandle) {
         app.exit(0);
         return;
     }
+    // Nook's own dialog in the main window, with the "Don't ask again" box (the native one has buttons only).
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+        if main.emit("quit-ask", working).is_ok() {
+            return;
+        }
+    }
     let text = quit_texts(&settings.app_language, working);
     let app = app.clone();
     app.dialog()
@@ -497,6 +607,13 @@ pub fn request_quit(app: &AppHandle) {
 #[tauri::command]
 pub fn quit_nook(app: AppHandle) {
     request_quit(&app);
+}
+
+/// The main window's own dialog was answered "Quit Anyway": quit now, without asking again.
+#[tauri::command]
+pub fn quit_now(app: AppHandle) {
+    remember_main(&app);
+    app.exit(0);
 }
 
 struct QuitTexts {
@@ -573,6 +690,14 @@ mod tests {
         assert_eq!(tray_tooltip(0, 2), "Nook · working on 2");
         assert_eq!(tray_tooltip(1, 3), "Nook · 1 Nook is waiting for you");
         assert_eq!(tray_tooltip(4, 0), "Nook · 4 Nooks are waiting for you");
+    }
+
+    #[test]
+    fn every_screen_but_the_bars_gets_a_resting_bar() {
+        let screens = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440), (-1280, 0, 1280, 1024)];
+        assert_eq!(mirror_targets(&screens, 0), vec![1, 2]);
+        assert_eq!(mirror_targets(&screens, 2), vec![0, 1]);
+        assert!(mirror_targets(&screens[..1], 0).is_empty());
     }
 
     #[test]

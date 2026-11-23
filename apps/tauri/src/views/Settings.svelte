@@ -37,6 +37,7 @@
   import About from "./settings/About.svelte";
   import Companion from "./settings/Companion.svelte";
   import AgentsSettings from "./settings/Agents.svelte";
+  import AgentsSkills from "./settings/AgentsSkills.svelte";
   import AgentsUsage from "./settings/AgentsUsage.svelte";
   import AgentsWorkspace from "./settings/AgentsWorkspace.svelte";
   import WorktreesSettings from "./settings/Worktrees.svelte";
@@ -79,6 +80,7 @@
     autocompleteStats: { component: AutocompleteSettings, props: { part: "stats" }, when: desktop },
     dictation: { component: Voice, props: { part: "dictation" }, when: () => !!(caps()?.microphone || caps()?.flow) },
     agents: { component: AgentsSettings },
+    skills: { component: AgentsSkills, when: localAgents },
     usage: { component: AgentsUsage, when: localAgents },
     sessions: { component: AgentsWorkspace, props: { part: "sessions" }, when: localAgents },
     worktrees: { component: WorktreesSettings, when: localAgents },
@@ -90,7 +92,8 @@
     chats: { component: Accounts, props: { part: "chats" } },
     connections: { component: Accounts, props: { part: "services" } },
     iphone: { component: Companion, when: desktop },
-    privacy: { component: Privacy, props: { part: "access" } },
+    privacy: { component: Privacy, props: { part: "level" } },
+    permissions: { component: Privacy, props: { part: "access" } },
     activityLog: { component: Privacy, props: { part: "log" } },
     maintenance: { component: Maintenance },
     about: { component: About },
@@ -101,9 +104,9 @@
     start: "house", general: "settings", notch: "laptop", appearance: "palette", notifications: "bell", notificationApps: "bell-dot", sound: "volume-2",
     shortcuts: "keyboard", games: "gamepad-2", brain: "brain", assistant: "sparkles", memory: "library", instructions: "list-checks",
     autocomplete: "text-cursor", autocompleteApps: "layout-grid", autocompleteStyle: "type", autocompletePlayground: "text-cursor-input",
-    autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", usage: "chart-column", sessions: "messages-square",
+    autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", skills: "book", usage: "chart-column", sessions: "messages-square",
     worktrees: "folder", openIn: "external-link", archive: "archive", automation: "calendar-clock", projects: "folder-cog", pullRequests: "git-branch", chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone",
-    privacy: "hand", activityLog: "list", maintenance: "wrench", about: "info",
+    privacy: "hand", permissions: "shield-check", activityLog: "list", maintenance: "wrench", about: "info",
   };
 
   const shown = (id: SettingsSectionId) => subjects[id].when?.() ?? true;

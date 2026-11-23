@@ -35,6 +35,9 @@
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { api } from "../../lib/api";
   import * as inbox from "../../lib/agent-inbox";
+  import { untrack } from "svelte";
+  import { onCommands } from "../../lib/commands";
+  import { autoSettle, loadRules as loadAutoSettleRules, loadSettled as loadAutoSettled, saveSettled as saveAutoSettled } from "../../lib/auto-settle";
   import { emptyState, needsYou, type Attention, type InboxEntry, type InboxState } from "../../lib/agent-inbox";
 
   let { compact = false }: { compact?: boolean } = $props();
@@ -50,6 +53,16 @@
     try { return { ...emptyState(), ...JSON.parse(localStorage.getItem(STATE_KEY) ?? "{}"), groupByProject: view.projectFolders }; } catch { return { ...emptyState(), groupByProject: view.projectFolders }; }
   }
   let inboxState = $state<InboxState>(loadState());
+  // Once after a launch: sessions that quitting cut off go on by themselves when Settings asks for it (`continueInterrupted`);
+  // the ones you settled or snoozed stay as they are.
+  let continuedAfterLaunch = false;
+  $effect(() => {
+    if (continuedAfterLaunch || !workspace.overview) return;
+    continuedAfterLaunch = true;
+    const now = Date.now();
+    const skip = [...inboxState.settled, ...Object.entries(inboxState.snoozed).filter(([, until]) => until > now).map(([id]) => id)].map((id) => id.replace(/^run:/, ""));
+    workspaceApi.continueInterrupted(skip).catch(() => {});
+  });
   function setView(next: View) {
     view = next;
     saveAgentsView(next);
@@ -113,7 +126,11 @@
       : d.toLocaleString(locale(), { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
-  function update(next: InboxState) {
+  // The last list actions (settle, pin, snooze…), for `session.undo` (the Mac's `store.undo()`).
+  const undoStack: InboxState[] = [];
+  function update(next: InboxState, record = true) {
+    if (record && next !== inboxState) undoStack.push(inboxState);
+    if (undoStack.length > 20) undoStack.shift();
     inboxState = next;
     menuFor = null;
     try { localStorage.setItem(STATE_KEY, JSON.stringify(next)); } catch { /* No storage: the choice lasts until the window closes. */ }
@@ -274,6 +291,14 @@
     id: i.id, title: i.title, project: i.folder, attention: i.unseen && i.status === "idle" ? "ready" : attentionOf[i.status],
     lastActivity: Date.parse(i.started ?? "") || 0, unread: i.unseen,
   })));
+  // Settings › Sessions › Tidying up (`AutoSettlePolicy` on the Mac, `lib/auto-settle.ts`): quiet sessions move to Done
+  // by themselves; checked as the list changes and every 30 s with `now`, so a change in Settings counts soon.
+  $effect(() => {
+    const result = autoSettle(allRows, inboxState, loadAutoSettleRules(), loadAutoSettled(), now);
+    if (!result.settled.length) return;
+    saveAutoSettled(result.autoSettled);
+    untrack(() => update(result.state));
+  });
   const rows = $derived.by(() => {
     const byTitle = inbox.filterRows(allRows, query);
     const kept = new Set(byTitle.map((r) => r.id));
@@ -390,9 +415,7 @@
     }
   }
 
-  /// The keys of the open session (`OpenSessionActions`, the Mac's `Keybindings` defaults with Ctrl for ⌘): Ctrl+Shift+S
-  /// settles it, Ctrl+Shift+P pins it, F2 renames it, Ctrl+Shift+C copies where it works, and Ctrl+Shift+M / E / A open
-  /// the composer's model picker (effort and access are in its footer).
+  /// Escape closes the innermost menu or selection first.
   function keys(e: KeyboardEvent) {
     if (e.key === "Escape") {
       if (customSnoozeFor) { e.preventDefault(); customSnoozeFor = null; return; }
@@ -400,33 +423,45 @@
       if (projectMenu) { e.preventDefault(); projectMenu = null; return; }
       if (picked.size || selecting) { e.preventDefault(); picked = new Set(); selecting = false; return; }
     }
-    const typing = (e.target as HTMLElement | null)?.closest("input, textarea, [contenteditable]") !== null;
-    const id = currentId;
-    const row = byId.get(id);
-    if (e.ctrlKey && e.shiftKey && !e.altKey) {
-      const key = e.key.toLowerCase();
-      if (key === "s" && row) {
-        e.preventDefault();
-        update(inboxState.settled.includes(id) ? inbox.unsettle(inboxState, id) : inbox.settle(inboxState, id));
-      } else if (key === "p" && row) {
-        e.preventDefault();
-        update(inboxState.pinned.includes(id) ? inbox.unpin(inboxState, id) : inbox.pin(inboxState, id));
-      } else if (key === "c" && row && !typing) {
-        e.preventDefault();
-        navigator.clipboard.writeText(row.path).catch(() => {});
-      } else if (key === "m" || key === "e" || key === "a") {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("nook-agents-picker", { detail: key === "a" ? "access" : "model" }));
-      }
-    } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "o" && row?.path) {
-      // Ctrl+O (`session.openInEditor`): the session's folder in the editor chosen in Settings › Editor & browser.
-      e.preventDefault();
-      workspaceApi.openIn(row.path).catch((err) => (agents.error = String(err)));
-    } else if (e.key === "F2" && !typing && id.startsWith("run:")) {
-      e.preventDefault();
-      window.dispatchEvent(new CustomEvent("nook-agents-rename", { detail: id }));
-    }
   }
+
+  // The session commands (`OpenSessionActions`): they come from the rules in `lib/keybindings.ts`, so a key you
+  // rebound in Settings › Shortcuts works here too.
+  const openId = () => (byId.get(currentId) ? currentId : null);
+  $effect(() => onCommands({
+    "session.settle": () => {
+      const id = openId();
+      if (!id) return false;
+      update(inboxState.settled.includes(id) ? inbox.unsettle(inboxState, id) : inbox.settle(inboxState, id));
+    },
+    "session.pin": () => {
+      const id = openId();
+      if (!id) return false;
+      update(inboxState.pinned.includes(id) ? inbox.unpin(inboxState, id) : inbox.pin(inboxState, id));
+    },
+    "session.undo": () => {
+      const previous = undoStack.pop();
+      if (!previous) return false;
+      update(previous, false);
+    },
+    "session.copyReference": () => {
+      const row = byId.get(currentId);
+      if (!row) return false;
+      navigator.clipboard.writeText(row.path).catch(() => {});
+    },
+    "session.openInEditor": () => {
+      const row = byId.get(currentId);
+      if (!row?.path) return false;
+      workspaceApi.openIn(row.path).catch((err) => (agents.error = String(err)));
+    },
+    "session.rename": () => {
+      if (!currentId.startsWith("run:")) return false;
+      window.dispatchEvent(new CustomEvent("nook-agents-rename", { detail: currentId }));
+    },
+    "modelPicker.toggle": () => { window.dispatchEvent(new CustomEvent("nook-agents-picker", { detail: "model" })); },
+    "effortPicker.toggle": () => { window.dispatchEvent(new CustomEvent("nook-agents-picker", { detail: "model" })); },
+    "permissionPicker.toggle": () => { window.dispatchEvent(new CustomEvent("nook-agents-picker", { detail: "access" })); },
+  }));
 
   // Several rows at once (`ListSelection`): Ctrl-click adds or removes a row, Shift-click takes the rows in between.
   let picked = $state(new Set<string>());

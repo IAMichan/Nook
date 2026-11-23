@@ -79,6 +79,20 @@ impl ToolSource for System {
                 },
             ),
         ];
+        // The user's own scripts (the Mac's `run_shortcut` for the Shortcuts app): always after an OK.
+        let scripts = nook_core::services::user_scripts::list();
+        let available = if scripts.is_empty() {
+            "None yet: the user puts them in Nook's Scripts folder.".to_string()
+        } else {
+            scripts.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+        };
+        tools.push(LoopTool::action(
+            "run_shortcut",
+            &format!(
+                "Runs one of the user's own scripts from Nook's Scripts folder by name: a PowerShell script, a batch file or a Windows shortcut. Use it for an app or task that has no tool of its own. Available: {available}"
+            ),
+            json!({"type": "object", "properties": {"name": {"type": "string", "description": "Exact name of the script, without its extension."}}, "required": ["name"]}),
+        ));
         let Some(services) = ctx.app.try_state::<Services>() else { return tools };
         let caps = crate::platform::capabilities();
         if caps.open_apps {
@@ -164,6 +178,7 @@ impl ToolSource for System {
                 .into(),
             ),
             "set_volume" => Some(format!("Volume op {}%", level(input).unwrap_or(0))),
+            "run_shortcut" => Some(nook_core::i18n::trf("Opdracht: {name}", "Shortcut: {name}", &[("name", &text(input, "name"))])),
             _ => None,
         }
     }
@@ -212,7 +227,50 @@ impl ToolSource for System {
                         .map(|_| format!("Volume op {percent}%")),
                 )
             }
+            "run_shortcut" => Some(run_script(ctx, &text(input, "name")).await),
             _ => None,
         }
+    }
+}
+
+/// Runs the user's script `name` from the Scripts folder (`user_scripts`): a shortcut is opened by the system, a script runs
+/// hidden with a time limit and its output goes back to the model.
+async fn run_script(ctx: &ToolCtx, name: &str) -> Result<String, String> {
+    use nook_core::services::user_scripts;
+    if name.trim().is_empty() {
+        return Err("The script's name is missing.".into());
+    }
+    let folder = user_scripts::folder();
+    let Some(script) = user_scripts::find_in(&folder, name) else {
+        let known = user_scripts::list_in(&folder).into_iter().map(|s| s.name).collect::<Vec<_>>();
+        return Err(if known.is_empty() {
+            format!("There are no scripts yet. Put one in {}.", folder.display())
+        } else {
+            format!("No script called {name}. Available: {}.", known.join(", "))
+        });
+    };
+    let Some((program, args)) = user_scripts::command(&script) else {
+        return ctx
+            .app
+            .opener()
+            .open_path(script.path.to_string_lossy(), None::<&str>)
+            .map(|_| format!("Shortcut {} started.", script.name))
+            .map_err(|e| e.to_string());
+    };
+    let mut command = tokio::process::Command::new(&program);
+    command.args(&args).current_dir(&folder).stdin(std::process::Stdio::null()).kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let run = command.output();
+    match tokio::time::timeout(std::time::Duration::from_secs(user_scripts::TIMEOUT_SECS), run).await {
+        Ok(Ok(out)) => {
+            let report = user_scripts::report(&script.name, out.status.code(), &String::from_utf8_lossy(&out.stdout), &String::from_utf8_lossy(&out.stderr));
+            if out.status.success() { Ok(report) } else { Err(report) }
+        }
+        Ok(Err(e)) => Err(format!("Could not start {}: {e}", script.name)),
+        Err(_) => Err(format!("Script {} took longer than {} seconds and was stopped.", script.name, user_scripts::TIMEOUT_SECS)),
     }
 }

@@ -35,6 +35,8 @@ pub enum DriverEvent {
     UserMessageRead(String),
     /// A Codex app-server turn started (with its turn id when reported), for conversation rollback tracking.
     TurnStarted(Option<String>),
+    /// The agent's task list changed (Codex `turn/plan/updated`, an ACP `plan` update).
+    Tasks(Vec<super::tasks::RunTaskStep>),
     /// Codex `thread/rollback` (or `thread/revert`) succeeded before starting the turn.
     RollbackApplied,
     /// Codex `thread/rollback` (and `thread/revert` fallback) failed; carries the error message.

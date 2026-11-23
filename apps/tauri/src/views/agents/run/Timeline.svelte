@@ -3,8 +3,16 @@
   // afgeronde beurten vouwen tot "… gewerkt", tool-aanroepen achter elkaar tot één zin, één levende regel terwijl de
   // agent werkt, zoeken met Ctrl+F, en volgen van het einde tot je zelf wegscrolt.
   import { isActive, workspaceApi, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
+  import SuggestionCard from "./SuggestionCard.svelte";
+  import PageCard from "./PageCard.svelte";
+  import { PAGE_TOOL, SUGGESTION_TOOL } from "../../../lib/workspace/session-cards";
   import { workspace } from "../../../lib/workspace/store.svelte";
+  import { needsSignIn, updatable, updatesApi, versionRejected } from "../../../lib/workspace/agent-updates";
+  import { agentApi } from "../../../lib/agents";
+  import { ask } from "../../../lib/confirm.svelte";
+  import { toast } from "../../../lib/toast.svelte";
   import * as T from "../../../lib/workspace/timeline";
+  import { filterTimeline, timelineDetail } from "../../../lib/workspace/timeline-detail";
   import { tr, locale } from "../../../lib/i18n.svelte";
   import Icon from "../../../components/Icon.svelte";
   import Ico from "../../../components/ui/Ico.svelte";
@@ -35,7 +43,7 @@
     /** A fork before a message of yours (`through` false) or through an answer (`through` true). */
     onfork?: (e: RunEvent, through: boolean) => void;
     onretry: () => void;
-    onimplement: (plan: string) => void;
+    onimplement: (plan: string, kept?: string | null, inNew?: boolean) => void;
     openFile?: (path: string) => void;
     onrun?: (command: string, title: string | null) => void;
   } = $props();
@@ -53,7 +61,10 @@
 
   const shown = $derived(events.filter((e) => !(e.kind === "system" && e.tool === "launch")));
   const active = $derived(isActive(run.status));
-  const list = $derived(T.blocks(shown, active));
+  // Settings › Sessions › "Agent's work in the timeline" (`TimelineDetail` on the Mac, `lib/workspace/timeline-detail.ts`):
+  // the blocks leave out the steps it hides; while the find bar is open every event shows, so every match can be reached.
+  const detail = $derived(timelineDetail(workspace.settings?.timelineDetail));
+  const list = $derived(T.blocks(finding ? shown : filterTimeline(shown, detail), active));
   const found = $derived(finding ? T.search(shown, query) : ({ state: "idle", matches: [] } as T.SearchResult));
   const current = $derived(findIndex !== null && found.matches[findIndex] ? found.matches[findIndex].eventId : null);
   const liveLine = $derived(T.live(shown));
@@ -131,6 +142,41 @@
     if (next.has(id)) next.delete(id);
     else next.add(id);
     expanded = next;
+  }
+
+  // A failed turn that a new sign-in or an update fixes offers it (`AgentSignInFailure`, `AgentVersionRejection`).
+  const signIn = $derived(run.status === "failed" && needsSignIn(run.statusDetail));
+  const update = $derived(run.status === "failed" && updatable(run.provider) && versionRejected(run.statusDetail));
+
+  /// The login ran out (`AgentSignInFailure`): the agent's own sign-in runs in a terminal in Nook; Retry then runs the
+  /// turn again with the new login.
+  async function signInAgain() {
+    try {
+      const profiles = await agentApi.profiles();
+      const profile = profiles.find((p) => p.id === run.profileId) ?? profiles.find((p) => p.kind === run.provider);
+      if (profile?.loginCommand) await agentApi.runInTerminal(profile.loginCommand);
+    } catch (e) {
+      toast.error(tr("Kon niet opnieuw inloggen", "Could not sign in again"), e);
+    }
+  }
+
+  /// The API refused this agent's version for the model (`AgentVersionRejection`): update it after you confirm, then
+  /// run the turn again.
+  async function updateAgent() {
+    const name = workspace.provider(run.provider)?.name ?? run.provider;
+    const rows = await updatesApi.list(false).catch(() => []);
+    const row = rows.find((r) => r.kind === run.provider);
+    if (!row?.command) {
+      toast.error(tr("Bijwerken mislukt", "Update failed"), tr("Nook kan niet zien wat {agent} installeerde. Werk het bij zoals je het installeerde.", "Nook cannot tell what installed {agent}. Update it the way you installed it.", { agent: name }));
+      return;
+    }
+    if (!(await ask({ question: tr("{agent} bijwerken?", "Update {agent}?", { agent: name }), detail: row.command, confirmTitle: tr("Bijwerken", "Update") }))) return;
+    try {
+      await updatesApi.update(row.kind);
+      onretry();
+    } catch (e) {
+      toast.error(tr("Bijwerken mislukt", "Update failed"), e);
+    }
   }
 
   function reveal(id: string) {
@@ -217,8 +263,12 @@
 
     {#snippet eventView(e: RunEvent)}
       <div data-event={e.id}>
-        {#if e.kind === "assistant" && e.tool === "plan"}
-          <PlanCard text={e.text} canAct={!active && latestPlan === e.id && !answered(e)} onimplement={() => onimplement(e.text)} baseFolder={run.workingDirectory} {onrun} />
+        {#if e.kind === "system" && e.tool === SUGGESTION_TOOL}
+          <SuggestionCard {run} event={e} />
+        {:else if e.kind === "system" && e.tool === PAGE_TOOL}
+          <PageCard {run} event={e} />
+        {:else if e.kind === "assistant" && e.tool === "plan"}
+          <PlanCard text={e.text} canAct={!active && latestPlan === e.id && !answered(e)} onimplement={(kept) => onimplement(e.text, kept)} onimplementnew={() => onimplement(e.text, null, true)} baseFolder={run.workingDirectory} {onrun} />
         {:else}
           <EventRow event={e} expanded={expanded.has(e.id)} toggle={() => toggleEvent(e.id)} highlighted={current === e.id}
             {openFile} baseFolder={run.workingDirectory} {onrun}
@@ -302,7 +352,14 @@
           </span>
         </div>
         {#if failure}<button class="ghost" onclick={() => reveal(failure)}>{tr("Ga naar fout", "Go to error")}</button>{/if}
-        <button onclick={onretry}>{tr("Opnieuw", "Retry")}</button>
+        <!-- One main action per card: a sign-in or an update to do first takes it from Retry (`recoveryCard`). -->
+        <button class:ghost={signIn || update} onclick={onretry}>{tr("Opnieuw", "Retry")}</button>
+        {#if signIn}
+          <button class="primary" onclick={signInAgain}>{tr("Opnieuw inloggen", "Log in again")}</button>
+        {/if}
+        {#if update}
+          <button class="primary" onclick={updateAgent}>{tr("{agent} bijwerken", "Update {agent}", { agent: workspace.provider(run.provider)?.name ?? run.provider })}</button>
+        {/if}
       </div>
     {/if}
     </div>

@@ -242,7 +242,7 @@ impl FollowUpStore {
 
     pub fn open_default() -> Self {
         let path = paths::support_directory().join(FILE_NAME);
-        let inner = std::fs::read(&path).ok().and_then(|d| serde_json::from_slice(&d).ok()).unwrap_or_default();
+        let inner = crate::storage_recovery::read_json_plain(&path);
         Self { inner: Mutex::new(inner), path: Some(path) }
     }
 

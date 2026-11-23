@@ -13,8 +13,8 @@ let playing: HTMLAudioElement | null = null;
 /// Frequenties en duur per geluid: oplopend voor klaar, twee tikjes voor aandacht, laag voor een fout.
 const tones: Record<SoundName, { freq: number; at: number; length: number }[]> = {
   attention: [{ freq: 880, at: 0, length: 0.12 }, { freq: 880, at: 0.16, length: 0.12 }],
-  // An approval waits: a rising pair, brighter than a question (the Mac's Hero against Ping).
-  permission: [{ freq: 784, at: 0, length: 0.12 }, { freq: 1175, at: 0.14, length: 0.18 }],
+  // A permission request: a rising pair, so it is told apart from a question (Hero vs Ping on the Mac).
+  permission: [{ freq: 740, at: 0, length: 0.12 }, { freq: 1110, at: 0.14, length: 0.18 }],
   done: [{ freq: 660, at: 0, length: 0.14 }, { freq: 990, at: 0.1, length: 0.22 }],
   error: [{ freq: 196, at: 0, length: 0.32 }],
 };

@@ -36,6 +36,8 @@ export interface AgentSession {
   started: string | null;
   updated: string | null;
   pid: number | null;
+  /** The session whose shell started this one (`LaunchedSessions` on the Mac): an agent's test run or helper. */
+  launchedBy?: string | null;
   /** True while the agent is compacting its conversation context (PreCompact → PostCompact / next event / 300s). */
   compacting?: boolean;
 }
@@ -98,7 +100,7 @@ export type ApprovalDecision = "allow" | "always" | "deny" | "terminal";
 
 export interface QuestionOption { label: string; description: string; /** What the option would look like, in the code font. */ preview?: string }
 export interface QuestionItem { question: string; header: string; options: QuestionOption[]; multiSelect: boolean }
-export interface QuestionRequest { id: string; sessionKey: string; agentName: string; project: string; items: QuestionItem[] }
+export interface QuestionRequest { id: string; sessionKey: string; agentName: string; project: string; items: QuestionItem[]; restored?: boolean }
 
 export interface PlanWindow { usedPercent: number; resetsAt: string }
 export interface PlanUsage { fiveHour: PlanWindow | null; sevenDay: PlanWindow | null; updated: string }

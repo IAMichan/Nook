@@ -121,6 +121,24 @@ pub(super) async fn session_start(
     if let Some(p) = providers.iter().find(|p| !super::tasks::installed(**p)) {
         return Err(format!("{} is not installed.", p.display_name()));
     }
+    // The account and rights of each session, checked before the approval card (`StartChoice` on the Mac).
+    let mut choices: Vec<StartChoice> = Vec::new();
+    for (index, (session, provider)) in plan.sessions.iter().zip(&providers).enumerate() {
+        let which = if plan.sessions.len() == 1 { String::new() } else { format!(" (session {})", index + 1) };
+        let mut profile_id = automation::default_profile(app, *provider);
+        let mut account_label = String::new();
+        if !session.account.is_empty() {
+            let accounts = account_choices(app, *provider);
+            let Some(id) = args::start_account(&session.account, &accounts) else {
+                let list: Vec<String> = accounts.iter().map(|(id, label)| format!("{id} ({label})")).collect();
+                return Err(format!("Unknown {} account \"{}\"{which}; its accounts: {}.", provider.display_name(), session.account, list.join(", ")));
+            };
+            account_label = accounts.iter().find(|(i, _)| *i == id).map(|(_, l)| l.clone()).unwrap_or_default();
+            profile_id = id;
+        }
+        let permission = args::start_rights(session.rights, caller.permission, &provider.capabilities().policies).map_err(|e| e + &which)?;
+        choices.push(StartChoice { profile_id, permission, account_label });
+    }
     if let Verdict::Refuse(reason) = check(app, BridgeTool::SessionStart, caller, None) {
         return Err(refusal(reason).into());
     }
@@ -145,7 +163,7 @@ pub(super) async fn session_start(
                 &[("agent", &caller.agent), ("n", &plan.sessions.len()), ("providers", &names.join(", "))],
             )
         };
-        let items: Vec<String> = plan.sessions.iter().map(|s| format!("- {}", s.task)).collect();
+        let items: Vec<String> = plan.sessions.iter().zip(&choices).map(|(s, c)| format!("- {}{}", s.task, account_rights_note(s, c))).collect();
         let detail = format!("{}\n\n{}", place_line(&plan.place, &folder), items.join("\n"));
         let note = tr(
             "De agent krijgt alleen deze opdracht te zien, nooit je gesprek, en heeft nooit meer rechten dan de sessie die hem start.",
@@ -158,8 +176,8 @@ pub(super) async fn session_start(
         }
     }
     let mut started = Vec::new();
-    for (session, provider) in plan.sessions.iter().zip(&providers) {
-        started.push(start_one(app, session, *provider, &plan.place, &folder, caller));
+    for ((session, provider), choice) in plan.sessions.iter().zip(&providers).zip(&choices) {
+        started.push(start_one(app, session, *provider, choice, &plan.place, &folder, caller));
     }
     let ok = started.iter().any(|s| s.get("sessionId").is_some());
     let text = serde_json::to_string_pretty(&json!({"sessions": started})).unwrap_or_default();
@@ -168,8 +186,50 @@ pub(super) async fn session_start(
     Ok(result)
 }
 
+/// The account and rights one session of a `session_start` call runs with, checked before the approval card.
+struct StartChoice {
+    profile_id: String,
+    permission: PermissionPolicy,
+    /// The account's name when the caller chose one, for the approval card.
+    account_label: String,
+}
+
+/// The agent's accounts as (`id`, name) pairs: the main account by the agent's name, extra ones by their label.
+fn account_choices(app: &AppHandle, provider: RunProvider) -> Vec<(String, String)> {
+    let Some(agents) = app.try_state::<AgentsState>() else { return vec![(provider.id().into(), provider.display_name().into())] };
+    let profiles = lock(&agents.profiles).profiles(provider.kind());
+    profiles.into_iter().map(|p| {
+        let label = if p.label.is_empty() { provider.display_name().to_string() } else { p.label.clone() };
+        (p.id, label)
+    }).collect()
+}
+
+/// " · Account Work · Allow edits" on the approval card, for what the caller chose itself (`accountRightsNote`).
+fn account_rights_note(session: &StartSession, choice: &StartChoice) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if !session.account.is_empty() && !choice.account_label.is_empty() {
+        parts.push(trf("Account {name}", "Account {name}", &[("name", &choice.account_label)]));
+    }
+    if session.rights.is_some() {
+        parts.push(match choice.permission {
+            PermissionPolicy::Ask => tr("Alles vragen", "Ask for everything").to_string(),
+            PermissionPolicy::AcceptEdits => tr("Bewerkingen toestaan", "Allow edits").to_string(),
+            PermissionPolicy::Bypass => tr("Alles toestaan", "Allow everything").to_string(),
+        });
+    }
+    if parts.is_empty() { String::new() } else { format!(" · {}", parts.join(" · ")) }
+}
+
 /// One session of a `session_start` call: its answer with the id, or why it did not start.
-fn start_one(app: &AppHandle, session: &StartSession, provider: RunProvider, place: &Place, folder: &str, caller: &BridgeCaller) -> Value {
+fn start_one(
+    app: &AppHandle,
+    session: &StartSession,
+    provider: RunProvider,
+    choice: &StartChoice,
+    place: &Place,
+    folder: &str,
+    caller: &BridgeCaller,
+) -> Value {
     let Some(ws) = workspace(app) else { return json!({"title": session.task, "error": "Nook is not ready."}) };
     let name = session.task.clone();
     let settings = lock(&ws.settings).clone();
@@ -196,18 +256,14 @@ fn start_one(app: &AppHandle, session: &StartSession, provider: RunProvider, pla
         title: session.title.clone(),
         task: session.task.clone(),
         provider,
-        profile_id: automation::default_profile(app, provider),
+        profile_id: choice.profile_id.clone(),
         model: if session.model.is_empty() {
             settings.default_models.get(provider.id()).cloned().unwrap_or_default()
         } else {
             session.model.clone()
         },
-        // They ask like any other session: the user raises their rights themselves.
-        permission: if caps.policies.contains(&PermissionPolicy::Ask) {
-            PermissionPolicy::Ask
-        } else {
-            caps.policies.first().copied().unwrap_or_default()
-        },
+        // Ask like any other session, unless the caller chose rights (never more than its own).
+        permission: choice.permission,
         mode: if session.plan && caps.plan_mode { ExecutionMode::Plan } else { ExecutionMode::Agent },
         isolation,
         branch_name: if isolation == IsolationMode::Worktree { branch_name(&name, Uuid::new_v4()) } else { String::new() },

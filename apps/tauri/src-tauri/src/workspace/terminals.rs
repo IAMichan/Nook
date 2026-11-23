@@ -47,6 +47,8 @@ struct Term {
     input: std::sync::mpsc::Sender<Vec<u8>>,
     master: Box<dyn MasterPty + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// The shell's process, to tell which dev servers a terminal started (AG-134).
+    pid: Option<u32>,
     buffer: OutputBuffer,
 }
 
@@ -64,6 +66,11 @@ struct Chunk {
 }
 
 impl Terminals {
+    /// The shells of the open terminals.
+    pub fn shell_pids(&self) -> Vec<u32> {
+        lock(&self.inner).values().filter_map(|t| t.pid).collect()
+    }
+
     pub fn list(&self) -> Vec<TerminalInfo> {
         let map = lock(&self.inner);
         lock(&self.order).iter().filter_map(|id| map.get(id).map(|t| t.info.clone())).collect()
@@ -104,6 +111,7 @@ impl Terminals {
         let mut child = pair.slave.spawn_command(builder).map_err(|e| format!("De shell starten lukte niet: {e}"))?;
         drop(pair.slave);
         let killer = child.clone_killer();
+        let pid = child.process_id();
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
         let (input, keys) = std::sync::mpsc::channel::<Vec<u8>>();
@@ -134,7 +142,7 @@ impl Terminals {
             created: chrono::Utc::now(),
         };
         lock(&self.inner)
-            .insert(id.clone(), Term { info: info.clone(), input, master: pair.master, killer, buffer: OutputBuffer::default() });
+            .insert(id.clone(), Term { info: info.clone(), input, master: pair.master, killer, pid, buffer: OutputBuffer::default() });
         lock(&self.order).push(id.clone());
         // Uitvoer lezen tot de shell stopt.
         let inner = self.inner.clone();

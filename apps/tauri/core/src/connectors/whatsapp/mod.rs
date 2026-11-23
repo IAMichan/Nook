@@ -214,6 +214,9 @@ pub struct Message {
     /// The message this one answers, by its id (GOWA's `replied_to_id`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<String>,
+    /// A poll this message asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<crate::chats::poll::ChatPoll>,
 }
 
 impl Message {
@@ -231,6 +234,7 @@ impl Message {
             chat_name: None,
             receipt: None,
             reply_to: None,
+            poll: None,
         }
     }
 }
@@ -482,6 +486,7 @@ impl Inbox {
                 chat_name: None,
                 receipt: m.receipt,
                 reply_to: m.reply_to.clone(),
+                poll: m.poll.clone(),
             })
             .collect();
         Some(Conversation {
@@ -575,6 +580,9 @@ impl Inbox {
             reply_to: message.reply_to,
             reactions: None,
             versions: vec![],
+            poll: message.poll,
+            membership: None,
+            group_change: None,
         };
         // WhatsApp's gateway gives no unread count of its own: a new message from someone else is one more, your own
         // (answered from the phone) reads the chat there, and history is never new.
@@ -800,6 +808,8 @@ pub enum WebhookEvent {
     Edited { chat: String, message: String, text: String },
     /// A message was deleted for everyone.
     Revoked { chat: String, message: String },
+    /// Someone voted on a poll (an empty choice takes their vote back): it moves that poll's counts, never a bubble.
+    PollVote { chat: String, poll: String, voter: String, choice: Vec<String>, from_me: bool },
     /// Een geldige levering waar Nook niets mee hoeft (een test, een poll die verandert).
     Ignored,
 }
@@ -883,6 +893,15 @@ fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
         return reaction;
     }
     let from = non_empty(&p["from"]).unwrap_or_else(|| chat.clone());
+    let from_me = p["is_from_me"].as_bool().unwrap_or(false);
+    let (poll, vote) = crate::chats::poll::ChatPoll::gowa(&p["poll"]);
+    if let Some((poll, choice)) = vote {
+        return WebhookEvent::PollVote { chat, poll, voter: if from_me { String::new() } else { from }, choice, from_me };
+    }
+    if p["poll"].is_object() && poll.is_none() {
+        // A poll edited or given an option: no message of its own.
+        return WebhookEvent::Ignored;
+    }
     let text = p["body"].as_str().unwrap_or("").to_string();
     let mine = me.map(str::to_string).or_else(|| non_empty(&json["device_id"]));
     let mut m = Message::new(
@@ -897,6 +916,10 @@ fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
     m.media = gowa_media(p);
     m.mentions_me = jid::is_group(&chat) && text_mentions(&text, mine.as_deref());
     m.reply_to = non_empty(&p["replied_to_id"]);
+    if let Some(poll) = poll {
+        m.text = String::new();
+        m.poll = Some(poll);
+    }
     WebhookEvent::Message(m)
 }
 
@@ -990,6 +1013,13 @@ fn parse_openwa(json: &Value, me: Option<&str>) -> WebhookEvent {
         from_me,
     );
     m.media = openwa_media(kind, non_empty(&d["media"]["filename"]));
+    if kind == "poll" {
+        m.poll = crate::chats::poll::ChatPoll::openwa(&d["poll"]);
+        if m.poll.is_some() {
+            m.text = String::new();
+            m.media = Media::None;
+        }
+    }
     let is_group = d["isGroup"].as_bool().unwrap_or_else(|| jid::is_group(&chat));
     if let (true, Some(mine)) = (is_group, me) {
         let ids: Vec<&str> = crate::connectors::list(&d["mentionedIds"]).iter().filter_map(Value::as_str).collect();
@@ -1504,6 +1534,34 @@ mod tests {
         assert_eq!(ticks(&inbox, "old"), None);
         assert_eq!(Receipt::Read.advanced(Receipt::Failed), Receipt::Failed);
         assert_eq!(Receipt::from_status("retry"), None);
+    }
+
+    #[test]
+    fn polls_come_in_and_votes_move_their_counts() {
+        let made = br#"{"event":"message","payload":{"id":"P1","chat_id":"120363000000000001@g.us","from":"31600000001@s.whatsapp.net","body":"Lunch?","timestamp":"2026-11-20T10:00:00Z","poll":{"type":"creation","question":"Lunch?","options":[{"name":"Sushi"},{"name":"Pizza"}],"selectable_options_count":1}}}"#;
+        let Some(WebhookEvent::Message(m)) = parse_webhook(GatewayKind::Gowa, made, None) else { panic!("a poll is a message") };
+        assert_eq!(m.poll.as_ref().map(|p| p.options.len()), Some(2));
+        assert!(m.text.is_empty());
+        let vote = br#"{"event":"message","payload":{"id":"V1","chat_id":"120363000000000001@g.us","from":"31600000002@s.whatsapp.net","poll":{"type":"vote","poll_id":"P1","selected_options":["Pizza"]}}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, vote, None),
+            Some(WebhookEvent::PollVote {
+                chat: "120363000000000001@g.us".into(),
+                poll: "P1".into(),
+                voter: "31600000002@s.whatsapp.net".into(),
+                choice: vec!["Pizza".into()],
+                from_me: false
+            })
+        );
+        let mut inbox = Inbox::default();
+        inbox.add(m, &Filters::default(), None, false);
+        let key = Inbox::key("120363000000000001@g.us");
+        inbox.store.with(|i| i.ballot(&key, "P1", "2", crate::chats::poll::Ballot { name: "Bea".into(), mine: false, choice: vec!["Pizza".into()] }));
+        let poll = inbox.get("120363000000000001@g.us").unwrap().messages[0].poll.clone().unwrap();
+        assert_eq!(poll.options[1].votes, 1);
+        let openwa = br#"{"event":"message.received","data":{"id":"O1","chatId":"31600000001@c.us","type":"poll","body":"","poll":{"name":"Q","options":["A","B"],"allowMultipleAnswers":true}}}"#;
+        let Some(WebhookEvent::Message(o)) = parse_webhook(GatewayKind::Openwa, openwa, None) else { panic!("OpenWA's poll") };
+        assert!(o.poll.unwrap().multiple);
     }
 
     #[test]

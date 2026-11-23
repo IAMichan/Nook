@@ -98,6 +98,8 @@ pub struct WorkspaceSettings {
     pub steer_by_default: bool,
     /// Een sessie die op een gebruikslimiet stopte, gaat vanzelf verder zodra de limiet vrij is (standaard uit).
     pub auto_resume_limited: bool,
+    /// A session that quitting or restarting Nook stopped goes on by itself when Nook opens again (`continueAfterRelaunch`).
+    pub continue_after_relaunch: bool,
     pub last_project: String,
     /// Favorite project folders: shown at the top of the project menu and never evicted.
     pub favorite_projects: Vec<String>,
@@ -121,6 +123,13 @@ pub struct WorkspaceSettings {
     /// At most this many sessions may work at once (`ws.maxWorkingSessions` on the Mac); `0` = no limit.
     #[serde(default)]
     pub max_working_sessions: u32,
+    /// How much of the agent's work a session's timeline shows (`ws.timelineDetail` on the Mac): "everything",
+    /// "hideSucceeded", "noTools" or "zen". Kept as text, so an unknown value falls back in the view
+    /// (`lib/workspace/timeline-detail.ts`) instead of resetting every setting.
+    pub timeline_detail: String,
+    /// What a screen reader hears from the open session (`ws.screenReaderAnnouncements`): "off", "replies" or
+    /// "everything" (`lib/workspace/announcements.ts`).
+    pub screen_reader_announcements: String,
 }
 
 impl Default for WorkspaceSettings {
@@ -139,6 +148,7 @@ impl Default for WorkspaceSettings {
             agent_tools: true,
             steer_by_default: true,
             auto_resume_limited: false,
+            continue_after_relaunch: false,
             last_project: String::new(),
             favorite_projects: vec![],
             recent_projects: vec![],
@@ -150,6 +160,8 @@ impl Default for WorkspaceSettings {
             project_overrides: BTreeMap::new(),
             online_model_list: true,
             max_working_sessions: 0,
+            timeline_detail: "everything".into(),
+            screen_reader_announcements: "replies".into(),
         }
     }
 }
@@ -358,6 +370,8 @@ mod tests {
         assert!(back.default_efforts.is_empty() && back.default_profiles.is_empty(), "old files still load");
         assert!(back.worktree_root().ends_with("worktrees"));
         assert!(back.folder_choices.is_empty(), "old files still load");
+        assert_eq!(back.timeline_detail, "everything", "an old file shows every step");
+        assert_eq!(back.screen_reader_announcements, "replies", "as on the Mac, replies by default");
     }
 
     #[test]

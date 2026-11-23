@@ -3,6 +3,7 @@
 
 mod autocomplete;
 mod browser;
+pub mod hold_key;
 mod media;
 mod menu;
 mod quiet;

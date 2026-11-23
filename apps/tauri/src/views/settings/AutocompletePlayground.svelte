@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Instellingen › Aanvullen › Testen: een tekstvak om aanvullen te proberen zonder Instellingen te verlaten. Hetzelfde
   // model, dezelfde voorstellen en dezelfde emoji als in andere apps; wat je hier typt wordt niet bewaard en telt niet mee.
   import { nook } from "../../lib/state.svelte";
@@ -141,7 +142,7 @@
 {#if picker}
   <div class="picker">
     {#each picker.choices as choice, i (i)}
-      <button class="cell" class:on={i === selected} title=":{choice.name}" onclick={() => takeEmoji(i)}>
+      <button class="cell" class:on={i === selected} use:tip={`:${choice.name}`} onclick={() => takeEmoji(i)}>
         {choice.emoji}
         {#if Math.floor(i / columns) === Math.floor(selected / columns)}<span class="number">{(i % columns) + 1}</span>{/if}
       </button>

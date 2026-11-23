@@ -233,6 +233,7 @@ pub fn attention_card(run: &WorkspaceRun, last: &str) -> AgentSession {
         started: Some(run.created_at),
         updated: Some(run.updated_at),
         pid: None,
+        launched_by: None,
     }
 }
 

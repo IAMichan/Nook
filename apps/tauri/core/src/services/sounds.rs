@@ -1,4 +1,4 @@
-//! Korte geluiden als een agent op je wacht, iets klaar is of misging. Eigen geluiden gaan voor: zet `attention`,
+//! Korte geluiden als een agent op je wacht (een vraag, of `permission` voor toestemming), iets klaar is of misging. Eigen geluiden gaan voor: zet `attention`,
 //! `done` of `error` (.wav, .mp3, .ogg, .m4a) in de map `Sounds` (`NookSound` op de Mac).
 
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use crate::paths;
 #[serde(rename_all = "lowercase")]
 pub enum NookSound {
     Attention,
-    /// An agent asks for permission (an approval is waiting), as the Mac's `NookSound.permission`.
+    /// An agent asks for permission (the Mac's `NookSound.permission`); a question or other wait is `Attention`.
     Permission,
     Done,
     Error,

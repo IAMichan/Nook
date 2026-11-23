@@ -43,5 +43,5 @@
 </div>
 
 <style>
-  .small { font-size: 12px; }
+  .small { font: var(--text-detail); }
 </style>

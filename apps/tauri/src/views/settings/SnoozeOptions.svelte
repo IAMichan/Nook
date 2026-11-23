@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Settings › Notifications › Snooze options (the Mac's `SnoozeOptionsSection`): what every snooze menu offers, as
+  // Settings › Sessions › Snooze options (the Mac's `SnoozeOptionsSection`): what every snooze menu offers, as
   // durations and times of day, in the order they come up; add one, remove one, or go back to the defaults.
   import { tr } from "../../lib/i18n.svelte";
   import { DEFAULT_OPTIONS, loadOptions, optionId, optionLabel, saveOptions, type SnoozeDay, type SnoozeOption } from "../../lib/snooze-options";

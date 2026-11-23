@@ -781,7 +781,10 @@ impl BuddyService {
             }
             changed = true;
         }
-        self.finishes.push((at, session.to_string()));
+        // The same finish fed again (the bar's timer reads every run each half minute) is kept once.
+        if !self.finishes.iter().any(|(t, s)| *t == at && s == session) {
+            self.finishes.push((at, session.to_string()));
+        }
         if self.finishes.len() > Self::FINISHES_LIMIT {
             let drop = self.finishes.len() - Self::FINISHES_LIMIT;
             self.finishes.drain(..drop);
@@ -838,6 +841,21 @@ impl BuddyService {
         events_today: usize,
         birthday: Option<MonthDay>,
     ) -> Option<BuddyMomentView> {
+        let moment = self.plan(idle_secs, now, in_event, surface_free, events_today, birthday)?;
+        Some(self.commit(&moment, now, tone))
+    }
+
+    /// The first half of `evaluate` (`buddyTick` on the Mac): notes whether you are at your computer and plans the
+    /// moment that is due, without recording it, so the caller can first ask the notice pacer whether it may show.
+    pub fn plan(
+        &mut self,
+        idle_secs: f64,
+        now: DateTime<FixedOffset>,
+        in_event: bool,
+        surface_free: bool,
+        events_today: usize,
+        birthday: Option<MonthDay>,
+    ) -> Option<BuddyMoment> {
         self.activity.note(idle_secs, now);
 
         let mut signals = BuddySignals::new(now);
@@ -856,18 +874,37 @@ impl BuddyService {
         signals.words_total = self.words_total;
         signals.birthday = birthday;
 
-        if let Some(moment) = BuddyPlanner::next(&signals, &self.ledger) {
-            self.ledger.record(&moment, now);
-            if moment.kind == BuddyMomentKind::BreakTime {
-                self.activity.restart_stretch(now);
-            }
-            let view = BuddyPlanner::present(&moment, tone);
-            self.active_moment = Some((view.clone(), now.with_timezone(&Utc)));
-            self.save();
-            return Some(view);
-        }
+        BuddyPlanner::next(&signals, &self.ledger)
+    }
 
+    /// The second half: records a shown moment in the ledger (a break also starts a fresh stretch) and returns it as
+    /// Nook shows it, in the chosen tone.
+    pub fn commit(&mut self, moment: &BuddyMoment, now: DateTime<FixedOffset>, tone: BuddyTone) -> BuddyMomentView {
+        self.ledger.record(moment, now);
+        if moment.kind == BuddyMomentKind::BreakTime {
+            self.activity.restart_stretch(now);
+        }
+        let view = BuddyPlanner::present(moment, tone);
+        self.active_moment = Some((view.clone(), now.with_timezone(&Utc)));
+        self.save();
+        view
+    }
+
+    /// The moment shown last, while it is fresh (ten minutes) and not dismissed; plans nothing.
+    pub fn active(&mut self, now: DateTime<FixedOffset>) -> Option<BuddyMomentView> {
+        let now_utc = now.with_timezone(&Utc);
+        if let Some((view, shown_at)) = &self.active_moment {
+            if !self.dismissed.contains(&view.id) && (now_utc - *shown_at).num_seconds() < Self::ACTIVE_TTL_SECS {
+                return Some(view.clone());
+            }
+        }
+        self.active_moment = None;
         None
+    }
+
+    /// "Breathe with Nook": a break taken, so the stretch of work starts again.
+    pub fn breathed(&mut self, now: DateTime<FixedOffset>) {
+        self.activity.restart_stretch(now);
     }
 
     /// Returns a newly planned moment, or keeps returning the recently surfaced moment within its TTL
@@ -888,14 +925,7 @@ impl BuddyService {
         if let Some(fresh) = self.evaluate(idle_secs, now, tone, in_event, true, events_today, birthday) {
             return Some(fresh);
         }
-        let now_utc = now.with_timezone(&Utc);
-        if let Some((view, shown_at)) = &self.active_moment {
-            if !self.dismissed.contains(&view.id) && (now_utc - *shown_at).num_seconds() < Self::ACTIVE_TTL_SECS {
-                return Some(view.clone());
-            }
-        }
-        self.active_moment = None;
-        None
+        self.active(now)
     }
 }
 
@@ -1124,6 +1154,56 @@ mod tests {
         let bytes = svc.ledger.to_bytes();
         assert_eq!(BuddyLedger::from_bytes(&bytes), svc.ledger);
         assert_eq!(BuddyLedger::from_bytes(b"nonsense"), BuddyLedger::default());
+    }
+
+    #[test]
+    fn birthday_is_celebrated_once_and_only_on_the_day() {
+        let day = local(2026, 6, 12, 9, 0);
+        let mut signals = BuddySignals::new(day);
+        signals.birthday = MonthDay::parse("06-12");
+        let mut ledger = BuddyLedger::default();
+        let first = BuddyPlanner::next(&signals, &ledger).unwrap();
+        assert_eq!(first.kind, BuddyMomentKind::Birthday);
+        ledger.record(&first, day);
+        // Later that day: no second birthday (Friday wrap etc. may follow, never the birthday again).
+        let later = BuddySignals { now: day + Duration::hours(3), ..signals.clone() };
+        assert!(BuddyPlanner::next(&later, &ledger).is_none_or(|m| m.kind != BuddyMomentKind::Birthday));
+        // Before 07:00 and on another day: nothing.
+        let early = BuddySignals { now: local(2026, 6, 12, 6, 30), ..signals.clone() };
+        assert!(BuddyPlanner::next(&early, &BuddyLedger::default()).is_none());
+        let other = BuddySignals { now: local(2026, 6, 13, 9, 0), ..signals };
+        assert!(BuddyPlanner::next(&other, &BuddyLedger::default()).is_none());
+    }
+
+    #[test]
+    fn plan_records_nothing_until_committed_and_active_keeps_the_moment() {
+        let mut svc = BuddyService::in_memory();
+        let t0 = local(2026, 5, 6, 9, 0);
+        let planned = svc.plan(0.0, t0, false, true, 0, None).unwrap();
+        assert_eq!(planned.kind, BuddyMomentKind::Morning);
+        assert!(svc.ledger.shown_today.is_empty(), "planning alone is not showing");
+        assert!(svc.active(t0).is_none());
+
+        let view = svc.commit(&planned, t0, BuddyTone::Calm);
+        assert_eq!(view.mood, "cozy");
+        assert_eq!(svc.ledger.shown_today, vec![planned.id.clone()]);
+        assert_eq!(svc.active(t0 + Duration::minutes(5)).map(|v| v.id), Some(planned.id.clone()));
+        assert!(svc.active(t0 + Duration::minutes(11)).is_none(), "ten minutes on screen at most");
+
+        // A quiet moment (meeting, screen share, quiet hours) plans nothing at all.
+        let mut quiet = BuddyService::in_memory();
+        assert!(quiet.plan(0.0, t0, true, true, 0, None).is_none());
+    }
+
+    #[test]
+    fn tone_changes_the_words_not_the_moment() {
+        crate::i18n::set_language("en");
+        let moment = BuddyMoment { kind: BuddyMomentKind::Morning, id: "preview".into(), count: 3, minutes: 0, unit: None };
+        assert_eq!(BuddyPlanner::line(&moment, BuddyTone::Calm), "Good morning. 3 events in your calendar today.");
+        assert_eq!(BuddyPlanner::line(&moment, BuddyTone::Warm), "Morning! You have 3 things on today.");
+        assert_eq!(BuddyPlanner::line(&moment, BuddyTone::Playful), "Morning, sunshine! 3 events today. Coffee first?");
+        assert_eq!(BuddyTone::parse("PLAYFUL"), BuddyTone::Playful);
+        assert_eq!(BuddyTone::parse(""), BuddyTone::Warm);
     }
 
     #[test]

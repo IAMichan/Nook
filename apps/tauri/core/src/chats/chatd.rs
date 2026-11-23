@@ -13,6 +13,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 
 use super::inbox::{MessageReadDetail, MessageReader, Reaction};
+use super::membership::{ChatGroupChange, ChatMembership, GroupChangeKind, MembershipChange, ME, SOMEONE};
 use super::{BridgedChat, ChatBridge, ChatKind, ChatMedia, InboxMessage, Receipt};
 
 /// The port the helper listens on, on 127.0.0.1 only (the same as on the Mac).
@@ -47,6 +48,8 @@ pub struct ServiceChat {
     pub is_muted: bool,
     pub is_pinned: bool,
     pub account: Option<String>,
+    /// What the helper says of the chat itself (description, admins, a person's number...).
+    pub profile: Option<super::ChatProfile>,
 }
 
 /// The networks by the words in their name or account id, most specific first.
@@ -148,6 +151,7 @@ pub fn chats(json: &Value) -> Vec<ServiceChat> {
                 is_muted: chat.get("isMuted").and_then(Value::as_bool) == Some(true),
                 is_pinned: chat.get("isPinned").and_then(Value::as_bool) == Some(true),
                 account,
+                profile: super::ChatProfile::helper(chat, &people, is_group),
             })
         })
         .collect()
@@ -271,6 +275,62 @@ fn label(message: &Value) -> String {
     }
 }
 
+/// Who the helper's message names as its sender, by name: you as [`ME`], nobody when it does not say.
+fn notice_by(message: &Value, mine: bool, chat: &ServiceChat) -> Option<String> {
+    if mine {
+        return Some(ME.to_string());
+    }
+    let id = message.get("senderID").and_then(Value::as_str).unwrap_or_default();
+    if id.is_empty() {
+        return None;
+    }
+    let name = message.get("senderName").and_then(Value::as_str).filter(|n| !n.is_empty()).map(str::to_string);
+    Some(name.or_else(|| chat.people.get(id).cloned()).unwrap_or_default())
+}
+
+/// A `MEMBERSHIP` or `GROUP_CHANGE` message as the centred line it is (`ChatServiceData.membership` / `.messages`).
+fn notice_line(message: &Value, kind: Option<&str>, id: &str, sent: DateTime<Utc>, mine: bool, chat: &ServiceChat) -> Option<InboxMessage> {
+    let line_id = message_id(id, &chat.id);
+    match kind {
+        Some("MEMBERSHIP") => {
+            let change = message.get("membership")?;
+            let user = change.get("userID").and_then(Value::as_str).unwrap_or_default();
+            let is_me = change.get("isSelf").and_then(Value::as_bool) == Some(true) || chat.me.as_deref().is_some_and(|me| me == user);
+            let person = if is_me {
+                ME.to_string()
+            } else {
+                change
+                    .get("userName")
+                    .and_then(Value::as_str)
+                    .filter(|n| !n.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| chat.people.get(user).cloned())
+                    .unwrap_or_default()
+            };
+            let sender = message.get("senderID").and_then(Value::as_str).unwrap_or_default();
+            let joined = change.get("membership").and_then(Value::as_str) == Some("join");
+            let people = [person];
+            let membership = if sender.is_empty() || sender == user {
+                let what = if joined { MembershipChange::Joined } else if sender.is_empty() { MembershipChange::Gone } else { MembershipChange::Left };
+                ChatMembership::new(what, None, &people)
+            } else {
+                let by = notice_by(message, mine, chat).filter(|b| !b.is_empty()).unwrap_or_else(|| SOMEONE.into());
+                ChatMembership::new(if joined { MembershipChange::Added } else { MembershipChange::Removed }, Some(&by), &people)
+            };
+            Some(InboxMessage::membership_notice(line_id, sent, membership))
+        }
+        Some("GROUP_CHANGE") => {
+            let change = message.get("groupChange")?;
+            let group_kind = GroupChangeKind::parse(change.get("kind").and_then(Value::as_str)?)?;
+            let by = notice_by(message, mine, chat);
+            let text = change.get("text").and_then(Value::as_str);
+            let group = ChatGroupChange::new(group_kind, by.as_deref(), text, &[]);
+            Some(InboxMessage::group_notice(line_id, sent, group, Some(mine)))
+        }
+        _ => None,
+    }
+}
+
 /// The messages of `/v1/chats/{id}/messages`, oldest first, without reactions and hidden ones; a deleted one shows as
 /// deleted, an edited one says so.
 pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
@@ -280,13 +340,15 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
             let id = message.get("id")?.as_str()?;
             let kind = message.get("type").and_then(Value::as_str);
             if kind == Some("REACTION")
-                || matches!(kind, Some("MEMBERSHIP" | "GROUP_CHANGE"))
                 || message.get("isHidden").and_then(Value::as_bool) == Some(true)
             {
                 return None;
             }
             let sent = date(message.get("timestamp")?)?;
             let mine = message.get("isSender").and_then(Value::as_bool) == Some(true);
+            if let Some(line) = notice_line(message, kind, id, sent, mine, chat) {
+                return Some(line);
+            }
             let sender_id = (!mine && chat.is_group)
                 .then(|| message.get("senderID").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string))
                 .flatten();
@@ -323,6 +385,11 @@ pub fn messages(json: &Value, chat: &ServiceChat) -> Vec<InboxMessage> {
             item.edited = message.get("isEdited").and_then(Value::as_bool) == Some(true);
             item.reply_to = message.get("linkedMessageID").and_then(Value::as_str).filter(|l| !l.is_empty()).map(|l| message_id(l, &chat.id));
             item.reactions = message.get("reactions").and_then(Value::as_array).map(|list| reactions(list, chat));
+            // A poll (`type: POLL`, its text the question) with who chose each option, as every app's poll.
+            item.poll = super::poll::ChatPoll::helper(message, chat.me.as_deref(), &|id| chat.people.get(id).cloned());
+            if item.poll.is_some() {
+                item.text = String::new();
+            }
             if !mine && chat.is_group {
                 let mentions: Vec<&str> = message
                     .get("mentions")
@@ -609,6 +676,12 @@ impl ChatdClient {
         }
     }
 
+    /// Your vote on a poll (its options' texts; an empty choice takes it back), where the chat's network takes votes.
+    pub async fn vote(&self, chat: &str, message: &str, choice: &[String]) -> Result<(), String> {
+        let path = format!("{}/vote", Self::message_path(chat, message));
+        self.call(reqwest::Method::POST, &path, &[], Some(json!({"answers": choice}))).await.map(|_| ())
+    }
+
     /// Pins or mutes the chat in its app.
     pub async fn set_chat(&self, chat: &str, pinned: Option<bool>, muted: Option<bool>) -> Result<(), String> {
         let mut body = json!({});
@@ -795,6 +868,7 @@ impl ChatdBridge {
             deleted,
             chat_id: Some(chat.id.clone()),
             account: chat.account.clone(),
+            profile: chat.profile.clone(),
             kind: Some(if chat.is_group { ChatKind::Group } else { ChatKind::Person }),
             activity: chat.last,
             muted_in_app: current.then_some(chat.is_muted),
@@ -1006,6 +1080,27 @@ mod tests {
     }
 
     #[test]
+    fn membership_and_group_changes_become_notice_lines() {
+        let chat = &chats(&list())[1];
+        let answer = json!({"items": [
+            {"id": "m1", "timestamp": "2026-11-17T12:01:00Z", "type": "MEMBERSHIP", "senderID": "@bo", "senderName": "Bo",
+             "membership": {"userID": "@cy", "userName": "Cy", "membership": "join"}},
+            {"id": "m2", "timestamp": "2026-11-17T12:02:00Z", "type": "MEMBERSHIP", "senderID": "@cy",
+             "membership": {"userID": "@cy", "userName": "Cy", "membership": "leave"}},
+            {"id": "g1", "timestamp": "2026-11-17T12:03:00Z", "type": "GROUP_CHANGE", "isSender": true,
+             "groupChange": {"kind": "renamed", "text": "Club"}}
+        ]});
+        let list = messages(&answer, chat);
+        assert_eq!(list.len(), 3);
+        let first = list[0].membership.as_ref().unwrap();
+        assert_eq!((first.change, first.by.as_deref(), first.people.clone()), (MembershipChange::Added, Some("Bo"), vec!["Cy".to_string()]));
+        assert_eq!(list[1].membership.as_ref().unwrap().change, MembershipChange::Left);
+        let renamed = list[2].group_change.as_ref().unwrap();
+        assert!(renamed.by_me() && list[2].from_me);
+        assert!(list.iter().all(|m| !m.is_incoming()), "a line about the group is no new message");
+    }
+
+    #[test]
     fn receipts_from_send_status_and_seen() {
         assert_eq!(receipt(&json!({"sendStatus": {"status": "PENDING"}})), Receipt::Pending);
         assert_eq!(receipt(&json!({"sendStatus": {"status": "FAIL_PERMANENT"}})), Receipt::Failed);
@@ -1029,6 +1124,7 @@ mod tests {
             people,
             me: Some("@me".into()),
             account: None,
+            profile: None,
         };
         let (read_at, read_by, readers) = receipt_details(
             &json!({

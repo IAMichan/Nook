@@ -6,13 +6,16 @@
   // Escape closes without an answer.
   import { onBack } from "../../lib/mobile";
   export interface DialogButton { label: string; destructive?: boolean; bold?: boolean; onselect: () => void }
-  let { title, message, field = $bindable(), placeholder, buttons, onclose }: {
+  let { title, message, field = $bindable(), placeholder, buttons, onclose, remember, remembered = $bindable(false) }: {
     title?: string;
     message?: string;
     field?: string;
     placeholder?: string;
     buttons: DialogButton[];
     onclose: () => void;
+    /** A box under the message ("Don't ask again"); its state is `remembered`. */
+    remember?: string;
+    remembered?: boolean;
   } = $props();
   $effect(() => onBack(() => (onclose(), true)));
 
@@ -46,6 +49,7 @@
     <div class="body">
       {#if title}<strong>{title}</strong>{/if}
       {#if message}<p>{message}</p>{/if}
+      {#if remember}<label class="remember"><input type="checkbox" bind:checked={remembered} />{remember}</label>{/if}
       {#if field !== undefined}<input bind:value={field} {placeholder} aria-label={placeholder ?? title} />{/if}
     </div>
     <div class="buttons" class:row={buttons.length === 2}>
@@ -63,7 +67,8 @@
   .body { padding: var(--space-16) var(--space-16) var(--space-12); display: flex; flex-direction: column; gap: var(--space-6); }
   strong { font: var(--text-title); color: var(--paper); }
   p { margin: 0; font: var(--text-detail); color: var(--text2); white-space: pre-line; }
-  input { margin-top: var(--space-6); }
+  input:not([type="checkbox"]) { margin-top: var(--space-6); }
+  .remember { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-6); font: var(--text-detail); color: var(--text2); cursor: pointer; }
   .buttons { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: var(--space-8); padding: 0 var(--space-16) var(--space-16); }
   .buttons button.bold { background: var(--iris); color: var(--on-iris); border-color: transparent; font-weight: 600; }
   .buttons button.destructive { background: color-mix(in srgb, var(--coral) 16%, var(--smoke)); color: var(--coral); border-color: color-mix(in srgb, var(--coral) 35%, transparent); font-weight: 600; }

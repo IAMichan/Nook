@@ -482,6 +482,13 @@ pub struct WorkspaceRun {
     /// True while the agent is actively compacting/summarizing the conversation (AG-65).
     #[serde(default)]
     pub compacting: bool,
+    /// The agent's own task list of the current work (`RunTasks`): Claude Code's TodoWrite, a Codex plan, an ACP plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<Vec<super::tasks::RunTaskStep>>,
+    /// What the session keeps for the next launch: questions that waited on you, and whether quitting stopped it
+    /// (`RestartContinuation` on the Mac).
+    #[serde(default, skip_serializing_if = "super::restart::RestartState::is_empty")]
+    pub restart: super::restart::RestartState,
 }
 
 impl WorkspaceRun {
@@ -941,6 +948,8 @@ pub(crate) mod tests {
             pending_rollback: None,
             goal: None,
             compacting: false,
+            tasks: None,
+            restart: Default::default(),
         }
     }
 

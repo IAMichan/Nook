@@ -286,6 +286,12 @@ pub fn workspace_delete_prompt(id: Uuid) -> Res<()> {
     lib.save_to(&file).map_err(|e| e.to_string())
 }
 
+/// When the model list in use was last edited (`ModelManifest.updatedAt`), as a date; Settings shows it.
+#[tauri::command]
+pub fn workspace_model_list_date() -> Option<String> {
+    nook_core::workspace::model_manifest::updated_at().map(|d| d.format("%Y-%m-%d").to_string())
+}
+
 /// The models Nook offers each agent (`ModelManifest`), by agent id.
 #[tauri::command]
 pub fn workspace_models() -> std::collections::BTreeMap<String, Vec<nook_core::workspace::model_manifest::CatalogModel>> {
@@ -610,6 +616,24 @@ pub fn workspace_retry(state: State<'_, WorkspaceState>, run: String) -> Res<()>
     state.manager.retry(id(&run)?)
 }
 
+/// After a launch: "Continue where you left off." for the sessions quitting cut off, when Settings asks for it. `skip`
+/// holds the sessions you settled or snoozed. Only the first call after a launch does anything.
+#[tauri::command]
+pub fn workspace_continue_interrupted(state: State<'_, WorkspaceState>, skip: Vec<String>) -> usize {
+    let enabled = state.settings.lock().map(|s| s.continue_after_relaunch).unwrap_or(false);
+    let skip = skip.iter().filter_map(|s| s.parse().ok()).collect();
+    state.manager.continue_interrupted(enabled, &skip)
+}
+
+/// Leaves a question asked before a restart unanswered (`runq:<run>:<request>`).
+#[tauri::command]
+pub fn workspace_dismiss_question(state: State<'_, WorkspaceState>, id: String) -> Res<()> {
+    let rest = id.strip_prefix("runq:").ok_or("Deze vraag bestaat niet meer.")?;
+    let (run, request) = rest.split_once(':').ok_or("Deze vraag bestaat niet meer.")?;
+    state.manager.dismiss_question(self::id(run)?, request);
+    Ok(())
+}
+
 /// "Hervat bij reset" aan of uit voor een sessie die op een gebruikslimiet stopte.
 #[tauri::command]
 pub fn workspace_set_auto_resume(state: State<'_, WorkspaceState>, run: String, on: bool) -> Res<()> {
@@ -672,6 +696,30 @@ pub async fn workspace_diff(state: State<'_, WorkspaceState>, run: String, file:
     let run = id(&run)?;
     let m = state.manager.clone();
     blocking(move || m.diff(run, &file)).await?
+}
+
+/// Stages or discards one hunk of a changed file (`HunkPatch`, `applyHunk`): the hunk is cut out of the file's diff
+/// as a patch of its own and applied to the index or, reversed, to the working tree.
+#[tauri::command]
+pub async fn workspace_apply_hunk(
+    state: State<'_, WorkspaceState>,
+    run: String,
+    file: FileChange,
+    index: usize,
+    action: nook_core::workspace::hunk::HunkAction,
+) -> Res<()> {
+    let id = id(&run)?;
+    let m = state.manager.clone();
+    let m2 = m.clone();
+    blocking(move || {
+        let r = m.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let diff = m.diff(id, &file)?;
+        let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        nook_core::workspace::hunk::apply_hunk_to_repo(git, &r.working_directory, &diff, index, action)
+    })
+    .await??;
+    m2.refresh_git(id);
+    Ok(())
 }
 
 #[tauri::command]

@@ -199,7 +199,7 @@ mod tests {
             ],
             multi_select: false,
         };
-        PendingQuestion { id: "q1".into(), run_id: Uuid::new_v4(), items: vec![item; n], input: json!({}), created: Utc::now() }
+        PendingQuestion { id: "q1".into(), run_id: Uuid::new_v4(), items: vec![item; n], input: json!({}), created: Utc::now(), restored: false }
     }
 
     #[test]

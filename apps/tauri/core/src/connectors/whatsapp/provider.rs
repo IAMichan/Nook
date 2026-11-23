@@ -866,6 +866,38 @@ impl Provider {
         })
     }
 
+    /// Sends a poll (`WASend`): GOWA's `/send/poll`, OpenWA's `/messages/send-poll`.
+    pub async fn send_poll(&self, chat: &str, question: &str, options: &[String], multiple: bool) -> WaResult<Option<String>> {
+        Ok(match self.kind {
+            GatewayKind::Gowa => {
+                let body = json!({"phone": chat, "question": question, "options": options, "max_answer": if multiple { options.len() } else { 1 }});
+                let data = self.gowa_scoped("POST", "/send/poll", &[], Some(body)).await?;
+                non_empty(&gowa::results(&data)["message_id"])
+            }
+            GatewayKind::Openwa => {
+                let body = json!({"chatId": openwa::id(chat), "name": question, "options": options, "allowMultipleAnswers": multiple});
+                let data = self.openwa_scoped("POST", "/messages/send-poll", &[], Some(body)).await?;
+                non_empty(&parse(&data)["messageId"])
+            }
+        })
+    }
+
+    /// Whether this gateway votes on a poll for you: OpenWA does (its whatsapp-web.js engine), GOWA has no such call.
+    pub fn can_vote(&self) -> bool {
+        self.kind == GatewayKind::Openwa
+    }
+
+    /// Votes on a poll with `choice` (the options' texts; empty takes your vote back).
+    pub async fn vote(&self, chat: &str, poll: &str, choice: &[String]) -> WaResult<()> {
+        match self.kind {
+            GatewayKind::Gowa => Err(WaError::Refused("vote".into())),
+            GatewayKind::Openwa => {
+                let body = json!({"chatId": openwa::id(chat), "pollMessageId": poll, "options": choice});
+                self.openwa_scoped("POST", "/messages/vote-poll", &[], Some(body)).await.map(|_| ())
+            }
+        }
+    }
+
     /// Sends a file (`WASend` on the Mac): GOWA as a multipart form to `/send/image|video|audio|file`, OpenWA as JSON
     /// with the file in base64. The caption goes with a photo, a video or a file; a voice note is sent as one (`ptt`).
     pub async fn send_file(&self, chat: &str, file: &OutgoingFile<'_>, reply_to: Option<&str>) -> WaResult<Option<String>> {

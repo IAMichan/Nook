@@ -20,11 +20,18 @@
   import QuestionCard from "../QuestionCard.svelte";
   import ContextBreakdown from "./ContextBreakdown.svelte";
   import GoalStrip from "./GoalStrip.svelte";
+  import TaskChecklist from "../../../components/TaskChecklist.svelte";
   import RunComposer from "./RunComposer.svelte";
   import SessionSidePanel from "./SessionSidePanel.svelte";
   import SideChatStrip, { type SideChatItem } from "./SideChatStrip.svelte";
   import { sidePanel } from "./side-panel.svelte";
+  import { onCommands } from "../../../lib/commands";
+  import { collectOutputs, hasNewOutput, opensByItself, outputSignature } from "../../../lib/workspace/session-outputs";
+  import { homeDir } from "@tauri-apps/api/path";
+  import { OPEN_FILE_EVENT, parseFileLink, resolveFileTarget } from "../../../lib/workspace/file-links";
   import Timeline from "./Timeline.svelte";
+  import SessionAnnouncer from "../../../components/SessionAnnouncer.svelte";
+  import { live as liveStep } from "../../../lib/workspace/timeline";
 
   let { runId, ongone }: { runId: string; ongone: () => void } = $props();
 
@@ -288,11 +295,23 @@
     if (done !== undefined) ongone();
   }
 
-  async function implement(plan: string) {
-    void plan;
+  /// "Carry out plan": Agent mode, then the plan is carried out; with steps left out, the kept plan goes along. "In a new
+  /// session": a fork carries it out, with the whole plan in its first message (a fork's summary cuts long messages).
+  async function implement(plan: string, kept: string | null = null, inNew = false) {
+    const prompt = "Implement the plan above.";
+    if (inNew) {
+      const id = await workspace.act(() => workspaceApi.fork(runId));
+      if (!id) return;
+      await workspace.act(async () => {
+        await workspaceApi.configure(id, { mode: "agent" });
+        await workspaceApi.send(id, prompt + "\n\n" + plan);
+      });
+      agents.select(`run:${id}`);
+      return;
+    }
     await workspace.act(async () => {
       await workspaceApi.configure(runId, { mode: "agent" });
-      await workspaceApi.send(runId, "Voer het plan hierboven uit.");
+      await workspaceApi.send(runId, kept ? prompt + "\n\n" + kept : prompt);
     });
   }
 
@@ -313,6 +332,71 @@
     if (run?.repoRoot) openChanges(path);
     else sidePanel.openTool(runId, "file", { filePath: path });
   }
+
+  // Outputs (`SessionOutputs`): a plan, design, PDF, image or video the agent makes this turn opens the Outputs tab by itself
+  // (a document only when it handed it over); what you have not looked at yet puts a dot on the panel's button. Outputs
+  // that were there when the session opened do neither.
+  const outputs = $derived(collectOutputs(events, run?.tasks, run?.workingDirectory));
+  let handled: Set<string> | null = null;
+  let seen = $state(new Set<string>());
+  $effect(() => {
+    const list = outputs;
+    const known = handled ?? new Set(list.map(outputSignature));
+    if (!handled) { handled = known; seen = new Set(known); return; }
+    const turn = [...events].reverse().find((e) => e.kind === "user");
+    const turnStart = turn ? Date.parse(turn.date) || null : null;
+    const fresh = list.filter((o) => !known.has(outputSignature(o)));
+    for (const o of fresh) known.add(outputSignature(o));
+    if (!run || !isActive(run.status)) return;
+    const first = fresh.find((o) => opensByItself(o, turnStart));
+    if (first) sidePanel.openTool(runId, "outputs", { outputId: first.id });
+  });
+  // Looking at the Outputs tab (or the panel closed on another tab) is what clears the dot.
+  $effect(() => {
+    if (panel.open && panel.active === "outputs") seen = new Set(outputs.map(outputSignature));
+  });
+  const unseenOutputs = $derived(hasNewOutput(outputs.filter((o) => o.kind !== "tasks"), seen));
+
+  // A file the agent named in its answer (`FileLink`): opened in the File tab at its line. A relative name that is not
+  // right in the folder is looked up below it (`FileLinks.locate`).
+  $effect(() => {
+    const take = async (e: Event) => {
+      const { raw, base } = (e as CustomEvent<{ raw: string; base: string }>).detail;
+      const dir = run?.workingDirectory;
+      if (!dir || base !== dir) return;
+      const target = parseFileLink(raw);
+      if (!target) return;
+      const home = await homeDir().catch(() => "");
+      const resolved = resolveFileTarget(target, dir, home);
+      if (!resolved) return;
+      let path = resolved.path;
+      if (!/^(~|\/|[A-Za-z]:|\\)/.test(target.path)) {
+        const name = target.path.replace(/^\.[\\/]/, "").replace(/\\/g, "/");
+        const hits = await workspaceApi.files(dir, name.split("/").pop() ?? name).catch(() => [] as string[]);
+        const exact = hits.find((h) => h === name);
+        const nearby = exact ?? hits.find((h) => h.endsWith("/" + name));
+        if (nearby && nearby !== name) path = resolveFileTarget({ path: nearby }, dir)?.path ?? path;
+      }
+      sidePanel.openTool(runId, "file", { filePath: path, fileLine: resolved.line ?? null, fileEndLine: resolved.endLine ?? null });
+    };
+    window.addEventListener(OPEN_FILE_EVENT, take);
+    return () => window.removeEventListener(OPEN_FILE_EVENT, take);
+  });
+
+  // The panel's key commands (`terminal.toggle`, `diff.toggle`, `sessionPanel.toggle`, `panel.reopenClosed`, `tab.close`),
+  // from the rules in `lib/keybindings.ts` so a rebound key works.
+  $effect(() => onCommands({
+    "terminal.toggle": () => { if (!run?.workingDirectory) return false; sidePanel.toggleTool(runId, "terminal"); },
+    "diff.toggle": () => { if (!run?.workingDirectory) return false; sidePanel.toggleTool(runId, "changes"); },
+    "sessionPanel.toggle": () => { sidePanel.toggle(runId); },
+    "sidePanel.toggle": () => { sidePanel.toggle(runId); },
+    "panel.reopenClosed": () => sidePanel.reopenClosed(runId),
+    "tab.close": () => {
+      const state = sidePanel.forRun(runId);
+      if (!state.open || state.active === "picker") return false;
+      sidePanel.closeTab(runId, state.active);
+    },
+  }));
 
   async function runCode(command: string, title: string | null) {
     if (!run?.workingDirectory) return;
@@ -398,9 +482,14 @@
       <span class="toggles">
         <button class="head-icon" class:on={panel.open && panel.active === "terminal"} disabled={!run.workingDirectory} title={tr("Terminal in de map van deze sessie", "Terminal in this session's folder")} aria-label={tr("Terminal in de map van deze sessie", "Terminal in this session's folder")} onclick={() => runCode("", null)}><Ico name="panel-bottom" size={16} /></button>
         <button class="head-icon" class:on={panel.open} title={panel.open ? tr("Zijpaneel sluiten", "Close side panel") : tr("Zijpaneel openen", "Open side panel")} aria-label={panel.open ? tr("Zijpaneel sluiten", "Close side panel") : tr("Zijpaneel openen", "Open side panel")}
-          onclick={() => sidePanel.toggle(runId)}><Ico name="panel-right" size={16} /></button>
+          onclick={() => sidePanel.toggle(runId)}><Ico name="panel-right" size={16} />{#if unseenOutputs && !(panel.open && panel.active === "outputs")}<span class="dot unread"></span>{/if}</button>
       </span>
     </header>
+
+    <!-- Settings › Sessions › Screen reader announcements (`AgentAnnouncer` on the Mac): a hidden aria-live region. -->
+    <SessionAnnouncer sessionId={runId} {events} author={workspace.provider(run.provider)?.name ?? run.provider}
+      status={approvals.length ? "approval" : question ? "question" : isActive(run.status) ? "working" : "idle"}
+      step={isActive(run.status) ? liveStep(events).tool : null} />
 
     <div class="workspace-split">
       {#if !(panel.open && sidePanel.maximized)}
@@ -467,6 +556,10 @@
             {#if run.goal}
               <GoalStrip runId={run.id} goal={run.goal} />
             {/if}
+            {#if run.tasks?.length}
+              <!-- The agent's own task list with the step it is on (`TaskChecklistCard`, `RunTasks.progress`). -->
+              <TaskChecklist steps={run.tasks} live={isActive(run.status)} phase />
+            {/if}
             <SideChatStrip items={sideChats} ondismiss={dismissSideChat} />
             <RunComposer bind:this={composer} {run} onsidechat={askSideChat} />
           {/if}
@@ -498,9 +591,10 @@
   .resources { font: var(--text-label); font-variant-numeric: tabular-nums; color: var(--text3); white-space: nowrap; }
   .resources.hot { color: var(--amber); }
   .toggles { display: flex; gap: var(--space-2); flex: none; }
-  .head-icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; margin: 0; flex: none; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text2); }
+  .head-icon { position: relative; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; margin: 0; flex: none; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text2); }
   .head-icon:hover:not(:disabled), .head-icon.on { background: var(--smoke); color: var(--paper); }
   .head-icon:disabled { opacity: 0.4; }
+  .head-icon .dot { position: absolute; top: 4px; right: 4px; }
   .foot { display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-16); flex: none; }
   .title-input { flex: 1; padding: 3px 8px; }
   .spacer { flex: 1; }

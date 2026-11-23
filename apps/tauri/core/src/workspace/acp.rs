@@ -677,6 +677,7 @@ impl AcpDriver {
                     step.event(ClaudeEvent::TextDelta(t));
                 }
             }
+            Some("plan") => step.events.push(DriverEvent::Tasks(super::tasks::acp(update))),
             Some("agent_thought_chunk") => {
                 if let Some(t) = text(update.get("content")) {
                     let starts = self.thought.is_empty();

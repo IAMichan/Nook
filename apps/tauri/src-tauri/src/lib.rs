@@ -20,6 +20,7 @@ mod services;
 mod state;
 mod storage;
 mod tools;
+mod update_runner;
 mod updates;
 mod workspace;
 
@@ -63,8 +64,11 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 nook_core::paths::set_support_directory(dir);
             }
+            // A new build that crashed before it proved healthy is rolled back here, before the database opens.
+            update_runner::at_launch();
             app.manage(state::AppState::new(platform::secrets::system_store()));
             app.manage(commands::instructions::InstructionsState::load());
+            app.manage(services::attention::Attention::load());
             notices::setup(app.handle());
             companion::setup(app.handle());
             connectors::setup(app.handle());
@@ -76,6 +80,9 @@ pub fn run() {
             updates::setup(app.handle());
             services::start(app.handle());
             updates::start(app.handle());
+            update_runner::start(app.handle());
+            // OpenTelemetry export (Settings › Maintenance): off unless an endpoint is set.
+            commands::services::telemetry_launched(app.handle());
             #[cfg(desktop)]
             games::start(app.handle());
             #[cfg(desktop)]
@@ -122,10 +129,13 @@ pub fn run() {
             platform::tray_live::tray_live,
             #[cfg(desktop)]
             platform::desktop::quit_nook,
+            platform::desktop::quit_now,
             workspace::clones::clone_jobs,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             storage::storage_incidents,
+            services::attention::attention_record,
+            services::attention::attention_weights,
             storage::storage_incident_dismiss,
             storage::storage_reveal,
             notice_history::notice_history,
@@ -292,7 +302,16 @@ pub fn run() {
             commands::connectors::whatsapp_unmute,
             chats::helper::chat_helper_status,
             chats::inbox::chat_inbox_list,
+            chats::inbox::chat_inbox_send_poll,
+            chats::inbox::chat_inbox_vote,
+            chats::gifs::chat_gifs,
+            chats::gifs::chat_gif_file,
+            chats::gifs::chat_giphy_key_set,
+            chats::gifs::chat_giphy_key_save,
+            chats::gifs::chat_giphy_key_remove,
             chats::inbox::chat_inbox_thread,
+            chats::info::chat_common_groups,
+            chats::info::chat_export,
             chats::inbox::chat_inbox_mark_read,
             chats::inbox::chat_inbox_mark_unread,
             chats::inbox::chat_inbox_mark_all_read,
@@ -442,6 +461,8 @@ pub fn run() {
             agents::usage::agents_usage_refresh,
             agents::usage::agents_codex_usage,
             agents::usage::agents_limits,
+            agents::updates::agents_updates,
+            agents::updates::agents_update,
             agents::usage::agents_use_reset_credit,
             commands::agents::agents_decide,
             commands::agents::agents_deny,
@@ -476,6 +497,8 @@ pub fn run() {
             commands::agents::agents_terminal_name,
             commands::agents::agents_sound,
             commands::workspace::workspace_overview,
+            commands::session_cards::workspace_suggestion_chosen,
+            commands::session_cards::workspace_page_html,
             commands::workspace::workspace_save_settings,
             commands::workspace::workspace_project_settings,
             commands::workspace::workspace_set_project_settings,
@@ -490,12 +513,18 @@ pub fn run() {
             commands::workspace::workspace_resources,
             commands::workspace::workspace_search,
             commands::workspace::workspace_models,
+            commands::workspace::workspace_model_list_date,
             commands::workspace::workspace_prompts,
             commands::workspace::workspace_save_prompt,
             commands::workspace::workspace_delete_prompt,
             commands::workspace::workspace_files,
             commands::workspace::workspace_skills,
             commands::workspace::workspace_fork,
+            commands::workspace::workspace_apply_hunk,
+            commands::file_view::workspace_file_read,
+            commands::workspace_tools::workspace_dev_servers,
+            commands::workspace_tools::workspace_stop_dev_server,
+            commands::file_view::workspace_file_save,
             commands::workspace::workspace_save_picture,
             commands::workspace::workspace_favicon,
             commands::workspace::workspace_agent_commands,
@@ -518,6 +547,8 @@ pub fn run() {
             commands::workspace::workspace_retry,
             commands::workspace::workspace_rename,
             commands::workspace::workspace_set_auto_resume,
+            commands::workspace::workspace_continue_interrupted,
+            commands::workspace::workspace_dismiss_question,
             commands::workspace::workspace_archive,
             commands::workspace::workspace_mark_reviewed,
             commands::workspace::workspace_delete,
@@ -587,7 +618,15 @@ pub fn run() {
             commands::workspace_tools::browser_close,
             commands::workspace_tools::workspace_editors,
             commands::workspace_tools::workspace_open_in,
+            commands::workspace_tools::workspace_terminals,
+            commands::workspace_tools::workspace_open_terminal,
+            commands::workspace_tools::open_in_prefs,
+            commands::workspace_tools::open_in_set_prefs,
+            commands::workspace_tools::browser_history_count,
+            commands::workspace_tools::browser_history_clear,
+            commands::workspace_tools::browser_history_suggest,
             commands::search::buddy_moment,
+            commands::search::buddy_breathe,
             commands::whatsapp::chat_forward,
             commands::whatsapp::chat_abilities,
             commands::whatsapp::chat_mark_unread,
@@ -610,6 +649,7 @@ pub fn run() {
                 // Bij afsluiten: de WhatsApp-gateway en lopende agents van de werkruimte netjes stoppen.
                 connectors::shutdown(app);
                 workspace::shutdown(app);
+                update_runner::clean_exit();
             }
         });
 }

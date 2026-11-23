@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Accounts & koppelingen: één pagina in één vorm. Een zoekveld met categorieën, wat jou nodig heeft, je koppelingen
   // (één rijvorm voor elke dienst, ook GitLab en je eigen MCP-servers), wat er op dit apparaat is, en één catalogus van
   // alles wat je kunt toevoegen (één kaartvorm, met een label dat zegt hoe: inloggen, een sleutel of MCP).
@@ -23,6 +24,7 @@
   import GitLabRow from "../connectors/GitLabRow.svelte";
   import GitLabSheet from "../connectors/GitLabSheet.svelte";
   import MailAccounts from "../connectors/MailAccounts.svelte";
+  import ChatOptions from "../connectors/ChatOptions.svelte";
   import Sheet from "../../components/ui/Sheet.svelte";
   import Spinner from "../../components/ui/Spinner.svelte";
   import QRCodeView from "../../components/ui/QRCodeView.svelte";
@@ -801,6 +803,7 @@
       {/each}
     </div>
   </div>
+  <ChatOptions />
 {:else if overview}
   <label class="search-card conn-search">
     <Ico name="search" size={13} />
@@ -970,7 +973,7 @@
     {:else}
       <HealthPill health={h} />
     {/if}
-    <input type="checkbox" role="switch" checked={info?.on ?? true} title={tr("Zet deze koppeling aan of uit", "Turn this connection on or off")} onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
+    <input type="checkbox" role="switch" checked={info?.on ?? true} use:tip={tr("Zet deze koppeling aan of uit", "Turn this connection on or off")} onchange={(e) => toggle(s.id, e.currentTarget.checked)} />
   </div>
 {/snippet}
 

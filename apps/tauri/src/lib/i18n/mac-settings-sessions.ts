@@ -1,0 +1,18 @@
+// Settings › Sessions › Sessions (UI-26): timeline detail, screen reader announcements and settling old sessions,
+// worded as the Mac's I18n ("VoiceOver" becomes "a screen reader").
+import type { Table } from "./catalog";
+
+export const table: Table = {
+  "Agent's work in the timeline": { de: "Arbeit des Agenten im Verlauf", fr: "Travail de l'agent dans le fil", es: "Trabajo del agente en la cronología" },
+  "How much of the agent's steps a session shows. Requests that wait on you and errors always stay.": { de: "Wie viele Schritte des Agenten eine Sitzung zeigt. Anfragen, die auf dich warten, und Fehler bleiben immer stehen.", fr: "Combien d'étapes de l'agent une session affiche. Les demandes qui vous attendent et les erreurs restent toujours.", es: "Cuántos pasos del agente muestra una sesión. Las solicitudes que te esperan y los errores siempre se quedan." },
+  "Hide finished steps": { de: "Erledigte Schritte ausblenden", fr: "Masquer les étapes terminées", es: "Ocultar pasos terminados" },
+  "Hide all steps": { de: "Alle Schritte ausblenden", fr: "Masquer toutes les étapes", es: "Ocultar todos los pasos" },
+  "Zen: only the conversation": { de: "Zen: nur das Gespräch", fr: "Zen : seulement la conversation", es: "Zen: solo la conversación" },
+  "Screen reader announcements": { de: "Ansagen für Bildschirmleser", fr: "Annonces pour lecteur d’écran", es: "Avisos para lectores de pantalla" },
+  "What a screen reader hears from the session you are looking at, only while a screen reader runs. Replies only reads each reply the agent finishes and says when it needs your approval or asks you something. Steps and replies also says the step it is on, such as the file it edits; steps are spaced out, so a quick one can be skipped. Its thinking is never read.": { de: "Was ein Bildschirmleser von der Sitzung hört, die du ansiehst, nur solange ein Bildschirmleser läuft. Nur Antworten liest jede Antwort vor, die der Agent fertig schreibt, und sagt, wenn er deine Freigabe braucht oder dich etwas fragt. Schritte und Antworten sagt auch den Schritt, an dem er gerade ist, etwa die Datei, die er bearbeitet; Schritte kommen mit Abstand, ein kurzer kann also ausfallen. Sein Denken wird nie vorgelesen.", fr: "Ce qu’un lecteur d’écran entend de la session que vous regardez, seulement quand un lecteur d’écran est actif. Réponses seulement lit chaque réponse que l’agent termine et signale quand il attend votre accord ou vous pose une question. Étapes et réponses dit aussi l’étape en cours, comme le fichier qu’il modifie ; les étapes sont espacées, une étape rapide peut donc être sautée. Sa réflexion n’est jamais lue.", es: "Lo que un lector de pantalla oye de la sesión que estás viendo, solo mientras un lector de pantalla está activo. Solo respuestas lee cada respuesta que el agente termina y avisa cuando necesita tu aprobación o te pregunta algo. Pasos y respuestas también dice el paso en el que está, como el archivo que edita; los pasos se espacian, así que uno rápido puede saltarse. Su razonamiento nunca se lee." },
+  "Replies only": { de: "Nur Antworten", fr: "Réponses seulement", es: "Solo respuestas" },
+  "Steps and replies": { de: "Schritte und Antworten", fr: "Étapes et réponses", es: "Pasos y respuestas" },
+  "Settle old sessions automatically": { de: "Alte Sitzungen automatisch erledigen", fr: "Classer automatiquement les anciennes sessions", es: "Cerrar automáticamente las sesiones antiguas" },
+  "After {n} days of quiet": { de: "Nach {n} Tagen Ruhe", fr: "Après {n} jours d’inactivité", es: "Tras {n} días sin actividad" },
+  "Days of quiet": { de: "Tage Ruhe", fr: "Jours d’inactivité", es: "Días sin actividad" },
+};

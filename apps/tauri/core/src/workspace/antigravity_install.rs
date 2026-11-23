@@ -119,6 +119,11 @@ fn active(paths: &Paths, asset: &Asset) -> PathBuf {
     paths.tools().join(asset.platform).join("active.json")
 }
 
+/// Nook installed an Antigravity server here once (whatever release), as `active.json` says.
+pub fn was_installed(paths: &Paths) -> bool {
+    current().is_some_and(|asset| active(paths, &asset).is_file())
+}
+
 /// The installed server and harness, when the active release is the pinned one and complete.
 pub fn installed(paths: &Paths) -> Option<(PathBuf, PathBuf)> {
     let asset = current()?;

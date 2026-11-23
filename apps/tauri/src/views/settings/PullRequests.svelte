@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Settings › Projects & pull requests › Pull requests (`WatchedPullRequestsSection` on the Mac): a prompt to connect
   // GitHub when none is linked yet, followed by watched organizations ("acme") and repositories ("acme/web") whose
   // pull requests show under Agents › Pull requests alongside yours.
@@ -97,7 +98,7 @@
           <small>{entry.includes("/") ? tr("Repository", "Repository") : tr("Organisatie", "Organization")}</small>
         </span>
       </span>
-      <button class="small" title={tr("Niet meer volgen", "Stop watching")} onclick={() => remove(entry)}>{tr("Niet meer volgen", "Stop watching")}</button>
+      <button class="small" use:tip={tr("Niet meer volgen", "Stop watching")} onclick={() => remove(entry)}>{tr("Niet meer volgen", "Stop watching")}</button>
     </div>
   {:else}
     {#if !adding}

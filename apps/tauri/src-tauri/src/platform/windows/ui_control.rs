@@ -721,7 +721,7 @@ fn send_unicode_text(text: &str) -> Result<(), String> {
             batch.push(key_input(0x0D, 0, KEYEVENTF_KEYUP));
         } else {
             let mut buf = [0u16; 2];
-            for &unit in ch.encode_utf16(&mut buf) {
+            for &mut unit in ch.encode_utf16(&mut buf) {
                 batch.push(key_input(0, unit, KEYEVENTF_UNICODE));
                 batch.push(key_input(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
             }

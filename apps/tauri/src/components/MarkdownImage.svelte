@@ -129,7 +129,7 @@
     border-radius: var(--radius-chip);
     background: var(--smoke);
     color: var(--text2);
-    font-size: 12px;
+    font: var(--text-detail);
     max-width: 100%;
   }
   .img-chip span {

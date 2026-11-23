@@ -3,6 +3,7 @@
 use super::Row;
 
 pub const ROWS: &[Row] = &[
+    ("Shortcut: {name}", "Kurzbefehl: {name}", "Raccourci : {name}", "Atajo: {name}"),
     ("{name} has not answered yet", "{name} hat noch nicht geantwortet", "{name} n'a pas encore répondu", "{name} aún no ha respondido"),
     ("Nook keeps running", "Nook läuft weiter", "Nook continue de tourner", "Nook sigue en marcha"),
     (

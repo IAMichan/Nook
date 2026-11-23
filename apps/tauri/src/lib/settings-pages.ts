@@ -17,8 +17,8 @@ export const settingsSections = [
   "start", "general", "notch", "appearance", "notifications", "notificationApps", "sound", "shortcuts", "games",
   "brain", "assistant", "memory", "instructions",
   "autocomplete", "autocompleteApps", "autocompleteStyle", "autocompletePlayground", "autocompleteStats", "dictation",
-  "agents", "usage", "sessions", "worktrees", "openIn", "archive", "automation", "projects", "pullRequests",
-  "chats", "connections", "iphone", "privacy", "activityLog",
+  "agents", "skills", "usage", "sessions", "worktrees", "openIn", "archive", "automation", "projects", "pullRequests",
+  "chats", "connections", "iphone", "privacy", "permissions", "activityLog",
   "maintenance", "about",
 ] as const;
 export type SettingsSectionId = (typeof settingsSections)[number];
@@ -39,7 +39,7 @@ export const settingsPages: Record<SettingsGroupId, { page: SettingsSectionId; p
     { page: "autocomplete", parts: ["autocomplete", "autocompleteApps", "autocompleteStyle", "autocompletePlayground", "autocompleteStats", "dictation"] },
   ],
   agents: [
-    { page: "agents", parts: ["agents", "usage"] },
+    { page: "agents", parts: ["agents", "skills", "usage"] },
     { page: "sessions", parts: ["sessions", "worktrees", "openIn", "archive"] },
     { page: "automation", parts: ["automation"] },
     { page: "projects", parts: ["projects", "pullRequests"] },
@@ -48,7 +48,7 @@ export const settingsPages: Record<SettingsGroupId, { page: SettingsSectionId; p
     { page: "chats", parts: ["chats"] },
     { page: "connections", parts: ["connections"] },
     { page: "iphone", parts: ["iphone"] },
-    { page: "privacy", parts: ["privacy", "activityLog"] },
+    { page: "privacy", parts: ["privacy", "permissions", "activityLog"] },
   ],
   system: [
     { page: "maintenance", parts: ["maintenance", "about"] },
@@ -122,6 +122,7 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "autocompleteStats": return tr("Statistieken", "Statistics");
     case "dictation": return tr("Dicteren", "Dictation");
     case "agents": return "Coding agents";
+    case "skills": return tr("Skills", "Skills");
     case "usage": return tr("Gebruik en kosten", "Usage & costs");
     case "sessions": return tr("Sessies", "Sessions");
     case "worktrees": return tr("Worktrees", "Worktrees");
@@ -133,7 +134,8 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "chats": return tr("Chat-apps", "Chat apps");
     case "connections": return tr("Diensten", "Services");
     case "iphone": return "Companion";
-    case "privacy": return tr("Privacy", "Privacy");
+    case "privacy": return tr("Privacyniveau", "Privacy level");
+    case "permissions": return tr("Toegang", "Access");
     case "activityLog": return tr("Logboek", "Activity log");
     case "maintenance": return tr("Onderhoud", "Maintenance");
     case "about": return tr("Over Nook", "About Nook");
@@ -145,6 +147,7 @@ export function pageTitle(page: SettingsSectionId): string {
   switch (page) {
     case "autocomplete": return tr("Typen", "Typing");
     case "iphone": return tr("Apparaten", "Devices");
+    case "privacy": return tr("Privacy", "Privacy");
     case "maintenance": return tr("Systeem", "System");
     case "projects": return tr("Projecten & pull requests", "Projects & pull requests");
     default: return sectionTitle(page);

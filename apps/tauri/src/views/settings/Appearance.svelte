@@ -2,8 +2,8 @@
   // Settings › Appearance (`SettingsView+Appearance` on the Mac): Nook first, a live Nook with a mood to preview and its
   // color; then the windows: System, Light or Dark with the theme for each (built-in or an imported VS Code theme),
   // text and layout and the custom colors each folded into one row, and sharing the whole look as one file. The bar
-  // stays dark in every look, as the notch on the Mac does. (The Mac's face styles, face and finish, and Nook as a buddy
-  // wait for a face Windows can change.)
+  // stays dark in every look, as the notch on the Mac does. Nook's own face (style, face and finish) and Nook as a buddy
+  // (his little moments, their tone, your birthday and breathing along) come first.
   import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import Segmented from "./Segmented.svelte";
@@ -14,7 +14,8 @@
   import ConfirmedButton from "../../components/ui/ConfirmedButton.svelte";
   import { tip } from "../../components/ui/tip";
   import { nook, accentCss } from "../../lib/state.svelte";
-  import { tr } from "../../lib/i18n.svelte";
+  import { tr, appLanguage } from "../../lib/i18n.svelte";
+  import { buddy } from "../../lib/buddy.svelte";
   import { toast } from "../../lib/toast.svelte";
   import { ACCENTS, DENSITIES, THEMES, themeAccent, resolveTheme, type Density, type ThemeSetting } from "../../lib/theme";
   import {
@@ -39,6 +40,35 @@
     { mood: "waiting", title: tr("Wacht", "Waiting") }, { mood: "done", title: tr("Klaar", "Done") }, { mood: "error", title: tr("Bezorgd", "Worried") },
   ]);
   let mood = $state<Mood>("idle");
+
+  // MARK: Nook as a buddy (`buddySection` on the Mac)
+
+  const moments = $derived(s.buddyMoments !== false);
+  const tone = $derived<"calm" | "warm" | "playful">(s.buddyTone ?? "warm");
+  const sampleLine = $derived(
+    tone === "calm" ? tr("Goedemorgen. Je hebt vandaag {n} afspraken.", "Good morning. {n} events in your calendar today.", { n: 3 })
+      : tone === "playful" ? tr("Goeiemorgen, zonnetje! {n} afspraken vandaag. Eerst koffie?", "Morning, sunshine! {n} events today. Coffee first?", { n: 3 })
+      : tr("Morgen! Je hebt vandaag {n} dingen op de planning.", "Morning! You have {n} things on today.", { n: 3 }),
+  );
+  // Stored together as "MM-DD"; a half-filled date is kept (so you can pick the day first) but only counts once both
+  // are set; both cleared is empty.
+  const bday = $derived.by(() => {
+    const [m, d] = (s.birthday ?? "").split("-").map((x) => Number(x) || 0);
+    return { month: m ?? 0, day: d ?? 0 };
+  });
+  const pad = (n: number) => String(n).padStart(2, "0");
+  function setBirthday(part: Partial<{ month: number; day: number }>) {
+    const next = { ...bday, ...part };
+    nook.saveSettings({ birthday: next.month === 0 && next.day === 0 ? "" : `${pad(next.month)}-${pad(next.day)}` });
+  }
+  // The month's name in the app's language.
+  const monthNames = $derived.by(() => {
+    const format = new Intl.DateTimeFormat(appLanguage(), { month: "long" });
+    return Array.from({ length: 12 }, (_, i) => {
+      const name = format.format(new Date(2000, i, 1));
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    });
+  });
 
   // MARK: Nook's face
 
@@ -221,9 +251,35 @@
 <h3>{tr("Nook als maatje", "Nook as a buddy")}</h3>
 <div class="group">
   <label class="row">
-    <span>{tr("Kleine momenten", "Little moments")}<br /><small>{tr("Hij springt even als je langskomt, wordt wakker als je terug bent, giechelt na drie tikjes en bloost als je hem aait.", "He hops to say hello, wakes up when you come back, giggles after three pokes and blushes when petted.")}</small></span>
-    <input type="checkbox" role="switch" checked={s.buddyMoments !== false} onchange={(e) => nook.saveSettings({ buddyMoments: e.currentTarget.checked })} />
+    <span>{tr("Kleine momenten", "Little moments")}<br /><small>{tr("Goedemorgen, welkom terug, af en toe een pauze, mijlpalen. Hooguit vier keer per dag, nooit in een vergadering.", "Good morning, welcome back, a break now and then, milestones. At most four times a day, never in a meeting.")}</small></span>
+    <input type="checkbox" role="switch" checked={moments} onchange={(e) => nook.saveSettings({ buddyMoments: e.currentTarget.checked })} />
   </label>
+  <div class="row" class:dim={!moments}>
+    <span>{tr("Toon", "Tone")}</span>
+    <Segmented label={tr("Toon", "Tone")} value={tone} onchange={(v) => moments && nook.saveSettings({ buddyTone: v })}
+      options={[{ value: "calm", label: tr("Rustig", "Calm") }, { value: "warm", label: tr("Warm", "Warm") }, { value: "playful", label: tr("Speels", "Playful") }]} />
+  </div>
+  <!-- How he sounds in the chosen tone: the morning greeting on a day with three events. -->
+  <div class="row sample" class:dim={!moments}>
+    <span class="sample-face"><Orb size={26} mood="cozy" /></span>
+    <span class="sample-line">{sampleLine}</span>
+  </div>
+  <div class="row">
+    <span>{tr("Je verjaardag", "Your birthday")}</span>
+    <span class="birthday">
+      <select aria-label={tr("Dag", "Day")} value={bday.day} onchange={(e) => setBirthday({ day: Number(e.currentTarget.value) })}>
+        <option value={0}>–</option>
+        {#each Array.from({ length: 31 }, (_, i) => i + 1) as d (d)}<option value={d}>{d}</option>{/each}
+      </select>
+      <select aria-label={tr("Maand", "Month")} value={bday.month} onchange={(e) => setBirthday({ month: Number(e.currentTarget.value) })}>
+        <option value={0}>–</option>
+        {#each monthNames as name, i (i)}<option value={i + 1}>{name}</option>{/each}
+      </select>
+    </span>
+  </div>
+  <div class="row">
+    <button class="capsule" onclick={() => buddy.requestBreathe()}>{tr("Nu even ademen met Nook", "Breathe with Nook now")}</button>
+  </div>
 </div>
 
 <h3>{tr("Thema", "Theme")}</h3>
@@ -338,6 +394,12 @@
 <p class="note">{tr("Bewaart je accentkleur, weergave, thema's, eigen kleuren, diffkleuren, dichtheid en het gezicht van Nook als één bestand. Wie het importeert krijgt dezelfde look; verder verandert er niets.", "Saves your accent, appearance, themes, custom colors, diff colors, density and Nook's face as one file. Whoever imports it gets the same look; nothing else of theirs changes.")}</p>
 
 <style>
+  /* Nook as a buddy: off, the tone and sample line fade as on the Mac; the sample is his face and the morning line. */
+  .dim { opacity: 0.5; }
+  .row.sample { justify-content: flex-start; gap: var(--space-12); }
+  .sample-face { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none; }
+  .sample-line { font: var(--text-body); color: var(--text-strong); }
+  .birthday { display: inline-flex; gap: var(--space-8); }
   /* The live preview (`lookPreview`): Nook at 88 px in a 150 by 130 stage, the mood menu under it, on the surface. */
   .preview { display: flex; flex-direction: column; align-items: center; gap: var(--space-8); padding: var(--space-16) var(--space-12); background: var(--surface); border-radius: var(--radius-sheet); }
   .stage { display: grid; place-items: center; width: 150px; height: 130px; }

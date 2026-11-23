@@ -14,6 +14,7 @@
   import GrantedRulesSheet from "./GrantedRulesSheet.svelte";
   import QuestionCard from "./QuestionCard.svelte";
   import { ago } from "./time";
+  import SessionAnnouncer from "../../components/SessionAnnouncer.svelte";
 
   let { session, ontakeover }: { session: AgentSession; ontakeover?: (s: AgentSession, endTerminal: boolean, message?: string) => void } = $props();
   let canEnd = $state(false);
@@ -57,6 +58,8 @@
   const question = $derived(agents.questionFor(session.id));
   const canNook = $derived(["Claude Code", "Claude (app)", "Codex", "Gemini CLI"].includes(session.name) && !!session.cwd);
   const busy = $derived(session.status === "running" || session.status === "waiting");
+  // "Started by an agent in …" (`LauncherLink`): the session whose shell started this one, as a link that opens it.
+  const launcher = $derived(session.launchedBy ? agents.sessions.find((s) => s.id === session.launchedBy) : undefined);
 
   async function end() {
     if (!(await ask({
@@ -88,6 +91,12 @@
 </script>
 
 <div class="detail">
+  <!-- Settings › Sessions › Screen reader announcements (`AgentAnnouncer` on the Mac): the agent's last reply, what waits
+       on you and its step, from the hooks' report (the transcript itself is drawn by Conversation). -->
+  <SessionAnnouncer sessionId={session.id} author={session.name}
+    events={session.lastReply ? [{ id: `reply:${session.lastReply}`, date: "", kind: "assistant", text: session.lastReply }] : []}
+    status={approval || session.approvalId ? "approval" : question || session.questionId ? "question" : session.status === "running" ? "working" : "idle"}
+    step={session.status === "running" ? (session.steps[session.steps.length - 1]?.text ?? null) : null} />
   <header class="thread-head">
     <div class="title"><span class="project">{session.project}</span><span class="slash">/</span><span class="name">{session.lastPrompt || session.summary || session.name}</span></div>
     <div class="meta faint">
@@ -95,6 +104,9 @@
       {session.name} · {session.compacting ? tr("Het gesprek wordt samengevat…", "Compacting the conversation…") : statusLabels[session.status]}{#if session.updated} · {ago(session.updated)}{/if}
       {#if session.linesAdded + session.linesRemoved > 0}<span> · <span class="add">+{session.linesAdded}</span> <span class="rem">−{session.linesRemoved}</span></span>{/if}
     </div>
+    {#if launcher}
+      <button class="launcher" onclick={() => agents.select(launcher.id)}><Ico name="terminal" size={12} />{tr("Gestart door een agent in {title}", "Started by an agent in {title}", { title: launcher.project })}</button>
+    {/if}
   </header>
 
   <div class="scroll">
@@ -183,6 +195,8 @@
   .slash { color: var(--text3); }
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+  .launcher { display: inline-flex; align-items: center; gap: var(--space-4); border: 0; background: none; padding: 0; font: var(--text-label); color: var(--text3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .launcher:hover { color: var(--blue); }
   .body { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; padding-bottom: 16px; }
   .foot { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; flex: none; }
   .add { color: var(--mint); }

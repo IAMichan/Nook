@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Settings › Automation (`WorkspaceSettingsSection`, part automation, and `ScheduledTasksView` on the Mac): scheduled
   // tasks that start a session at a time, at an interval or from a signed local webhook, their list, and the workspace
   // Nook offers agents. The Mac lists the tasks in a sheet; here they stay on the page.
@@ -146,7 +147,7 @@
     {#each view.tasks as t (t.id)}
       <div class="task" class:off={!t.enabled}>
         <div class="line">
-          <input type="checkbox" role="switch" title={tr("Aan", "Enabled")} checked={t.enabled} onchange={(e) => act(() => automationApi.setEnabled(t.id, (e.target as HTMLInputElement).checked))} />
+          <input type="checkbox" role="switch" use:tip={tr("Aan", "Enabled")} checked={t.enabled} onchange={(e) => act(() => automationApi.setEnabled(t.id, (e.target as HTMLInputElement).checked))} />
           <strong>{t.title || tr("Taak zonder naam", "Untitled task")}</strong>
           <span class="faint">{ruleLabel(t.rule)}</span>
           <span class="spacer"></span>

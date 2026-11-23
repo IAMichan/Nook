@@ -70,6 +70,36 @@ pub fn key_up(app: &AppHandle) {
     });
 }
 
+/// Starts or stops the keyboard hook for a Flow key that is a modifier held alone (right Ctrl, Alt, Shift or Windows).
+/// Only Windows has the hook; elsewhere such a key does nothing.
+pub fn sync_hold_key(app: &AppHandle, setting: Option<&str>) {
+    #[cfg(target_os = "windows")]
+    {
+        use nook_core::services::flow_hold::{HoldKey, HoldSignal};
+        match setting.and_then(HoldKey::parse) {
+            Some(key) => {
+                let app = app.clone();
+                crate::platform::windows::hold_key::start(key, move |signal| match signal {
+                    HoldSignal::Down => key_down(&app),
+                    HoldSignal::Up => key_up(&app),
+                    HoldSignal::Other => other_key(&app),
+                    HoldSignal::Escape => cancel(&app),
+                });
+            }
+            None => crate::platform::windows::hold_key::stop(),
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = (app, setting);
+}
+
+/// Another key while the modifier is held: a shortcut, not dictation.
+pub fn other_key(app: &AppHandle) {
+    let services = app.state::<Services>();
+    let action = services.flow_state.logic.lock().unwrap_or_else(|e| e.into_inner()).other_key();
+    apply(app, action);
+}
+
 /// Esc of de knop in de pil.
 pub fn cancel(app: &AppHandle) {
     let services = app.state::<Services>();

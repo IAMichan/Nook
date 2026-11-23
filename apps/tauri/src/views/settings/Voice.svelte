@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tip } from "../../components/ui/tip";
   // Voice, sound and the bar's quiet behaviour, shown one part at a time where the Mac has them: Notifications › Sound
   // & voice (talking and reading aloud, "Hey Nook", the Notetaker, sounds, also your own), Notifications (how big a
   // notice is), Typing › Dictation (speech recognition, dictating anywhere with Flow) and General › Bar & windows (how
@@ -209,7 +210,7 @@
         <div class="col">
           <span>{tr("Recent", "Recent")}</span>
           {#each flow.history as entry (entry.id)}
-            <div class="entry"><span>{entry.text}</span><button class="ghost" title={tr("Kopiëren", "Copy")} onclick={() => navigator.clipboard.writeText(entry.text)}>⧉</button></div>
+            <div class="entry"><span>{entry.text}</span><button class="ghost" use:tip={tr("Kopiëren", "Copy")} onclick={() => navigator.clipboard.writeText(entry.text)}>⧉</button></div>
           {/each}
           <button class="danger" onclick={async () => { await services.clearFlowHistory(); flow = await services.flowView(); }}>{tr("Geschiedenis wissen", "Clear history")}</button>
         </div>

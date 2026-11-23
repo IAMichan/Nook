@@ -15,6 +15,7 @@
   import { itemId, laneCounts, triage } from "../lib/pulls";
   import { pullRequests } from "../lib/pulls.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
+  import { chatOptions } from "../lib/chat-options.svelte";
   import DisclosureChevron from "../components/ui/DisclosureChevron.svelte";
   import Ico from "../components/ui/Ico.svelte";
   import IconButton from "../components/ui/IconButton.svelte";
@@ -165,7 +166,7 @@
   // answer or choose Mark as read in the app. The same for every app.
   $effect(() => {
     const e = open;
-    if (!e || e.read !== "unread") return;
+    if (!e || e.read !== "unread" || !chatOptions.readOnOpen) return;
     const timer = setTimeout(() => {
       if (document.visibilityState === "visible") chatsApi.markRead(e.key, false).then(() => whatsapp.version++).catch(() => {});
     }, 800);
@@ -423,7 +424,7 @@
           {/key}
         </div>
       {:else if open}
-        {#key open.key}<ChatDetail entry={open} targets={all.filter((e) => e.sends && e.listKind === "chats")} onclose={closeChat} {onnook} />{/key}
+        {#key open.key}<ChatDetail entry={open} targets={all.filter((e) => e.sends && e.listKind === "chats")} onclose={closeChat} {onnook} onopenchat={(key) => { const next = all.find((x) => x.key === key); if (next) openChat(next); }} />{/key}
       {:else}
         <!-- No chat open (none picked yet, or closed with Escape). -->
         <div class="placeholder" data-tauri-drag-region>

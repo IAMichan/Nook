@@ -4,6 +4,7 @@ import { untrack } from "svelte";
 import { nook } from "./state.svelte";
 import { toast } from "./toast.svelte";
 import { appLanguage } from "./i18n.svelte";
+import { attentionPrioritizer, inboxAttention, loadWeights, recordAttention, type AttentionEvent } from "./attention-rank";
 import { pruneDismissed, rank, type InboxItem, type Prioritizer, type Ranked, type Target } from "./inbox";
 import {
   catchUp, parseFocus, pruneSnoozed, remember, snoozeUntil, splitByFocus, splitSnoozed,
@@ -120,7 +121,24 @@ class InboxService {
     this.pushed = [...this.pushed.filter((i) => i.id !== item.id), item];
   }
 
+  /// What you did with an item, for the shared ranking (`attention_record`).
+  private feedback(id: string, event: AttentionEvent) {
+    const item = this.items.find((i) => i.id === id);
+    if (item) recordAttention(event, inboxAttention(item));
+  }
+
+  /// The shared ranking's weights for what is listed now, then its order (the Mac's `AttentionScorer`).
+  private async reweigh() {
+    const weights = await loadWeights(this.items.map(inboxAttention));
+    this.setPrioritizer(attentionPrioritizer(weights));
+  }
+
   async dismiss(id: string) {
+    this.feedback(id, "dismissed");
+    return this.hide(id);
+  }
+
+  private async hide(id: string) {
     this.pushed = this.pushed.filter((i) => i.id !== id);
     if (!nook.settings) return;
     const now = Date.now();
@@ -129,6 +147,7 @@ class InboxService {
 
   /// Hides an item until the chosen time; it comes back on its own.
   async snooze(id: string, choice: SnoozeChoice) {
+    this.feedback(id, "snoozed");
     this.pushed = this.pushed.filter((i) => i.id !== id);
     if (!nook.settings) return;
     const now = new Date();
@@ -138,6 +157,7 @@ class InboxService {
 
   /// Hides an item until `until` (one of your snooze options, `lib/snooze-options.ts`).
   async snoozeTo(id: string, until: Date) {
+    this.feedback(id, "snoozed");
     this.pushed = this.pushed.filter((i) => i.id !== id);
     if (!nook.settings) return;
     const now = Date.now();
@@ -163,7 +183,8 @@ class InboxService {
 
   /// Read: it stays answered, so it leaves the inbox like a dismissal.
   markAsRead(id: string) {
-    return this.dismiss(id);
+    this.feedback(id, "answered");
+    return this.hide(id);
   }
 
   getImportantItems(): InboxItem[] {
@@ -178,6 +199,7 @@ class InboxService {
 
   async act(item: InboxItem, action: string): Promise<Target | void> {
     const provider = this.providers.get(item.provider);
+    recordAttention("opened", inboxAttention(item));
     try {
       const target = await provider?.act?.(item, action);
       this.load(provider);
@@ -203,6 +225,7 @@ class InboxService {
       this.byProvider = { ...this.byProvider, [p.id]: items };
       this.history = remember(this.history, this.items);
       this.save();
+      void this.reweigh();
     } catch {
       // The provider keeps what it showed; the next refresh tries again.
     } finally {

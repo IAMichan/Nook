@@ -133,6 +133,48 @@ pub async fn workspace_folder_tools(folder: String) -> Res<FolderTools> {
     }
 }
 
+/// The dev servers in a folder, each marked with whether Nook started it (AG-134): only those get a working Stop.
+#[tauri::command]
+pub async fn workspace_dev_servers(state: State<'_, WorkspaceState>, folder: String) -> Res<Vec<nook_core::workspace::dev_stop::DevServerView>> {
+    #[cfg(desktop)]
+    {
+        let (shells, agents) = roots_of(&state);
+        tauri::async_runtime::spawn_blocking(move || {
+            nook_core::workspace::dev_stop::mark(terminal::scan_dev_servers(&folder), &shells, &agents)
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (state, folder);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Stops a dev server Nook started; false for one it did not (or that is gone), which is yours to stop where you started it.
+#[tauri::command]
+pub async fn workspace_stop_dev_server(state: State<'_, WorkspaceState>, folder: String, pid: u32, port: u16) -> Res<bool> {
+    #[cfg(desktop)]
+    {
+        let (shells, agents) = roots_of(&state);
+        tauri::async_runtime::spawn_blocking(move || nook_core::workspace::dev_stop::stop(&folder, pid, port, &shells, &agents))
+            .await
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (state, folder, pid, port);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+#[cfg(desktop)]
+fn roots_of(state: &WorkspaceState) -> (Vec<u32>, Vec<u32>) {
+    let agents = state.manager.runs().iter().filter_map(|r| state.manager.agent_pid(r.id)).collect();
+    (state.terminals.shell_pids(), agents)
+}
+
 /// Koppelt de werkruimte-brug aan een agent die je zelf in een terminal start: het commando draait zichtbaar in een
 /// terminal van Nook, zodat je precies ziet wat er gebeurt. Sessies die Nook start, krijgen de brug vanzelf.
 #[tauri::command]
@@ -255,4 +297,82 @@ pub fn workspace_open_in(app: AppHandle, state: State<'_, WorkspaceState>, folde
     }
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_path(folder, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// The terminals on this computer (Nook's own first), for Settings › Sessions › Editor & browser.
+#[tauri::command]
+pub async fn workspace_terminals() -> Vec<nook_core::workspace::open_in::Editor> {
+    tauri::async_runtime::spawn_blocking(nook_core::workspace::open_in::installed_terminals).await.unwrap_or_default()
+}
+
+/// Opens `folder` in the terminal you chose (`openTerminal` on the Mac). Nook's own terminal: opens one there and
+/// returns its id, so the view can show it (Agents › All terminals); another terminal: starts it and returns `None`.
+#[tauri::command]
+pub fn workspace_open_terminal(app: AppHandle, state: State<'_, WorkspaceState>, folder: String) -> Res<Option<String>> {
+    use nook_core::workspace::open_in::{find, terminal_command, OpenInPrefs};
+    let chosen = OpenInPrefs::current().terminal;
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    if let Some((program, args)) = terminal_command(&chosen, &folder).filter(|_| find(&chosen, &path_var).is_some()) {
+        let mut cmd = std::process::Command::new(program);
+        cmd.args(args).current_dir(&folder);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        return cmd.spawn().map(|_| None).map_err(|e| e.to_string());
+    }
+    #[cfg(desktop)]
+    {
+        let info = state.terminals.open(&app, &folder, None, None, None)?;
+        Ok(Some(info.id))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// The rest of Settings › Sessions › Editor & browser: terminal, search engine, where links open, remembering pages.
+#[tauri::command]
+pub fn open_in_prefs() -> nook_core::workspace::open_in::OpenInPrefs {
+    nook_core::workspace::open_in::OpenInPrefs::current()
+}
+
+/// Saves those choices; turning "Remember visited pages" off clears the pages kept so far, as on the Mac.
+#[tauri::command]
+pub async fn open_in_set_prefs(prefs: nook_core::workspace::open_in::OpenInPrefs) -> nook_core::workspace::open_in::OpenInPrefs {
+    tauri::async_runtime::spawn_blocking(move || {
+        let saved = prefs.save();
+        if !saved.remember_history {
+            nook_core::workspace::browser_history::clear();
+        }
+        saved
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// How many pages Nook's browser remembers.
+#[tauri::command]
+pub async fn browser_history_count() -> usize {
+    tauri::async_runtime::spawn_blocking(nook_core::workspace::browser_history::count).await.unwrap_or(0)
+}
+
+/// Forgets every page you visited in Nook's browser.
+#[tauri::command]
+pub async fn browser_history_clear() {
+    let _ = tauri::async_runtime::spawn_blocking(nook_core::workspace::browser_history::clear).await;
+}
+
+/// Pages you visited before that match what you typed in the address bar (newest first, at most 8).
+#[tauri::command]
+pub async fn browser_history_suggest(text: String) -> Vec<nook_core::workspace::browser_history::Visit> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let visits = nook_core::workspace::browser_history::load(&nook_core::workspace::browser_history::file());
+        nook_core::workspace::browser_history::suggestions(&visits, &text, 8)
+    })
+    .await
+    .unwrap_or_default()
 }

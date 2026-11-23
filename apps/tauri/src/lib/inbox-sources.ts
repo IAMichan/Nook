@@ -208,6 +208,7 @@ const owed: InboxProvider = {
       provider: "owed",
       ref: t.chat,
       source: "messages",
+      sourceLabel: appName(t.app),
       type: "action_required",
       cared: true,
       title: tr("{name} wacht op je antwoord", "{name} is waiting for your reply", { name: t.name }),

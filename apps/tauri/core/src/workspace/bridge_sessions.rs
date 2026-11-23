@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::bridge_nook::shielded;
 use super::delegation::Snapshot;
-use super::models::{EventKind, RunEvent, WorkspaceRun};
+use super::models::{EventKind, PermissionPolicy, RunEvent, WorkspaceRun};
 use crate::agents::models::QuestionItem;
 
 pub const MAX_START: usize = 20;
@@ -34,6 +34,10 @@ pub struct StartSession {
     pub agent: String,
     pub model: String,
     pub plan: bool,
+    /// The account to run on, by id or label; empty is the agent's default account.
+    pub account: String,
+    /// The starting rights asked for; `None` is Ask. Never more than the caller's own (`start_rights`).
+    pub rights: Option<PermissionPolicy>,
 }
 
 /// Where the sessions of one call work.
@@ -69,21 +73,87 @@ fn text(fields: &Map<String, Value>, key: &str) -> Option<String> {
     fields.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
 }
 
-fn session(fields: &Map<String, Value>, defaults: Option<&StartSession>) -> StartSession {
-    StartSession {
+fn session(fields: &Map<String, Value>, defaults: Option<&StartSession>) -> Result<StartSession, String> {
+    let rights = match text(fields, "rights") {
+        Some(raw) => Some(parse_rights(&raw).ok_or("rights must be one of ask, acceptEdits, bypass.")?),
+        None => defaults.and_then(|d| d.rights),
+    };
+    Ok(StartSession {
         task: text(fields, "task").unwrap_or_default(),
         title: text(fields, "title").unwrap_or_default(),
         agent: text(fields, "agent").or_else(|| defaults.map(|d| d.agent.clone())).unwrap_or_default(),
         model: text(fields, "model").or_else(|| defaults.map(|d| d.model.clone())).unwrap_or_default(),
         plan: fields.get("plan").and_then(Value::as_bool).or(defaults.map(|d| d.plan)).unwrap_or(false),
+        account: text(fields, "account").or_else(|| defaults.map(|d| d.account.clone())).unwrap_or_default(),
+        rights,
+    })
+}
+
+fn parse_rights(raw: &str) -> Option<PermissionPolicy> {
+    match raw {
+        "ask" => Some(PermissionPolicy::Ask),
+        "acceptEdits" => Some(PermissionPolicy::AcceptEdits),
+        "bypass" => Some(PermissionPolicy::Bypass),
+        _ => None,
     }
+}
+
+fn rights_name(p: PermissionPolicy) -> &'static str {
+    match p {
+        PermissionPolicy::Ask => "ask",
+        PermissionPolicy::AcceptEdits => "acceptEdits",
+        PermissionPolicy::Bypass => "bypass",
+    }
+}
+
+fn rank(p: PermissionPolicy) -> u8 {
+    match p {
+        PermissionPolicy::Ask => 0,
+        PermissionPolicy::AcceptEdits => 1,
+        PermissionPolicy::Bypass => 2,
+    }
+}
+
+/// The rights a started session gets (`BridgeSessionArguments.rights`): what it asked for, or Ask. Refused when that is
+/// more than the caller has (`None` for a script the user ran: they approve the card) or when the agent does not offer it.
+pub fn start_rights(
+    requested: Option<PermissionPolicy>,
+    caller: Option<PermissionPolicy>,
+    offered: &[PermissionPolicy],
+) -> Result<PermissionPolicy, String> {
+    let Some(requested) = requested else {
+        return Ok(if offered.contains(&PermissionPolicy::Ask) { PermissionPolicy::Ask } else { offered.first().copied().unwrap_or(PermissionPolicy::Ask) });
+    };
+    if let Some(caller) = caller {
+        if rank(requested) > rank(caller) {
+            return Err(format!("A session you start cannot have more rights than you ({}).", rights_name(caller)));
+        }
+    }
+    if !offered.contains(&requested) {
+        let names: Vec<&str> = offered.iter().map(|p| rights_name(*p)).collect();
+        return Err(format!("This agent does not offer {} rights; it offers {}.", rights_name(requested), names.join(", ")));
+    }
+    Ok(requested)
+}
+
+/// The account a session asks for among the agent's accounts (`id`, `label`): by id, or by label, ignoring case.
+pub fn start_account(requested: &str, accounts: &[(String, String)]) -> Option<String> {
+    let wanted = requested.trim().to_lowercase();
+    if wanted.is_empty() {
+        return None;
+    }
+    accounts
+        .iter()
+        .find(|(id, _)| id.to_lowercase() == wanted)
+        .or_else(|| accounts.iter().find(|(_, label)| label.to_lowercase() == wanted))
+        .map(|(id, _)| id.clone())
 }
 
 /// What `session_start` asks for. `caller_folder`: where the calling agent works, the default place; empty for a
 /// client without a folder, which must name one. One session from the top-level fields, or several from `sessions`,
 /// which take those fields as their defaults.
 pub fn start(arguments: &Map<String, Value>, caller_folder: &str) -> Result<Start, String> {
-    let shared = session(arguments, None);
+    let shared = session(arguments, None)?;
     let sessions = match arguments.get("sessions") {
         Some(list) => {
             let items =
@@ -93,9 +163,8 @@ pub fn start(arguments: &Map<String, Value>, caller_folder: &str) -> Result<Star
             }
             items
                 .iter()
-                .map(|i| i.as_object().map(|f| session(f, Some(&shared))))
-                .collect::<Option<Vec<_>>>()
-                .ok_or("Each item of sessions is an object with task and/or title.")?
+                .map(|i| i.as_object().ok_or_else(|| "Each item of sessions is an object with task and/or title.".to_string()).and_then(|f| session(f, Some(&shared))))
+                .collect::<Result<Vec<_>, _>>()?
         }
         None => vec![shared],
     };
@@ -841,6 +910,42 @@ mod tests {
 
     fn args(v: Value) -> Map<String, Value> {
         v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn start_reads_account_and_rights_per_session() {
+        let plan = start(
+            &args(json!({"account": "work", "rights": "acceptEdits", "sessions": [{"task": "a"}, {"task": "b", "account": "Personal", "rights": "ask"}]})),
+            "/p",
+        )
+        .unwrap();
+        assert_eq!(plan.sessions[0].account, "work");
+        assert_eq!(plan.sessions[0].rights, Some(PermissionPolicy::AcceptEdits));
+        assert_eq!(plan.sessions[1].account, "Personal");
+        assert_eq!(plan.sessions[1].rights, Some(PermissionPolicy::Ask));
+        assert!(start(&args(json!({"task": "a", "rights": "all"})), "/p").unwrap_err().contains("rights must be"));
+        assert_eq!(start(&args(json!({"task": "a"})), "/p").unwrap().sessions[0].rights, None);
+    }
+
+    #[test]
+    fn start_rights_never_above_the_caller() {
+        use PermissionPolicy::*;
+        let all = [Ask, AcceptEdits, Bypass];
+        assert_eq!(start_rights(None, Some(Bypass), &all), Ok(Ask));
+        assert_eq!(start_rights(None, None, &[AcceptEdits]), Ok(AcceptEdits));
+        assert_eq!(start_rights(Some(AcceptEdits), Some(Bypass), &all), Ok(AcceptEdits));
+        assert!(start_rights(Some(Bypass), Some(AcceptEdits), &all).unwrap_err().contains("more rights than you (acceptEdits)"));
+        assert_eq!(start_rights(Some(Bypass), None, &all), Ok(Bypass));
+        assert!(start_rights(Some(Bypass), None, &[Ask, AcceptEdits]).unwrap_err().contains("offers ask, acceptEdits"));
+    }
+
+    #[test]
+    fn start_account_by_id_or_label() {
+        let accounts = vec![("claude".to_string(), "Personal".to_string()), ("claude-work".to_string(), "Work".to_string())];
+        assert_eq!(start_account("claude-work", &accounts).as_deref(), Some("claude-work"));
+        assert_eq!(start_account(" work ", &accounts).as_deref(), Some("claude-work"));
+        assert_eq!(start_account("home", &accounts), None);
+        assert_eq!(start_account("", &accounts), None);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 // The main window's key handling: a key event becomes a command through the rules in `keybindings.ts` (the defaults
 // and your own `keybindings.json`). The shell runs its own commands (the names below); every other command goes to the
 // view on screen as `cmd:<command>` (`lib/commands.ts`).
+import { keyFlags } from "./key-context";
 import { DEFAULT_RULES, resolve, type KeybindingRule } from "./keybindings";
 
 type Key = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "repeat" | "isComposing" | "defaultPrevented"> & { code?: string };
@@ -17,6 +18,7 @@ export type Shortcut =
 /// The commands the shell runs itself, by the name its handler uses.
 const SHELL: Record<string, Shortcut> = {
   "search.toggle": "palette",
+  "commandPalette.toggle": "palette",
   "chat.find": "search",
   "shortcuts.cheatSheet": "cheatsheet",
   "settings.open": "settings",
@@ -39,6 +41,7 @@ export function shellShortcut(e: Key, context: Context, rules: KeybindingRule[] 
     composerFocus: !!context.composer,
     panelFocus: !!context.panel,
     paletteOpen: context.paletteOpen,
+    ...keyFlags,
     sidebarTab: context.chat,
   }, rules);
   if (!command) return null;

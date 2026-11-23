@@ -8,10 +8,14 @@
   import Spinner from "./ui/Spinner.svelte";
   import { checklistProgress, type TaskStep } from "../lib/task-steps";
 
-  let { steps, live }: { steps: TaskStep[]; live: boolean } = $props();
+  /** `phase`: the step that matters now beside the count (an agent session's Tasks strip, `RunTasks.progress`). */
+  let { steps, live, phase = false }: { steps: TaskStep[]; live: boolean; phase?: boolean } = $props();
   let collapsed = $state(false);
   const shown = $derived(live ? steps : steps.map((s) => (s.status === "active" ? { ...s, status: "pending" as const } : s)));
   const progress = $derived(checklistProgress(shown));
+  const current = $derived(
+    (shown.find((s) => s.status === "active") ?? shown.find((s) => s.status === "pending") ?? [...shown].reverse().find((s) => s.status !== "cancelled"))?.text ?? "",
+  );
 </script>
 
 <div class="checklist">
@@ -24,7 +28,7 @@
   >
     <Ico name="list-checks" size={11} stroke={2.4} />
     <span class="title">{tr("Taken", "Tasks")}</span>
-    <span class="count">{tr("{done} van {total} klaar", "{done} of {total} done", { done: progress.done, total: progress.total })}</span>
+    <span class="count">{tr("{done} van {total} klaar", "{done} of {total} done", { done: progress.done, total: progress.total })}{#if phase && current} · <span class="phase">{current}</span>{/if}</span>
     <DisclosureChevron open={!collapsed} size={10} />
   </button>
   {#if !collapsed}
@@ -50,7 +54,8 @@
   .head { all: unset; cursor: pointer; display: flex; align-items: center; gap: 7px; width: 100%; color: var(--text2); }
   .head:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; border-radius: var(--radius-chip); }
   .title { font: var(--text-label); }
-  .count { font: var(--text-detail); color: var(--text3); font-variant-numeric: tabular-nums; flex: 1; }
+  .phase { color: var(--text2); }
+  .count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font: var(--text-detail); color: var(--text3); font-variant-numeric: tabular-nums; flex: 1; }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-6); }
   li { display: flex; gap: var(--space-8); align-items: center; font: var(--text-body); color: var(--text2); }
   li.done, li.cancelled { color: var(--text3); }

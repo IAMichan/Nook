@@ -597,6 +597,7 @@ impl Scheduler {
         }
         if let Some(index) = s.tasks.iter().position(|t| t.id == id) {
             let started = s.tasks[index].last_run;
+            crate::services::nook_telemetry::shared().scheduled_run_finished(status, trigger, started, now);
             let mut row = s.tasks[index].finishing(status, error, now, tz);
             if row.rule.waits_for_event() {
                 row.next_run = None;

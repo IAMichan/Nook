@@ -281,6 +281,11 @@ impl AgentHub {
             ("CODEX_HOME", &self.default_homes.1)
         } else if agent_id.starts_with("claude") {
             ("CLAUDE_CONFIG_DIR", &self.default_homes.0)
+        } else if agent_id == "gemini" {
+            // GEMINI_CLI_HOME stands in for the home folder: the account's data is in its `.gemini`.
+            let Some(raw) = text(env, "GEMINI_CLI_HOME").filter(|r| !r.is_empty()) else { return String::new() };
+            let home = normalize_home(&super::AgentKind::Gemini.home_from_variable(raw));
+            return if home == normalize_home(&super::AgentKind::Gemini.default_home().to_string_lossy()) { String::new() } else { home };
         } else {
             return String::new();
         };
@@ -487,6 +492,7 @@ impl AgentHub {
                     agent_name: record.agent.clone(),
                     project: record.project.clone(),
                     items: items.clone(),
+                    restored: false,
                 };
                 record.status = AgentStatus::Waiting;
                 push(&mut record, StepMark::Blocked, format!("vraag: {}", shorten(&items[0].question, 60)));
@@ -1046,6 +1052,7 @@ impl AgentHub {
                     started: None,
                     updated: None,
                     pid: Some(agent.pid),
+                    launched_by: None,
                 });
             }
             if s.detected != detected {
@@ -1254,6 +1261,7 @@ impl AgentHub {
         let now = Utc::now();
         let mut entries: Vec<(&String, &Record)> = s.records.iter().collect();
         entries.sort_by(|(_, a), (_, b)| a.status.order().cmp(&b.status.order()).then(b.updated.cmp(&a.updated)));
+        let by_pid: HashMap<u32, String> = s.records.iter().filter_map(|(k, r)| r.pid.map(|p| (p, k.clone()))).collect();
         let sessions: Vec<AgentSession> = entries
             .into_iter()
             .map(|(key, r)| {
@@ -1305,6 +1313,7 @@ impl AgentHub {
                     started: Some(r.started),
                     updated: Some(r.updated),
                     pid: None,
+                    launched_by: launcher_key(key, r, &by_pid),
                 }
             })
             .collect();
@@ -1313,6 +1322,14 @@ impl AgentHub {
 }
 
 // MARK: Hulpfuncties
+
+/// The session whose shell started this one: an agent process above this session's own in the chain of processes its
+/// hook came from (`lineage`, nearest first), that another session runs in. `None` for a session you started yourself.
+fn launcher_key(key: &str, record: &Record, by_pid: &HashMap<u32, String>) -> Option<String> {
+    let own = record.pid?;
+    let at = record.lineage.iter().position(|p| *p == own)?;
+    record.lineage[at + 1..].iter().filter(|p| **p != own).find_map(|p| by_pid.get(p).filter(|k| k.as_str() != key).cloned())
+}
 
 /// In welke app de agent draait, uit de omgeving van zijn hook: `x11:<venster>` (xterm, Konsole, Alacritty, …),
 /// `windows-terminal`, `vscode`, `kitty`, `wezterm`, `jetbrains`, `konsole` of de `TERM_PROGRAM`.
@@ -1882,6 +1899,27 @@ mod tests {
         });
         hub.apply_scan(vec![p(50)], |_, _| true);
         assert!(hub.detected().is_empty());
+    }
+
+    #[test]
+    fn a_session_started_from_another_agents_shell_names_it() {
+        let (hub, _) = hub();
+        let event = |session: &str, cwd: &str, lineage: Vec<u32>| {
+            serde_json::to_vec(&json!({"agent": "claude-code", "mode": "event", "env": {}, "lineage": lineage,
+                "event": {"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": cwd, "prompt": "p"}}))
+            .unwrap()
+        };
+        let p = |pid, cwd: &str| DetectedAgent { pid, name: "Claude Code".into(), cwd: cwd.into(), home: String::new() };
+        // Parent: agent 50 in /w/a. Child: hook 91, shell 90, agent 70, then the parent's tool shell 60, the parent 50.
+        hub.apply_scan(vec![p(50, "/w/a"), p(70, "/w/b")], |_, _| true);
+        hub.handle(&event("parent", "/w/a", vec![51, 50, 40]), Responder::none());
+        hub.handle(&event("child", "/w/b", vec![91, 90, 70, 60, 50, 40]), Responder::none());
+        hub.handle(&event("alone", "/w/c", vec![81, 80, 30, 20]), Responder::none());
+        hub.apply_scan(vec![p(50, "/w/a"), p(70, "/w/b")], |_, _| true);
+        let by_id = |id: &str| hub.sessions().into_iter().find(|s| s.id == id).unwrap();
+        assert_eq!(by_id("claude-code:child").launched_by.as_deref(), Some("claude-code:parent"));
+        assert_eq!(by_id("claude-code:parent").launched_by, None, "you started this one");
+        assert_eq!(by_id("claude-code:alone").launched_by, None);
     }
 
     #[test]

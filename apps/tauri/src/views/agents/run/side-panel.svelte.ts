@@ -31,7 +31,13 @@ export interface SessionSideState {
   changesFile: string | null;
   terminalId: string | null;
   filePath: string | null;
+  /** The line a file link points at (and the end of a range), and a number that changes on every open. */
+  fileLine: number | null;
+  fileEndLine: number | null;
+  fileOpened: number;
   outputId: string | null;
+  /** Tabs closed, newest last, for "Reopen closed tab". */
+  closed: SideTool[];
 }
 
 const WIDTH_KEY = "agents.sidePanel.width";
@@ -58,7 +64,11 @@ function emptyState(): SessionSideState {
     changesFile: null,
     terminalId: null,
     filePath: null,
+    fileLine: null,
+    fileEndLine: null,
+    fileOpened: 0,
     outputId: null,
+    closed: [],
   };
 }
 
@@ -113,7 +123,7 @@ function createSidePanelStore() {
     openTool(
       runId: string,
       tool: SideTool,
-      opts?: { changesFile?: string | null; terminalId?: string | null; filePath?: string | null; outputId?: string | null },
+      opts?: { changesFile?: string | null; terminalId?: string | null; filePath?: string | null; fileLine?: number | null; fileEndLine?: number | null; outputId?: string | null },
     ) {
       const s = ensure(runId);
       if (!s.tabs.includes(tool)) s.tabs = orderTabs([...s.tabs, tool], s.pinned);
@@ -121,7 +131,12 @@ function createSidePanelStore() {
       s.open = true;
       if (opts && "changesFile" in opts) s.changesFile = opts.changesFile ?? null;
       if (opts && "terminalId" in opts) s.terminalId = opts.terminalId ?? null;
-      if (opts && "filePath" in opts) s.filePath = opts.filePath ?? null;
+      if (opts && "filePath" in opts) {
+        s.filePath = opts.filePath ?? null;
+        s.fileLine = opts.fileLine ?? null;
+        s.fileEndLine = opts.fileEndLine ?? null;
+        s.fileOpened += 1;
+      }
       if (opts && "outputId" in opts) s.outputId = opts.outputId ?? null;
     },
     /** Switches to an already-open tab or opens it. */
@@ -137,9 +152,31 @@ function createSidePanelStore() {
       const idx = s.tabs.indexOf(tool);
       if (idx < 0) return;
       s.tabs = s.tabs.filter((t) => t !== tool);
+      s.closed = [...s.closed.filter((t) => t !== tool), tool].slice(-10);
       s.pinned = s.pinned.filter((t) => t !== tool);
       if (s.active === tool) {
         s.active = s.tabs[Math.min(idx, s.tabs.length - 1)] ?? "picker";
+      }
+    },
+    /** Brings back the tab closed last (`panel.reopenClosed`); false when none was closed. */
+    reopenClosed(runId: string): boolean {
+      const s = ensure(runId);
+      const tool = s.closed[s.closed.length - 1];
+      if (!tool) return false;
+      s.closed = s.closed.slice(0, -1);
+      if (!s.tabs.includes(tool)) s.tabs = orderTabs([...s.tabs, tool], s.pinned);
+      s.active = tool;
+      s.open = true;
+      return true;
+    },
+    /** Opens a tool, or closes it again when it is the one showing (`terminal.toggle`, `diff.toggle`). */
+    toggleTool(runId: string, tool: SideTool) {
+      const s = ensure(runId);
+      if (s.open && s.active === tool) {
+        this.closeTab(runId, tool);
+        if (!s.tabs.length) this.close(runId);
+      } else {
+        this.openTool(runId, tool);
       }
     },
     /** Pins or unpins a tab to the front of the session's tab strip. */
@@ -153,7 +190,11 @@ function createSidePanelStore() {
       s.tabs = orderTabs(s.tabs, s.pinned);
     },
     setFile(runId: string, filePath: string | null) {
-      ensure(runId).filePath = filePath;
+      const s = ensure(runId);
+      s.filePath = filePath;
+      s.fileLine = null;
+      s.fileEndLine = null;
+      s.fileOpened += 1;
     },
     setOutput(runId: string, outputId: string | null) {
       ensure(runId).outputId = outputId;

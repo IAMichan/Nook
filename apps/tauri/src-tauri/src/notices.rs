@@ -79,6 +79,17 @@ fn allow_popup(state: &Toasts, class: InterruptionClass, key: &str, urgent: bool
     allowed
 }
 
+/// Nook's own moments (`services::buddy`) share the day's interruption budget and keep the notices' distance
+/// (`NoticePacer` on the Mac): `consume` false only asks, true records the moment that is shown.
+pub fn moment_permitted(app: &AppHandle, consume: bool) -> bool {
+    let Some(state) = app.try_state::<Toasts>() else { return true };
+    if consume {
+        allow_popup(&state, InterruptionClass::Moment, "moments", false, 0.0)
+    } else {
+        permits_popup(&state, InterruptionClass::Moment, "moments", false, 0.0)
+    }
+}
+
 /// Called once at launch: Nook takes `nook://notice` links, toasts from before a restart that only Nook's buttons could
 /// answer go, and a click that started this Nook is answered.
 pub fn setup(app: &AppHandle) {

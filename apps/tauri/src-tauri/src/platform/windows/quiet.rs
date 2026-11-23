@@ -161,6 +161,21 @@ impl PowerMonitor for WindowsPower {
         EnergySignals { low_power_mode, on_battery, busy, ..Default::default() }
     }
 
+    /// The lock screen runs on a desktop of its own: the input desktop cannot be opened while it is up.
+    fn screen_locked(&self) -> bool {
+        use windows::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop, DESKTOP_CONTROL_FLAGS};
+        const DESKTOP_SWITCHDESKTOP: u32 = 0x0100;
+        match unsafe { OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, windows::Win32::System::StationsAndDesktops::DESKTOP_ACCESS_FLAGS(DESKTOP_SWITCHDESKTOP)) } {
+            Ok(desktop) => {
+                unsafe {
+                    let _ = CloseDesktop(desktop);
+                }
+                false
+            }
+            Err(_) => true,
+        }
+    }
+
     fn battery(&self) -> Option<(u8, bool)> {
         let mut status = SYSTEM_POWER_STATUS::default();
         unsafe { GetSystemPowerStatus(&mut status) }.ok()?;

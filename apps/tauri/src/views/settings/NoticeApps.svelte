@@ -9,7 +9,6 @@
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import ServiceIcon from "../connectors/ServiceIcon.svelte";
   import Ico from "../../components/ui/Ico.svelte";
-  import SnoozeOptions from "./SnoozeOptions.svelte";
 
   type NoticeSource = "agents" | "chats" | "suggestions";
   interface ChatAppEntry {
@@ -169,8 +168,6 @@
     {/if}
   </div>
 {/if}
-
-<SnoozeOptions />
 
 <style>
   .search { flex-wrap: nowrap; justify-content: flex-start; gap: var(--space-6); color: var(--text3); }

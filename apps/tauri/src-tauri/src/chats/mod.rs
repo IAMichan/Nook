@@ -3,7 +3,9 @@
 
 pub mod call;
 pub mod follow_up;
+pub mod gifs;
 pub mod helper;
 pub mod inbox;
+pub mod info;
 pub mod link;
 pub mod notify;

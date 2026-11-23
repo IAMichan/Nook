@@ -41,20 +41,17 @@ impl ConnectorStore {
         Self::open(paths::support_directory().join("connectors.json"))
     }
 
-    /// Een bestand dat niet te lezen is, wordt bewaard als `.bak` en Nook begint leeg (nooit stil overschrijven).
+    /// A file that cannot be read is set aside under a dated name with a notice and Nook starts empty, never silently
+    /// overwriting it (`storage_recovery`).
     pub fn open(path: PathBuf) -> Self {
-        let data = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
+        let data = crate::storage_recovery::read_json(&path, |bytes| {
+            serde_json::from_slice::<serde_json::Value>(bytes)
                 .and_then(|mut value| {
                     super::whatsapp::migrate_beeper(&mut value);
                     serde_json::from_value(value)
                 })
-                .unwrap_or_else(|_| {
-                    let _ = std::fs::copy(&path, path.with_extension("json.bak"));
-                    ConnectorConfig::default()
-                }),
-            Err(_) => ConnectorConfig::default(),
-        };
+                .map_err(|e| e.to_string())
+        });
         Self { path: Some(path), data: RwLock::new(data) }
     }
 
@@ -129,7 +126,9 @@ mod tests {
         std::fs::write(&file, b"{kapot").unwrap();
         let store = ConnectorStore::open(file.clone());
         assert!(store.is_on("x"));
-        assert!(file.with_extension("json.bak").exists());
+        // Set aside under a dated name (`connectors.damaged-<date>.json`), never overwritten.
+        let aside = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).any(|e| e.file_name().to_string_lossy().starts_with("connectors.damaged-"));
+        assert!(aside && !file.exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 
