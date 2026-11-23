@@ -5321,13 +5321,14 @@ function AgentMark($$anchor, $$props) {
 	pop();
 }
 // src/ModelPicker.svelte
+var pickers = 0;
 var root_1$1 = /* @__PURE__ */ from_html(`<span class="mp-rail-line svelte-9tg97k" aria-hidden="true"></span>`);
 var root_2$1 = /* @__PURE__ */ from_html(`<span class="mp-in-use svelte-9tg97k" aria-hidden="true"></span>`);
 var root_3$1 = /* @__PURE__ */ from_html(`<!> <button type="button"><!> <!></button>`, 1);
 var root_4$1 = /* @__PURE__ */ from_html(`<div class="mp-header svelte-9tg97k"> </div>`);
 var root_5$1 = /* @__PURE__ */ from_html(`<button type="button" role="option"><!> <span class="mp-title svelte-9tg97k"> </span></button>`);
 var root_6$1 = /* @__PURE__ */ from_html(`<p class="mp-empty svelte-9tg97k"> </p>`);
-var root_7$1 = /* @__PURE__ */ from_html(`<div class="mp-panel svelte-9tg97k" role="dialog"><div class="mp-rail svelte-9tg97k"></div> <div class="mp-column svelte-9tg97k"><!> <label class="mp-search svelte-9tg97k"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3 3"></path></svg> <input type="search" class="svelte-9tg97k"/></label> <div class="mp-list svelte-9tg97k" role="listbox"></div></div></div>`);
+var root_7$1 = /* @__PURE__ */ from_html(`<div class="mp-panel svelte-9tg97k" role="dialog"><div class="mp-rail svelte-9tg97k"></div> <div class="mp-column svelte-9tg97k"><!> <label class="mp-search svelte-9tg97k"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3 3"></path></svg> <input type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" class="svelte-9tg97k"/></label> <div class="mp-list svelte-9tg97k" role="listbox"></div></div></div>`);
 var root_8$1 = /* @__PURE__ */ from_html(`<div class="mp svelte-9tg97k"><button type="button" aria-haspopup="dialog"><!> <span class="mp-label svelte-9tg97k"> </span> <svg class="mp-chevron svelte-9tg97k" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"></path></svg></button> <!></div>`);
 var $$css$3 = {
 	hash: "svelte-9tg97k",
@@ -5340,6 +5341,8 @@ function ModelPicker($$anchor, $$props) {
 	/** The menu opens: the surface can fetch the newest list. */
 	/** The panel's width on the Mac (`ModelPickerStyle.width`), and the room it keeps from the window's edges. */
 	const width = 340;
+	/** Ties the search field to its list and the row the arrow keys are on, for assistive technology. */
+	const listID = `nook-model-list-${pickers++}`;
 	const margin = 12;
 	let open = /* @__PURE__ */ state(false);
 	let query = /* @__PURE__ */ state("");
@@ -5407,7 +5410,7 @@ function ModelPicker($$anchor, $$props) {
 		queueMicrotask(() => get(list)?.querySelector(`[data-index="${get(highlight)}"]`)?.scrollIntoView({ block: "nearest" }));
 	}
 	function key(e) {
-		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		if (e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.key === "ArrowDown") step(1);
 		else if (e.key === "ArrowUp") step(-1);
 		else if (e.key === "Enter") choose(get(rows)[get(active)]);
@@ -5522,7 +5525,9 @@ function ModelPicker($$anchor, $$props) {
 					active: get(index) === get(active)
 				});
 				set_attribute(button_2, "data-index", get(index));
-				set_attribute(button_2, "aria-selected", !!get(choice).chosen);
+				set_attribute(button_2, "id", `${listID}-${get(index) ?? ""}`);
+				set_attribute(button_2, "aria-selected", get(index) === get(active));
+				set_attribute(button_2, "aria-checked", !!get(choice).chosen);
 				set_text(text_2, get(choice).title);
 			});
 			event("mouseenter", button_2, () => set(highlight, get(index), true));
@@ -5544,8 +5549,11 @@ function ModelPicker($$anchor, $$props) {
 				left: `${get(shift) ?? ""}px`,
 				width: "min(340px, calc(100vw - 24px))"
 			});
+			set_attribute(input, "aria-controls", listID);
+			set_attribute(input, "aria-activedescendant", get(active) >= 0 ? `${listID}-${get(active)}` : void 0);
 			set_attribute(input, "placeholder", $$props.texts.search);
 			set_attribute(input, "aria-label", $$props.texts.search);
+			set_attribute(div_5, "id", listID);
 			set_attribute(div_5, "aria-label", get(current)?.name);
 		});
 		delegated("input", input, () => set(highlight, 0));

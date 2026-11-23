@@ -9,6 +9,8 @@
     local?: boolean;
   }
 
+  let pickers = 0;
+
   export interface ModelPickerTexts {
     /** The chip's tooltip ("Choose the model Nook thinks with"). */
     button: string;
@@ -48,6 +50,8 @@
 
   /** The panel's width on the Mac (`ModelPickerStyle.width`), and the room it keeps from the window's edges. */
   const width = 340;
+  /** Ties the search field to its list and the row the arrow keys are on, for assistive technology. */
+  const listID = `nook-model-list-${pickers++}`;
   const margin = 12;
 
   let open = $state(false);
@@ -125,7 +129,8 @@
   }
 
   function key(e: KeyboardEvent) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Return and the arrows belong to an input method while it composes (Japanese, Chinese…): leave them to it.
+    if (e.isComposing || e.keyCode === 229 || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "ArrowDown") step(1);
     else if (e.key === "ArrowUp") step(-1);
     else if (e.key === "Enter") choose(rows[active]);
@@ -162,12 +167,14 @@
         <label class="mp-search">
           <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" /></svg>
           <input type="search" bind:this={search} bind:value={query} oninput={() => (highlight = 0)} onkeydown={key}
+                 role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls={listID}
+                 aria-activedescendant={active >= 0 ? `${listID}-${active}` : undefined}
                  placeholder={texts.search} aria-label={texts.search} />
         </label>
-        <div class="mp-list" role="listbox" aria-label={current?.name} bind:this={list}>
+        <div class="mp-list" role="listbox" id={listID} aria-label={current?.name} bind:this={list}>
           {#each rows as choice, index (choice.id)}
             <button type="button" class="mp-row" class:chosen={choice.chosen} class:active={index === active} data-index={index}
-                    role="option" aria-selected={!!choice.chosen} onmouseenter={() => (highlight = index)} onclick={() => choose(choice)}>
+                    id="{listID}-{index}" role="option" aria-selected={index === active} aria-checked={!!choice.chosen} onmouseenter={() => (highlight = index)} onclick={() => choose(choice)}>
               <AgentMark name={choice.local ? choice.title : brandFor(choice.title) ? choice.title : choice.group} size={14} />
               <span class="mp-title">{choice.title}</span>
             </button>
