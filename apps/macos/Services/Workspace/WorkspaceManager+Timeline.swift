@@ -30,7 +30,8 @@ extension WorkspaceManager {
                     // A push: the branch's pull request (or one opened for it now) is read at once, for every agent alike.
                     else if PullRequestToolCall.pushes(command: texts) { PullRequestSync.shared.pushed(id) }
                     // A pull request the agent works on with the forge's CLI joins the session's list, for every agent alike.
-                    noticePullRequests(id, PullRequestMentions.inCommand(texts), mustExist: false)
+                    noticePullRequests(id, PullRequestMentions.inCommand(texts, directory: PullRequestMentions.folder(in: input.dictionary)),
+                                       mustExist: false)
                     // A worktree the agent made itself: the session may move there when the turn ends.
                     if let cwd = run(id)?.workingDirectory,
                        let added = texts.lazy.compactMap({ WorktreeMove.added(in: $0, cwd: cwd) }).first {
@@ -110,13 +111,24 @@ extension WorkspaceManager {
     private static let mentionsPerEvent = 6
 
     func noticePullRequests(_ id: UUID, _ refs: [PullRequestRef], mustExist: Bool) {
-        guard !refs.isEmpty, let run = run(id) else { return }
+        noticePullRequests(id, refs.map { PullRequestMentions.Found(ref: $0) }, mustExist: mustExist)
+    }
+
+    /// A number the agent used after a `cd` is looked up in the repository of that folder, not the session's: an agent
+    /// in one project's worktree can make and check a pull request in another project, and the same number in the
+    /// session's own repository is another pull request. A folder that is no repository links nothing.
+    func noticePullRequests(_ id: UUID, _ found: [PullRequestMentions.Found], mustExist: Bool) {
+        guard !found.isEmpty, let run = run(id) else { return }
         let directory = run.workingDirectory
         let key = PullRequestSync.sessionKey(run: id, directory: directory)
         Task { @MainActor in
             let sync = PullRequestSync.shared
-            let repository = await sync.repository(directory: directory)
-            for ref in refs.prefix(Self.mentionsPerEvent) {
+            let own = await sync.repository(directory: directory)
+            for item in found.prefix(Self.mentionsPerEvent) {
+                let ref = item.ref
+                let repository = if let moved = item.directory {
+                    await sync.repository(directory: SessionProjects.absolute(moved, cwd: directory))
+                } else { own }
                 guard let host = ref.host ?? repository?.host, let path = ref.repository ?? repository?.path else { continue }
                 let candidate = PullRequestLink(host: host, repository: path, number: ref.number, url: ref.url?.absoluteString ?? "")
                 guard !sync.knows(candidate, session: key) else { continue }
