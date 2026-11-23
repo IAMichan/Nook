@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import { composerInbox } from "../../../lib/workspace/composer-inbox.svelte";
   import { ask, explain, fixChecks } from "../../../lib/workspace/session-prompts";
+  import { workspace } from "../../../lib/workspace/store.svelte";
+  import { projectName } from "../../../lib/workspace/api";
+  import { agents } from "../../../lib/agents.svelte";
+  import { openNewSessionIn } from "../new-session.svelte";
   // One pull request, read in full inside Nook (`PullRequestDetailView` on the Mac): the description, checks and
   // timeline, the commits, and every changed file with its diff. The bar at the bottom merges it with the account it
   // was listed under, only after you confirmed it in that same bar; the merge is written to the action log. A page read
@@ -47,6 +52,59 @@
   let reviewText = $state("");
   let reviewBusy = $state(false);
   let reviewNote = $state<{ ok: boolean; text: string } | null>(null);
+  // AG-125: "Work on this PR" (`AppModel+PullRequestCheckout` on macOS)
+  let localFolder = $state<string | null>(null);
+  let checkoutBusy = $state(false);
+  let checkoutMenuOpen = $state(false);
+  let checkoutError = $state<string | null>(null);
+  const preferredFolder = $derived(session ? (workspace.run(session)?.workingDirectory ?? null) : (workspace.settings?.lastProject ?? null));
+
+  $effect(() => {
+    const repo = detail?.repo ?? item.repo;
+    const pref = preferredFolder;
+    let cancelled = false;
+    invoke<string | null>("workspace_pr_local_folder", { repo, preferred: pref })
+      .then((folder) => {
+        if (!cancelled) localFolder = folder ?? null;
+      })
+      .catch(() => {
+        if (!cancelled) localFolder = null;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  async function workOnPr(mode: "worktree" | "here") {
+    const repo = detail?.repo ?? item.repo;
+    const number = detail?.number ?? item.number;
+    const headBranch = detail?.headBranch ?? "";
+    checkoutMenuOpen = false;
+    if (checkoutBusy) return;
+    checkoutBusy = true;
+    checkoutError = null;
+    try {
+      const checkedOutPath = await invoke<string>("workspace_pr_checkout", {
+        repo,
+        number,
+        headBranch,
+        isFork: false,
+        mode,
+        preferredFolder,
+      });
+      agents.confirm(
+        mode === "worktree"
+          ? tr("PR uitgecheckt in een nieuwe worktree", "Checked out PR in a new worktree")
+          : tr("PR uitgecheckt in projectmap", "Checked out PR in project folder"),
+      );
+      await openNewSessionIn(checkedOutPath);
+    } catch (e) {
+      checkoutError = String(e);
+    } finally {
+      checkoutBusy = false;
+    }
+  }
+
   // The relative times in the conversation and the commits tick along, once a minute.
   let now = $state(Date.now());
 
@@ -207,6 +265,29 @@
     <span class="spacer"></span>
     {#if loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
     <button class="ghost" title={tr("Vernieuwen", "Refresh")} disabled={loading} onclick={load}>{tr("Vernieuwen", "Refresh")}</button>
+    {#if localFolder}
+      <div class="pr-checkout-wrap">
+        <button
+          class="ghost"
+          disabled={checkoutBusy}
+          onclick={() => (checkoutMenuOpen = !checkoutMenuOpen)}
+        >
+          {checkoutBusy ? tr("Bezig met uitchecken…", "Checking out…") : tr("Werk aan deze PR", "Work on this PR")} ▾
+        </button>
+        {#if checkoutMenuOpen}
+          <div class="pr-checkout-menu" role="menu">
+            <button role="menuitem" class="pr-checkout-item" onclick={() => workOnPr("worktree")}>
+              <strong>{tr("In een nieuwe worktree", "In a new worktree")}</strong>
+              <span class="faint small">{tr("Eigen map naast je checkout", "Separate folder next to your checkout")}</span>
+            </button>
+            <button role="menuitem" class="pr-checkout-item" onclick={() => workOnPr("here")}>
+              <strong>{tr("In {folder}", "In {folder}", { folder: projectName(localFolder) })}</strong>
+              <span class="faint small">{tr("Wisselt van branch in je bestaande map", "Switches branch in your existing folder")}</span>
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/if}
     {#if session && sessionRef}
       <button class="ghost" onclick={() => toSession(explain(sessionRef!))}>{tr("Laten uitleggen in deze sessie", "Explain in this session")}</button>
       <button class="ghost" onclick={() => toSession(ask(sessionRef!))}>{tr("Hierover vragen in deze sessie", "Ask about this in this session")}</button>
@@ -214,6 +295,7 @@
     {/if}
     {#if detail?.url ?? item.url}<button class="ghost" title={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(detail?.url ?? item.url)}>{tr("Open op GitHub", "Open on GitHub")} ↗</button>{/if}
   </div>
+  {#if checkoutError}<span class="err">{checkoutError}</span>{/if}
 
   {#if detail}
     <div class="summary">
@@ -464,4 +546,8 @@
   .err { color: var(--coral); font-size: 12px; user-select: text; }
   select { font-size: 12px; padding: 5px 8px; }
   textarea { width: 100%; box-sizing: border-box; resize: vertical; font-size: 12.5px; }
+  .pr-checkout-wrap { position: relative; display: inline-flex; }
+  .pr-checkout-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; min-width: 240px; padding: 6px; border-radius: var(--radius-card); background: var(--field); border: 1px solid var(--line2); display: flex; flex-direction: column; gap: 2px; }
+  .pr-checkout-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; border-radius: var(--radius-control); background: none; border: none; text-align: left; font-size: var(--text-detail); color: var(--paper); }
+  .pr-checkout-item:hover { background: var(--smoke); }
 </style>

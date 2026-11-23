@@ -230,6 +230,57 @@
     textarea?.focus();
   }
 
+  // Next-prompt ghost suggestion (`NextPromptSuggestion` on macOS, AG-70): shown in the empty composer after an assistant turn;
+  // Tab accepts it into `draft`, Escape dismisses it.
+  let suggestedPrompt = $state<string | null>(null);
+  let dismissedTurnId = $state<string | null>(null);
+  let lastSuggestedTurnKey = "";
+
+  const lastAssistantTurnKey = $derived.by(() => {
+    if (active) return "";
+    const visible = events.filter((e) => !e.rolledBack && (e.kind === "user" || e.kind === "assistant") && e.text.trim());
+    const last = visible[visible.length - 1];
+    if (!last || last.kind !== "assistant" || !visible.some((e) => e.kind === "user")) return "";
+    return `${runId}:${last.id}`;
+  });
+
+  $effect(() => {
+    const turnKey = lastAssistantTurnKey;
+    if (!turnKey || turnKey === dismissedTurnId) {
+      suggestedPrompt = null;
+      return;
+    }
+    try {
+      if (localStorage.getItem("nook.suggestNextPrompt") === "false") {
+        suggestedPrompt = null;
+        return;
+      }
+    } catch {
+      // default enabled
+    }
+    if (turnKey === lastSuggestedTurnKey) return;
+    lastSuggestedTurnKey = turnKey;
+    suggestedPrompt = null;
+    let cancelled = false;
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke<string | null>("workspace_suggest_next_prompt", { run: runId }))
+      .then((res) => {
+        if (!cancelled && lastAssistantTurnKey === turnKey) {
+          suggestedPrompt = res?.trim() || null;
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const ghostSuggestion = $derived(
+    !active && !editing && !draft && !hasAttachments && suggestedPrompt && lastAssistantTurnKey !== dismissedTurnId
+      ? suggestedPrompt
+      : null,
+  );
+
   function keydown(e: KeyboardEvent) {
     if (context?.key(e)) return;
     if (matching.length) {
@@ -237,6 +288,20 @@
       if (e.key === "ArrowUp") { e.preventDefault(); commandIndex = (commandIndex - 1 + matching.length) % matching.length; return; }
       if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") { e.preventDefault(); pickCommand(matching[Math.min(commandIndex, matching.length - 1)]); return; }
       if (e.key === "Escape") { e.preventDefault(); draft = ""; return; }
+    }
+    if (ghostSuggestion) {
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        draft = ghostSuggestion;
+        suggestedPrompt = null;
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dismissedTurnId = lastAssistantTurnKey;
+        suggestedPrompt = null;
+        return;
+      }
     }
     // Ctrl+Enter, Ctrl+Shift+Enter and Ctrl+. are rules (`composer.send`, `composer.sendAlternate`, `queue.steerFirst`,
     // `session.interrupt`) the shell resolves, so a rebound key works; the commands are below.
@@ -437,7 +502,20 @@
       </div>
     {/if}
     <ComposerContext bind:this={context} {textarea} bind:draft root={run.workingDirectory || null} bind:attached bind:pictures bind:mentions exclude={run.id} bind:open={listOpen} />
-    <textarea bind:this={textarea} bind:value={draft} placeholder={editing ? tr("Bewerk het bericht in de wachtrij (Enter bewaart, Esc annuleert)", "Edit the queued message (Enter saves, Esc cancels)") : prompt} rows="1" onkeydown={keydown}></textarea>
+    <div class="input-wrap">
+      <textarea bind:this={textarea} bind:value={draft} placeholder={ghostSuggestion ? "" : editing ? tr("Bewerk het bericht in de wachtrij (Enter bewaart, Esc annuleert)", "Edit the queued message (Enter saves, Esc cancels)") : prompt} rows="1" onkeydown={keydown}></textarea>
+      {#if ghostSuggestion}
+        <button
+          type="button"
+          class="ghost-suggestion"
+          tabindex="-1"
+          title={tr("Druk op Tab om over te nemen of Esc om te verbergen", "Press Tab to accept or Esc to dismiss")}
+          onclick={() => { draft = ghostSuggestion; suggestedPrompt = null; textarea?.focus(); }}>
+          <span class="ghost-text">{ghostSuggestion}</span>
+          <kbd class="ghost-kbd">Tab</kbd>
+        </button>
+      {/if}
+    </div>
     <div class="bar">
       <Dropdown width={260} label={tr("Meer opties", "More options")}>
         {#snippet trigger({ toggle, open })}
@@ -514,9 +592,13 @@
   .cname { font: var(--text-body); color: var(--paper); font-family: var(--mono); }
   .cdetail { font: var(--text-detail); color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .box:focus-within { border-color: color-mix(in srgb, var(--iris) 28%, var(--composer)); }
-  textarea { background: transparent; border: none; resize: none; padding: 0; min-height: 20px; max-height: 200px; font: var(--text-body); line-height: 20px; color: var(--paper); field-sizing: content; }
+  .input-wrap { position: relative; display: flex; flex-direction: column; }
+  textarea { background: transparent; border: none; resize: none; padding: 0; min-height: 20px; max-height: 200px; font: var(--text-body); line-height: 20px; color: var(--paper); field-sizing: content; width: 100%; }
   textarea::placeholder { color: var(--text3); }
   textarea:focus, textarea:focus-visible { border: none; outline: none; box-shadow: none; }
+  .ghost-suggestion { position: absolute; inset: 0; display: flex; align-items: center; gap: var(--space-8); margin: 0; padding: 0 var(--space-8) 0 0; border: 0; background: transparent; font: var(--text-body); line-height: 20px; color: var(--text3); text-align: left; pointer-events: auto; cursor: text; overflow: hidden; }
+  .ghost-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.72; }
+  .ghost-kbd { flex: none; padding: 1px 5px; border-radius: var(--radius-chip); border: 1px solid var(--line2); background: var(--surface); font: var(--text-label); font-family: var(--mono); line-height: 15px; color: var(--text2); }
   .bar { display: flex; align-items: center; gap: var(--space-4); margin-left: calc(-1 * var(--space-8)); min-width: 0; }
   .bar :global(.mic) { width: 28px; height: 28px; color: var(--text2); }
   /* The plus as the Mac's `ComposerIcon`: a 26 pt square, quiet until hovered. */

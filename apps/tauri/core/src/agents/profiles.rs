@@ -34,6 +34,48 @@ pub struct AgentProfile {
     pub auth: Option<AgentAuthMethod>,
 }
 
+/// The environment variable that points a CLI agent at a dedicated account directory (`None` for single-account agents).
+pub fn profile_home_variable(kind: AgentKind) -> Option<&'static str> {
+    if let Some(var) = kind.home_variable() {
+        return Some(var);
+    }
+    match kind {
+        AgentKind::Opencode => Some("OPENCODE_CONFIG_DIR"),
+        AgentKind::Cursor => Some("CURSOR_CONFIG_DIR"),
+        AgentKind::Grok => Some("GROK_HOME"),
+        _ => None,
+    }
+}
+
+/// The environment variable value for a profile stored at `home`.
+pub fn profile_home_value(kind: AgentKind, home: &str) -> String {
+    kind.home_value(home)
+}
+
+/// The account folder a running agent's `profile_home_variable` points at.
+pub fn profile_home_from_variable(kind: AgentKind, value: &str) -> String {
+    kind.home_from_variable(value)
+}
+
+/// Suggested folder for an extra account (`~/.claude-werk`, `~/.gemini-werk/.gemini`, `~/.opencode-werk`, etc.).
+pub fn profile_suggested_home(kind: AgentKind, slug: &str) -> PathBuf {
+    let home = home_dir();
+    match kind {
+        AgentKind::Claude => home.join(format!(".claude-{slug}")),
+        AgentKind::Codex => home.join(format!(".codex-{slug}")),
+        AgentKind::Gemini => home.join(format!(".gemini-{slug}")).join(".gemini"),
+        AgentKind::Opencode => home.join(format!(".opencode-{slug}")),
+        AgentKind::Cursor => home.join(format!(".cursor-{slug}")),
+        AgentKind::Grok => home.join(format!(".grok-{slug}")),
+        AgentKind::Antigravity => kind.default_home(),
+    }
+}
+
+/// Whether `kind` supports multiple side-by-side account profiles via a dedicated config directory.
+pub fn supports_multi_account_profiles(kind: AgentKind) -> bool {
+    profile_home_variable(kind).is_some()
+}
+
 impl AgentProfile {
     pub fn default_profile(kind: AgentKind) -> Self {
         Self { id: kind.id().into(), kind, label: String::new(), home: None, auth: None }
@@ -59,8 +101,8 @@ impl AgentProfile {
     /// De omgevingsvariabele die de agent naar deze map wijst; leeg voor het hoofdaccount.
     pub fn environment(&self) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
-        if let (Some(home), Some(variable)) = (&self.home, self.kind.home_variable()) {
-            env.insert(variable.into(), self.kind.home_value(home));
+        if let (Some(home), Some(variable)) = (&self.home, profile_home_variable(self.kind)) {
+            env.insert(variable.into(), profile_home_value(self.kind, home));
         }
         env
     }
@@ -90,11 +132,12 @@ impl AgentProfile {
 
     fn with_prefix(&self, command: &str) -> String {
         let mut prefix = String::new();
-        if let (Some(home), Some(variable)) = (&self.home, self.kind.home_variable()) {
+        if let (Some(home), Some(variable)) = (&self.home, profile_home_variable(self.kind)) {
+            let val = profile_home_value(self.kind, home);
             if cfg!(windows) {
-                prefix = format!("$env:{variable}='{}'; ", self.kind.home_value(home).replace('\'', "''"));
+                prefix = format!("$env:{variable}='{}'; ", val.replace('\'', "''"));
             } else {
-                prefix = format!("{variable}={} ", shell_quote(&self.kind.home_value(home)));
+                prefix = format!("{variable}={} ", shell_quote(&val));
             }
         }
         format!("{prefix}{command}")
@@ -235,7 +278,7 @@ impl ProfileStore {
     pub fn add(&mut self, kind: AgentKind, label: &str, home: Option<PathBuf>) -> AgentProfile {
         let name = label.trim();
         let slug = slug(if name.is_empty() { "werk" } else { name });
-        let suggested = |s: &str| kind.suggested_home(s);
+        let suggested = |s: &str| profile_suggested_home(kind, s);
         let mut folder = home.clone().unwrap_or_else(|| suggested(&slug));
         if home.is_none() {
             let mut counter = 2;
@@ -306,7 +349,7 @@ impl ProfileStore {
     pub fn adopt_existing(&mut self, running: &[(AgentKind, String)]) -> bool {
         let mut folders = self.discover(&home_dir());
         for (kind, home) in running {
-            if home.is_empty() || !kind.supports_profiles() {
+            if home.is_empty() || !supports_multi_account_profiles(*kind) {
                 continue;
             }
             let path = PathBuf::from(normalize(home));
@@ -326,17 +369,24 @@ impl ProfileStore {
         changed
     }
 
-    /// Accountmappen (`~/.claude-werk`, `~/.codex-klant`) met een inlog die nog niet in Nook staan.
+    /// Accountmappen (`~/.claude-werk`, `~/.codex-klant`, `~/.opencode-werk`, `~/.cursor-werk`, `~/.grok-werk`) met een
+    /// inlog die nog niet in Nook staan.
     pub fn discover(&self, home: &Path) -> Vec<(AgentKind, PathBuf)> {
         let Ok(entries) = std::fs::read_dir(home) else { return vec![] };
         let mut names: Vec<String> = entries.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         names.sort();
         let mut found = vec![];
         for name in names {
-            let (kind, marker) = if name.starts_with(".claude-") || name.starts_with(".claude_") {
-                (AgentKind::Claude, ".claude.json")
+            let (kind, markers): (AgentKind, &[&str]) = if name.starts_with(".claude-") || name.starts_with(".claude_") {
+                (AgentKind::Claude, &[".claude.json"])
             } else if name.starts_with(".codex-") || name.starts_with(".codex_") {
-                (AgentKind::Codex, "auth.json")
+                (AgentKind::Codex, &["auth.json"])
+            } else if name.starts_with(".opencode-") || name.starts_with(".opencode_") {
+                (AgentKind::Opencode, &["auth.json", "opencode.json"])
+            } else if name.starts_with(".cursor-") || name.starts_with(".cursor_") {
+                (AgentKind::Cursor, &["cli-config.json", "auth.json"])
+            } else if name.starts_with(".grok-") || name.starts_with(".grok_") {
+                (AgentKind::Grok, &["auth.json", "config.json", "settings.json"])
             } else if name.starts_with(".gemini-") || name.starts_with(".gemini_") {
                 // GEMINI_CLI_HOME stands in for the home folder: the account's data is in its `.gemini`.
                 let data = home.join(&name).join(".gemini");
@@ -349,7 +399,8 @@ impl ProfileStore {
                 continue;
             };
             let path = home.join(&name);
-            if path.join(marker).exists() && self.profile_for_home(kind, &path.to_string_lossy()).is_none() {
+            let signed_in = markers.iter().any(|m| path.join(m).exists());
+            if signed_in && self.profile_for_home(kind, &path.to_string_lossy()).is_none() {
                 found.push((kind, path));
             }
         }
@@ -427,5 +478,40 @@ mod tests {
     fn quoting() {
         assert_eq!(shell_quote("/home/x/.claude-werk"), "/home/x/.claude-werk");
         assert_eq!(shell_quote("/home/x/My Projects"), "'/home/x/My Projects'");
+    }
+
+    #[test]
+    fn multi_account_profiles_and_discovery_for_all_cli_agents() {
+        let dir = std::env::temp_dir().join(format!("nook-profiles-all-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = ProfileStore::load(Some(dir.join("p.json")));
+
+        for (kind, folder_name, marker, var) in [
+            (AgentKind::Opencode, ".opencode-werk", "auth.json", "OPENCODE_CONFIG_DIR"),
+            (AgentKind::Cursor, ".cursor-klant", "cli-config.json", "CURSOR_CONFIG_DIR"),
+            (AgentKind::Grok, ".grok-prive", "auth.json", "GROK_HOME"),
+        ] {
+            assert_eq!(profile_home_variable(kind), Some(var));
+            assert!(supports_multi_account_profiles(kind));
+            let folder = dir.join(folder_name);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join(marker), "{}").unwrap();
+            let p = AgentProfile {
+                id: format!("{}-werk", kind.id()),
+                kind,
+                label: "Werk".into(),
+                home: Some(folder.to_string_lossy().into_owned()),
+                auth: None,
+            };
+            assert_eq!(p.environment().get(var).map(String::as_str), Some(folder.to_string_lossy().as_ref()));
+            assert!(p.launch_command().contains(var));
+        }
+
+        let discovered = store.discover(&dir);
+        assert_eq!(discovered.len(), 3);
+        assert!(discovered.iter().any(|(k, p)| *k == AgentKind::Opencode && p.ends_with(".opencode-werk")));
+        assert!(discovered.iter().any(|(k, p)| *k == AgentKind::Cursor && p.ends_with(".cursor-klant")));
+        assert!(discovered.iter().any(|(k, p)| *k == AgentKind::Grok && p.ends_with(".grok-prive")));
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

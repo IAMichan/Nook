@@ -16,7 +16,16 @@
   import SnoozeOptions from "./SnoozeOptions.svelte";
   import { TIMELINE_DETAILS, timelineDetail, type TimelineDetail } from "../../lib/workspace/timeline-detail";
   import { announcementLevel, SCREEN_READER_LEVELS, type ScreenReaderAnnouncements } from "../../lib/workspace/announcements";
-  import { loadRules as loadSettleRules, MAX_DAYS as settleMax, MIN_DAYS as settleMin, saveRules as saveSettleRules, type AutoSettleRules } from "../../lib/auto-settle";
+  import {
+    loadRules as loadSettleRules,
+    loadSettleActions,
+    MAX_DAYS as settleMax,
+    MIN_DAYS as settleMin,
+    saveRules as saveSettleRules,
+    saveSettleActions,
+    type AutoSettleRules,
+    type SettleActionRules,
+  } from "../../lib/auto-settle";
 
   // The Mac's names for the timeline details and the screen reader levels.
   const detailNames: Record<TimelineDetail, string> = {
@@ -31,11 +40,39 @@
     everything: tr("Stappen en antwoorden", "Steps and replies"),
   };
 
-  // Settling old sessions is kept for every window in localStorage, as the snooze options.
-  let settleRules = $state<AutoSettleRules>(loadSettleRules());
+  // Settling old sessions & settle actions are kept for every window in localStorage, as the snooze options.
+  let settleRules = $state<Required<AutoSettleRules>>(loadSettleRules());
   function setSettleRules(next: AutoSettleRules) {
     saveSettleRules(next);
     settleRules = loadSettleRules();
+  }
+
+  let settleActions = $state<SettleActionRules>(loadSettleActions());
+  function setSettleActions(next: SettleActionRules) {
+    saveSettleActions(next);
+    settleActions = loadSettleActions();
+  }
+
+  // AG-70 Text generation preferences (next-prompt suggestion toggle + generator selectors).
+  let suggestNextPrompt = $state<boolean>((() => {
+    try { return localStorage.getItem("nook.suggestNextPrompt") !== "false"; } catch { return true; }
+  })());
+  function setSuggestNextPrompt(v: boolean) {
+    suggestNextPrompt = v;
+    try { localStorage.setItem("nook.suggestNextPrompt", v ? "true" : "false"); } catch {}
+  }
+
+  let titleGenerator = $state<string>((() => {
+    try { return localStorage.getItem("nook.textGenerator.titles") || "automatic"; } catch { return "automatic"; }
+  })());
+  let commitGenerator = $state<string>((() => {
+    try { return localStorage.getItem("nook.textGenerator.commits") || "automatic"; } catch { return "automatic"; }
+  })());
+  let promptGenerator = $state<string>((() => {
+    try { return localStorage.getItem("nook.textGenerator.nextPrompt") || "automatic"; } catch { return "automatic"; }
+  })());
+  function saveGenerator(key: string, val: string) {
+    try { localStorage.setItem(key, val); } catch {}
   }
 
   let { part = "sessions" }: { part?: "sessions" | "worktrees" | "openIn" | "bridge" } = $props();
@@ -163,6 +200,30 @@
           value={automation.settings.titleInstructions ?? ""} onchange={(e) => { automation!.settings.titleInstructions = e.currentTarget.value.trim(); saveAutomation(); }} />
       </label>
     {/if}
+    <label class="row">
+      <span>{tr("Volgende prompt voorstellen", "Suggest the next prompt")}<br /><small>{tr("Stelt na een antwoord van de agent een vervolgbericht voor in het lege invoerveld (Tab neemt over, Esc verbergt).", "Suggests a follow-up prompt in the empty composer after the agent replies (Tab accepts, Esc dismisses).")}</small></span>
+      <input type="checkbox" role="switch" checked={suggestNextPrompt} onchange={(e) => setSuggestNextPrompt(e.currentTarget.checked)} />
+    </label>
+    <Fold title={tr("Tekstgeneratie", "Text generation")} summary={titleGenerator === "automatic" ? tr("Automatisch", "Automatic") : (workspace.provider(titleGenerator)?.name ?? titleGenerator)}>
+      <label class="row"><span>{tr("Sessietitels genereren met", "Generate session titles with")}</span>
+        <select value={titleGenerator} onchange={(e) => { titleGenerator = e.currentTarget.value; saveGenerator("nook.textGenerator.titles", titleGenerator); }}>
+          <option value="automatic">{tr("Automatisch (snelste model)", "Automatic (fastest model)")}</option>
+          {#each providers as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
+        </select>
+      </label>
+      <label class="row"><span>{tr("Commit- en PR-tekst genereren met", "Generate commit and PR text with")}</span>
+        <select value={commitGenerator} onchange={(e) => { commitGenerator = e.currentTarget.value; saveGenerator("nook.textGenerator.commits", commitGenerator); }}>
+          <option value="automatic">{tr("Automatisch (snelste model)", "Automatic (fastest model)")}</option>
+          {#each providers as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
+        </select>
+      </label>
+      <label class="row"><span>{tr("Volgende prompt voorstellen met", "Suggest next prompt with")}</span>
+        <select value={promptGenerator} onchange={(e) => { promptGenerator = e.currentTarget.value; saveGenerator("nook.textGenerator.nextPrompt", promptGenerator); }}>
+          <option value="automatic">{tr("Automatisch (snelste model)", "Automatic (fastest model)")}</option>
+          {#each providers as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
+        </select>
+      </label>
+    </Fold>
     <label class="row stacked">
       <span>{tr("Instructies voor elke agent", "Instructions for every agent")}<br /><small>{tr("Nook geeft ze bij de start aan elke coding agent, voor de eigen instructies van de sessie, ook aan agents die geen CLAUDE.md of AGENTS.md lezen. Een wijziging telt vanaf de volgende start van een agent.", "Nook gives these to every coding agent at launch, before the session's own instructions, also to agents that read no CLAUDE.md or AGENTS.md. A change counts from an agent's next start.")}</small></span>
       <textarea rows="3" placeholder={tr("Regels die elke agent hier volgt, bijv. “Draai de tests voor je commit.”", "Rules every agent follows here, e.g. “Run the tests before you commit.”")}
@@ -200,7 +261,7 @@
 
   <h3>{tr("Opruimen", "Tidying up")}</h3>
   <div class="group">
-    <!-- `AutoSettleRulesRows` on the Mac; applied by the Agents list (`lib/auto-settle.ts`). -->
+    <!-- `AutoSettleRulesRows` on the Mac; applied by the Agents list (`lib/auto-settle.ts`, AG-110 & AG-111). -->
     <label class="row"><span>{tr("Oude sessies automatisch afhandelen", "Settle old sessions automatically")}</span>
       <input type="checkbox" role="switch" checked={settleRules.enabled} onchange={(e) => setSettleRules({ ...settleRules, enabled: e.currentTarget.checked })} />
     </label>
@@ -210,7 +271,27 @@
           aria-label={tr("Dagen stil", "Days of quiet")}
           onchange={(e) => { setSettleRules({ ...settleRules, inactivityDays: Number(e.currentTarget.value) }); e.currentTarget.value = String(settleRules.inactivityDays); }} />
       </label>
+      <label class="row"><span>{tr("Afhandelen zodra de pull request is samengevoegd", "Settle when pull request is merged")}</span>
+        <input type="checkbox" role="switch" checked={settleRules.settleOnMergedPullRequest} onchange={(e) => setSettleRules({ ...settleRules, settleOnMergedPullRequest: e.currentTarget.checked })} />
+      </label>
+      <label class="row"><span>{tr("Afhandelen zodra de pull request is gesloten", "Settle when pull request is closed")}</span>
+        <input type="checkbox" role="switch" checked={settleRules.settleOnClosedPullRequest} onchange={(e) => setSettleRules({ ...settleRules, settleOnClosedPullRequest: e.currentTarget.checked })} />
+      </label>
+      <label class="row"><span>{tr("Openhouden zolang er een open pull request is", "Keep in inbox while pull request is open")}</span>
+        <input type="checkbox" role="switch" checked={settleRules.keepWithOpenPullRequest} onchange={(e) => setSettleRules({ ...settleRules, keepWithOpenPullRequest: e.currentTarget.checked })} />
+      </label>
     {/if}
+    <label class="row"><span>{tr("Devservers stoppen bij afhandelen", "Stop dev servers when settling")}<br /><small>{tr("Stopt lokale servers die bij de map horen zodra de laatste open sessie in die map wordt afgehandeld.", "Stops local dev servers in the session's folder when the last unsettled session in that folder settles.")}</small></span>
+      <input type="checkbox" role="switch" checked={settleActions.stopDevServersOnSettle} onchange={(e) => setSettleActions({ ...settleActions, stopDevServersOnSettle: e.currentTarget.checked })} />
+    </label>
+    <label class="row"><span>{tr("Stille terminals sluiten bij afhandelen", "Close idle terminals when settling")}</span>
+      <input type="checkbox" role="switch" checked={settleActions.closeIdleTerminalsOnSettle} onchange={(e) => setSettleActions({ ...settleActions, closeIdleTerminalsOnSettle: e.currentTarget.checked })} />
+    </label>
+    <label class="row stacked">
+      <span>{tr("Commando uitvoeren bij afhandelen", "Run command when settling")}<br /><small>{tr("Draait in de map van de sessie zodra de laatste open sessie daar wordt afgehandeld.", "Runs in the session's working folder when the last unsettled session there settles.")}</small></span>
+      <input placeholder={tr("bijv. docker compose stop", "e.g. docker compose stop")} value={settleActions.settleCommand}
+        onchange={(e) => setSettleActions({ ...settleActions, settleCommand: e.currentTarget.value.trim() })} />
+    </label>
     <label class="row"><span>{tr("Automatisch archiveren na", "Archive automatically after")}</span>
       <select bind:value={s.autoArchiveDays} onchange={save}>
         <option value={0}>{tr("Nooit", "Never")}</option><option value={1}>{tr("1 dag", "1 day")}</option>{#each [7, 30, 90] as n (n)}<option value={n}>{tr("{n} dagen", "{n} days", { n })}</option>{/each}

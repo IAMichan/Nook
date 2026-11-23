@@ -396,3 +396,615 @@ pub fn buddy_breathe(app: AppHandle) {
     crate::services::buddy::breathe(&app);
 }
 
+// ── Music & Spotify Web API PKCE Commands (SV-30..SV-38, BR-28) ──
+
+use nook_core::platform::NowPlaying;
+use nook_core::services::dictation_lang::{self, DictationLanguageSettings};
+use nook_core::services::music::{
+    LoadState, MusicArtist, MusicOutput, MusicPlayerStats, MusicPlaylist, MusicTrack, PlayQueue, QueueEntry,
+};
+use nook_core::services::music_history::{MusicHistory, MusicListening, MusicPlay, MusicStats, StatsPeriod};
+use nook_core::services::spotify::{self, SpotifyConfig, SpotifySearchCatalog};
+use nook_core::services::transcribe::{self, ReusableModelCopy, SpeechModelCatalogEntry};
+
+static MUSIC_QUEUE: std::sync::LazyLock<Mutex<PlayQueue>> = std::sync::LazyLock::new(|| Mutex::new(PlayQueue::default()));
+static MUSIC_LISTENING: std::sync::LazyLock<Mutex<MusicListening>> =
+    std::sync::LazyLock::new(|| Mutex::new(MusicListening::default()));
+
+/// Synchronizes the currently playing track from `platform.media.now_playing()` into [`MusicHistory`] and [`MusicListening`].
+fn sync_now_playing(app: &AppHandle) -> (Option<NowPlaying>, MusicHistory) {
+    let services = app.state::<Services>();
+    let now_playing = services.platform.media.now_playing();
+    let mut history = MusicHistory::load();
+    let mut dirty = false;
+
+    let draft_play = now_playing.as_ref().and_then(|np| {
+        let title = np.title.trim();
+        if title.is_empty() {
+            return None;
+        }
+        let track = MusicTrack {
+            id: String::new(),
+            title: title.to_string(),
+            artist: np.artist.clone(),
+            duration: np.duration.unwrap_or(0.0).max(0.0) as u32,
+            artwork_url: np.artwork.clone(),
+            album: np.album.clone(),
+        };
+        if np.playing {
+            let before = history.recent.tracks.first().cloned();
+            history.recent.add(track);
+            if history.recent.tracks.first() != before.as_ref() {
+                dirty = true;
+            }
+        }
+        Some(MusicPlay {
+            id: String::new(),
+            title: title.to_string(),
+            artist: np.artist.clone(),
+            album: np.album.clone(),
+            app: if np.app.is_empty() { "Player".into() } else { np.app.clone() },
+            artwork_url: np.artwork.clone(),
+            duration: np.duration.unwrap_or(0.0).max(0.0) as u32,
+            listened: 0,
+            played_at: chrono::Utc::now(),
+        })
+    });
+
+    let is_playing = now_playing.as_ref().is_some_and(|n| n.playing);
+    let finished = MUSIC_LISTENING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .update(draft_play, is_playing, chrono::Utc::now());
+    if let Some(play) = finished {
+        history.add(play);
+        dirty = true;
+    }
+    if dirty {
+        let _ = history.save();
+    }
+    (now_playing, history)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicOverviewView {
+    pub spotify_connected: bool,
+    pub spotify_client_id: String,
+    pub spotify_redirect_uri: String,
+    pub spotify_user: Option<String>,
+    pub spotify_pending_url: Option<String>,
+    pub now_playing: Option<NowPlaying>,
+    pub recent: Vec<MusicTrack>,
+    pub searches: Vec<String>,
+    pub nook_queue: Vec<QueueEntry>,
+    pub spotify_queue: Vec<MusicTrack>,
+    pub playlists: Vec<MusicPlaylist>,
+    pub outputs: Vec<MusicOutput>,
+    pub streak: u32,
+    pub week_seconds: u32,
+    pub week_plays: u32,
+}
+
+#[tauri::command]
+pub async fn music_overview(app: AppHandle) -> Res<MusicOverviewView> {
+    let (now_playing, history) = sync_now_playing(&app);
+    let cfg = SpotifyConfig::load();
+    let connected = cfg.connected();
+    let nook_queue = MUSIC_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).entries.clone();
+    let local_vol = app.state::<Services>().platform.media.volume();
+    let local_out = vec![spotify::local_computer_output(local_vol)];
+
+    let (spotify_queue, playlists, connect_devs) = if connected {
+        let q = spotify::player_queue().await.unwrap_or_default();
+        let p = spotify::user_playlists().await.unwrap_or_default();
+        let d = spotify::connect_devices().await.unwrap_or_default();
+        (q, p, d)
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
+
+    let outputs = spotify::merge_outputs(local_out, connect_devs);
+    let now = chrono::Utc::now();
+    let offset = *chrono::Local::now().offset();
+    let week = MusicStats::new(&history.plays, StatsPeriod::Week, now, offset);
+
+    Ok(MusicOverviewView {
+        spotify_connected: connected,
+        spotify_client_id: cfg.client_id,
+        spotify_redirect_uri: cfg.redirect_uri,
+        spotify_user: cfg.session.as_ref().and_then(|s| s.display_name.clone().or_else(|| s.user_id.clone())),
+        spotify_pending_url: cfg.pending.as_ref().map(|p| p.authorize_url.clone()),
+        now_playing,
+        recent: history.recent.tracks,
+        searches: history.searches,
+        nook_queue,
+        spotify_queue,
+        playlists,
+        outputs,
+        streak: week.streak,
+        week_seconds: week.seconds,
+        week_plays: week.plays,
+    })
+}
+
+#[tauri::command]
+pub async fn music_search(query: String, remember: Option<bool>, forget: Option<String>) -> Res<SpotifySearchCatalog> {
+    let mut history = MusicHistory::load();
+    if let Some(f) = forget.as_deref().filter(|s| !s.is_empty()) {
+        history.forget_search(f);
+        let _ = history.save();
+    }
+    let clean = query.trim();
+    if clean.is_empty() {
+        return Ok(SpotifySearchCatalog::default());
+    }
+    if remember.unwrap_or(true) {
+        history.remember_search(clean);
+        let _ = history.save();
+    }
+    let mut catalog = spotify::search_catalog(clean, 24).await;
+    if catalog.tracks.is_empty() {
+        let lower = clean.to_lowercase();
+        let local_matches: Vec<MusicTrack> = history
+            .recent
+            .tracks
+            .iter()
+            .filter(|t| {
+                t.title.to_lowercase().contains(&lower)
+                    || t.artist.to_lowercase().contains(&lower)
+                    || t.album.to_lowercase().contains(&lower)
+            })
+            .cloned()
+            .collect();
+        if !local_matches.is_empty() {
+            catalog.tracks = local_matches;
+        }
+    }
+    Ok(catalog)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicQueueView {
+    pub state: LoadState,
+    pub nook_queue: Vec<QueueEntry>,
+    pub spotify_queue: Vec<MusicTrack>,
+}
+
+#[tauri::command]
+pub async fn music_queue(remove_id: Option<String>, clear: Option<bool>, play_entry_id: Option<String>) -> Res<MusicQueueView> {
+    let mut to_play: Option<MusicTrack> = None;
+    {
+        let mut q = MUSIC_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        if clear == Some(true) {
+            q.clear();
+        }
+        if let Some(rid) = remove_id.as_deref().filter(|s| !s.is_empty()) {
+            q.remove(rid);
+        }
+        if let Some(pid) = play_entry_id.as_deref().filter(|s| !s.is_empty()) {
+            to_play = q.take(Some(pid));
+        }
+    }
+    if let Some(track) = to_play {
+        if !track.id.is_empty() {
+            let _ = spotify::play_uri(&track.id, None, None).await;
+        }
+        let mut h = MusicHistory::load();
+        h.recent.add(track);
+        let _ = h.save();
+    }
+    let nook_queue = MUSIC_QUEUE.lock().unwrap_or_else(|e| e.into_inner()).entries.clone();
+    match spotify::player_queue().await {
+        Ok(spotify_queue) => Ok(MusicQueueView {
+            state: LoadState::Done,
+            nook_queue,
+            spotify_queue,
+        }),
+        Err(f) => Ok(MusicQueueView {
+            state: LoadState::from_failure(&f),
+            nook_queue,
+            spotify_queue: Vec::new(),
+        }),
+    }
+}
+
+#[tauri::command]
+pub async fn music_queue_add(
+    track: MusicTrack,
+    play_now: Option<bool>,
+    context_uri: Option<String>,
+    device_id: Option<String>,
+) -> Res<MusicQueueView> {
+    if play_now == Some(true) {
+        let target = if track.id.is_empty() {
+            context_uri.clone().unwrap_or_default()
+        } else {
+            track.id.clone()
+        };
+        if !target.is_empty() {
+            spotify::play_uri(&target, context_uri.as_deref(), device_id.as_deref())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if !track.title.is_empty() {
+            let mut h = MusicHistory::load();
+            h.recent.add(track);
+            let _ = h.save();
+        }
+    } else {
+        let mut added_remote = false;
+        if nook_core::services::music::is_spotify_uri(&track.id) {
+            added_remote = spotify::add_to_player_queue(&track.id).await.is_ok();
+        }
+        if !added_remote {
+            let mut q = MUSIC_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+            let mut queued_track = track;
+            if queued_track.id.is_empty() {
+                queued_track.id = format!("local:{}:{}", queued_track.artist, queued_track.title);
+            }
+            q.append(queued_track);
+        } else {
+            let mut q = MUSIC_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+            q.append(track);
+        }
+    }
+    music_queue(None, None, None).await
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicPlaylistsView {
+    pub state: LoadState,
+    pub playlists: Vec<MusicPlaylist>,
+    pub selected_id: Option<String>,
+    pub tracks: Vec<MusicTrack>,
+}
+
+#[tauri::command]
+pub async fn music_playlists(playlist_id: Option<String>) -> Res<MusicPlaylistsView> {
+    let playlists = match spotify::user_playlists().await {
+        Ok(list) => list,
+        Err(f) => {
+            return Ok(MusicPlaylistsView {
+                state: LoadState::from_failure(&f),
+                playlists: Vec::new(),
+                selected_id: None,
+                tracks: Vec::new(),
+            })
+        }
+    };
+    let selected = playlist_id
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| playlists.first().map(|p| p.id.clone()));
+    let tracks = if let Some(sel) = selected.as_deref() {
+        spotify::playlist_tracks(sel).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    Ok(MusicPlaylistsView {
+        state: LoadState::Done,
+        playlists,
+        selected_id: selected,
+        tracks,
+    })
+}
+
+#[tauri::command]
+pub async fn music_playlist_create(name: String, description: Option<String>, public: Option<bool>) -> Res<MusicPlaylist> {
+    spotify::create_playlist(&name, description.as_deref(), public.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn music_playlist_modify(
+    playlist_id: String,
+    action: String,
+    name: Option<String>,
+    track_uri: Option<String>,
+) -> Res<MusicPlaylistsView> {
+    match action.as_str() {
+        "rename" => {
+            let new_name = name.unwrap_or_default();
+            spotify::rename_playlist(&playlist_id, &new_name).await.map_err(|e| e.to_string())?;
+        }
+        "delete" => {
+            spotify::delete_playlist(&playlist_id).await.map_err(|e| e.to_string())?;
+            return music_playlists(None).await;
+        }
+        "add_track" => {
+            let uri = track_uri.unwrap_or_default();
+            spotify::add_tracks_to_playlist(&playlist_id, &[uri]).await.map_err(|e| e.to_string())?;
+        }
+        "remove_track" => {
+            let uri = track_uri.unwrap_or_default();
+            spotify::remove_tracks_from_playlist(&playlist_id, &[uri])
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        "play" => {
+            let target = track_uri.as_deref().unwrap_or(&playlist_id);
+            spotify::play_uri(target, Some(&playlist_id), None)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        other => return Err(format!("Unknown playlist action: {other}")),
+    }
+    music_playlists(Some(playlist_id)).await
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicLibraryView {
+    pub state: LoadState,
+    pub time_range: String,
+    pub player_stats: MusicPlayerStats,
+    pub recent: Vec<MusicTrack>,
+    pub local_top_tracks: Vec<nook_core::services::music_history::TrackRank>,
+    pub local_top_artists: Vec<nook_core::services::music_history::ArtistRank>,
+}
+
+#[tauri::command]
+pub async fn music_library(time_range: Option<String>) -> Res<MusicLibraryView> {
+    let range = time_range.unwrap_or_else(|| "medium_term".into());
+    let mut history = MusicHistory::load();
+    if let Ok(imported) = spotify::recent_plays().await {
+        for p in imported.iter().rev() {
+            history.recent.add(p.track());
+        }
+        if history.merge(imported) {
+            let _ = history.save();
+        }
+    }
+    let now = chrono::Utc::now();
+    let offset = *chrono::Local::now().offset();
+    let stats_month = MusicStats::new(&history.plays, StatsPeriod::Month, now, offset);
+
+    let (state, player_stats) = match spotify::top_stats(Some(&range)).await {
+        Ok(ps) => (LoadState::Done, ps),
+        Err(f) => {
+            let fallback = MusicPlayerStats {
+                app: "Nook".into(),
+                tracks: stats_month.top_tracks.iter().map(|r| r.track.clone()).collect(),
+                artists: stats_month
+                    .top_artists
+                    .iter()
+                    .map(|a| MusicArtist {
+                        name: a.name.clone(),
+                        plays: Some(a.plays),
+                        artwork_url: a.artwork_url.clone(),
+                    })
+                    .collect(),
+            };
+            (LoadState::from_failure(&f), fallback)
+        }
+    };
+
+    Ok(MusicLibraryView {
+        state,
+        time_range: range,
+        player_stats,
+        recent: history.recent.tracks,
+        local_top_tracks: stats_month.top_tracks,
+        local_top_artists: stats_month.top_artists,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicHistoryStatsView {
+    pub stats: MusicStats,
+    pub change_percent: Option<i32>,
+    pub total_plays: usize,
+    pub recent: Vec<MusicTrack>,
+    pub searches: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn music_history_stats(period: Option<StatsPeriod>, clear: Option<bool>) -> Res<MusicHistoryStatsView> {
+    let mut history = MusicHistory::load();
+    if clear == Some(true) {
+        history.clear();
+        let _ = history.save();
+    } else if let Ok(imported) = spotify::recent_plays().await {
+        if history.merge(imported) {
+            let _ = history.save();
+        }
+    }
+    let chosen = period.unwrap_or(StatsPeriod::Week);
+    let now = chrono::Utc::now();
+    let offset = *chrono::Local::now().offset();
+    let stats = MusicStats::new(&history.plays, chosen, now, offset);
+    let change_percent = stats.change();
+    Ok(MusicHistoryStatsView {
+        stats,
+        change_percent,
+        total_plays: history.plays.len(),
+        recent: history.recent.tracks,
+        searches: history.searches,
+    })
+}
+
+#[tauri::command]
+pub async fn music_outputs(app: AppHandle) -> Res<Vec<MusicOutput>> {
+    let local_vol = app.state::<Services>().platform.media.volume();
+    let local = vec![spotify::local_computer_output(local_vol)];
+    let connect = spotify::connect_devices().await.unwrap_or_default();
+    Ok(spotify::merge_outputs(local, connect))
+}
+
+#[tauri::command]
+pub async fn music_select_output(app: AppHandle, device_id: String, play: Option<bool>) -> Res<Vec<MusicOutput>> {
+    if !device_id.trim().is_empty() && device_id != "local:default" {
+        spotify::select_connect_device(&device_id, play.unwrap_or(true))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    music_outputs(app).await
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotifyConnectStatus {
+    pub connected: bool,
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub authorize_url: Option<String>,
+    pub user_id: Option<String>,
+    pub display_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn music_spotify_connect(
+    app: AppHandle,
+    client_id: Option<String>,
+    redirect_uri: Option<String>,
+    callback_code: Option<String>,
+) -> Res<SpotifyConnectStatus> {
+    if let Some(code) = callback_code.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let session = spotify::complete_pkce(code).await.map_err(|e| e.to_string())?;
+        let cfg = SpotifyConfig::load();
+        return Ok(SpotifyConnectStatus {
+            connected: true,
+            client_id: session.client_id,
+            redirect_uri: cfg.redirect_uri,
+            authorize_url: None,
+            user_id: session.user_id,
+            display_name: session.display_name,
+        });
+    }
+
+    let cfg = SpotifyConfig::load();
+    let cid = client_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&cfg.client_id);
+    let pending = spotify::begin_pkce(cid, redirect_uri.as_deref()).map_err(|e| e.to_string())?;
+    let _ = app.state::<Services>().platform.system.open_url(&pending.authorize_url);
+
+    let expected_state = pending.state.clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(code) = spotify::await_loopback_callback(expected_state, Duration::from_secs(180)).await {
+            if let Ok(session) = spotify::complete_pkce(&code).await {
+                let _ = tauri::Emitter::emit(&app_clone, "music-spotify-connected", &session.display_name);
+            }
+        }
+    });
+
+    Ok(SpotifyConnectStatus {
+        connected: false,
+        client_id: pending.client_id,
+        redirect_uri: pending.redirect_uri,
+        authorize_url: Some(pending.authorize_url),
+        user_id: None,
+        display_name: None,
+    })
+}
+
+#[tauri::command]
+pub fn music_spotify_disconnect() -> Res<SpotifyConnectStatus> {
+    spotify::disconnect();
+    let cfg = SpotifyConfig::load();
+    Ok(SpotifyConnectStatus {
+        connected: false,
+        client_id: cfg.client_id,
+        redirect_uri: cfg.redirect_uri,
+        authorize_url: None,
+        user_id: None,
+        display_name: None,
+    })
+}
+
+// ── SV-47, SV-48, SV-49: Voice Multi-Language Dictation & Hugging Face / Parakeet Model Discovery Commands ──
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictationLanguageOption {
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceDictationLanguagesView {
+    pub settings: DictationLanguageSettings,
+    pub candidates: Vec<String>,
+    pub available: Vec<DictationLanguageOption>,
+    pub context_preview: String,
+}
+
+#[tauri::command]
+pub fn voice_dictation_languages(
+    app: AppHandle,
+    update: Option<DictationLanguageSettings>,
+) -> Res<VoiceDictationLanguagesView> {
+    let mut settings = match update {
+        Some(mut next) => {
+            next.normalize();
+            let _ = next.save();
+            next
+        }
+        None => DictationLanguageSettings::load(),
+    };
+    settings.normalize();
+    let app_lang = nook_core::i18n::language();
+    let sys_locale: Vec<String> = std::env::var("LC_ALL")
+        .or_else(|_| std::env::var("LANG"))
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .into_iter()
+        .collect();
+    let candidates: Vec<String> = settings
+        .candidates(&sys_locale, &[], app_lang)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let available: Vec<DictationLanguageOption> = dictation_lang::LANGUAGES
+        .iter()
+        .map(|(code, name)| DictationLanguageOption {
+            code: (*code).to_string(),
+            name: (*name).to_string(),
+        })
+        .collect();
+    let context_preview = crate::services::flow::initial_prompt(&app);
+    Ok(VoiceDictationLanguagesView {
+        settings,
+        candidates,
+        available,
+        context_preview,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceModelsView {
+    pub catalog: Vec<SpeechModelCatalogEntry>,
+    pub reusable: Vec<ReusableModelCopy>,
+    pub models_dir: String,
+    pub linked_path: Option<String>,
+}
+
+#[tauri::command]
+pub fn voice_reusable_models(reuse_model_id: Option<String>, snapshot_path: Option<String>) -> Res<VoiceModelsView> {
+    let models_dir = transcribe::speech_models_dir();
+    let mut linked_path = None;
+    if let (Some(id), Some(path)) = (
+        reuse_model_id.as_deref().filter(|s| !s.is_empty()),
+        snapshot_path.as_deref().filter(|s| !s.is_empty()),
+    ) {
+        let dest = transcribe::reuse_hf_model(id, std::path::Path::new(path), &models_dir).map_err(|e| e.to_string())?;
+        linked_path = Some(dest.to_string_lossy().to_string());
+    }
+    Ok(VoiceModelsView {
+        catalog: transcribe::model_catalog(),
+        reusable: transcribe::discover_reusable_models(),
+        models_dir: models_dir.to_string_lossy().to_string(),
+        linked_path,
+    })
+}
+
+

@@ -125,6 +125,107 @@ pub struct FilledMessage {
     pub readers: Vec<MessageReader>,
 }
 
+/// Detailed metadata for one message (`MessageInfoPopover` on macOS, CH-47): sent/delivered/read timestamps,
+/// sender handle, app/account, and version history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageInfo {
+    pub id: String,
+    pub chat_key: String,
+    pub app: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub sender: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    pub from_me: bool,
+    pub sent_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<Receipt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readers: Vec<MessageReader>,
+    pub edited: bool,
+    pub deleted: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<MessageVersion>,
+}
+
+/// Messages you deleted for yourself, per chat (`ChatHiddenMessages` on macOS, CH-47): the chat no longer shows them
+/// locally, even when the bridge brings them in again at its next read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ChatHiddenMessages {
+    pub hidden: HashMap<String, HashSet<String>>,
+}
+
+impl ChatHiddenMessages {
+    pub fn is_empty(&self) -> bool {
+        self.hidden.is_empty() || self.hidden.values().all(HashSet::is_empty)
+    }
+
+    pub fn ids(&self, chat: &str) -> HashSet<String> {
+        self.hidden.get(chat).cloned().unwrap_or_default()
+    }
+
+    pub fn is_hidden(&self, chat: &str, message_id: &str) -> bool {
+        self.hidden.get(chat).is_some_and(|set| set.contains(message_id))
+    }
+
+    /// Hides `message_id` in `chat` from now on. Returns `true` if newly hidden.
+    pub fn hide(&mut self, chat: &str, message_id: &str) -> bool {
+        if chat.is_empty() || message_id.is_empty() {
+            return false;
+        }
+        self.hidden
+            .entry(chat.to_string())
+            .or_default()
+            .insert(message_id.to_string())
+    }
+
+    /// Unhides `message_id` in `chat`.
+    pub fn unhide(&mut self, chat: &str, message_id: &str) -> bool {
+        let Some(set) = self.hidden.get_mut(chat) else {
+            return false;
+        };
+        let removed = set.remove(message_id);
+        if set.is_empty() {
+            self.hidden.remove(chat);
+        }
+        removed
+    }
+
+    /// Filters a slice of items down to those not hidden in `chat`.
+    pub fn visible<T>(&self, items: Vec<T>, chat: &str, id_of: impl Fn(&T) -> &str) -> Vec<T> {
+        let Some(gone) = self.hidden.get(chat).filter(|s| !s.is_empty()) else {
+            return items;
+        };
+        items.into_iter().filter(|item| !gone.contains(id_of(item))).collect()
+    }
+
+    /// Loads `chat-hidden.json` from `path` (or returns empty if missing/invalid).
+    pub fn load(path: &std::path::Path) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Saves `chat-hidden.json` to `path`.
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let json = serde_json::to_string(&self.hidden).map_err(|e| e.to_string())?;
+        std::fs::write(path, json).map_err(|e| e.to_string())
+    }
+}
+
 /// An earlier text of a message and until when it said that.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -420,6 +521,41 @@ impl InboxThread {
         fill_messages(&self.messages, &self.read_details, !self.is_group())
     }
 
+    /// Detailed metadata for one message in this thread (`MessageInfoPopover`, CH-47).
+    pub fn message_info(&self, id: &str) -> Option<MessageInfo> {
+        let filled = self.filled_messages().into_iter().find(|f| f.message.id == id)?;
+        let msg = filled.message;
+        let sender = if msg.from_me {
+            "You".to_string()
+        } else if !msg.sender.is_empty() {
+            msg.sender.clone()
+        } else {
+            self.name.clone()
+        };
+        let handle = msg
+            .sender_id
+            .clone()
+            .or_else(|| (!msg.from_me).then(|| self.handle.clone()).flatten());
+        Some(MessageInfo {
+            id: msg.id,
+            chat_key: self.id.clone(),
+            app: self.app.clone(),
+            account: self.account.clone(),
+            sender,
+            sender_id: msg.sender_id,
+            handle,
+            from_me: msg.from_me,
+            sent_at: msg.date,
+            receipt: msg.receipt,
+            read_at: filled.read_at,
+            read_by: filled.read_by,
+            readers: filled.readers,
+            edited: msg.edited,
+            deleted: msg.deleted,
+            versions: msg.versions,
+        })
+    }
+
     /// The newest message with filled ticks and read details (for list summaries).
     pub fn filled_last(&self) -> Option<FilledMessage> {
         self.filled_messages().pop()
@@ -596,6 +732,9 @@ pub struct ChatInbox {
     /// Chats you removed, and when: a bridge brings back only what is newer, not the history you threw away.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub removed: HashMap<String, DateTime<Utc>>,
+    /// Messages deleted for you alone (`ChatHiddenMessages` on the Mac, CH-47), per chat key.
+    #[serde(default, skip_serializing_if = "ChatHiddenMessages::is_empty")]
+    pub hidden: ChatHiddenMessages,
 }
 
 impl ChatInbox {
@@ -671,10 +810,12 @@ impl ChatInbox {
             return true;
         }
         let gone = self.removed.get(&key).copied();
-        let messages: Vec<InboxMessage> = match gone {
-            Some(gone) => chat.messages.iter().filter(|m| m.date > gone).cloned().collect(),
-            None => chat.messages.clone(),
-        };
+        let messages: Vec<InboxMessage> = chat
+            .messages
+            .iter()
+            .filter(|m| gone.is_none_or(|g| m.date > g) && !self.hidden.is_hidden(&key, &m.id))
+            .cloned()
+            .collect();
         let described = known.as_ref().is_some_and(|k| {
             chat.unread.is_some()
                 || chat.members.is_some()
@@ -1020,12 +1161,28 @@ impl ChatInbox {
         }
     }
 
-    /// Deleted for you: the message leaves the chat in Nook.
+    /// Deleted for everyone (`delete_for_everyone`, CH-47): withdraws the message in place, preserving its earlier version.
+    pub fn delete_for_everyone(&mut self, key: &str, id: &str) {
+        self.withdraw_message(key, id);
+    }
+
+    /// Deleted for you: records `id` in `hidden` so future reads do not bring it back, and removes it from the chat in Nook.
     pub fn forget_message(&mut self, key: &str, id: &str) {
+        self.hidden.hide(key, id);
         if let Some(thread) = self.threads.get_mut(key) {
             thread.messages.retain(|m| m.id != id);
             thread.read_details.remove(id);
         }
+    }
+
+    /// Deleted for you alone (`delete_for_me`, CH-47): hides the message locally and removes it from the thread.
+    pub fn delete_for_me(&mut self, key: &str, id: &str) {
+        self.forget_message(key, id);
+    }
+
+    /// Detailed metadata for one message in `key` (`message_info`, CH-47).
+    pub fn message_info(&self, key: &str, id: &str) -> Option<MessageInfo> {
+        self.threads.get(key)?.message_info(id)
     }
 
     /// Someone's vote on a poll in this chat, by the poll's message id (WhatsApp sends votes one by one). False when the
@@ -1609,5 +1766,45 @@ mod tests {
 
         assert!(inbox.set_archived(&key, true));
         assert!(inbox.threads[&key].archived);
+    }
+
+    #[test]
+    fn delete_for_me_hides_message_across_future_reads_and_message_info_inspects_details() {
+        let mut inbox = ChatInbox::default();
+        let key = ChatInbox::key("telegram", "1");
+        let mut m1 = msg("a", 0, true);
+        m1.receipt = Some(Receipt::Read);
+        let mut m2 = msg("b", 1, false);
+        m2.sender = "Anna".into();
+        m2.sender_id = Some("u_anna".into());
+        inbox.merge(chat("telegram", "1", vec![m1.clone(), m2.clone()]), at(2));
+
+        inbox.edit_message(&key, "a", "updated text");
+        let info_a = inbox.message_info(&key, "a").unwrap();
+        assert!(info_a.from_me);
+        assert!(info_a.edited);
+        assert_eq!(info_a.versions.len(), 1);
+        assert_eq!(info_a.versions[0].text, "text a");
+        assert_eq!(info_a.receipt, Some(Receipt::Read));
+
+        let info_b = inbox.message_info(&key, "b").unwrap();
+        assert!(!info_b.from_me);
+        assert_eq!(info_b.sender, "Anna");
+        assert_eq!(info_b.handle.as_deref(), Some("u_anna"));
+
+        // Delete for everyone keeps the row withdrawn with version history
+        inbox.delete_for_everyone(&key, "a");
+        let withdrawn = inbox.message_info(&key, "a").unwrap();
+        assert!(withdrawn.deleted);
+        assert_eq!(withdrawn.versions.len(), 2);
+
+        // Delete for me hides message locally and prevents future bridge merges from restoring it
+        inbox.delete_for_me(&key, "b");
+        assert!(inbox.hidden.is_hidden(&key, "b"));
+        assert!(inbox.message_info(&key, "b").is_none());
+
+        inbox.merge(chat("telegram", "1", vec![m1, m2]), at(3));
+        assert!(inbox.message_info(&key, "b").is_none());
+        assert_eq!(inbox.threads[&key].messages.len(), 1);
     }
 }

@@ -78,12 +78,53 @@
 
   // Een gebruikslimiet beëindigde de beurt: een eigen kaart op de plek van "Je hebt deze beurt gestopt".
   const limited = $derived(!!run.limitedAt && !active);
+  let otherProfiles = $state<Array<{ id: string; label: string }>>([]);
+  let switchingAccount = $state(false);
+
   $effect(() => {
-    if (!limited) return;
+    if (!limited) {
+      otherProfiles = [];
+      return;
+    }
     now = Date.now();
     const t = setInterval(() => (now = Date.now()), 30_000);
+    const currentId = run.profileId ?? `${run.provider}-default`;
+    agentApi
+      .profiles()
+      .then((list) => {
+        otherProfiles = list
+          .filter((p) => p.kind === run.provider && p.id !== currentId)
+          .map((p) => ({ id: p.id, label: p.label }));
+      })
+      .catch(() => {
+        otherProfiles = [];
+      });
     return () => clearInterval(t);
   });
+
+  async function switchAccountAndRetry(profileId: string) {
+    if (switchingAccount) return;
+    switchingAccount = true;
+    try {
+      const { automationApi } = await import("../../../lib/workspace/automation");
+      await workspace.act(() => automationApi.handOff(run.id, run.provider, profileId, run.model));
+      onretry();
+    } catch (e) {
+      toast.error(tr("Kon niet van account wisselen", "Could not switch account"), e);
+    } finally {
+      switchingAccount = false;
+    }
+  }
+
+  function snoozeUntilReset() {
+    if (!run.limitResetAt) return;
+    const until = Date.parse(run.limitResetAt);
+    if (!Number.isFinite(until) || until <= Date.now()) return;
+    window.dispatchEvent(new CustomEvent("nook-agents-snooze", { detail: { id: "run:" + run.id, until } }));
+    toast.success(tr("Gesnoozed tot de limiet vrijkomt", "Snoozed until the limit resets"));
+  }
+
+  const canSnoozeUntilReset = $derived(!!run.limitResetAt && Date.parse(run.limitResetAt) > now);
 
   function limitLine(): string {
     if (!run.limitResetAt) return tr("Wanneer de limiet vrijkomt is onbekend; probeer het later zelf opnieuw.", "It's unknown when the limit resets; try again yourself later.");
@@ -330,13 +371,30 @@
           <strong>{tr("Gebruikslimiet bereikt", "Usage limit reached")}</strong>
           <span class="faint">{limitLine()}</span>
         </div>
+        {#each otherProfiles.slice(0, 2) as alt (alt.id)}
+          <button
+            class="primary"
+            disabled={switchingAccount}
+            title={tr("Wissel deze sessie naar {account} en ga meteen verder.", "Switch this session to {account} and continue immediately.", { account: alt.label })}
+            onclick={() => switchAccountAndRetry(alt.id)}>
+            {tr("Verder met {account}", "Continue with {account}", { account: alt.label })}
+          </button>
+        {/each}
+        {#if canSnoozeUntilReset}
+          <button
+            class="ghost"
+            title={tr("Verberg deze sessie uit de inbox totdat de gebruikslimiet vrijkomt.", "Hide this session from the inbox until the usage limit resets.")}
+            onclick={snoozeUntilReset}>
+            {tr("Snooze tot reset", "Snooze until reset")}
+          </button>
+        {/if}
         {#if run.limitResetAt}
           <button class="ghost" title={tr("Stuurt \"Continue where you left off.\" zodra de limiet vrij is. Een eigen bericht annuleert dit.", "Sends \"Continue where you left off.\" once the limit resets. A message of your own cancels this.")}
             onclick={() => workspace.act(() => workspaceApi.setAutoResume(run.id, !run.autoResume))}>
             {run.autoResume ? tr("Niet automatisch hervatten", "Don't resume automatically") : tr("Hervat bij reset", "Resume at reset")}
           </button>
         {/if}
-        <button onclick={onretry}>{tr("Opnieuw", "Retry")}</button>
+        <button class:ghost={otherProfiles.length > 0} onclick={onretry}>{tr("Opnieuw", "Retry")}</button>
       </div>
     {:else if run.status === "failed" || run.status === "stopped"}
       <div class="recovery {run.status}">

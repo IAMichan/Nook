@@ -103,6 +103,25 @@ impl LoudnessGate {
     }
 }
 
+/// Default RMS loudness threshold before running wake-word speech recognition (`SV-51`).
+pub const DEFAULT_LOUDNESS_THRESHOLD: f32 = 0.008;
+
+/// Whether wake-word listening should run given current system/battery signals and Nook's energy mode (`SV-51`).
+pub fn should_listen(signals: &Signals, mode: EnergyMode) -> bool {
+    pause_reason(signals, mode).is_none()
+}
+
+/// Fast RMS loudness check on raw 16 kHz mono samples (`SV-51`): returns `true` only when the audio buffer carries
+/// enough speech energy to justify waking the recognizer.
+pub fn loudness_passes(samples: &[f32], threshold: f32) -> bool {
+    if samples.is_empty() {
+        return false;
+    }
+    let rms = vad::power(samples).sqrt() as f32;
+    rms >= threshold.max(0.0001)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,13 +140,16 @@ mod tests {
     fn listening_waits_for_the_lock_the_saver_and_a_low_battery() {
         let none = Signals::default();
         assert_eq!(pause_reason(&none, EnergyMode::Automatic), None);
+        assert!(should_listen(&none, EnergyMode::Automatic));
         assert_eq!(pause_reason(&Signals { screen_locked: true, ..none }, EnergyMode::Full), Some(PauseReason::Locked));
+        assert!(!should_listen(&Signals { screen_locked: true, ..none }, EnergyMode::Full));
         assert_eq!(pause_reason(&Signals { display_asleep: true, ..none }, EnergyMode::Automatic), Some(PauseReason::DisplayAsleep));
         assert_eq!(pause_reason(&Signals { low_power_mode: true, ..none }, EnergyMode::Full), Some(PauseReason::LowPowerMode));
         let low = Signals { low_battery: true, ..none };
         assert_eq!(pause_reason(&low, EnergyMode::Automatic), Some(PauseReason::LowBattery));
         assert_eq!(pause_reason(&low, EnergyMode::Saver), Some(PauseReason::LowBattery));
         assert_eq!(pause_reason(&low, EnergyMode::Full), None);
+        assert!(should_listen(&low, EnergyMode::Full));
     }
 
     fn tone(frames: usize, amplitude: f32) -> Vec<f32> {
@@ -155,4 +177,12 @@ mod tests {
         assert_eq!(gate.feed(&[0.0; 100]), Gate::None);
         gate.reset();
     }
+
+    #[test]
+    fn loudness_passes_filters_silence_and_accepts_speech() {
+        assert!(!loudness_passes(&[], DEFAULT_LOUDNESS_THRESHOLD));
+        assert!(!loudness_passes(&tone(1, 0.001), DEFAULT_LOUDNESS_THRESHOLD));
+        assert!(loudness_passes(&tone(1, 0.08), DEFAULT_LOUDNESS_THRESHOLD));
+    }
 }
+

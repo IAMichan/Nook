@@ -376,3 +376,475 @@ pub async fn browser_history_suggest(text: String) -> Vec<nook_core::workspace::
     .await
     .unwrap_or_default()
 }
+
+// MARK: Browser element picker into the composer (AG-105)
+
+/// Starts interactive element picking in Nook's browser window and returns the picked element snippet (`BrowserPicker.swift`, AG-105).
+#[tauri::command]
+pub async fn browser_pick_element(app: AppHandle) -> Res<Option<serde_json::Value>> {
+    #[cfg(desktop)]
+    {
+        let picked = app.state::<WorkspaceState>().browser.pick_element(&app).await?;
+        Ok(picked.and_then(|p| serde_json::to_value(p).ok()))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Cancels an active interactive element pick in Nook's browser window (AG-105).
+#[tauri::command]
+pub fn browser_cancel_pick(app: AppHandle) -> Res<()> {
+    #[cfg(desktop)]
+    {
+        app.state::<WorkspaceState>().browser.cancel_pick(&app)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Clears picked element outlines in Nook's browser window (AG-105).
+#[tauri::command]
+pub fn browser_clear_picks(app: AppHandle) -> Res<()> {
+    #[cfg(desktop)]
+    {
+        app.state::<WorkspaceState>().browser.clear_picks(&app)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Lists interactive & structural elements on the open browser page so the user can pick an element snippet directly (AG-105).
+#[tauri::command]
+pub async fn browser_elements(app: AppHandle) -> Res<Vec<serde_json::Value>> {
+    #[cfg(desktop)]
+    {
+        let items = app.state::<WorkspaceState>().browser.page_elements(&app).await?;
+        Ok(items.into_iter().filter_map(|i| serde_json::to_value(i).ok()).collect())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+// MARK: Pull Request Checkout ("Work on this PR", AG-125)
+
+#[cfg(desktop)]
+fn resolve_pr_local_folder(
+    app: &AppHandle,
+    ws: &WorkspaceState,
+    repo: &str,
+    preferred: Option<String>,
+) -> Option<String> {
+    let git = nook_core::workspace::git::Git::locate()?;
+    let ws_settings = ws.settings.lock().unwrap_or_else(|e| e.into_inner());
+    let mut folders = Vec::new();
+    if let Some(p) = preferred.filter(|p| !p.trim().is_empty()) {
+        folders.push(p);
+    }
+    folders.extend(ws_settings.favorite_projects.clone());
+    folders.extend(ws_settings.recent_projects.clone());
+    drop(ws_settings);
+    let _ = app;
+    for r in ws.manager.runs() {
+        folders.push(r.working_directory.clone());
+        if let Some(wt) = r.worktree_path {
+            folders.push(wt);
+        }
+    }
+    nook_core::workspace::pr_checkout::local_folder(&git, repo, &folders)
+}
+
+/// Finds the local repository folder matching `repo` (`owner/name`) on this computer (AG-125).
+#[tauri::command]
+pub async fn workspace_pr_local_folder(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    repo: String,
+    preferred: Option<String>,
+) -> Res<Option<String>> {
+    #[cfg(desktop)]
+    {
+        let _ = app;
+        let ws = state.inner();
+        let git = nook_core::workspace::git::Git::locate();
+        let mut folders = Vec::new();
+        if let Some(p) = preferred.filter(|p| !p.trim().is_empty()) {
+            folders.push(p);
+        }
+        {
+            let ws_settings = ws.settings.lock().unwrap_or_else(|e| e.into_inner());
+            folders.extend(ws_settings.favorite_projects.clone());
+            folders.extend(ws_settings.recent_projects.clone());
+        }
+        for r in ws.manager.runs() {
+            folders.push(r.working_directory.clone());
+            if let Some(wt) = r.worktree_path {
+                folders.push(wt);
+            }
+        }
+        tauri::async_runtime::spawn_blocking(move || {
+            let Some(git) = git else { return None };
+            nook_core::workspace::pr_checkout::local_folder(&git, &repo, &folders)
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state, repo, preferred);
+        Ok(None)
+    }
+}
+
+/// Checks out a pull request branch in a new worktree (`mode: "worktree"`) or in the local folder itself (`mode: "here"`)
+/// and returns the folder path so a session can be opened in it (`AppModel+PullRequestCheckout.swift`, AG-125).
+#[tauri::command]
+pub async fn workspace_pr_checkout(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    repo: String,
+    number: u64,
+    head_branch: String,
+    is_fork: Option<bool>,
+    mode: nook_core::workspace::pr_checkout::CheckoutMode,
+    preferred_folder: Option<String>,
+) -> Res<String> {
+    #[cfg(desktop)]
+    {
+        use nook_core::i18n::{tr, trf};
+        use nook_core::workspace::pr_checkout::{checkout, CheckoutPlan};
+        let folder = resolve_pr_local_folder(&app, state.inner(), &repo, preferred_folder).ok_or_else(|| {
+            trf(
+                "Geen lokale kloon van {repo} gevonden op deze computer.",
+                "No local clone of {repo} was found on this computer.",
+                &[("repo", &repo)],
+            )
+        })?;
+        let worktree_root = state.settings.lock().unwrap_or_else(|e| e.into_inner()).worktree_root();
+        let mut reserved: Vec<String> = state
+            .manager
+            .worktree_rows()
+            .into_iter()
+            .map(|r| r.worktree.path)
+            .collect();
+        for r in state.manager.runs() {
+            if let Some(wt) = r.worktree_path {
+                reserved.push(wt);
+            }
+        }
+        let dirty_msg = tr(
+            "Deze map heeft nog niet-gecommitte wijzigingen. Commit of stash ze eerst, of open de PR in een eigen worktree.",
+            "This folder has uncommitted changes. Commit or stash them first, or check out the PR in a new worktree.",
+        )
+        .to_string();
+        let manager = state.manager.clone();
+        let path = tauri::async_runtime::spawn_blocking(move || {
+            let git = nook_core::workspace::git::Git::locate()
+                .ok_or_else(|| tr("Git is niet gevonden op deze computer.", "Git was not found on this computer.").to_string())?;
+            let plan = CheckoutPlan::new(&repo, number, &head_branch, is_fork.unwrap_or(false));
+            let out = checkout(&git, &plan, mode, &folder, &worktree_root, &reserved, &dirty_msg).map_err(|e| e.0)?;
+            manager.refresh_worktrees();
+            Ok::<String, String>(out)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let _ = tauri::Emitter::emit(&app, "workspace-changed", ());
+        Ok(path)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state, repo, number, head_branch, is_fork, mode, preferred_folder);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+// MARK: Worktree Build Leftovers, Disk Usage Warning, Archive & Move (AG-121)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeDiskStatus {
+    pub available_bytes: Option<u64>,
+    pub low_disk_space: bool,
+    pub low_threshold_bytes: u64,
+    pub worktrees_bytes: u64,
+    pub build_leftovers_bytes: u64,
+    pub build_leftovers_count: usize,
+    pub archive_bytes: u64,
+    pub archive_count: usize,
+}
+
+#[cfg(desktop)]
+fn build_leftover_roots(state: &WorkspaceState) -> nook_core::workspace::pr_checkout::build_leftovers::Roots {
+    use nook_core::workspace::pr_checkout::build_leftovers::{held_folders, is_idle_with_held, Roots};
+    use std::path::PathBuf;
+
+    let rows = state.manager.worktree_rows();
+    let runs = state.manager.runs();
+    let running: std::collections::HashSet<uuid::Uuid> = runs
+        .iter()
+        .filter(|r| state.manager.is_running(r.id))
+        .map(|r| r.id)
+        .collect();
+
+    let mut busy_dirs = Vec::new();
+    for r in &runs {
+        if running.contains(&r.id) || r.status.is_active() {
+            busy_dirs.push(r.working_directory.clone());
+            if let Some(ref wt) = r.worktree_path {
+                busy_dirs.push(wt.clone());
+            }
+        }
+    }
+    let held = held_folders(&busy_dirs);
+    let main_checkouts: Vec<String> = rows
+        .iter()
+        .filter(|r| r.worktree.is_main)
+        .map(|r| r.worktree.path.clone())
+        .collect();
+
+    let mut worktrees = Vec::new();
+    let mut settled_worktrees = std::collections::HashSet::new();
+    let mut idle_worktrees = std::collections::HashSet::new();
+
+    for row in &rows {
+        if row.worktree.is_main {
+            continue;
+        }
+        let pb = PathBuf::from(&row.worktree.path);
+        worktrees.push(pb.clone());
+        let linked: Vec<_> = runs.iter().filter(|r| row.run_ids.contains(&r.id)).collect();
+        if !linked.is_empty() && linked.iter().all(|r| r.archived) {
+            settled_worktrees.insert(pb.clone());
+        }
+        if is_idle_with_held(&row.worktree.path, &held, &main_checkouts) {
+            idle_worktrees.insert(pb);
+        }
+    }
+
+    let home = nook_core::agents::home_dir();
+    let mut temporary = vec![std::env::temp_dir()];
+    let var_tmp = PathBuf::from("/private/tmp");
+    if var_tmp.is_dir() && !temporary.contains(&var_tmp) {
+        temporary.push(var_tmp);
+    }
+    let mut scratchpad_parents = Vec::new();
+    for p in [std::env::temp_dir().join("claude"), PathBuf::from("/private/tmp/claude")] {
+        if p.is_dir() && !scratchpad_parents.contains(&p) {
+            scratchpad_parents.push(p);
+        }
+    }
+    let derived_data = {
+        let dd = home.join("Library/Developer/Xcode/DerivedData");
+        dd.is_dir().then_some(dd)
+    };
+
+    Roots {
+        temporary,
+        scratchpad_parents,
+        derived_data,
+        worktrees,
+        settled_worktrees,
+        idle_worktrees,
+    }
+}
+
+/// Scans worktrees, build leftovers, archive size, and available disk space (`BuildLeftovers.swift`, AG-121).
+#[tauri::command]
+pub async fn workspace_worktree_disk_status(state: State<'_, WorkspaceState>) -> Res<WorktreeDiskStatus> {
+    #[cfg(desktop)]
+    {
+        use nook_core::workspace::pr_checkout::{build_leftovers, disk_space, worktree_archive};
+        let worktree_root = state.settings.lock().unwrap_or_else(|e| e.into_inner()).worktree_root();
+        let roots = build_leftover_roots(state.inner());
+        let worktree_paths: Vec<std::path::PathBuf> = state
+            .manager
+            .worktree_rows()
+            .into_iter()
+            .filter(|r| !r.worktree.is_main)
+            .map(|r| std::path::PathBuf::from(r.worktree.path))
+            .collect();
+        tauri::async_runtime::spawn_blocking(move || {
+            let available_bytes = disk_space::available_bytes(std::path::Path::new(&worktree_root));
+            let low_disk_space = available_bytes.is_some_and(|b| disk_space::is_low(b, false));
+            let worktrees_bytes: u64 = worktree_paths.iter().map(|p| build_leftovers::folder_size(p)).sum();
+            let leftovers = build_leftovers::find(&roots, std::time::SystemTime::now());
+            let build_leftovers_bytes: u64 = leftovers.iter().map(|l| l.size_bytes).sum();
+            let build_leftovers_count = leftovers.len();
+            let archive_root = worktree_archive::default_root();
+            let mut archive_bytes = 0u64;
+            let mut archive_count = 0usize;
+            if let Ok(entries) = std::fs::read_dir(&archive_root) {
+                for entry in entries.flatten() {
+                    if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                        archive_count += 1;
+                        archive_bytes = archive_bytes.saturating_add(build_leftovers::folder_size(&entry.path()));
+                    }
+                }
+            }
+            WorktreeDiskStatus {
+                available_bytes,
+                low_disk_space,
+                low_threshold_bytes: disk_space::LOW_BYTES,
+                worktrees_bytes,
+                build_leftovers_bytes,
+                build_leftovers_count,
+                archive_bytes,
+                archive_count,
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = state;
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Scans all stale build leftovers (`target`, `node_modules`, `.next`, `dist`, `.turbo`, `.build`, `.scratch`) (AG-121).
+#[tauri::command]
+pub async fn workspace_build_leftovers_scan(
+    state: State<'_, WorkspaceState>,
+) -> Res<Vec<nook_core::workspace::pr_checkout::build_leftovers::Leftover>> {
+    #[cfg(desktop)]
+    {
+        let roots = build_leftover_roots(state.inner());
+        tauri::async_runtime::spawn_blocking(move || {
+            nook_core::workspace::pr_checkout::build_leftovers::find(&roots, std::time::SystemTime::now())
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = state;
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Sweeps (removes) stale build leftovers and returns the removed entries with freed bytes (AG-121).
+#[tauri::command]
+pub async fn workspace_build_leftovers_sweep(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+) -> Res<Vec<nook_core::workspace::pr_checkout::build_leftovers::RemovedLeftover>> {
+    #[cfg(desktop)]
+    {
+        let roots = build_leftover_roots(state.inner());
+        let removed = tauri::async_runtime::spawn_blocking(move || {
+            nook_core::workspace::pr_checkout::build_leftovers::sweep(&roots, std::time::SystemTime::now())
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let _ = tauri::Emitter::emit(&app, "workspace-changed", ());
+        Ok(removed)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeArchiveResult {
+    pub archived: bool,
+    pub archive_path: String,
+    pub removed: bool,
+}
+
+/// Archives a worktree's `.scratch` files (and optionally removes the worktree) (`WorktreeArchive.swift`, AG-121).
+#[tauri::command]
+pub async fn workspace_worktree_archive(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    repo: String,
+    path: String,
+    remove: Option<bool>,
+    force: Option<bool>,
+) -> Res<WorktreeArchiveResult> {
+    #[cfg(desktop)]
+    {
+        use nook_core::workspace::pr_checkout::worktree_archive;
+        let manager = state.manager.clone();
+        let should_remove = remove.unwrap_or(false);
+        let force_remove = force.unwrap_or(false);
+        let res = tauri::async_runtime::spawn_blocking(move || {
+            let root = worktree_archive::default_root();
+            let loc = worktree_archive::location(&path, &root);
+            let archived = worktree_archive::save(&path, &root);
+            let mut removed = false;
+            if should_remove {
+                manager.remove_worktree_at(&repo, &path, force_remove)?;
+                removed = true;
+            }
+            Ok::<WorktreeArchiveResult, String>(WorktreeArchiveResult {
+                archived,
+                archive_path: loc.to_string_lossy().into_owned(),
+                removed,
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let _ = tauri::Emitter::emit(&app, "workspace-changed", ());
+        Ok(res)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state, repo, path, remove, force);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+
+/// Moves a git worktree to a new folder path (`git worktree move`) and refreshes worktrees (AG-121).
+#[tauri::command]
+pub async fn workspace_worktree_move(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    repo: String,
+    from: String,
+    to: String,
+) -> Res<String> {
+    #[cfg(desktop)]
+    {
+        use nook_core::i18n::tr;
+        let manager = state.manager.clone();
+        let dest = tauri::async_runtime::spawn_blocking(move || {
+            let git = nook_core::workspace::git::Git::locate()
+                .ok_or_else(|| tr("Git is niet gevonden op deze computer.", "Git was not found on this computer.").to_string())?;
+            let clean_to = to.trim().to_string();
+            if clean_to.is_empty() {
+                return Err(tr("Kies een doelmap voor de worktree.", "Choose a destination folder for the worktree.").to_string());
+            }
+            if let Some(parent) = std::path::Path::new(&clean_to).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            git.run(&["worktree", "move", "--", &from, &clean_to], &repo).map_err(|e| e.0)?;
+            manager.refresh_worktrees();
+            Ok::<String, String>(clean_to)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let _ = tauri::Emitter::emit(&app, "workspace-changed", ());
+        Ok(dest)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, state, repo, from, to);
+        Err(DESKTOP_ONLY.into())
+    }
+}
+

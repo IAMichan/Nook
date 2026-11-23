@@ -37,7 +37,15 @@
   import * as inbox from "../../lib/agent-inbox";
   import { untrack } from "svelte";
   import { onCommands } from "../../lib/commands";
-  import { autoSettle, loadRules as loadAutoSettleRules, loadSettled as loadAutoSettled, saveSettled as saveAutoSettled } from "../../lib/auto-settle";
+  import {
+    autoSettle,
+    loadRules as loadAutoSettleRules,
+    loadSettleActions,
+    loadSettled as loadAutoSettled,
+    planSettleActions,
+    saveSettled as saveAutoSettled,
+  } from "../../lib/auto-settle";
+  import { toolsApi } from "../../lib/workspace/api";
   import { emptyState, needsYou, type Attention, type InboxEntry, type InboxState } from "../../lib/agent-inbox";
 
   let { compact = false }: { compact?: boolean } = $props();
@@ -126,15 +134,67 @@
       : d.toLocaleString(locale(), { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
+  // Runs Settle actions (`SettleActionRules`, AG-111) when one or more sessions move to Done.
+  async function runSettleActionsFor(newlySettledIds: string[], nextState: InboxState) {
+    if (!newlySettledIds.length) return;
+    const actions = loadSettleActions();
+    if (!actions.stopDevServersOnSettle && !actions.closeIdleTerminalsOnSettle && !actions.settleCommand.trim()) return;
+    const settledSet = new Set(nextState.settled);
+    const otherUnsettledFolders = all.filter((i) => !settledSet.has(i.id) && i.path).map((i) => i.path);
+    const handledFolders = new Set<string>();
+    for (const id of newlySettledIds) {
+      const item = byId.get(id);
+      if (!item?.path) continue;
+      const plan = planSettleActions(item.path, otherUnsettledFolders, actions);
+      if (!plan || handledFolders.has(plan.folder)) continue;
+      handledFolders.add(plan.folder);
+      if (plan.stopDevServers || plan.closeIdleTerminals) {
+        toolsApi
+          .terminals()
+          .then((terms) => {
+            for (const t of terms) {
+              const tFolder = (t.origin ?? "").trim().replace(/[\\/]+$/, "");
+              if (tFolder !== plan.folder) continue;
+              if (plan.stopDevServers && t.running) {
+                toolsApi.closeTerminal(t.id).catch(() => {});
+              } else if (plan.closeIdleTerminals && !t.running) {
+                toolsApi.closeTerminal(t.id).catch(() => {});
+              }
+            }
+          })
+          .catch(() => {});
+      }
+      if (plan.command) {
+        toolsApi.openTerminal(plan.folder, plan.command, "Settle").catch(() => {});
+      }
+    }
+  }
+
   // The last list actions (settle, pin, snooze…), for `session.undo` (the Mac's `store.undo()`).
   const undoStack: InboxState[] = [];
   function update(next: InboxState, record = true) {
+    const prevSettled = new Set(inboxState.settled);
+    const newlySettled = next.settled.filter((id) => !prevSettled.has(id));
     if (record && next !== inboxState) undoStack.push(inboxState);
     if (undoStack.length > 20) undoStack.shift();
     inboxState = next;
     menuFor = null;
     try { localStorage.setItem(STATE_KEY, JSON.stringify(next)); } catch { /* No storage: the choice lasts until the window closes. */ }
+    if (newlySettled.length) {
+      runSettleActionsFor(newlySettled, next).catch(() => {});
+    }
   }
+
+  // Listen for `"nook-agents-snooze"` dispatched by `Timeline.svelte`'s "Snooze until reset" button (AG-80).
+  $effect(() => {
+    const onSnooze = (e: Event) => {
+      const detail = (e as CustomEvent<{ id: string; until: number }>).detail;
+      if (!detail?.id || !(detail.until > Date.now())) return;
+      update(inbox.snooze(inboxState, detail.id, detail.until));
+    };
+    window.addEventListener("nook-agents-snooze", onSnooze);
+    return () => window.removeEventListener("nook-agents-snooze", onSnooze);
+  });
   let now = $state(Date.now());
   // In the main window the session list is the sidebar's list, as on the Mac: the column moves into the sidebar slot.
   let docked = $state(false);

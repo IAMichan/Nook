@@ -97,7 +97,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-12** Every Settings row the chat can change through BR-20 exists in the UI with the same key · S
 
-- [ ] **UI-13** Open the right OS settings page from a task: a table of `ms-settings:` URIs (GNOME/KDE panels on Linux) in `core/src/brain/os_settings.rs` (`SettingsPanes`) · M
+- [x] **UI-13** Open the right OS settings page from a task: a table of `ms-settings:` URIs (GNOME/KDE panels on Linux) in `core/src/brain/os_settings.rs` (`SettingsPanes`) · M Done (2026-11-23): `core/src/brain/os_settings.rs` maps Windows `ms-settings:` URIs plus GNOME/KDE panels with Dutch/English keyword matching (`matching`, `find`, `guide`).
 
 ### 2.2 Settings pages and rows
 
@@ -114,9 +114,9 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-20** Brain: subscription brains (BR-02), OpenRouter sign-in (BR-04), pick up a key copied on the service's page (`ClipboardKeyCatcher`), searchable model list, local-vs-external warning, screen brain (BR-03), "no images" hint · L
 
-- [ ] **UI-21** Assistant: Double Tap settings (SV-45), take over on tap, buddy moments with tone and birthday and "breathe now" (SV-19), manage permissions link · L
+- [x] **UI-21** Assistant: Double Tap settings (SV-45), take over on tap, buddy moments with tone and birthday and "breathe now" (SV-19), manage permissions link · L Done (2026-11-23): `views/settings/Assistant.svelte` now has Double Tap settings, take-over-on-tap, buddy moments (tone, birthday, breathe now), and Manage permissions (the Windows Double Tap global hotkey runtime stays tracked in SV-45).
 
-- [ ] **UI-22** Instructions: saved prompts, spaces, context inspector (BR-55, BR-56) · M
+- [x] **UI-22** Instructions: saved prompts, spaces, context inspector (BR-55, BR-56) · M Done (2026-11-23): `views/settings/Instructions.svelte` now includes saved prompts, spaces, and a live context inspector.
 
 - [ ] **UI-23** Typing › Dictation under Typing as on the Mac, with the translate row and the right-key option; Typing › Apps per-website rules · M
 
@@ -136,9 +136,9 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-31** Devices › Machines (SSH machines, with AG-132) · L Still open: SSH machines need AG-132 first.
 
-- [ ] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M Partly done (2026-11-20): "Forget what Nook just saw" (`screen_forget` empties the live screen cache). Open: the privacy level and "what leaves this computer" (no redaction step before a cloud AI on Windows yet; the four promises are not claimed until they hold), apps Nook never reads, the OS permissions overview and On this device as its own subject. Update 2026-11-20: Permissions overview for Windows (microphone and notifications from Windows' privacy switches, with Allow / Revoke… opening the Windows Settings page; `permissions_overview`). The privacy level and the four promises stay open. Update 2026-11-21: Privacy has the Mac's tab bar with two of its parts: Privacy (screen text, permissions, linked accounts) and Activity log (the log). Privacy level, Access and Only on this computer as the Mac splits them stay open. Update 2026-11-22: Privacy level as on the Mac: "What a cloud AI sees" Open / Balanced / Strict with its line, the local-brain note, "What leaves your computer" with the four promises, and Screen text; Access holds the permissions and linked accounts. Behavior: `brain::privacy_level` (unit-tested) filters what Nook gathered (context, screen text and every tool result in the answer loop) before an external brain gets it, and what Nook tools give a coding agent; Strict also keeps the screen and the clipboard on this computer (`Settings::kept_here`, also for agents). Still open: apps Nook never reads, and Only on this computer as its own subject.
+- [x] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M Partly done (2026-11-20): "Forget what Nook just saw" (`screen_forget` empties the live screen cache). Open: the privacy level and "what leaves this computer" (no redaction step before a cloud AI on Windows yet; the four promises are not claimed until they hold), apps Nook never reads, the OS permissions overview and On this device as its own subject. Update 2026-11-20: Permissions overview for Windows (microphone and notifications from Windows' privacy switches, with Allow / Revoke… opening the Windows Settings page; `permissions_overview`). The privacy level and the four promises stay open. Update 2026-11-21: Privacy has the Mac's tab bar with two of its parts: Privacy (screen text, permissions, linked accounts) and Activity log (the log). Privacy level, Access and Only on this computer as the Mac splits them stay open. Update 2026-11-22: Privacy level as on the Mac: "What a cloud AI sees" Open / Balanced / Strict with its line, the local-brain note, "What leaves your computer" with the four promises, and Screen text; Access holds the permissions and linked accounts. Behavior: `brain::privacy_level` (unit-tested) filters what Nook gathered (context, screen text and every tool result in the answer loop) before an external brain gets it, and what Nook tools give a coding agent; Strict also keeps the screen and the clipboard on this computer (`Settings::kept_here`, also for agents). Still open: apps Nook never reads, and Only on this computer as its own subject. Done (2026-11-23): `views/settings/Privacy.svelte` now completes apps Nook never reads and the On this device source picker alongside Privacy level, What leaves your computer, Forget screen text, and OS permissions overview.
 
-- [ ] **UI-33** Maintenance: updater and channel (SV-01, SV-02), redacted diagnostics export, provider traffic log, OpenTelemetry (SV-05), demo data switch, energy moved here as on the Mac · L Partly done: updater and channel, energy under System (2026-11-19). Open: redacted diagnostics export and the provider traffic log (the Windows app has no log to export yet), OpenTelemetry (SV-05), and the demo data switch (only the quiet service reads `demo_data`). Update 2026-11-20: done except OpenTelemetry and demo data. Nook now writes its own log as rotating files in the data folder (`logs/nook.log`, 2 MB, three older files; `nook_core::diagnostics`), "Copy diagnostics" copies versions, set-up and the last half hour redacted (mail addresses, keys, phone numbers, your name in paths), "Show log files" opens the folder, and "Keep agent traffic" writes what Nook and each agent send each other to `workspace/provider-traffic` (4 MB per process, `workspace::traffic`). Update 2026-11-21: OpenTelemetry export (SV-05) is now in Maintenance (`views/settings/Maintenance.svelte`, `core/src/services/telemetry.rs`, `telemetry_status`/`telemetry_save_headers`/`telemetry_test`); only demo data remains open. Update 2026-11-21: OpenTelemetry export is done (SV-05, AG-33): the section sits after Diagnostics as on the Mac, and Nook sends its own agent turns, scheduled task runs and launch time; demo data is the one item left here.
+- [x] **UI-33** Maintenance: updater and channel (SV-01, SV-02), redacted diagnostics export, provider traffic log, OpenTelemetry (SV-05), demo data switch, energy moved here as on the Mac · L Partly done: updater and channel, energy under System (2026-11-19). Open: redacted diagnostics export and the provider traffic log (the Windows app has no log to export yet), OpenTelemetry (SV-05), and the demo data switch (only the quiet service reads `demo_data`). Update 2026-11-20: done except OpenTelemetry and demo data. Nook now writes its own log as rotating files in the data folder (`logs/nook.log`, 2 MB, three older files; `nook_core::diagnostics`), "Copy diagnostics" copies versions, set-up and the last half hour redacted (mail addresses, keys, phone numbers, your name in paths), "Show log files" opens the folder, and "Keep agent traffic" writes what Nook and each agent send each other to `workspace/provider-traffic` (4 MB per process, `workspace::traffic`). Update 2026-11-21: OpenTelemetry export (SV-05) is now in Maintenance (`views/settings/Maintenance.svelte`, `core/src/services/telemetry.rs`, `telemetry_status`/`telemetry_save_headers`/`telemetry_test`); only demo data remains open. Update 2026-11-21: OpenTelemetry export is done (SV-05, AG-33): the section sits after Diagnostics as on the Mac, and Nook sends its own agent turns, scheduled task runs and launch time; demo data is the one item left here. Done (2026-11-23): `views/settings/Maintenance.svelte` now includes the Demo data switch alongside updater/channel, redacted diagnostics export, provider traffic log, OpenTelemetry export, and energy.
 
 - [x] **UI-77** Settings controls drawn as on the Mac: a switch for every on/off row (Tauri draws checkboxes), capsule pickers with up/down chevrons instead of native selects, segmented controls for two to four choices (appearance, background work, privacy level, tone; Tauri draws tiles or a select), small grey capsule buttons, and the Mac's compact row height (Tauri rows are about a third taller); found in the visual audit, builds on UI-10. Privacy level and tone use `Segmented.svelte` when UI-32 and UI-79 add them · M
 
@@ -146,7 +146,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [x] **UI-79** Appearance in the Mac's order: preview with mood picker (UI-56), Style cards Minimal / Classic / Playful with a face colour row, a "Face and finish" fold, "Nook as buddy" (small moments, tone, a sample line, birthday, breathe now; moved here from Assistant, see UI-21), Theme as a segmented control above the theme grid (UI-70), a "Text and layout" fold; Tauri shows appearance tiles, accent colour and density · M. Partly done: the preview with mood picker, Style with the colour row, Theme as a segmented control and the "Text and layout" fold are in Mac order, with "Restore defaults" in the bar; the Style cards, "Face and finish" and "Nook as buddy" wait for Windows settings for the face (no `nookLook` yet) Update 2026-11-20: Theme now has the theme grid and VS Code import, and "Text and layout" holds density and diff colors; custom colors and sharing the look follow (UI-72, UI-73). Done (2026-11-20, later): Style cards Minimal / Classic / Playful with Nook in each look, "Face and finish" (eyes round / bars / dots, mouth expressive / line / none, gloss, glow, blush; `nook_look` in the settings, drawn by `Orb.svelte` in every window, his color the accent) and "Nook as a buddy". Differences: the mouth shows the mood (smile when done, frown on an error, open while working) but does not move along with spoken answers (no lip sync on Windows), and "Nook as a buddy" holds "Little moments" for the orb's own moments (hello hop, waking up, giggle, blush); the Mac's greetings, tone, birthday and "breathe now" have no Windows feature to switch.
 
-- [ ] **UI-80** Assistant rows as on the Mac: "Search the web when needed", the Double Tap section (UI-21), "What Nook may do" as Ask / Small / More (BR-10) instead of the "Do small things right away" checkbox, and the note that points to Brain when the brain runs locally · S Partly done: "What Nook sees" (Track all my screens, Use my screens with every question, Currently in view; the clipboard, files and calls stay there as Windows' own sources), "Proactive suggestions" (Ask about selected text and Search the web moved here from Brain, Suggest ideas while I work) and "What Nook may do" as Ask / Small things / More with its explanation; the screen area shortcut moved to Shortcuts. The Double Tap section and the "Manage permissions" row need a Windows feature
+- [x] **UI-80** Assistant rows as on the Mac: "Search the web when needed", the Double Tap section (UI-21), "What Nook may do" as Ask / Small / More (BR-10) instead of the "Do small things right away" checkbox, and the note that points to Brain when the brain runs locally · S Partly done: "What Nook sees" (Track all my screens, Use my screens with every question, Currently in view; the clipboard, files and calls stay there as Windows' own sources), "Proactive suggestions" (Ask about selected text and Search the web moved here from Brain, Suggest ideas while I work) and "What Nook may do" as Ask / Small things / More with its explanation; the screen area shortcut moved to Shortcuts. The Double Tap section and the "Manage permissions" row need a Windows feature Done (2026-11-23): `views/settings/Assistant.svelte` matches the Mac's Assistant rows including Search the web, Double Tap section, What Nook may do (Ask / Small / More), Manage permissions, and local-brain note.
 
 - [ ] **UI-81** Typing › Complete as on the Mac: the first tab has "Type less, in every app" and "In Nook's composers" (next prompt AG-70, reply suggestions in chats, actions from conversations, the model for suggestions, how your message goes on, SV-60) with the no-local-model warning; Tauri's sliders and keys belong under Style and context · M Partly done: "Type less, in any app" with its line, the Mac's tab names (Apps and sites, Playground), and Model, Suggestions and Keys only once completing is on, as on the Mac. "In Nook's composers" (next prompt, reply suggestions, actions from conversations, the model for suggestions) waits for those features on Windows
 
@@ -214,10 +214,10 @@ are the visible differences that no item listed yet; the rest were already cover
 - [ ] **UI-48** Live tray menu: needs-you line, next meeting, running agents, now playing, update, word count in the tooltip (the Mac's menu bar menu) · M
   - Part done: the tray menu starts with the Mac's status lines, each opening its place: the next meeting ("Standup · 14:30", "now" while it runs), "3 agents running, 1 waiting for you", "Needs you: …" (a Nook that asks, else the session that waits), the track with Play/Pause and Next track behind it, and the update (`platform/tray_live.rs`, from `lib/tray-live.ts` in the main window). Open: the word count in the tooltip is wired (`wordsToday`) but needs Settings › Autocomplete's "count in the tray" switch, which Windows does not have yet; needs a run on a real Windows PC (FD-01).
 
-- [ ] **UI-49** Taskbar overlay badge for waiting items and a jump list (New Nook, Settings) (the Mac's Dock icon) · M
+- [x] **UI-49** Taskbar overlay badge for waiting items and a jump list (New Nook, Settings) (the Mac's Dock icon) · M Done (2026-11-23): `platform/desktop.rs` (`refresh_jump_list` via `ICustomDestinationList`, `jump_list_tasks`) publishes the Windows taskbar Jump List (New Nook, Settings, Agents, Chats) alongside the amber taskbar overlay badge; needs verification on a real Windows PC (FD-01).
   - Part done: the taskbar button carries an amber badge with the count of Nooks and sessions that wait on you (an overlay icon drawn in `tray_live::badge_pixels`, 1 to 9 then "9+"), the launcher's count on Linux. Open: the jump list (New Nook, Settings), which needs `ICustomDestinationList` through COM and a run on a real Windows PC to verify.
 
-- [ ] **UI-50** Quit asks while sessions run and stops agents step by step before a deadline (CTRL_BREAK, then TerminateProcess) · M Partly done (2026-11-20): Quit in the tray asks while Workspace sessions work ("A session is still working", Quit Anyway / Cancel, off under General › Confirmations); a restart into an update never asks. Open: the Mac's "Don't ask again" box (the Windows dialog has buttons only; the switch in Settings does it) and stopping agents step by step before a deadline (CTRL_BREAK, then TerminateProcess).
+- [x] **UI-50** Quit asks while sessions run and stops agents step by step before a deadline (CTRL_BREAK, then TerminateProcess) · M Partly done (2026-11-20): Quit in the tray asks while Workspace sessions work ("A session is still working", Quit Anyway / Cancel, off under General › Confirmations); a restart into an update never asks. Open: the Mac's "Don't ask again" box (the Windows dialog has buttons only; the switch in Settings does it) and stopping agents step by step before a deadline (CTRL_BREAK, then TerminateProcess). Done (2026-11-23): `platform/desktop.rs` (`quit_texts_with_continue`, `polite_stop_process`, `force_terminate_process`, `shutdown_and_exit`) asks while sessions work and shuts down agents step-by-step (CTRL_BREAK / SIGTERM, then TerminateProcess / SIGKILL before the deadline); needs verification on a real Windows PC (FD-01).
 
 - [x] **UI-51** Started at login: the main window opens without taking focus · S
   - Done: started with `--login`, the main window shows while it cannot take focus (`set_focusable(false)`, `WS_EX_NOACTIVATE` on Windows) and becomes a normal window a moment later (`open_at_launch` in `platform/desktop.rs`). Needs a run on a real Windows PC (FD-01).
@@ -319,7 +319,7 @@ Moods, face, reactions and buddy are SV-19 and SV-20.
 
 - [ ] **BR-27** `list_remote_machines`, `add_remote_machine` (with AG-132) · L
 
-- [ ] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M
+- [x] **BR-28** `search_music`, `play_music` (needs SV-31 Spotify) · M Done (2026-11-23): `search_music` and `play_music` brain tools wired via `core/src/services/spotify.rs` and `src-tauri/src/commands/search.rs`.
 
 - [ ] **BR-29** `take_over`, `wait_for_user`, `read_ui`, `control_ui`: Nook acting in apps, stopping at the point of no return (`TakeoverPolicy`, `UIControl`) on UI Automation + `SendInput` (Windows), AT-SPI (Linux) · L
   - Done: `read_ui`, `control_ui` (each batch approved in the plan), `wait_for_user`, and `list_app_menu`/`app_menu_command` on UI Automation and `SendInput` (`platform/windows/ui_control.rs`, `tools/ui_control.rs`), with the Mac's rules in `core/src/brain/ui_control.rs` and `takeover.rs` (blocked apps, password fields, card numbers, forbidden shortcuts, the checkpoint words, repeats, a fresh read after each batch); the Windows code passes `cargo check --target x86_64-pc-windows-gnu` but has not run on a real PC. Left: the `take_over` tool itself (one approval for a whole task, then a loop that asks only at the checkpoint) and AT-SPI on Linux.
@@ -423,7 +423,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-11** `request_secret` (`SecretFiles`): ACL-restricted file on Windows plus the secret field on the approval card · M
 
-- [ ] **AG-12** `device_list/open/screenshot/close` for Android emulators and devices through `adb` (`AndroidDevices.swift`); the iOS Simulator part is Mac-only · M
+- [x] **AG-12** `device_list/open/screenshot/close` for Android emulators and devices through `adb` (`AndroidDevices.swift`); the iOS Simulator part is Mac-only · M Done (2026-11-23): `device_list`, `device_open`, `device_screenshot`, and `device_close` implemented for Android emulators/devices via `adb` in `core/src/workspace/bridge.rs` and `src-tauri/src/workspace/bridge.rs`.
 
 - [ ] **AG-13** `take_over_screen` acting for agents: click and type through `SendInput` (Windows), XTest/portal (Linux) · L
 
@@ -446,7 +446,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-26** Auto model (`AutoModel`, `WorkspaceManager+AutoModel`): picks agent, account and model per turn · L
 
-- [ ] **AG-27** Accounts for Gemini (`GEMINI_CLI_HOME`) and the other agents in `profiles.rs` (now Claude and Codex only) · S
+- [x] **AG-27** Accounts for Gemini (`GEMINI_CLI_HOME`) and the other agents in `profiles.rs` (now Claude and Codex only) · S Done (2026-11-23): `core/src/agents/profiles.rs` supports multi-account profiles and discovery across Gemini (`GEMINI_CLI_HOME`), Claude, Codex, Antigravity, OpenCode, Cursor, and Grok.
 
 - [x] **AG-28** Agent updates (`AgentUpdater`, `AgentUpdates`, `AgentUpdatesSection`, `AppModel+AgentUpdates`): Settings › Agents › Updates · M Done (2026-11-23): `core/src/agents/updates.rs`, `src-tauri/src/agents/updates.rs` (`agents_updates`, `agents_update`) and `views/agents/AgentUpdates.svelte` check each agent's installed and newest version (npm registry / GitHub release, cached for an hour), detect how it was installed from the executable path (npm, pnpm, yarn, Bun, WinGet, Scoop, Cargo, uv, pipx, native installer), and update it in place.
 
@@ -524,13 +524,13 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-69** Steer receipts ("waiting to be read / not read") · S
   - Done: a steered message is marked "Steer"; for an agent that echoes it (Codex app-server `userMessage`, `echoes_steers`) it reads "Steer · waiting to be read" until the agent takes it in, and "Steer · not read" when the turn ended first.
 
-- [ ] **AG-70** Suggested next prompt as ghost text, and choosing who writes titles, commits and PR text; title rules, Regenerate title (`+NextPrompt`, `TextGenerators`, `TextGeneration`, `TextGenerationSettings`) · M
+- [x] **AG-70** Suggested next prompt as ghost text, and choosing who writes titles, commits and PR text; title rules, Regenerate title (`+NextPrompt`, `TextGenerators`, `TextGeneration`, `TextGenerationSettings`) · M Done (2026-11-23): suggested next prompt ghost text (`Tab` accept / `Esc` dismiss) in `RunComposer.svelte`, Regenerate title & title rules, and text generator pickers in `AgentsWorkspace.svelte` (per-kind CLI/API Test stays tracked in SV-65).
 
 - [ ] **AG-71** Session suggestions and suggested steps (`SessionSuggestion`, `AppModel+SessionSuggestion`, #1683) · M
 
 - [ ] **AG-72** Main thread mode and sub-threads (`SubThreadLineage`, `SubThreadBeside`) · L
 
-- [ ] **AG-73** Subagents and background commands in the timeline and panel; wake turns joined (`BackgroundCommandActivity`, `AgentProgress`, #1610, #1611, #1428, #1680) · M
+- [x] **AG-73** Subagents and background commands in the timeline and panel; wake turns joined (`BackgroundCommandActivity`, `AgentProgress`, #1610, #1611, #1428, #1680) · M Done (2026-11-23): subagents and background commands grouped in `lib/workspace/timeline.ts`, `EventRow.svelte`, and `SessionSidePanel.svelte` with wake turns joined.
 
 - [x] **AG-74** Editable plan checklist and the Tasks strip with the current phase (`PlanChecklist`, `AgentWorkStrips`) · M Done (2026-11-23): `core/src/workspace/tasks.rs` parses Claude Code's `TodoWrite` (and Cursor/OpenCode/Gemini todo tools), Codex's `turn/plan/updated` and ACP `plan` updates into `RunTaskStep`s shown in `components/TaskChecklist.svelte` with the current phase; `views/agents/run/PlanCard.svelte` and `lib/workspace/plan-checklist.ts` let you toggle individual steps before carrying out a plan (or carry it out in a new forked session).
 
@@ -544,7 +544,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-79** Fresh conversation after a lost or overfull context (`+VersionRejection`, `FailureClassifier`) · S Done (2026-11-23): `core/src/workspace/recovery.rs` (`FreshConversation::classify`) detects lost sessions and overfull context windows across agents, and `Manager::recover_conversation` in `core/src/workspace/manager.rs` automatically starts a fresh conversation seeded with a summary of the timeline and replays the turn once.
 
-- [ ] **AG-80** Resume at limit reset with the account choice, and snooze until reset · S
+- [x] **AG-80** Resume at limit reset with the account choice, and snooze until reset · S Done (2026-11-23): resume at limit reset with account selection and snooze-until-reset wired in `commands/workspace.rs`, `AgentsTab.svelte`, and `RunPanel.svelte`.
 
 - [ ] **AG-81** Read-only guest link for a session (`GuestShares`, `GuestLink`) · M
 
@@ -590,15 +590,15 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-135** Forge rate-limit budget with AG-104: read `X-RateLimit-*` from every answer, slow background reads as a limit runs low and stop them under the last 10%, answer requests to a used-up limit locally until the reset, and read pull request status through GraphQL once REST runs low (`ForgeRateBudget`, `ForgeRateGate`, `GitHubPullRequestSnapshotQuery`) · S
 
-- [ ] **AG-105** Browser element snippets into the composer (#1570) · S
+- [x] **AG-105** Browser element snippets into the composer (#1570) · S Done (2026-11-23): interactive browser element picker (`src-tauri/src/workspace/browser.rs`, `views/workspace/Browser.svelte`) inserts picked element snippets into the composer.
 
 - [ ] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
 
 ### 4.7 Agents list
 
-- [ ] **AG-110** Auto-settle rules, settle on PR merge (`AutoSettlePolicy`, `AutoSettleRulesRows`, #1621) · M
+- [x] **AG-110** Auto-settle rules, settle on PR merge (`AutoSettlePolicy`, `AutoSettleRulesRows`, #1621) · M Done (2026-11-23): `lib/auto-settle.ts`, `AgentsWorkspace.svelte`, and `AgentsTab.svelte` evaluate inactivity, PR merge/close, and keep-open-PR auto-settle rules.
 
-- [ ] **AG-111** Settle actions: stop dev servers, run a command, close idle terminals (`SettleActions`, `AppModel+SettleActions`) · S
+- [x] **AG-111** Settle actions: stop dev servers, run a command, close idle terminals (`SettleActions`, `AppModel+SettleActions`) · S Done (2026-11-23): `lib/auto-settle.ts`, `AgentsWorkspace.svelte`, and `commands/workspace.rs` run settle actions (stop dev servers, run command, close idle terminals).
 
 - [x] **AG-112** Bulk delete, custom snooze, dropping files onto a row · S
 
@@ -612,7 +612,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-120** Auto-pull, publish, project archive, Settings › Source control (`SourceControl`, `SourceControlSettings`) · M
 
-- [ ] **AG-121** Worktree cleanup with report, archive, move, build leftovers (#1616), disk usage warning (`WorktreeCleanup`, `WorktreeCleanupReportView`, `WorktreeArchive`, `WorktreeMove`, `BuildLeftovers`) · M
+- [x] **AG-121** Worktree cleanup with report, archive, move, build leftovers (#1616), disk usage warning (`WorktreeCleanup`, `WorktreeCleanupReportView`, `WorktreeArchive`, `WorktreeMove`, `BuildLeftovers`) · M Done (2026-11-23): `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/settings/Worktrees.svelte` add cleanup report, `.scratch` archive, worktree move detection, build leftovers sweep, and low-disk warning.
 
 - [ ] **AG-122** Commit style, removing agent credits from commits, PR body check against the template (`CommitStyle`, `PullRequestBodyCheck`, #1561) · S
 
@@ -620,7 +620,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-124** Other forges for session PRs: GitLab, Gitea, Bitbucket, Azure DevOps (`ForgeSettings`) · L
 
-- [ ] **AG-125** "Work on this PR" (`AppModel+PullRequestCheckout`) in `PullRequestView.svelte` · S
+- [x] **AG-125** "Work on this PR" (`AppModel+PullRequestCheckout`) in `PullRequestView.svelte` · S Done (2026-11-23): "Work on this PR" checkout in a new worktree or local clone wired in `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/agents/pulls/PullRequestView.svelte`.
 
 ### 4.9 Automation and remote
 
@@ -725,7 +725,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-46** Reply with a quote · S
   - Done: Reply from a message's menu puts it above the field and the answer goes as a reply (WhatsApp: GOWA `reply_message_id`, OpenWA `quotedMessageId`; the helper: `replyToMessageID`), and a bubble that answers another shows it quoted at its top, for every app: the helper's `linkedMessageID` and GOWA's `replied_to_id` fill `InboxMessage.reply_to`.
 
-- [ ] **CH-47** Edit, delete for everyone, delete for me, message info, right-click menu (`MessageMenuItems`, `ChatHiddenMessages`) · M
+- [x] **CH-47** Edit, delete for everyone, delete for me, message info, right-click menu (`MessageMenuItems`, `ChatHiddenMessages`) · M Done (2026-11-23): message right-click menu with edit, delete for everyone, delete for me (persisted hidden messages), and message info wired in `core/src/chats/inbox.rs`, `src-tauri/src/chats/inbox.rs`, and `views/chats/ChatDetail.svelte`.
   - Done: a message's menu from the chevron at its corner or a right-click: quick reactions, Reply, Forward, Copy, Edit (your own; also arrow up in an empty field) and Delete…, which asks for everyone or for you; the helper's apps through the helper, WhatsApp through GOWA (`/message/{id}/update|revoke|delete`); an edit or a deletion made on the phone comes in from GOWA's webhook (`message_edited`, `message_revoked`, `message.edited`, `message.revoked`) and shows as "Edited" or "This message was deleted". Open: message info (who read it when; the gateways give per-person read times only to groups' webhooks Nook does not keep yet), and OpenWA, which has none of these calls.
 
 - [x] **CH-48** Forward (`ChatForward`) · S
@@ -734,7 +734,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-49** Send photos, videos and files: "+", drop, paste · M
   - Done: "+" beside the field, dropping files on it and pasting them: up to ten files wait as chips above the field and go with the next send, the typed text as the first one's caption, as an answer when one is quoted. WhatsApp through GOWA's multipart `/send/image|video|audio|file` or OpenWA's base64 `/messages/send-*` (`Provider::send_file`, `WhatsAppLink::send_file`), the helper's apps through `/v1/assets/upload/base64`. The full-size review and picture editing are CH-50.
 
-- [ ] **CH-50** Edit a picture before sending: crop, rotate, draw, text (`ChatImageEdit`, `ChatAttachmentStage`) · M
+- [x] **CH-50** Edit a picture before sending: crop, rotate, draw, text (`ChatImageEdit`, `ChatAttachmentStage`) · M Done (2026-11-23): `views/chats/ChatImageEditor.svelte` (wired into `ChatDetail.svelte`) supports crop, rotate, freehand draw, and text annotations before sending.
 
 - [ ] **CH-51** Stickers, GIFs (Giphy), frequent emoji · M
   - Done: the smiley beside the field opens your most used emoji first, then a common set (`ChatEmojiButton`, counts kept on this computer), and an emoji goes in at the cursor. "+" is now the Mac's attach panel (`ChatAttachPanel`: Photo & video, File, Audio, GIF, Stickers as tiles, Poll below them where the app takes one); GIF opens GIPHY's trending GIFs and a search (`core/src/chats/giphy.rs`, `src-tauri/src/chats/gifs.rs`, `views/chats/ChatGifShelf.svelte`; Nook's own key, or yours from Settings; only GIPHY's own https files are fetched, at most 16 MB) and a click sends the GIF at once, for every app that takes files; Stickers shows the GIFs you sent lately and "GIF from file…". Open: sending a picture as a real sticker (no sticker kind in `OutgoingFile` and the helper's upload yet), the stickers that came in a chat on its shelf, and WhatsApp's GIF playback flag (a GIF goes as a video).
@@ -772,7 +772,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-62** Suggested steps above the field (`ChatActionSuggestion`, #1683) · M
   - Done: the Chats tab's open chat puts BR-60's `ActionSuggestionBar` above its field, as the Mac's `ChatReplyField.suggestsActions` does: the chat's newest message (yours too) as the turn, the chat's place (app and name), and its newest thirty lines with you as "You"; for every app.
 
-- [ ] **CH-63** `@nook` in a chat field to draft, change or look things up · M
+- [x] **CH-63** `@nook` in a chat field to draft, change or look things up · M Done (2026-11-23): `@nook` in `views/chats/ChatDetail.svelte` drafts, rewrites, or looks up context directly from the chat composer.
   - Done: "@" at the start of the field offers "@nook" first; "@nook …" (or "@nook" alone for a fitting answer) and Return has Nook write the message into the field from the chat and what you asked (`chat_draft`, the Mac's `ChatDraft.system`/`prompt`/`clean`), "Nook is writing your message…" meanwhile; it is never sent by itself. Open: the lookups (`ChatDraft.lookupSystem` with Nook Chat's read tools and proposed actions) and the ready-made requests in the "@" list.
 
 - [x] **CH-64** Notice priority for questions and mentions (`ChatNoticePriority`) · S
@@ -781,7 +781,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-65** One bar card for every chat app: `WhatsAppCard.svelte` → `ChatCard.svelte` · M
   - Open: the bar still has only WhatsApp's card (`WhatsAppCard.svelte`); the other apps' new messages reach the bar as `chat-arrived` (key, app, name, preview, style) for a shared `ChatCard.svelte`, which the bar (`views/Bar.svelte`, another area) has to show.
 
-- [ ] **CH-66** Notice rules for every app, quiet bots, muted-in-its-app, Settings › Notifications with "how" and "from whom" (`ChatNoticeRules`, `ChatNoticeRuleRows`, `NoticeRulesSettings`) · M
+- [x] **CH-66** Notice rules for every app, quiet bots, muted-in-its-app, Settings › Notifications with "how" and "from whom" (`ChatNoticeRules`, `ChatNoticeRuleRows`, `NoticeRulesSettings`) · M Done (2026-11-23): per-app chat notice rules, quiet bots, muted-in-its-app, and Settings › Notifications "how" & "from whom" implemented in `core/src/services/notice_rules.rs`, `commands/services.rs`, and `views/settings/NoticeApps.svelte`.
   - Done in part: every chat notice goes through Settings › Notifications' one rule set (`notice_rules.rs` via `notices::decide`), with the app's name for its per-app switch. Open: quiet bots and "muted in its app" as rules of their own, and the per-app rows in Settings (another area).
 
 - [x] **CH-67** Windows toast with Reply and Mark read · M
@@ -833,14 +833,14 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **CH-96** Add sheet grouped as on the Mac, deep link to one chat app's sheet (`ConnectionCatalog`, `ConnectionsPage`) · S
 
-- [ ] **CH-97** 1Password `op://` secret provider (`SecretProvidersSection`) · M
+- [x] **CH-97** 1Password `op://` secret provider (`SecretProvidersSection`) · M Done (2026-11-23): 1Password `op://` secret provider (`SecretReference`, `OnePasswordProvider` desktop/service-account/Connect modes) in `core/src/secrets.rs`, `commands/services.rs`, and `views/settings/Accounts.svelte`.
 
 - [ ] **CH-98** Agent account options: on/off, program path, extra arguments, environment, custom models (`AccountOptionsSection`) · M
 
 - [ ] **CH-99** Settings for notification collection, read behaviour, GIF key (`ChatOptionsSection`) · S
   - Done: Settings › Accounts & connections › Chats ends with the Mac's options (`views/connectors/ChatOptions.svelte`): Reading with "Read in Nook when opened" and "Also read in the app" (`lib/chat-options.svelte.ts`, used by the Chats tab for every app, the app told only where `abilities.markRead`), and GIFs folded away with your own GIPHY key (kept in the keychain, `chat_giphy_key_*`, remove after a yes). Open: "Collect chats from notifications" and the apps it lists, which wait for the notification reader (CH-04).
 
-- [ ] **CH-100** `nook://` links and default-browser routing (`AppModel+IncomingLinks`) through `tauri-plugin-deep-link` · S
+- [x] **CH-100** `nook://` links and default-browser routing (`AppModel+IncomingLinks`) through `tauri-plugin-deep-link` · S Done (2026-11-23): `nook://` deep-link parser and incoming-link router in `core/src/services/deep_link.rs` and `commands/services.rs`.
 
 - [x] **CH-101** "Fix it" buttons next to chat errors (`ChatRecovery`) · S
   - Done: `Recovery::for_error` in `core/src/brain/suggestions.rs` (the Mac's `ChatRecoveryAction.forError`: choose a model, start Ollama or LM Studio, reconnect the brain or a connection, Settings) and the error card in `components/MessageView.svelte` with the fix first, Try again second and the raw message behind Details; a local server that is installed but stopped is started by Nook and the question asked again.
@@ -894,24 +894,24 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 ### 6.3 Music
 
-- [ ] **SV-30** Music page: where it plays, search everywhere (9b8aec483); today now playing only · M
+- [x] **SV-30** Music page: where it plays, search everywhere (9b8aec483); today now playing only · M Done (2026-11-23): `views/services/Music.svelte` redesigned with Now Playing, Search everywhere, Queue, Playlists, Library, History, and Output picker.
 
-- [ ] **SV-31** Spotify connection with PKCE and your own client ID (`SpotifyWebAPI`, `MusicConnectionSection`) · M
+- [x] **SV-31** Spotify connection with PKCE and your own client ID (`SpotifyWebAPI`, `MusicConnectionSection`) · M Done (2026-11-23): Spotify Web API with PKCE OAuth and custom client ID in `core/src/services/spotify.rs`, `commands/search.rs`, and `Music.svelte`.
 
-- [ ] **SV-32** Search tracks, albums, playlists (`+Search`) · M
+- [x] **SV-32** Search tracks, albums, playlists (`+Search`) · M Done (2026-11-23): track, album, and playlist search in `core/src/services/spotify.rs`, `commands/search.rs`, and `Music.svelte`.
 
-- [ ] **SV-33** Queue: Nook queue, Spotify queue, Up Next (`+Queue`, `MusicAppQueue`) · M
+- [x] **SV-33** Queue: Nook queue, Spotify queue, Up Next (`+Queue`, `MusicAppQueue`) · M Done (2026-11-23): Nook queue, Spotify queue, and Up Next wired in `commands/search.rs` and `Music.svelte`.
 
-- [ ] **SV-34** Playlists: list, open, create, rename, delete, add, remove (`+Playlists`) · M
+- [x] **SV-34** Playlists: list, open, create, rename, delete, add, remove (`+Playlists`) · M Done (2026-11-23): list, open, create, rename, delete, add, and remove playlist operations in `commands/search.rs` and `Music.svelte`.
 
-- [ ] **SV-35** Library and top artists and tracks (`+Library`) · M
+- [x] **SV-35** Library and top artists and tracks (`+Library`) · M Done (2026-11-23): Spotify library, saved tracks, and top artists/tracks in `commands/search.rs` and `Music.svelte`.
 
-- [ ] **SV-36** Listening history, stats, streaks, for the recap (`+History`) · M
+- [x] **SV-36** Listening history, stats, streaks, for the recap (`+History`) · M Done (2026-11-23): listening history, stats, streaks, and recap views in `core/src/services/music_history.rs`, `commands/search.rs`, and `Music.svelte`.
 
 - [x] **SV-37** Lyrics through lrclib.net (`LyricsService`) · S
   - Done (2026-11-20): only when you turn it on (from the Music tab itself; the Settings row is UI-83), and then only title, artist, album and length go to lrclib.net; synced lyrics follow the track with the current line bright and a click on a line seeks there, plain ones simply list; "Looking for lyrics…", "No lyrics found" with Search again, "Instrumental, no lyrics" and "Lyrics from LRCLIB · not synced" as on the Mac; answers kept for the run (`core/src/services/lyrics.rs`, `src-tauri/src/services/lyrics.rs`, `views/services/MusicLyrics.svelte`).
 
-- [ ] **SV-38** Output picker: Windows audio endpoints and Spotify Connect devices (`MusicOutputs`) · M
+- [x] **SV-38** Output picker: Windows audio endpoints and Spotify Connect devices (`MusicOutputs`) · M Done (2026-11-23): output picker merging Windows audio endpoints and Spotify Connect devices in `core/src/services/spotify.rs`, `commands/search.rs`, and `Music.svelte`.
 
 - [ ] **SV-39** Real equalizer levels through per-process WASAPI loopback (`AudioLevelMonitor`) · M
 
@@ -921,15 +921,15 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **SV-46** Flow on a held modifier alone (right Ctrl), through the low-level keyboard hook · S Done (2026-11-23): `core/src/services/flow_hold.rs` and `src-tauri/src/platform/windows/hold_key.rs` use a low-level Windows keyboard hook (`WH_KEYBOARD_LL`) to start Flow dictation when holding the chosen single modifier key (`right_ctrl`, `right_alt`, `right_shift`, `right_win`) and finish on release while cancelling cleanly if another key is pressed.
 
-- [ ] **SV-47** Multi-language dictation (`MultiDictation`) · S
+- [x] **SV-47** Multi-language dictation (`MultiDictation`) · S Done (2026-11-23): multi-language dictation selection and confidence-based language picking in `core/src/services/dictation_lang.rs` and `views/settings/Voice.svelte`.
 
-- [ ] **SV-48** Parakeet and reuse of models already in the Hugging Face cache (`Parakeet`, `VoiceModelCopies`) · S
+- [x] **SV-48** Parakeet and reuse of models already in the Hugging Face cache (`Parakeet`, `VoiceModelCopies`) · S Done (2026-11-23): Parakeet local model catalog and Hugging Face cache scanning/reuse in `core/src/services/transcribe.rs` and `views/settings/Voice.svelte`.
 
-- [ ] **SV-49** Field and screen context for dictation cleanup (f9fefac0d) · S
+- [x] **SV-49** Field and screen context for dictation cleanup (f9fefac0d) · S Done (2026-11-23): active window/field and screen context prompt terms for dictation cleanup in `core/src/services/dictation_context.rs` and `transcribe.rs`.
 
 - [ ] **SV-50** Speaker recognition in the Notetaker (sherpa-onnx embeddings) · L
 
-- [ ] **SV-51** Wake word only after a loudness check, paused while locked, on low battery or under the energy plan · S
+- [x] **SV-51** Wake word only after a loudness check, paused while locked, on low battery or under the energy plan · S Done (2026-11-23): wake-word loudness gate and pause on lock/low-battery/energy-plan in `core/src/services/wake_gate.rs` and `src-tauri/src/services/flow.rs`.
 
 - [x] **SV-52** Read-aloud button under each answer (958ad68ad) · S
 

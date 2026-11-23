@@ -132,7 +132,99 @@ impl QuietHours {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+fn default_true() -> bool {
+    true
+}
+
+/// Detects automated/bot senders and evaluates whether a chat message notice should be suppressed
+/// (`BotSenderDetector` / `ChatNoticeRules`, CH-66).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BotSenderDetector;
+
+impl BotSenderDetector {
+    /// Known automated bot sender names and handles (case-insensitive).
+    pub const KNOWN_BOTS: [&'static str; 15] = [
+        "slackbot",
+        "uslackbot",
+        "github",
+        "linear",
+        "sentry",
+        "dependabotalert",
+        "dependabot",
+        "renovate",
+        "vercel",
+        "netlify",
+        "pagerduty",
+        "datadog",
+        "jira",
+        "confluence",
+        "automations",
+    ];
+
+    /// Automated email / address substrings (`MailStats.automatedPattern` on macOS).
+    pub const AUTOMATED_ADDRESS_PATTERNS: [&'static str; 13] = [
+        "noreply",
+        "no-reply",
+        "do-not-reply",
+        "donotreply",
+        "newsletter",
+        "notifications@",
+        "notification@",
+        "notify@",
+        "mailer-daemon",
+        "bounce@",
+        "marketing@",
+        "news@",
+        "updates@",
+    ];
+
+    /// Whether a sender name, handle, or profile indicates an automated bot (`isAutomated` on macOS).
+    pub fn is_bot_sender(sender: &str, handle: Option<&str>, is_bot_profile: bool) -> bool {
+        if is_bot_profile {
+            return true;
+        }
+        let s = sender.trim().to_lowercase();
+        let h = handle.unwrap_or("").trim().to_lowercase();
+
+        if s.ends_with("[bot]") || h.ends_with("[bot]") || s.ends_with(" (bot)") {
+            return true;
+        }
+        if Self::KNOWN_BOTS.iter().any(|&b| s == b || h == b) {
+            return true;
+        }
+        for pat in Self::AUTOMATED_ADDRESS_PATTERNS {
+            if s.contains(pat) || h.contains(pat) {
+                return true;
+            }
+        }
+        if (s.contains("info@") || h.contains("info@"))
+            && (s.contains(".mailchimp") || s.contains(".sendgrid") || h.contains(".mailchimp") || h.contains(".sendgrid"))
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Whether a chat notice should be suppressed because it came from a bot or a chat muted in its own app.
+    pub fn should_suppress(
+        sender: &str,
+        handle: Option<&str>,
+        is_bot_profile: bool,
+        muted_in_app: bool,
+        suppress_bots: bool,
+        respect_app_mute: bool,
+    ) -> bool {
+        if respect_app_mute && muted_in_app {
+            return true;
+        }
+        if suppress_bots && Self::is_bot_sender(sender, handle, is_bot_profile) {
+            return true;
+        }
+        false
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NoticeRules {
     /// How each source shows; a source missing here uses its default.
@@ -143,6 +235,25 @@ pub struct NoticeRules {
     pub quiet_hours: Option<QuietHours>,
     /// Quiet for the session you are watching: no notice while its app is in front.
     pub quiet_while_watching: bool,
+    /// Keep automated bot senders and newsletters quiet in chat notifications (CH-66).
+    #[serde(default = "default_true", alias = "quietBots")]
+    pub suppress_bots: bool,
+    /// Respect when a chat is muted inside its own chat app (CH-66).
+    #[serde(default = "default_true")]
+    pub respect_app_mute: bool,
+}
+
+impl Default for NoticeRules {
+    fn default() -> Self {
+        Self {
+            styles: BTreeMap::new(),
+            apps: BTreeMap::new(),
+            quiet_hours: None,
+            quiet_while_watching: false,
+            suppress_bots: true,
+            respect_app_mute: true,
+        }
+    }
 }
 
 impl NoticeRules {
@@ -229,6 +340,32 @@ impl NoticeRules {
             return NoticeDecision::HistoryOnly;
         }
         NoticeDecision::Show(style)
+    }
+
+    /// Decides what a chat notice does, factoring in bot sender detection and `muted_in_app` (CH-66).
+    #[allow(clippy::too_many_arguments)]
+    pub fn decide_chat(
+        &self,
+        app: &str,
+        sender: &str,
+        handle: Option<&str>,
+        is_bot_profile: bool,
+        muted_in_app: bool,
+        quiet: bool,
+        watching: bool,
+        hour: u32,
+    ) -> NoticeDecision {
+        if BotSenderDetector::should_suppress(
+            sender,
+            handle,
+            is_bot_profile,
+            muted_in_app,
+            self.suppress_bots,
+            self.respect_app_mute,
+        ) {
+            return NoticeDecision::HistoryOnly;
+        }
+        self.decide(NoticeSource::Chats, app, false, quiet, watching, hour)
     }
 
     /// Whether an agent push may go to a paired phone (`allowsAgentPush` on the Mac): approvals and questions always
@@ -425,5 +562,49 @@ mod tests {
         let aliased: NoticeRules = serde_json::from_str(r#"{"styles":{"agents":"line","nook":"list"}}"#).unwrap();
         assert_eq!(aliased.style(NoticeSource::Agents), NoticeStyle::Strip);
         assert_eq!(aliased.style(NoticeSource::Nook), NoticeStyle::Off);
+    }
+
+    #[test]
+    fn bot_sender_detector_identifies_automated_senders_and_respects_flags() {
+        assert!(BotSenderDetector::is_bot_sender("slackbot", None, false));
+        assert!(BotSenderDetector::is_bot_sender("GitHub", Some("notifications@github.com"), false));
+        assert!(BotSenderDetector::is_bot_sender("dependabot[bot]", None, false));
+        assert!(BotSenderDetector::is_bot_sender("Billing", Some("no-reply@stripe.com"), false));
+        assert!(BotSenderDetector::is_bot_sender("Digest", Some("info@news.mailchimp.com"), false));
+        assert!(BotSenderDetector::is_bot_sender("Helper", None, true));
+        assert!(!BotSenderDetector::is_bot_sender("Anna", Some("anna@example.com"), false));
+
+        let mut rules = NoticeRules::default();
+        rules.set_app(NoticeSource::Chats, "slack", true);
+
+        // Bot sender suppressed by default
+        assert_eq!(
+            rules.decide_chat("slack", "slackbot", None, false, false, false, false, 12),
+            NoticeDecision::HistoryOnly
+        );
+        // Muted in app suppressed by default
+        assert_eq!(
+            rules.decide_chat("slack", "Anna", None, false, true, false, false, 12),
+            NoticeDecision::HistoryOnly
+        );
+        // Human sender in unmuted chat shows
+        assert_eq!(
+            rules.decide_chat("slack", "Anna", None, false, false, false, false, 12),
+            NoticeDecision::Show(NoticeStyle::Card)
+        );
+
+        // Turning off suppress_bots allows bot notifications
+        rules.suppress_bots = false;
+        assert_eq!(
+            rules.decide_chat("slack", "slackbot", None, false, false, false, false, 12),
+            NoticeDecision::Show(NoticeStyle::Card)
+        );
+
+        // Turning off respect_app_mute allows muted-in-app notifications
+        rules.respect_app_mute = false;
+        assert_eq!(
+            rules.decide_chat("slack", "Anna", None, false, true, false, false, 12),
+            NoticeDecision::Show(NoticeStyle::Card)
+        );
     }
 }

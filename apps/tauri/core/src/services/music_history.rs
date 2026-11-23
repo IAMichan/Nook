@@ -245,9 +245,10 @@ impl StatsPeriod {
 }
 
 /// The part of the day someone listens most.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ListenerType {
+
     Afternoon,
     Evening,
     Morning,
@@ -561,9 +562,9 @@ mod tests {
 
     #[test]
     fn a_period_is_compared_with_the_one_before() {
-        let plays = vec![play("a", "A", 100, at(10, 10)), play("a", "A", 150, at(20, 10))];
+        let plays = vec![play("a", "A", 100, at(5, 10)), play("a", "A", 150, at(20, 10))];
         let s = MusicStats::new(&plays, StatsPeriod::Week, at(22, 8), utc());
-        assert_eq!(s.previous_seconds, Some(100).filter(|_| false).or(None));
+        assert_eq!(s.previous_seconds, None);
         let s = MusicStats::new(&plays, StatsPeriod::Month, at(22, 8), utc());
         assert_eq!(s.seconds, 250);
         let plays = vec![play("a", "A", 100, at(12, 10)), play("a", "A", 150, at(20, 10))];

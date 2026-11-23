@@ -40,6 +40,7 @@
   import { activeCall } from "../../lib/chats-call.svelte";
   import { chatOptions } from "../../lib/chat-options.svelte";
   import ChatGifShelf from "./ChatGifShelf.svelte";
+  import ChatImageEditor from "./ChatImageEditor.svelte";
   import ChatPollForm from "./ChatPollForm.svelte";
   import ChatPollView from "./ChatPollView.svelte";
   import DropdownRow from "../../components/ui/DropdownRow.svelte";
@@ -256,24 +257,46 @@
   /** Return or the arrow: the text goes to this chat as typed, as an answer to the quoted message when there is one;
    *  the chat stays open and shows it. When it fails the chat says why and the text and the quote are back. A chat Nook
    *  cannot write in copies the text for its app instead. */
-  // "@nook …" (`ChatDraft`): Nook writes the message into the field, for you to read and send yourself.
+  // "@nook …" (`ChatDraft`, CH-63): Nook writes the message into the field, refines an existing draft, or answers a lookup question.
   let writing = $state(false);
+  let lastNookDraft = $state<string | null>(null);
+  let nookLookup = $state<{ question: string; answer: string } | null>(null);
   function nookInstruction(text: string): string | null {
     const t = text.trim();
     if (!/^@nook(?![\p{L}\p{N}])/iu.test(t)) return null;
     return t.slice(5).replace(/^[\s,:;\-–—]+/, "").trim();
   }
-  async function writeWithNook(instruction: string) {
+  async function writeWithNook(instruction: string, currentDraft?: string) {
     writing = true;
     notice = "";
     try {
-      draft = await chatsApi.draft(entry.key, instruction);
+      const res = await invokeOrFallback<{ kind: string; text: string; instruction: string }>(
+        "chat_inline_nook",
+        { key: entry.key, instruction, currentDraft: currentDraft ?? null },
+        async () => {
+          const text = await chatsApi.draft(entry.key, instruction);
+          return { kind: "draft", text, instruction };
+        },
+      );
+      if (res.kind === "answer") {
+        nookLookup = { question: res.instruction || instruction, answer: res.text };
+        if (nookInstruction(draft) !== null) draft = "";
+      } else {
+        draft = res.text;
+        lastNookDraft = res.text;
+        nookLookup = null;
+      }
       tick().then(() => field?.focus());
     } catch (e) {
       notice = String(e);
     } finally {
       writing = false;
     }
+  }
+  function tweakNookDraft(change: string) {
+    const current = draft.trim() || lastNookDraft;
+    if (!current || writing) return;
+    writeWithNook(change, current);
   }
 
   // The answer you will likely send (`ChatReplySuggestion`): grey in the empty field when the newest message is
@@ -305,6 +328,7 @@
     sending = true;
     notice = "";
     draft = "";
+    lastNookDraft = null;
     const quoted = replying;
     replying = null;
     try {
@@ -322,14 +346,18 @@
     }
   }
 
-  /** The field's words become your message's new words, after Return or the arrow. */
+  /** The field's words become your message's new words, after Return or the arrow (`chat_inbox_edit_message`, CH-47). */
   async function saveEdit() {
     const target = editing;
     const text = draft.trim();
     if (!target || !text || sending) return;
     sending = true;
     try {
-      await chatsApi.message(entry.key, target.id, "edit", text);
+      await invokeOrFallback(
+        "chat_inbox_edit_message",
+        { key: entry.key, message: target.id, text },
+        () => chatsApi.message(entry.key, target.id, "edit", text),
+      );
       editing = null;
       draft = "";
       await loadThread();
@@ -475,9 +503,16 @@
     panel = null;
     openChatSettings();
   }
+  let editingFileIndex = $state<number | null>(null);
+  let filePreviews = $state<Record<number, string>>({});
   function addFiles(list: FileList | File[] | null | undefined) {
     if (!list || !takesFiles) return;
     files = [...files, ...Array.from(list)].slice(0, 10);
+  }
+  function updateEditedFile(index: number, edited: File, previewUrl: string) {
+    files = files.map((f, idx) => (idx === index ? edited : f));
+    filePreviews = { ...filePreviews, [index]: previewUrl };
+    editingFileIndex = null;
   }
   function paste(e: ClipboardEvent) {
     const pasted = Array.from(e.clipboardData?.files ?? []);
@@ -539,12 +574,26 @@
     if (!m.text.trim() && !kind) return false;
     return targets.some((t) => t.key !== entry.key && canForwardTo(t, m.text, kind));
   }
-  // Deleting a message asks how (`chat.delete.choose`).
+  // Deleting a message asks how (`chat.delete.choose`, CH-47).
   let deleting = $state<Bubble | null>(null);
   async function step(m: Bubble, what: "revoke" | "deleteForMe" | "react", text?: string) {
     try {
-      await chatsApi.message(entry.key, m.id, what, text);
-      if (what === "react" && text) usedEmoji(text);
+      if (what === "revoke") {
+        await invokeOrFallback(
+          "chat_inbox_delete_for_everyone",
+          { key: entry.key, message: m.id },
+          () => chatsApi.message(entry.key, m.id, "revoke"),
+        );
+      } else if (what === "deleteForMe") {
+        await invokeOrFallback(
+          "chat_inbox_delete_for_me",
+          { key: entry.key, message: m.id },
+          () => chatsApi.message(entry.key, m.id, "deleteForMe"),
+        );
+      } else {
+        await chatsApi.message(entry.key, m.id, what, text);
+        if (text) usedEmoji(text);
+      }
       await loadThread();
     } catch (e) {
       notice = String(e);
@@ -589,6 +638,7 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       if (emojiOpen) emojiOpen = false;
+      else if (nookLookup) nookLookup = null;
       else if (files.length) files = [];
       else if (editing) { editing = null; draft = ""; }
       else if (replying) replying = null;
@@ -633,8 +683,8 @@
     ...chatMenu(entry, onclose),
   ]);
 
-  // A message's menu, from the chevron on it or a right-click (`MessageMenuItems`): the quick reactions on top, then
-  // reply, forward, copy, and for your own message info, edit and delete, all respecting `ChatAbilities`.
+  // A message's menu, from the chevron on it or a right-click (`MessageMenuItems`, CH-47): the quick reactions on top, then
+  // reply, edit, forward, copy, message info, delete for me, and delete for everyone, all respecting `ChatAbilities`.
   let messageMenu = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
   let receiptInfo = $state<{ m: Bubble; anchor: DOMRect } | null>(null);
   function openMessageInfo(e: MouseEvent, m: Bubble) {
@@ -648,13 +698,14 @@
     return [
       [
         ...(abilities.reply && !m.deleted ? [{ label: tr("Beantwoorden", "Reply"), icon: "reply", onselect: () => quote(m) }] : []),
+        ...(abilities.edit && m.fromMe && !m.deleted && m.text ? [{ label: tr("Bewerken", "Edit"), icon: "pencil", onselect: () => startEdit(m) }] : []),
         ...(canForwardMessage(m) ? [{ label: tr("Doorsturen", "Forward"), icon: "forward", onselect: () => (forwarding = m) }] : []),
         ...(m.text ? [{ label: tr("Kopieer", "Copy"), icon: "copy", onselect: () => navigator.clipboard.writeText(m.text).catch(() => {}) }] : []),
-        ...(m.fromMe && !m.deleted ? [{ label: tr("Berichtinfo", "Message info"), icon: "info", onselect: () => (receiptInfo = { m, anchor }) }] : []),
+        ...(!m.deleted ? [{ label: tr("Berichtinfo", "Message info"), icon: "info", onselect: () => (receiptInfo = { m, anchor }) }] : []),
       ],
       [
-        ...(abilities.edit && m.fromMe && !m.deleted && m.text ? [{ label: tr("Bewerken", "Edit"), icon: "pencil", onselect: () => startEdit(m) }] : []),
-        ...(!m.deleted ? [{ label: tr("Verwijderen…", "Delete…"), icon: "trash-2", destructive: true, onselect: () => (deleting = m) }] : []),
+        ...(m.fromMe && abilities.delete && !m.deleted ? [{ label: tr("Verwijderen voor iedereen", "Delete for everyone"), icon: "trash-2", destructive: true, onselect: () => step(m, "revoke") }] : []),
+        ...(!m.deleted ? [{ label: tr("Verwijderen voor mij", "Delete for me"), icon: "trash-2", destructive: true, onselect: () => step(m, "deleteForMe") }] : []),
       ],
     ].filter((s) => s.length);
   });
@@ -889,12 +940,57 @@
       </ChatQuote></div>
     {/if}
     {#if files.length}
-      <!-- What waits to go with the next send (`ChatAttachmentReview`). -->
+      <!-- What waits to go with the next send (`ChatAttachmentReview` / `ChatAttachmentStage`, CH-50). -->
       <div class="files">
         {#each files as f, i (i)}
-          <span class="chip"><Ico name={f.type.startsWith("image/") ? "image" : f.type.startsWith("video/") ? "play" : "file"} size={12} /><span class="chip-name">{f.name}</span>
-            <button class="chip-x" aria-label={tr("Verwijder", "Remove")} onclick={() => (files = files.filter((_, j) => j !== i))}><Ico name="x" size={10} stroke={2.6} /></button></span>
+          <span class="chip">
+            {#if filePreviews[i]}
+              <img class="chip-thumb" src={filePreviews[i]} alt={f.name} />
+            {:else}
+              <Ico name={f.type.startsWith("image/") ? "image" : f.type.startsWith("video/") ? "play" : "file"} size={12} />
+            {/if}
+            <span class="chip-name">{f.name}</span>
+            {#if f.type.startsWith("image/")}
+              <button
+                type="button"
+                class="chip-edit"
+                title={tr("Afbeelding bewerken", "Edit picture")}
+                aria-label={tr("Afbeelding bewerken", "Edit picture")}
+                onclick={() => (editingFileIndex = i)}
+              >
+                <Ico name="edit" size={11} />
+                <span>{tr("Bewerken", "Edit")}</span>
+              </button>
+            {/if}
+            <button class="chip-x" aria-label={tr("Verwijder", "Remove")} onclick={() => (files = files.filter((_, j) => j !== i))}><Ico name="x" size={10} stroke={2.6} /></button>
+          </span>
         {/each}
+      </div>
+    {/if}
+    {#if nookLookup}
+      <!-- Dismissible inline @nook lookup answer popover (CH-63). -->
+      <div class="nook-lookup" role="region" aria-label="@nook">
+        <div class="nook-lookup-head">
+          <span class="nook-mark"><Ico name="sparkles" size={12} stroke={2.4} /></span>
+          <strong class="nook-lookup-q">{nookLookup.question || "@nook"}</strong>
+          <IconButton title={tr("Sluiten", "Close")} size={20} onclick={() => (nookLookup = null)}><Ico name="x" size={11} stroke={2.4} /></IconButton>
+        </div>
+        <p class="nook-lookup-a">{nookLookup.answer}</p>
+        <div class="nook-lookup-actions">
+          <button type="button" class="small-ghost" onclick={() => { if (nookLookup) { draft = nookLookup.answer; nookLookup = null; tick().then(() => field?.focus()); } }}>
+            {tr("In veld zetten", "Use in field")}
+          </button>
+        </div>
+      </div>
+    {/if}
+    {#if lastNookDraft && draft.trim() && !editing && !writing}
+      <!-- Quick @nook draft refinement chips (`ChatDraft.Tweak`, CH-63). -->
+      <div class="nook-tweaks">
+        <span class="nook-mark"><Ico name="sparkles" size={11} stroke={2.4} /></span>
+        <button type="button" class="tweak-chip" onclick={() => tweakNookDraft("Make it shorter.")}>{tr("Korter", "Shorter")}</button>
+        <button type="button" class="tweak-chip" onclick={() => tweakNookDraft("Make it warmer and friendlier.")}>{tr("Vriendelijker", "Warmer")}</button>
+        <button type="button" class="tweak-chip" onclick={() => tweakNookDraft("Make it more formal.")}>{tr("Formeler", "More formal")}</button>
+        <button type="button" class="tweak-chip" onclick={() => tweakNookDraft("")}>{tr("Opnieuw", "Try again")}</button>
       </div>
     {/if}
     {#if tagMatches.length || offersNook}
@@ -972,6 +1068,13 @@
   </footer>
 </div>
 
+{#if editingFileIndex !== null && files[editingFileIndex]}
+  <ChatImageEditor
+    file={files[editingFileIndex]}
+    onsave={(edited, previewUrl) => updateEditedFile(editingFileIndex!, edited, previewUrl)}
+    onclose={() => (editingFileIndex = null)}
+  />
+{/if}
 {#if menuAnchor}<Menu sections={menu} anchor={menuAnchor} onclose={() => (menuAnchor = null)} />{/if}
 {#if messageMenu && (messageItems.length || messageReactions)}<Menu sections={messageItems} reactions={messageReactions} anchor={messageMenu.anchor} onclose={() => (messageMenu = null)} />{/if}
 {#if versionsOf}<Menu title={versionsOf.m.deleted ? tr("Voordat het werd verwijderd", "Before it was deleted") : tr("Eerdere versies", "Earlier versions")} sections={versionRows} anchor={versionsOf.anchor} onclose={() => (versionsOf = null)} />{/if}
@@ -1005,10 +1108,24 @@
         <IconButton title={tr("Sluiten", "Close")} size={20} onclick={() => (receiptInfo = null)}><Ico name="x" size={12} stroke={2.4} /></IconButton>
       </div>
       <div class="info-row">
+        <span class="info-key">{tr("Afzender", "Sender")}</span>
+        <span class="info-val">{m.fromMe ? tr("Jij", "You") : m.sender || entry.name}</span>
+      </div>
+      {#if !m.fromMe && entry.handle}
+        <div class="info-row">
+          <span class="info-key">{tr("Adres", "Handle")}</span>
+          <span class="info-val">{entry.handle}</span>
+        </div>
+      {/if}
+      <div class="info-row">
+        <span class="info-key">{tr("App", "App")}</span>
+        <span class="info-val">{app}{entry.account ? ` · ${entry.account}` : ""}</span>
+      </div>
+      <div class="info-row">
         <span class="info-key">{tr("Verstuurd", "Sent")}</span>
         <span class="info-val">{dayAndClock(m.date, receiptNow)}</span>
       </div>
-      {#if !isGroup}
+      {#if m.fromMe && !isGroup}
         <div class="info-row">
           <span class="info-key">
             <Ticks receipt={m.receipt} size={12} />
@@ -1016,7 +1133,7 @@
           </span>
           <span class="info-val">{m.receipt === "read" && m.readAt ? dayAndClock(m.readAt, receiptNow) : "—"}</span>
         </div>
-      {:else}
+      {:else if m.fromMe}
         {#if readReaders.length}
           <div class="info-group">
             <span class="info-label"><Ticks receipt="read" size={12} />{tr("Gelezen door", "Read by")}</span>
@@ -1161,9 +1278,20 @@
   .line.mine .reactions { justify-content: flex-end; padding-left: 0; padding-right: calc(7px + var(--space-12)); }
   .bubble :global(.quote) { margin-bottom: var(--space-2); }
   .files { display: flex; flex-wrap: wrap; gap: var(--space-6); }
-  .chip { display: inline-flex; align-items: center; gap: var(--space-4); max-width: 220px; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-8); border-radius: var(--radius-chip); background: var(--smoke); font: var(--text-label); color: var(--text-strong); }
+  .chip { display: inline-flex; align-items: center; gap: var(--space-4); max-width: 240px; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-8); border-radius: var(--radius-chip); background: var(--smoke); font: var(--text-label); color: var(--text-strong); }
+  .chip-thumb { width: 20px; height: 20px; border-radius: var(--radius-chip); object-fit: cover; flex: none; }
   .chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip-edit { display: inline-flex; align-items: center; gap: var(--space-4); height: 20px; padding: 0 var(--space-6); border: 0; border-radius: var(--radius-chip); background: var(--row-hover); color: var(--text2); font: var(--text-caption); white-space: nowrap; }
+  .chip-edit:hover:not(:disabled) { background: var(--separator); border: 0; color: var(--paper); }
   .chip-x { width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border: 0; border-radius: var(--radius-chip); background: transparent; color: var(--text3); }
+  .nook-lookup { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8) var(--space-12); border: 1px solid var(--field-stroke); border-radius: var(--radius-sheet); background: var(--composer-tray); }
+  .nook-lookup-head { display: flex; align-items: center; gap: var(--space-8); }
+  .nook-lookup-q { flex: 1; min-width: 0; font: var(--text-label); color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nook-lookup-a { margin: 0; font: var(--text-detail); color: var(--text-strong); white-space: pre-wrap; }
+  .nook-lookup-actions { display: flex; justify-content: flex-end; }
+  .nook-tweaks { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-2) var(--space-4); }
+  .tweak-chip { height: 24px; padding: 0 var(--space-8); border: 1px solid var(--separator); border-radius: var(--radius-chip); background: var(--composer-tray); color: var(--text2); font: var(--text-caption); white-space: nowrap; }
+  .tweak-chip:hover:not(:disabled) { background: var(--row-hover); border-color: var(--separator); color: var(--paper); }
   .tags { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--field-stroke); border-radius: var(--radius-sheet); background: var(--composer-tray); }
   .tag { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-4) var(--space-8); border: 0; border-radius: var(--radius-control); background: transparent; text-align: left; font: var(--text-control); color: var(--paper); }
   .tag:hover:not(:disabled) { background: var(--row-hover); border: 0; }

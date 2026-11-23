@@ -36,6 +36,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     }
     restore_main(app);
     own_title_bar(app);
+    refresh_jump_list(&settings.app_language);
     Ok(())
 }
 
@@ -447,16 +448,133 @@ pub fn open_at_launch(app: &AppHandle, at_login: bool) {
     }
 }
 
-/// `--window` opent het hoofdvenster, `--settings` meteen de instellingen.
+/// `--window` opent het hoofdvenster, `--settings` meteen de instellingen, en de Jump List-vlaggen openen direct
+/// Nieuwe Nook, Agents of Chats (UI-49).
 pub fn route_from_args(args: &[String]) -> Option<&'static str> {
     if args.iter().any(|a| a == "--settings") {
         Some("settings")
+    } else if args.iter().any(|a| a == "--agents") {
+        Some("agents")
+    } else if args.iter().any(|a| a == "--chats") {
+        Some("chats")
+    } else if args.iter().any(|a| a == "--new-nook" || a == "--new") {
+        Some("chat")
     } else if args.iter().any(|a| a == "--window") {
         Some("chat")
     } else {
         None
     }
 }
+
+/// Whether command-line arguments ask to start a fresh Nook conversation immediately (`--new-nook`).
+pub fn is_new_nook_arg(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--new-nook" || a == "--new")
+}
+
+/// One task in the Windows taskbar Jump List (`New Nook`, `Settings`, `Agents`, `Chats`, UI-49).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JumpListTask {
+    pub flag: &'static str,
+    pub route: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+}
+
+/// The Windows Jump List tasks in the interface language (UI-49).
+pub fn jump_list_tasks(language: &str) -> [JumpListTask; 4] {
+    let tr = |nl, en| nook_core::i18n::translate(language, nl, en);
+    [
+        JumpListTask {
+            flag: "--new-nook",
+            route: "chat",
+            title: tr("Nieuwe Nook", "New Nook"),
+            description: tr("Start een nieuw gesprek met Nook", "Start a new conversation with Nook"),
+        },
+        JumpListTask {
+            flag: "--settings",
+            route: "settings",
+            title: tr("Instellingen", "Settings"),
+            description: tr("Open de instellingen van Nook", "Open Nook's settings"),
+        },
+        JumpListTask {
+            flag: "--agents",
+            route: "agents",
+            title: tr("Agents", "Agents"),
+            description: tr("Open je lopende coding-agents", "Open your coding agent sessions"),
+        },
+        JumpListTask {
+            flag: "--chats",
+            route: "chats",
+            title: tr("Chats", "Chats"),
+            description: tr("Open je chat-apps en berichten", "Open your chat apps and messages"),
+        },
+    ]
+}
+
+/// Publishes the Windows taskbar Jump List (`ICustomDestinationList`) with tasks for `New Nook`, `Settings`,
+/// `Agents`, and `Chats` (UI-49). Safe no-op on non-Windows platforms.
+#[cfg(windows)]
+pub fn refresh_jump_list(language: &str) {
+    use windows::core::{Interface, HSTRING, PROPVARIANT};
+    use windows::Win32::System::Com::StructuredStorage::IPropertyStore;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::Common::{IObjectArray, IObjectCollection};
+    use windows::Win32::UI::Shell::{
+        DestinationList, EnumerableObjectCollection, ICustomDestinationList, IShellLinkW, ShellLink,
+    };
+    use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
+
+    let Some(exe) = std::env::current_exe().ok() else { return };
+    let exe_str = exe.to_string_lossy().into_owned();
+    let tasks = jump_list_tasks(language);
+
+    // PKEY_Title: {F29F85E0-4FF9-1068-AB91-08002B27B3D9}, pid 2
+    const PKEY_TITLE: PROPERTYKEY = PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(0xf29f85e0_4ff9_1068_ab91_08002b27b3d9),
+        pid: 2,
+    };
+
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let Ok(list) = CoCreateInstance::<_, ICustomDestinationList>(&DestinationList, None, CLSCTX_INPROC_SERVER) else {
+            return;
+        };
+        let mut min_slots = 0u32;
+        let Ok(_removed): windows::core::Result<IObjectArray> = list.BeginList(&mut min_slots) else {
+            return;
+        };
+        let Ok(collection) =
+            CoCreateInstance::<_, IObjectCollection>(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)
+        else {
+            let _ = list.AbortList();
+            return;
+        };
+        for task in &tasks {
+            let Ok(link) = CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) else {
+                continue;
+            };
+            let _ = link.SetPath(&HSTRING::from(&exe_str));
+            let _ = link.SetArguments(&HSTRING::from(task.flag));
+            let _ = link.SetDescription(&HSTRING::from(task.description));
+            let _ = link.SetIconLocation(&HSTRING::from(&exe_str), 0);
+            if let Ok(store) = link.cast::<IPropertyStore>() {
+                let val = PROPVARIANT::from(task.title);
+                let _ = store.SetValue(&PKEY_TITLE, &val);
+                let _ = store.Commit();
+            }
+            let _ = collection.AddObject(&link);
+        }
+        if let Ok(array) = collection.cast::<IObjectArray>() {
+            let _ = list.AddUserTasks(&array);
+        }
+        let _ = list.CommitList();
+    }
+}
+
+#[cfg(not(windows))]
+pub fn refresh_jump_list(_language: &str) {}
 
 pub fn toggle_main(app: &AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
@@ -505,33 +623,48 @@ pub fn open_bar(app: &AppHandle, focus: &str) {
     }
 }
 
-/// The tray menu's labels in the interface language, in menu order: open, window, new, settings, quit.
-fn tray_labels(language: &str) -> [&'static str; 5] {
+/// The tray menu's labels in the interface language, in menu order: open, window, new, agents, chats, settings, quit.
+fn tray_labels(language: &str) -> [&'static str; 7] {
     match language {
-        "nl" => ["Open Nook", "Open in venster", "Nieuwe Nook", "Instellingen…", "Stop Nook"],
-        "de" => ["Nook öffnen", "Im Fenster öffnen", "Neuer Nook", "Einstellungen…", "Nook beenden"],
-        "fr" => ["Ouvrir Nook", "Ouvrir dans une fenêtre", "Nouveau Nook", "Réglages…", "Quitter Nook"],
-        "es" => ["Abrir Nook", "Abrir en ventana", "Nuevo Nook", "Ajustes…", "Salir de Nook"],
-        _ => ["Open Nook", "Open in window", "New Nook", "Settings…", "Quit Nook"],
+        "nl" => ["Open Nook", "Open in venster", "Nieuwe Nook", "Agents", "Chats", "Instellingen…", "Stop Nook"],
+        "de" => ["Nook öffnen", "Im Fenster öffnen", "Neuer Nook", "Agents", "Chats", "Einstellungen…", "Nook beenden"],
+        "fr" => ["Ouvrir Nook", "Ouvrir dans une fenêtre", "Nouveau Nook", "Agents", "Chats", "Réglages…", "Quitter Nook"],
+        "es" => ["Abrir Nook", "Abrir en ventana", "Nuevo Nook", "Agents", "Chats", "Ajustes…", "Salir de Nook"],
+        _ => ["Open Nook", "Open in window", "New Nook", "Agents", "Chats", "Settings…", "Quit Nook"],
     }
 }
 
-/// The actions of the tray menu; `tray_live::build_menu` puts the status lines above them.
+/// The actions of the tray menu; `tray_live::build_menu` puts the status lines above them (UI-48).
 pub(crate) fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let [open, window, new_nook, settings, quit] = tray_labels(&app.state::<AppState>().settings().app_language);
+    let [open, window, new_nook, agents, chats, settings, quit] =
+        tray_labels(&app.state::<AppState>().settings().app_language);
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let window = MenuItem::with_id(app, "window", window, true, Some("Alt+CommandOrControl+W"))?;
     let new_nook = MenuItem::with_id(app, "new", new_nook, true, None::<&str>)?;
+    let agents = MenuItem::with_id(app, "agents", agents, true, None::<&str>)?;
+    let chats = MenuItem::with_id(app, "chats", chats, true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", settings, true, Some("CommandOrControl+,"))?;
     let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
     Menu::with_items(
         app,
-        &[&open, &window, &new_nook, &PredefinedMenuItem::separator(app)?, &settings, &PredefinedMenuItem::separator(app)?, &quit],
+        &[
+            &open,
+            &window,
+            &new_nook,
+            &agents,
+            &chats,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
     )
 }
 
-/// Rebuilds the tray menu after the interface language changed.
+/// Rebuilds the tray menu and Jump List after the interface language or status changed.
 pub fn refresh_tray(app: &AppHandle) {
+    let lang = app.state::<AppState>().settings().app_language;
+    refresh_jump_list(&lang);
     super::tray_live::refresh(app);
 }
 
@@ -549,6 +682,8 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 show_main(app, "chat");
                 let _ = app.emit("new-nook", ());
             }
+            "agents" => show_main(app, "agents"),
+            "chats" => show_main(app, "chats"),
             "settings" => show_main(app, "settings"),
             "quit" => request_quit(app),
             id => {
@@ -564,19 +699,78 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Quit from the tray (`confirmQuit` on the Mac): while a Workspace session is still at work and Settings › General ›
-/// Confirmations asks for it, Nook asks first; otherwise, or after "Quit Anyway", it quits. A restart into an update
-/// (`updates.rs`) never asks.
+/// Sends a polite console control event (`CTRL_BREAK_EVENT`) on Windows to an agent process before a hard kill (UI-50).
+#[cfg(windows)]
+pub fn polite_stop_process(pid: u32) {
+    use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+    if pid > 1 {
+        unsafe {
+            let _ = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn polite_stop_process(_pid: u32) {}
+
+/// Force-terminates an agent process on Windows (`OpenProcess` + `TerminateProcess`) if it is still running at the
+/// shutdown deadline (UI-50).
+#[cfg(windows)]
+pub fn force_terminate_process(pid: u32) {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    if pid > 1 {
+        unsafe {
+            if let Ok(handle) = OpenProcess(PROCESS_TERMINATE, false, pid) {
+                let _ = TerminateProcess(handle, 1);
+                let _ = CloseHandle(handle);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn force_terminate_process(_pid: u32) {}
+
+/// Stops running agent sessions step by step before the shared deadline (`CTRL_BREAK` first, then `TerminateProcess` /
+/// `manager.shutdown()`), remembers main window placement, and exits Nook (UI-50).
+pub fn shutdown_and_exit(app: &AppHandle) {
+    remember_main(app);
+    if let Some(ws) = app.try_state::<crate::workspace::WorkspaceState>() {
+        let pids: Vec<u32> = ws
+            .manager
+            .runs()
+            .into_iter()
+            .filter(|r| r.status.is_active())
+            .filter_map(|r| ws.manager.agent_pid(r.id))
+            .collect();
+        for &pid in &pids {
+            polite_stop_process(pid);
+        }
+        crate::workspace::shutdown(app);
+        for &pid in &pids {
+            force_terminate_process(pid);
+        }
+    }
+    app.exit(0);
+}
+
+/// Quit from the tray (`confirmQuit` on the Mac, UI-50): while a Workspace session is still at work and Settings ›
+/// General › Confirmations asks for it, Nook asks first; otherwise, or after "Quit Anyway", it stops agents step by
+/// step before the deadline and quits. A restart into an update (`updates.rs`) never asks.
 pub fn request_quit(app: &AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
     let settings = app.state::<AppState>().settings();
-    let working = app
+    let (working, auto_continue) = app
         .try_state::<crate::workspace::WorkspaceState>()
-        .map(|state| state.manager.runs().into_iter().filter(|run| run.status.is_active()).count())
-        .unwrap_or(0);
+        .map(|state| {
+            let count = state.manager.runs().into_iter().filter(|run| run.status.is_active()).count();
+            let auto = state.settings.lock().unwrap_or_else(|e| e.into_inner()).continue_after_relaunch;
+            (count, auto)
+        })
+        .unwrap_or((0, false));
     if working == 0 || !settings.confirm_quit {
-        remember_main(app);
-        app.exit(0);
+        shutdown_and_exit(app);
         return;
     }
     // Nook's own dialog in the main window, with the "Don't ask again" box (the native one has buttons only).
@@ -588,7 +782,7 @@ pub fn request_quit(app: &AppHandle) {
             return;
         }
     }
-    let text = quit_texts(&settings.app_language, working);
+    let text = quit_texts_with_continue(&settings.app_language, working, auto_continue);
     let app = app.clone();
     app.dialog()
         .message(text.detail)
@@ -597,8 +791,7 @@ pub fn request_quit(app: &AppHandle) {
         .buttons(MessageDialogButtons::OkCancelCustom(text.quit.into(), text.cancel.into()))
         .show(move |quit| {
             if quit {
-                remember_main(&app);
-                app.exit(0);
+                shutdown_and_exit(&app);
             }
         });
 }
@@ -609,11 +802,10 @@ pub fn quit_nook(app: AppHandle) {
     request_quit(&app);
 }
 
-/// The main window's own dialog was answered "Quit Anyway": quit now, without asking again.
+/// The main window's own dialog was answered "Quit Anyway": stop agents step by step and quit now, without asking again.
 #[tauri::command]
 pub fn quit_now(app: AppHandle) {
-    remember_main(&app);
-    app.exit(0);
+    shutdown_and_exit(&app);
 }
 
 struct QuitTexts {
@@ -625,21 +817,33 @@ struct QuitTexts {
 
 /// The Mac's words (`quit.working.*`) in the interface language.
 fn quit_texts(language: &str, working: usize) -> QuitTexts {
-    use nook_core::i18n::{fill, translate};
+    quit_texts_with_continue(language, working, false)
+}
+
+fn quit_texts_with_continue(language: &str, working: usize, continue_after_relaunch: bool) -> QuitTexts {
+    use nook_core::i18n::fill;
+    let tr = |nl, en| nook_core::i18n::translate(language, nl, en);
     let title = if working == 1 {
-        translate(language, "Er werkt nog een sessie", "A session is still working").to_string()
+        tr("Er werkt nog een sessie", "A session is still working").to_string()
     } else {
-        fill(translate(language, "Er werken nog {n} sessies", "{n} sessions are still working"), &[("n", &working)])
+        fill(tr("Er werken nog {n} sessies", "{n} sessions are still working"), &[("n", &working)])
+    };
+    let detail = if continue_after_relaunch {
+        tr(
+            "Als je Nook stopt, stoppen zij ook. Ze gaan vanzelf verder zodra je Nook weer opent.",
+            "Quitting Nook stops them. They continue automatically when you open Nook again.",
+        )
+    } else {
+        tr(
+            "Als je Nook stopt, stoppen zij ook. Je kunt ze voortzetten zodra je Nook weer opent.",
+            "Quitting Nook stops them. You can continue them after you open Nook again.",
+        )
     };
     QuitTexts {
         title,
-        detail: translate(
-            language,
-            "Als je Nook stopt, stoppen zij ook. Je kunt ze voortzetten zodra je Nook weer opent.",
-            "Quitting Nook stops them. You can continue them after you open Nook again.",
-        ),
-        quit: translate(language, "Toch stoppen", "Quit Anyway"),
-        cancel: translate(language, "Annuleren", "Cancel"),
+        detail,
+        quit: tr("Toch stoppen", "Quit Anyway"),
+        cancel: tr("Annuleren", "Cancel"),
     }
 }
 
@@ -705,5 +909,17 @@ mod tests {
         assert_eq!(quit_texts("en", 1).title, "A session is still working");
         assert_eq!(quit_texts("en", 3).title, "3 sessions are still working");
         assert_eq!(quit_texts("nl", 2).quit, "Toch stoppen");
+        assert!(quit_texts_with_continue("en", 1, true).detail.contains("continue automatically"));
+    }
+
+    #[test]
+    fn jump_list_and_route_args_cover_new_nook_settings_agents_and_chats() {
+        let tasks = jump_list_tasks("en");
+        assert_eq!(tasks.map(|t| t.title), ["New Nook", "Settings", "Agents", "Chats"]);
+        assert_eq!(route_from_args(&["nook".into(), "--new-nook".into()]), Some("chat"));
+        assert!(is_new_nook_arg(&["nook".into(), "--new-nook".into()]));
+        assert_eq!(route_from_args(&["nook".into(), "--settings".into()]), Some("settings"));
+        assert_eq!(route_from_args(&["nook".into(), "--agents".into()]), Some("agents"));
+        assert_eq!(route_from_args(&["nook".into(), "--chats".into()]), Some("chats"));
     }
 }

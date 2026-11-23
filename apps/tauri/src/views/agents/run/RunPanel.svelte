@@ -207,6 +207,21 @@
     if (titleDraft.trim()) await workspace.act(() => workspaceApi.rename(runId, titleDraft.trim()));
   }
 
+  let regeneratingTitle = $state(false);
+  async function regenerateTitle() {
+    if (regeneratingTitle) return;
+    regeneratingTitle = true;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await workspace.act(() => invoke<string>("workspace_regenerate_title", { run: runId }));
+      toast.success(tr("Titel bijgewerkt", "Title updated"));
+    } catch (e) {
+      toast.error(tr("Kon de titel niet opnieuw genereren", "Could not regenerate title"), e);
+    } finally {
+      regeneratingTitle = false;
+    }
+  }
+
   function canEditEvent(e: RunEvent): boolean {
     if (!run || isActive(run.status)) return false;
     if (!workspace.provider(run.provider)?.capabilities.canRollbackConversation) return false;
@@ -454,6 +469,7 @@
             {/if}
             <DropdownRow symbol="git-branch" title={tr("Vork maken", "Fork")} disabledReason={busy} onclick={() => { close(); fork(); }} />
             <DropdownRow symbol="pencil" title={tr("Wijzig naam", "Rename")} onclick={() => { close(); titleDraft = run.title; renaming = true; }} />
+            <DropdownRow symbol="sparkles" title={tr("Titel opnieuw genereren", "Regenerate title")} disabledReason={regeneratingTitle ? tr("Bezig…", "Working…") : undefined} onclick={() => { close(); regenerateTitle(); }} />
             {#if run.repoRoot}<DropdownRow symbol="diff" title={tr("Wijzigingen bekijken", "View changes")} onclick={() => { close(); openChanges(); }} />{/if}
             <DropdownRow symbol="external-link" title={tr("Open in editor", "Open in editor")} onclick={() => { close(); workspaceApi.openIn(run.workingDirectory).catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e)); }} />
             <DropdownRow symbol="copy" title={tr("Kopieer als Markdown", "Copy as Markdown")} onclick={() => { close(); copyMarkdown(); }} />

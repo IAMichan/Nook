@@ -18,7 +18,13 @@
   import { tr } from "../../../lib/i18n.svelte";
   import { toast } from "../../../lib/toast.svelte";
   import { isActive, workspaceApi, type RunEvent, type WorkspaceRun } from "../../../lib/workspace/api";
-  import { oneLine } from "../../../lib/workspace/timeline";
+  import {
+    backgroundCommandTail,
+    listBackgroundCommands,
+    listSubagents,
+    orderedBackgroundCommands,
+    type SubagentInfo,
+  } from "../../../lib/workspace/timeline";
   import { SIDE_TOOLS, sidePanel, type SideTool } from "./side-panel.svelte";
 
   let {
@@ -37,12 +43,48 @@
   const hasFolder = $derived(!!run.workingDirectory);
   const hasRepo = $derived(!!run.repoRoot);
 
-  // Derived session outputs (plans & changed files) and subagents from the session's live timeline.
+  // Derived session outputs (plans & changed files), subagents, and background commands from the session's live timeline (AG-73).
   const outputs = $derived(collectOutputs(events, run.tasks, run.workingDirectory));
-  const subagents = $derived(
-    events.filter((e) => e.kind === "tool" && !e.rolledBack && (e.tool === "Task" || e.tool === "Agent")),
+  const activeEvents = $derived(events.filter((e) => !e.rolledBack));
+  const subagents = $derived.by(() => {
+    const list = listSubagents(activeEvents);
+    const rank = (a: SubagentInfo) => (a.isRunning ? 0 : a.failed ? 1 : 2);
+    return list
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => (rank(a.item) !== rank(b.item) ? rank(a.item) - rank(b.item) : b.index - a.index))
+      .map((x) => x.item);
+  });
+  const bgCommands = $derived(orderedBackgroundCommands(listBackgroundCommands(activeEvents)));
+  const totalWorkCount = $derived(subagents.length + bgCommands.length);
+  const runningWorkCount = $derived(
+    subagents.filter((a) => a.isRunning).length + bgCommands.filter((c) => c.isRunning).length,
   );
+  const doneWorkCount = $derived(totalWorkCount - runningWorkCount);
   let openSubagents = $state(new Set<string>());
+
+  let now = $state(Date.now());
+  $effect(() => {
+    if (runningWorkCount === 0) return;
+    const timer = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+
+  function formatElapsed(isoDate: string): string {
+    const secs = Math.max(0, Math.floor((now - Date.parse(isoDate)) / 1000));
+    if (secs < 60) return `${secs}s`;
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}m ${s}s`;
+  }
+
+  function revealInTimeline(eventId: string) {
+    const el = document.querySelector(`[data-event="${CSS.escape(eventId)}"]`);
+    if (el && "scrollIntoView" in el) {
+      (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
 
   // File tab search backed by workspace_files.
   let fileQuery = $state("");
@@ -368,7 +410,7 @@
         </div>
       {:else if panel.active === "browser"}
         <div class="pane-fill pane-pad">
-          <Browser />
+          <Browser session={run.id} />
         </div>
       {:else if panel.active === "pullRequest"}
         <div class="pane-fill">
@@ -377,48 +419,139 @@
       {:else if panel.active === "outputs"}
         <OutputsPanel {outputs} selected={panel.outputId} onselect={(id) => sidePanel.setOutput(run.id, id)} folder={run.workingDirectory} live={isActive(run.status)} {onrun} />
       {:else if panel.active === "subagents"}
+        <!-- SessionSubagentsPanel (`AgentWorkStrips.swift` on macOS, AG-73): both background commands and subagents -->
         <div class="pane-scroll">
-          {#if !subagents.length}
+          {#if totalWorkCount === 0}
             <EmptyState
               symbol="users"
               title={tr("Geen subagents", "No subagents")}
-              message={tr("Subagents die de agent tijdens deze sessie start verschijnen hier met hun opdracht en antwoord.", "Subagents the agent starts during this session show up here with their task and answer.")}
+              message={tr("Subagents en achtergrondcommando's die de agent tijdens deze sessie start verschijnen hier met hun status, opdracht en uitkomst.", "Subagents and background commands the agent starts during this session show up here with their status, task and output.")}
             />
           {:else}
-            <div class="item-list">
-              {#each subagents as agent (agent.id)}
-                {@const opened = openSubagents.has(agent.id)}
-                <div class="sub-card">
-                  <button type="button" class="sub-head" onclick={() => toggleSubagent(agent.id)}>
-                    <span class="sub-status {agent.state ?? 'done'}">
-                      <Ico
-                        name={agent.state === "running" ? "loader-circle" : agent.state === "failed" ? "circle-alert" : "circle-check"}
-                        size={13}
-                        stroke={2}
-                      />
-                    </span>
-                    <span class="sub-title">{oneLine(agent.text, 120)}</span>
-                    <span class="sub-chev" class:open={opened}><Ico name="chevron-right" size={12} stroke={2.2} /></span>
-                  </button>
-                  {#if opened}
-                    {#if agent.detail && agent.detail !== "{}"}
-                      <div class="sub-block">
-                        <span class="sub-label">{tr("Opdracht", "Task")}</span>
-                        <pre class="sub-pre">{agent.detail}</pre>
-                      </div>
-                    {/if}
-                    {#if agent.output}
-                      <div class="sub-block">
-                        <span class="sub-label">{tr("Antwoord", "Answer")}</span>
-                        <pre class="sub-pre">{agent.output}</pre>
-                      </div>
-                    {:else if agent.state === "running"}
-                      <span class="faint-note">{tr("Loopt nog…", "Still running…")}</span>
-                    {/if}
-                  {/if}
-                </div>
-              {/each}
+            <div class="sub-toolbar">
+              <span class="sub-toolbar-progress">
+                {tr("{done} van {total} klaar", "{done} of {total} done", { done: doneWorkCount, total: totalWorkCount })}
+              </span>
+              {#if runningWorkCount > 0}
+                <span class="sub-toolbar-running">
+                  · {tr("{n} actief", "{n} running", { n: runningWorkCount })}
+                </span>
+              {/if}
             </div>
+
+            {#if bgCommands.length > 0}
+              <div class="section">
+                <div class="section-head">
+                  <span>{tr("Achtergrondcommando's", "Background commands")}</span>
+                  <span class="count">{bgCommands.length}</span>
+                </div>
+                <div class="item-list">
+                  {#each bgCommands as cmd (cmd.id)}
+                    {@const opened = openSubagents.has(cmd.id)}
+                    {@const tail = backgroundCommandTail(cmd.printed, 4)}
+                    <div class="sub-card">
+                      <button
+                        type="button"
+                        class="sub-head"
+                        onclick={() => {
+                          toggleSubagent(cmd.id);
+                          revealInTimeline(cmd.id);
+                        }}
+                      >
+                        <span class="sub-status {cmd.failed ? 'failed' : cmd.isRunning ? 'running' : 'done'}">
+                          <Ico
+                            name={cmd.isRunning ? "loader-circle" : cmd.failed ? "circle-alert" : "terminal"}
+                            size={13}
+                            stroke={2}
+                          />
+                        </span>
+                        <span class="sub-title">{cmd.title}</span>
+                        {#if cmd.isRunning}
+                          <span class="badge">{formatElapsed(cmd.started)}</span>
+                        {/if}
+                        <span class="sub-chev" class:open={opened}><Ico name="chevron-right" size={12} stroke={2.2} /></span>
+                      </button>
+                      {#if cmd.command !== cmd.title}
+                        <div class="sub-meta-line mono">{cmd.command}</div>
+                      {/if}
+                      {#if !opened && tail}
+                        <div class="sub-tail-preview mono">{tail}</div>
+                      {/if}
+                      {#if opened}
+                        <div class="sub-block">
+                          <span class="sub-label">{tr("Commando", "Command")}</span>
+                          <pre class="sub-pre">{cmd.command}</pre>
+                        </div>
+                        {#if cmd.printed}
+                          <div class="sub-block">
+                            <span class="sub-label">{tr("Uitkomst", "Output")}</span>
+                            <pre class="sub-pre">{cmd.printed}</pre>
+                          </div>
+                        {:else if cmd.isRunning}
+                          <span class="faint-note">{tr("Draait op de achtergrond…", "Running in the background…")}</span>
+                        {/if}
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            {#if subagents.length > 0}
+              <div class="section">
+                {#if bgCommands.length > 0}
+                  <div class="section-head">
+                    <span>{tr("Subagents", "Subagents")}</span>
+                    <span class="count">{subagents.length}</span>
+                  </div>
+                {/if}
+                <div class="item-list">
+                  {#each subagents as agent (agent.id)}
+                    {@const opened = openSubagents.has(agent.id)}
+                    <div class="sub-card">
+                      <button
+                        type="button"
+                        class="sub-head"
+                        onclick={() => {
+                          toggleSubagent(agent.id);
+                          revealInTimeline(agent.id);
+                        }}
+                      >
+                        <span class="sub-status {agent.failed ? 'failed' : agent.isRunning ? 'running' : 'done'}">
+                          <Ico
+                            name={agent.isRunning ? "loader-circle" : agent.failed ? "circle-alert" : "circle-check"}
+                            size={13}
+                            stroke={2}
+                          />
+                        </span>
+                        <span class="sub-title">{agent.title}</span>
+                        <span class="badge">{agent.kind}</span>
+                        {#if agent.isRunning}
+                          <span class="badge">{formatElapsed(agent.started)}</span>
+                        {/if}
+                        <span class="sub-chev" class:open={opened}><Ico name="chevron-right" size={12} stroke={2.2} /></span>
+                      </button>
+                      {#if opened}
+                        {#if agent.prompt}
+                          <div class="sub-block">
+                            <span class="sub-label">{tr("Opdracht", "Task")}</span>
+                            <pre class="sub-pre">{agent.prompt}</pre>
+                          </div>
+                        {/if}
+                        {#if agent.answer}
+                          <div class="sub-block">
+                            <span class="sub-label">{tr("Antwoord", "Answer")}</span>
+                            <pre class="sub-pre">{agent.answer}</pre>
+                          </div>
+                        {:else if agent.isRunning}
+                          <span class="faint-note">{tr("Subagent werkt…", "Subagent is working…")}</span>
+                        {/if}
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           {/if}
         </div>
       {:else if panel.active === "file"}
@@ -907,6 +1040,38 @@
     max-height: 260px;
     overflow: auto;
     user-select: text;
+  }
+  .sub-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    font: var(--text-label);
+    color: var(--text3);
+  }
+  .sub-toolbar-progress {
+    color: var(--text2);
+  }
+  .sub-toolbar-running {
+    color: var(--amber);
+  }
+  .sub-meta-line {
+    padding: 0 var(--space-12) var(--space-6);
+    font: var(--text-code);
+    color: var(--text3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sub-tail-preview {
+    padding: var(--space-6) var(--space-12);
+    border-top: 1px solid var(--separator);
+    background: var(--well);
+    font: var(--text-code);
+    color: var(--text3);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 88px;
+    overflow: hidden;
   }
 
   /* File tab */

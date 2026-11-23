@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Privacy: everything Nook is signed in to (`LinkedAccessSection`, Settings › Privacy › Access on the Mac), and the log
-  // of what Nook carried out (`AuditLogSection`). Managing happens on Services; this list only says what Nook can reach.
+  // Privacy (`SettingsView+Privacy` and `SettingsView+PrivateSources` on the Mac, UI-32): privacy level (`level`),
+  // permissions, linked accounts and apps Nook never reads (`access`), Only on this computer source picker (`onDevice`),
+  // and the activity log (`log`).
   import { api } from "../../lib/api";
   import type { AuditEntry } from "../../lib/types";
   import { connectorsApi, connectorEvents, type Overview } from "../../lib/connectors";
@@ -19,9 +20,7 @@
   import InfoLabel from "./InfoLabel.svelte";
   import { tip } from "../../components/ui/tip";
 
-  // The Mac's Privacy parts this page has: the privacy level (`level`), what Nook may reach (`access`) and the activity
-  // log (`log`).
-  let { part = "access" }: { part?: "level" | "access" | "log" } = $props();
+  let { part = "access" }: { part?: "level" | "access" | "onDevice" | "log" } = $props();
   type PrivacyLevel = "open" | "balanced" | "strict";
   const level = $derived<PrivacyLevel>(nook.settings?.privacyLevel ?? "balanced");
   function levelDetail(l: PrivacyLevel) {
@@ -38,6 +37,62 @@
     { icon: "hand", title: tr("Niets zonder jouw klik", "Nothing without your click"), detail: tr("Nook verstuurt nooit zelf mail.", "Nook never sends emails automatically.") },
     { icon: "lock", title: tr("Sleutels in de beveiligde opslag van je systeem", "Keys in your system's secure storage"), detail: tr("De sleutels en wachtwoorden die Nook bewaart staan in Windows Referentiebeheer, nooit in een bestand of in wat een AI ziet. De eigen aanmelding van een agent (zoals een Codex-API-sleutel) bewaart die agent zelf.", "The keys and passwords Nook keeps stay in Windows Credential Manager, never in a file or in what an AI sees. An agent's own sign-in (such as a Codex API key) is kept by that agent.") },
   ]);
+
+  // "Only on this computer" (`PrivateSourcesSection` on the Mac, UI-32): sources whose text stays on this computer
+  // when answering via an external brain.
+  interface PrivateSourceItem {
+    id: string;
+    icon: string;
+    title: string;
+    detail: string;
+    personal: boolean;
+    strictLocked?: boolean;
+  }
+
+  const privateSources = $derived<PrivateSourceItem[]>([
+    { id: "mail", icon: "mail", title: tr("E-mail", "Mail"), detail: tr("Berichten en concepten uit je gekoppelde postvakken.", "Messages and drafts from your linked mailboxes."), personal: true },
+    { id: "calendar", icon: "calendar", title: tr("Agenda", "Calendar"), detail: tr("Je afspraken, deelnemers en locaties.", "Your events, attendees and locations."), personal: true },
+    { id: "reminders", icon: "check-square", title: tr("Herinneringen", "Reminders"), detail: tr("Taken en open punten op je lijsten.", "Tasks and open items on your lists."), personal: true },
+    { id: "notes", icon: "file-text", title: tr("Notities", "Notes"), detail: tr("Je eigen notities en gespreksnotities van de Notetaker.", "Your own notes and call notes from the Notetaker."), personal: true },
+    { id: "messages", icon: "message-circle", title: tr("Berichten en chats", "Messages & chats"), detail: tr("WhatsApp, Telegram, Slack, Discord en andere gekoppelde chat-apps.", "WhatsApp, Telegram, Slack, Discord and other linked chat apps."), personal: true },
+    { id: "contacts", icon: "users", title: tr("Contacten", "Contacts"), detail: tr("Namen, e-mailadressen en telefoonnummers.", "Names, email addresses and phone numbers."), personal: true },
+    { id: "screen", icon: "monitor", title: tr("Scherm", "Screen"), detail: tr("Tekst van de vensters die op je scherm openstaan.", "Text from the windows open on your screen."), personal: true, strictLocked: true },
+    { id: "clipboard", icon: "clipboard", title: tr("Klembord", "Clipboard"), detail: tr("Wat je net gekopieerd hebt.", "What you just copied."), personal: false, strictLocked: true },
+    { id: "files", icon: "folder", title: tr("Bestanden", "Files"), detail: tr("Documenten en tekstbestanden in je thuismap.", "Documents and text files in your home folder."), personal: false },
+    { id: "browser", icon: "globe", title: tr("Browser", "Browser"), detail: tr("Open tabbladen en pagina's die je bekijkt.", "Open tabs and pages you are viewing."), personal: false },
+    { id: "memory", icon: "brain", title: tr("Geheugen", "Memory"), detail: tr("Feiten en voorkeuren die Nook over je onthouden heeft.", "Facts and preferences Nook has remembered about you."), personal: false },
+  ]);
+
+  let sourceQuery = $state("");
+  const localOnly = $derived<string[]>(nook.settings?.localOnlySources ?? []);
+  const filteredSources = $derived.by(() => {
+    const q = sourceQuery.trim().toLowerCase();
+    if (!q) return privateSources;
+    return privateSources.filter((s) => s.title.toLowerCase().includes(q) || s.detail.toLowerCase().includes(q) || s.id.toLowerCase().includes(q));
+  });
+
+  function isSourceKeptOnDevice(item: PrivateSourceItem): boolean {
+    if (level === "strict" && item.strictLocked) return true;
+    return localOnly.includes(item.id);
+  }
+
+  function isSourceLocked(item: PrivateSourceItem): boolean {
+    return level === "strict" && !!item.strictLocked;
+  }
+
+  function toggleSourceOnDevice(id: string, on: boolean) {
+    const next = on ? Array.from(new Set([...localOnly, id])) : localOnly.filter((x) => x !== id);
+    nook.saveSettings({ localOnlySources: next });
+  }
+
+  function setPersonalSourcesOnly() {
+    const ids = privateSources.filter((s) => s.personal).map((s) => s.id);
+    nook.saveSettings({ localOnlySources: ids });
+  }
+
+  function clearLocalOnlySources() {
+    nook.saveSettings({ localOnlySources: [] });
+  }
 
   interface PermissionItem {
     id: string;
@@ -207,6 +262,38 @@
 {/if}
 {/if}
 
+{#if part === "level" || part === "onDevice"}
+  <!-- "Only on this computer" (`PrivateSourcesSection` on the Mac, UI-32): choose per source what never leaves this PC. -->
+  <h3>{tr("Alleen op deze computer", "Only on this computer")}</h3>
+  <p class="section-info">{tr("Bronnen die zijn aangevinkt gaan nooit naar een online AI. Als een vraag zo'n bron nodig heeft, beantwoordt je lokale brein hem op deze computer (of vat eerst alleen de feiten samen zonder ruwe tekst).", "Checked sources never go to an online AI. When a question needs one of them, your local brain answers it on this computer (or summarizes only the needed facts without raw text).")}</p>
+  <div class="group">
+    <div class="row source-bar">
+      <div class="log-search source-search">
+        <Ico name="search" size={13} />
+        <input placeholder={tr("Filter bronnen…", "Filter sources…")} bind:value={sourceQuery} aria-label={tr("Filter bronnen…", "Filter sources…")} />
+      </div>
+      <span class="source-presets">
+        <button class="small" onclick={setPersonalSourcesOnly}>{tr("Persoonlijke bronnen", "Personal sources")}</button>
+        <button class="small" onclick={clearLocalOnlySources} disabled={localOnly.length === 0}>{tr("Geen", "None")}</button>
+      </span>
+    </div>
+    {#each filteredSources as src (src.id)}
+      {@const kept = isSourceKeptOnDevice(src)}
+      {@const locked = isSourceLocked(src)}
+      <label class="row">
+        <span class="plain">
+          <span class="promise-icon"><Ico name={src.icon} size={15} /></span>
+          <span class="text">
+            <span>{src.title}{#if locked} <span class="lock-tag" use:tip={tr("Altijd op deze computer bij privacyniveau Strikt.", "Always kept on this computer under Strict privacy level.")}><Ico name="lock" size={11} /></span>{/if}</span>
+            <small class="faint">{src.detail}</small>
+          </span>
+        </span>
+        <input type="checkbox" role="switch" checked={kept} disabled={locked} onchange={(e) => toggleSourceOnDevice(src.id, e.currentTarget.checked)} />
+      </label>
+    {/each}
+  </div>
+{/if}
+
 {#if part === "access"}
 {#if permissions.length}
   <!-- The Mac's Permissions (`SystemPermission`): what Windows lets Nook use, with a check once it may, and one-click
@@ -269,6 +356,18 @@
   {/each}
 </div>
 
+{#if nook.info?.capabilities.screenReading}
+  <!-- Apps Nook never reads (`neverReadApps` on the Mac, UI-32): also shown under Access as on macOS. -->
+  <h3>{tr("Apps die Nook nooit leest", "Apps Nook never reads")}</h3>
+  <p class="section-info">{tr("Nook leest deze apps nooit en doet er geen suggesties, zoals je bank of een privéchat. Wachtwoordmanagers blijven altijd buiten.", "Nook never reads these apps or suggests text in them, like your bank or a private chat. Password managers are always left out.")}</p>
+  <div class="group">
+    {#each neverRead as app (app)}
+      <div class="row"><span><Ico name="eye-off" size={13} /> {app}</span><button class="small" onclick={() => removeNeverRead(app)}>{tr("Verwijder", "Remove")}</button></div>
+    {/each}
+    <div class="row"><span></span><button class="small" onclick={addNeverRead}>{tr("App toevoegen…", "Add App…")}</button></div>
+  </div>
+{/if}
+
 {/if}
 
 {#if part === "log"}
@@ -306,6 +405,10 @@
   .linked { flex-wrap: nowrap; }
   .plain { display: flex; align-items: center; gap: var(--space-12); }
   .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .source-bar { gap: var(--space-12); }
+  .source-search { flex: 1; display: flex; align-items: center; }
+  .source-presets { display: inline-flex; gap: var(--space-6); }
+  .lock-tag { display: inline-flex; align-items: center; color: var(--text3); margin-left: var(--space-4); }
   .log-search { flex-wrap: nowrap; justify-content: flex-start; gap: var(--space-6); color: var(--text3); }
   .log-search input { flex: 1; min-width: 0; padding: 0; border: none; background: none; box-shadow: none; outline: none; color: var(--paper); font: var(--text-body); }
   .entry-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }

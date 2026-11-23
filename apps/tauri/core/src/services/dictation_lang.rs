@@ -116,6 +116,125 @@ pub fn best(candidates: &[Candidate], lead: usize) -> Option<&Candidate> {
     }
 }
 
+/// Automatic candidate languages when the user also checked specific spoken languages in Settings (`SV-47`).
+/// Checked spoken languages take priority right after `last_heard` (if `last_heard` is among them or none are checked),
+/// followed by system languages, keyboard layouts, Nook's app language, and English, capped at [`MAX_CANDIDATES`].
+pub fn candidates_with_spoken(
+    last_heard: &str,
+    spoken: &[String],
+    system: &[String],
+    keyboards: &[String],
+    app_language: &str,
+) -> Vec<&'static str> {
+    if spoken.is_empty() {
+        return automatic_languages(last_heard, system, keyboards, app_language);
+    }
+    let mut out: Vec<&'static str> = Vec::new();
+    let spoken_codes: Vec<&'static str> = spoken.iter().filter_map(|s| code_of(s)).collect();
+    if let Some(last) = code_of(last_heard) {
+        if spoken_codes.is_empty() || spoken_codes.contains(&last) {
+            out.push(last);
+        }
+    }
+    let fallback = spoken_codes
+        .into_iter()
+        .chain(system.iter().filter_map(|s| code_of(s)))
+        .chain(keyboards.iter().filter_map(|s| code_of(s)))
+        .chain([app_language, "en"].into_iter().filter_map(code_of));
+    for code in fallback {
+        if !out.contains(&code) {
+            out.push(code);
+        }
+        if out.len() == MAX_CANDIDATES {
+            break;
+        }
+    }
+    out
+}
+
+/// Persisted multi-language dictation preferences (`SV-47`: Automatic vs fixed language + checked spoken languages).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DictationLanguageSettings {
+    /// `"auto"` or a two-letter language code (`"nl"`, `"en"`, `"de"`, ...).
+    pub mode: String,
+    /// Two-letter codes checked by the user for Automatic multi-language dictation.
+    pub spoken_languages: Vec<String>,
+    /// The language code that won the last dictation round.
+    pub last_heard: String,
+}
+
+impl Default for DictationLanguageSettings {
+    fn default() -> Self {
+        Self {
+            mode: AUTOMATIC.to_string(),
+            spoken_languages: Vec::new(),
+            last_heard: String::new(),
+        }
+    }
+}
+
+impl DictationLanguageSettings {
+    pub fn file() -> std::path::PathBuf {
+        crate::paths::support_directory().join("dictation-languages.json")
+    }
+
+    pub fn load() -> Self {
+        let mut s: Self = std::fs::read(Self::file())
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        s.normalize();
+        s
+    }
+
+    pub fn save(&self) -> std::io::Result<()> {
+        let mut clean = self.clone();
+        clean.normalize();
+        let bytes = serde_json::to_vec_pretty(&clean).map_err(std::io::Error::other)?;
+        crate::paths::write_atomic(&Self::file(), &bytes)
+    }
+
+    pub fn normalize(&mut self) {
+        if self.mode.trim().is_empty() || self.mode == AUTOMATIC {
+            self.mode = AUTOMATIC.to_string();
+        } else if let Some(code) = code_of(&self.mode) {
+            self.mode = code.to_string();
+        } else {
+            self.mode = AUTOMATIC.to_string();
+        }
+        let mut seen = Vec::new();
+        for lang in &self.spoken_languages {
+            if let Some(code) = code_of(lang) {
+                let s = code.to_string();
+                if !seen.contains(&s) {
+                    seen.push(s);
+                }
+            }
+        }
+        self.spoken_languages = seen;
+        self.last_heard = code_of(&self.last_heard).unwrap_or("").to_string();
+    }
+
+    /// Resolves the ordered candidate language codes (up to [`MAX_CANDIDATES`]) for this configuration.
+    pub fn candidates(&self, system: &[String], keyboards: &[String], app_language: &str) -> Vec<&'static str> {
+        if let Some(code) = fixed(&self.mode) {
+            return vec![code];
+        }
+        candidates_with_spoken(&self.last_heard, &self.spoken_languages, system, keyboards, app_language)
+    }
+
+    /// Updates `last_heard` when a recognizer reports a detected language.
+    pub fn record_winner(&mut self, language: &str) -> bool {
+        let Some(code) = code_of(language) else { return false };
+        if self.last_heard == code {
+            return false;
+        }
+        self.last_heard = code.to_string();
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,4 +282,22 @@ mod tests {
         assert_eq!(best(&[a.clone(), empty], 0), Some(&a));
         assert_eq!(best(&[], 0), None);
     }
+
+    #[test]
+    fn spoken_language_checkboxes_prioritize_checked_languages() {
+        let mut settings = DictationLanguageSettings {
+            mode: "auto".into(),
+            spoken_languages: ids(&["de-DE", "es", "nl"]),
+            last_heard: "es".into(),
+        };
+        settings.normalize();
+        assert_eq!(settings.spoken_languages, ids(&["de", "es", "nl"]));
+        assert_eq!(settings.candidates(&ids(&["fr-FR"]), &[], "en"), vec!["es", "de", "nl"]);
+        assert!(settings.record_winner("German"));
+        assert_eq!(settings.last_heard, "de");
+        settings.mode = "fr-FR".into();
+        settings.normalize();
+        assert_eq!(settings.candidates(&ids(&["nl"]), &[], "en"), vec!["fr"]);
+    }
 }
+

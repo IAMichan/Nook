@@ -60,6 +60,73 @@ pub fn prompt(words: &[String]) -> String {
     words.iter().take(40).cloned().collect::<Vec<_>>().join(", ")
 }
 
+/// Builds the full recognizer & cleanup vocabulary (`SV-49`): personal dictionary first, then project and branch names,
+/// followed by salient terms from the active window title and focused text field context.
+pub fn prompt_words(
+    dictionary: &[String],
+    projects: &[String],
+    branches: &[String],
+    active_window: Option<&str>,
+    focused_field: Option<&str>,
+) -> Vec<String> {
+    let mut out = strings(dictionary, projects, branches);
+    let mut seen: std::collections::HashSet<String> = out.iter().map(|s| s.to_lowercase()).collect();
+
+    let mut push = |raw: &str| {
+        let word = raw.trim().trim_matches(|c: char| matches!(c, '(' | ')' | '[' | ']' | '"' | '\'' | ',' | ';' | ':'));
+        if word.len() < 2 || word.chars().count() > MAX_LENGTH || out.len() >= LIMIT {
+            return;
+        }
+        if seen.insert(word.to_lowercase()) {
+            out.push(word.to_string());
+        }
+    };
+
+    if let Some(title) = active_window {
+        for segment in title.split(['—', '–', '|', '·', '•']) {
+            for part in segment.split(" - ") {
+                let trimmed = part.trim();
+                if !trimmed.is_empty() && trimmed.chars().count() <= MAX_LENGTH {
+                    push(trimmed);
+                }
+                for token in trimmed.split_whitespace() {
+                    if token.contains(['-', '_', '/', '.'])
+                        || token.chars().skip(1).any(char::is_uppercase)
+                        || token.chars().next().is_some_and(char::is_uppercase)
+                    {
+                        push(token);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(field) = focused_field {
+        for token in field.split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']')) {
+            if token.contains(['-', '_', '/'])
+                || token.chars().skip(1).any(char::is_uppercase)
+                || token.starts_with('@')
+                || token.starts_with('#')
+            {
+                push(token.trim_start_matches(['@', '#']));
+            }
+        }
+    }
+
+    out
+}
+
+/// Formatted initial prompt string combining personal dictionary, projects, branches, active window title, and focused field.
+pub fn initial_prompt(
+    dictionary: &[String],
+    projects: &[String],
+    branches: &[String],
+    active_window: Option<&str>,
+    focused_field: Option<&str>,
+) -> String {
+    prompt(&prompt_words(dictionary, projects, branches, active_window, focused_field))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,4 +155,21 @@ mod tests {
         assert_eq!(folder_name("/home/me/nook"), "nook");
         assert_eq!(prompt(&v(&["a", "b"])), "a, b");
     }
+
+    #[test]
+    fn prompt_words_includes_window_title_and_focused_field_terms() {
+        let words = prompt_words(
+            &v(&["Nook"]),
+            &v(&["windows-parity"]),
+            &v(&["feat/parakeet-tdt"]),
+            Some("Voice.svelte — windows-versie-1-1 - Visual Studio Code"),
+            Some("Replying to @Michan about WakeWordService and sherpa_onnx"),
+        );
+        assert!(words.contains(&"Nook".to_string()));
+        assert!(words.contains(&"Voice.svelte".to_string()));
+        assert!(words.contains(&"WakeWordService".to_string()));
+        assert!(words.contains(&"sherpa_onnx".to_string()));
+        assert!(words.contains(&"Michan".to_string()));
+    }
 }
+

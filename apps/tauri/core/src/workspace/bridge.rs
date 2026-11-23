@@ -47,6 +47,10 @@ pub enum BridgeTool {
     SessionQuestions,
     SessionSuggest,
     RenderPage,
+    DeviceList,
+    DeviceOpen,
+    DeviceScreenshot,
+    DeviceClose,
     // Scheduled tasks (`schedule` / `scheduler`).
     ScheduleTask,
     ListScheduledTasks,
@@ -80,7 +84,7 @@ pub const SERVER_NAME: &str = "nook";
 pub const TOOL_PREFIX: &str = "mcp__nook__";
 
 impl BridgeTool {
-    pub const ALL: [BridgeTool; 44] = [
+    pub const ALL: [BridgeTool; 48] = [
         Self::WorkspaceInfo,
         Self::TerminalRun,
         Self::TerminalRead,
@@ -111,6 +115,10 @@ impl BridgeTool {
         Self::SessionQuestions,
         Self::SessionSuggest,
         Self::RenderPage,
+        Self::DeviceList,
+        Self::DeviceOpen,
+        Self::DeviceScreenshot,
+        Self::DeviceClose,
         Self::ScheduleTask,
         Self::ListScheduledTasks,
         Self::UpdateScheduledTask,
@@ -159,6 +167,10 @@ impl BridgeTool {
             Self::SessionQuestions => "session_questions",
             Self::SessionSuggest => "session_suggest",
             Self::RenderPage => "render_page",
+            Self::DeviceList => "device_list",
+            Self::DeviceOpen => "device_open",
+            Self::DeviceScreenshot => "device_screenshot",
+            Self::DeviceClose => "device_close",
             Self::ScheduleTask => "schedule_task",
             Self::ListScheduledTasks => "list_scheduled_tasks",
             Self::UpdateScheduledTask => "update_scheduled_task",
@@ -193,6 +205,8 @@ impl BridgeTool {
             | Self::SessionRead
             | Self::SessionWait
             | Self::SessionSearch
+            | Self::DeviceList
+            | Self::DeviceScreenshot
             | Self::ListScheduledTasks => Effect::Read,
             Self::SessionStart
             | Self::SessionSend
@@ -200,6 +214,8 @@ impl BridgeTool {
             | Self::SessionQuestions
             | Self::SessionSuggest
             | Self::RenderPage
+            | Self::DeviceOpen
+            | Self::DeviceClose
             | Self::ScheduleTask
             | Self::UpdateScheduledTask
             | Self::RunScheduledTaskNow
@@ -264,6 +280,10 @@ impl BridgeTool {
             Self::SessionQuestions => tr("Vragen van sessies", "Session questions"),
             Self::SessionSuggest => tr("Sessie voorstellen", "Suggest a session"),
             Self::RenderPage => tr("Pagina tonen", "Show a page"),
+            Self::DeviceList => tr("Simulators en emulators", "Simulators and emulators"),
+            Self::DeviceOpen => tr("Simulator openen", "Open simulator"),
+            Self::DeviceScreenshot => tr("Screenshot simulator", "Simulator screenshot"),
+            Self::DeviceClose => tr("Simulator sluiten", "Close simulator"),
             Self::ScheduleTask => tr("Taak inplannen", "Schedule task"),
             Self::ListScheduledTasks => tr("Geplande taken", "Scheduled tasks"),
             Self::UpdateScheduledTask => tr("Geplande taak aanpassen", "Update scheduled task"),
@@ -288,6 +308,7 @@ impl BridgeTool {
             "url",
             "title",
             "name",
+            "device",
             "query",
             "action",
             "terminal_id",
@@ -338,6 +359,10 @@ impl BridgeTool {
             Self::SessionOrganize => "Organizes Nook sessions: pin, unpin, settle, reopen, snooze, wake, archive, unarchive, mark_unread, mark_read, or rename. Waits for the user's approval unless full rights.",
             Self::SessionSuggest => "Places a side-task suggestion card in your timeline for the user to start, hand back or dismiss. Do not wait for it; prompt must stand alone.",
             Self::RenderPage => "Renders a sandboxed, offline HTML chart, diagram, table or mock-up inline in your timeline (html, or path to an .html file in your working directory; inline CSS/JS/SVG/data URLs; <=512 KB; fixed height 80-1200 pt, default 360; no network or navigation). Use it to show, not to ask: the page cannot send anything back.",
+            Self::DeviceList => "Lists Android emulators (`adb` / `emulator`): id, name, runtime, state, and which ones are open for this session.",
+            Self::DeviceOpen => "Boots an Android emulator by id or name (or picks a booted or default Android AVD) and tracks it for this session. Returns quick-start `adb` commands.",
+            Self::DeviceScreenshot => "Captures a PNG screenshot from the active or specified Android emulator (`adb exec-out screencap -p`).",
+            Self::DeviceClose => "Closes the Android emulator view in Nook (with shutdown: true, also shuts down the emulator).",
             Self::SessionQuestions => "Lists or reads pending multiple-choice questions (and read-only notices of pending permission prompts) across Nook sessions, or answers a pending multiple-choice question (never approves permission prompts).",
             Self::ScheduleTask => "Creates a scheduled task in Nook (interval, fixed time, one-shot, or webhook). Always waits for the user's approval in Nook; scheduled runs never get full bypass rights.",
             Self::ListScheduledTasks => "Lists scheduled tasks in Nook (defaults to tasks for your folder or session; pass all: true for all tasks).",
@@ -352,7 +377,26 @@ impl BridgeTool {
         let object = |props: Value, required: &[&str]| json!({"type": "object", "properties": props, "required": required});
         let terminal_id = json!({"type": "string", "description": "The terminal id from terminal_run or terminal_list, such as \"t2\"."});
         match self {
-            Self::WorkspaceInfo | Self::TerminalList | Self::BrowserRead => object(json!({}), &[]),
+            Self::WorkspaceInfo | Self::TerminalList | Self::BrowserRead | Self::DeviceList => object(json!({}), &[]),
+            Self::DeviceOpen => object(
+                json!({
+                    "device": {"type": "string", "description": "Device id, name or serial from device_list (optional: picks a booted or default Android AVD)."}
+                }),
+                &[],
+            ),
+            Self::DeviceScreenshot => object(
+                json!({
+                    "device": {"type": "string", "description": "Device id, name or serial (optional: uses the active open device)."}
+                }),
+                &[],
+            ),
+            Self::DeviceClose => object(
+                json!({
+                    "device": {"type": "string", "description": "Device id, name or serial (optional: closes the active open device)."},
+                    "shutdown": {"type": "boolean", "description": "Also shut down the emulator (`adb emu kill`). Default false."}
+                }),
+                &[],
+            ),
             Self::TerminalRun => object(
                 json!({
                     "command": {"type": "string", "description": "The complete shell command, for example \"npm run dev\"."},
@@ -1507,6 +1551,119 @@ pub fn render_pr_status(s: &PullRequestSnapshot) -> String {
     lines.join("\n")
 }
 
+// MARK: Android emulator & device tools (AG-12)
+
+pub const ANDROID_ID_PREFIX: &str = "android";
+
+/// An Android emulator or connected physical device discovered via `adb` / `emulator`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AndroidDevice {
+    pub id: String,
+    pub name: String,
+    pub running: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+}
+
+/// Returns true if a device identifier refers to an Android device or AVD (`android:` / `android-avd:`).
+pub fn is_android_device_id(id: &str) -> bool {
+    let trimmed = id.trim();
+    trimmed.starts_with("android:") || trimmed.starts_with("android-avd:")
+}
+
+/// Candidate Android SDK root directories given an environment map and home directory.
+pub fn android_sdk_folders(env: &std::collections::BTreeMap<String, String>, home: &str) -> Vec<String> {
+    let mut folders = Vec::new();
+    let mut push = |candidate: String| {
+        let trimmed = candidate.trim().to_string();
+        if !trimmed.is_empty() && !folders.contains(&trimmed) {
+            folders.push(trimmed);
+        }
+    };
+    for key in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+        if let Some(val) = env.get(key) {
+            push(val.clone());
+        }
+    }
+    let home = home.trim().trim_end_matches(['/', '\\']);
+    if !home.is_empty() {
+        push(format!("{home}\\AppData\\Local\\Android\\Sdk"));
+        push(format!("{home}/AppData/Local/Android/Sdk"));
+        push(format!("{home}/Library/Android/sdk"));
+        push(format!("{home}/Android/Sdk"));
+    }
+    if let Some(local) = env.get("LOCALAPPDATA") {
+        let local = local.trim().trim_end_matches(['/', '\\']);
+        if !local.is_empty() {
+            push(format!("{local}\\Android\\Sdk"));
+        }
+    }
+    folders
+}
+
+/// Parses `adb devices -l` stdout into running Android devices.
+pub fn parse_adb_running_devices(output: &str) -> Vec<AndroidDevice> {
+    let mut out = Vec::new();
+    for raw in output.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with("List of devices") || line.starts_with('*') {
+            continue;
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 || parts[1] != "device" {
+            continue;
+        }
+        let serial = parts[0];
+        let model = parts
+            .iter()
+            .skip(2)
+            .find_map(|p| p.strip_prefix("model:"))
+            .map(|m| m.replace('_', " "));
+        let name = model.unwrap_or_else(|| serial.to_string());
+        out.push(AndroidDevice {
+            id: format!("{ANDROID_ID_PREFIX}:{serial}"),
+            name,
+            running: true,
+            serial: Some(serial.to_string()),
+        });
+    }
+    out
+}
+
+/// Parses `emulator -list-avds` stdout into stopped Android Virtual Devices, skipping any AVD whose name is already in `running_names`.
+pub fn parse_android_avds(output: &str, running_names: &std::collections::BTreeSet<String>) -> Vec<AndroidDevice> {
+    let mut out = Vec::new();
+    for raw in output.lines() {
+        let line = raw.trim();
+        if line.is_empty()
+            || line.starts_with("INFO")
+            || line.starts_with("WARNING")
+            || line.starts_with("ERROR")
+            || line.contains('|')
+        {
+            continue;
+        }
+        if running_names.contains(line) {
+            continue;
+        }
+        out.push(AndroidDevice {
+            id: format!("android-avd:{line}"),
+            name: line.replace('_', " "),
+            running: false,
+            serial: None,
+        });
+    }
+    out
+}
+
+/// Helpful quick-start snippet shown when an Android device is opened.
+pub fn android_quick_start(serial: &str) -> String {
+    format!(
+        "Quick start:\n- Install an APK: `adb -s {serial} install -r app-debug.apk`\n- Launch an activity: `adb -s {serial} shell am start -n com.example/.MainActivity`\n- Open a URL: `adb -s {serial} shell am start -a android.intent.action.VIEW -d https://example.com`\n- Capture screenshot in Nook: `device_screenshot` with `device_id: \"{ANDROID_ID_PREFIX}:{serial}\"`"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1550,7 +1707,7 @@ mod tests {
         assert_eq!(verdict(BridgeTool::SessionSend, &bypass, None, true), Verdict::Allow);
         assert_eq!(verdict(BridgeTool::SessionSend, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
         assert_eq!(verdict(BridgeTool::SessionWait, &plan, None, true), Verdict::Allow);
-        // AG-06, AG-09, AG-10, AG-11 policies:
+        // AG-06, AG-09, AG-10, AG-11, AG-12 policies:
         assert_eq!(verdict(BridgeTool::SessionSearch, &plan, None, true), Verdict::Allow);
         assert_eq!(verdict(BridgeTool::SessionOrganize, &agent, None, true), Verdict::Ask(Reason::NeedsReview));
         assert_eq!(verdict(BridgeTool::SessionOrganize, &bypass, None, true), Verdict::Allow);
@@ -1570,6 +1727,44 @@ mod tests {
         assert_eq!(verdict(BridgeTool::WatchPullRequest, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
         assert_eq!(verdict(BridgeTool::RequestSecret, &bypass, None, true), Verdict::Ask(Reason::Secret));
         assert_eq!(verdict(BridgeTool::RequestSecret, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
+        assert_eq!(verdict(BridgeTool::DeviceList, &plan, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::DeviceScreenshot, &plan, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::DeviceOpen, &agent, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::DeviceClose, &agent, None, true), Verdict::Allow);
+        assert_eq!(verdict(BridgeTool::DeviceOpen, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
+        assert_eq!(verdict(BridgeTool::DeviceClose, &plan, None, true), Verdict::Refuse(Reason::PlanMode));
+    }
+
+    #[test]
+    fn android_device_parsing_and_sdk_paths() {
+        let adb_out = "List of devices attached\nemulator-5554          device product:sdk_gphone64_arm64 model:Pixel_8_API_34 device:emu64a transport_id:1\n192.168.1.9:5555       offline\nR58M42ABCDE            device usb:1-1 product:beyond1lte model:SM_G973F device:beyond1\n";
+        let running = parse_adb_running_devices(adb_out);
+        assert_eq!(running.len(), 2);
+        assert_eq!(running[0].id, "android:emulator-5554");
+        assert_eq!(running[0].name, "Pixel 8 API 34");
+        assert!(running[0].running);
+        assert_eq!(running[1].id, "android:R58M42ABCDE");
+        assert_eq!(running[1].name, "SM G973F");
+
+        let mut running_names = std::collections::BTreeSet::new();
+        running_names.insert("Pixel_8_API_34".to_string());
+        let avd_out = "INFO    | Storing crashdata in: /tmp/android\nPixel_8_API_34\nPixel_7_Pro_API_33\n";
+        let avds = parse_android_avds(avd_out, &running_names);
+        assert_eq!(avds.len(), 1);
+        assert_eq!(avds[0].id, "android-avd:Pixel_7_Pro_API_33");
+        assert_eq!(avds[0].name, "Pixel 7 Pro API 33");
+        assert!(!avds[0].running);
+
+        assert!(is_android_device_id("android:emulator-5554"));
+        assert!(is_android_device_id("android-avd:Pixel_8"));
+        assert!(!is_android_device_id("ABCD-1234"));
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("ANDROID_HOME".into(), "C:\\Android\\Sdk".into());
+        let folders = android_sdk_folders(&env, "C:\\Users\\nook");
+        assert_eq!(folders[0], "C:\\Android\\Sdk");
+        assert!(folders.iter().any(|f| f.contains("AppData\\Local\\Android\\Sdk")));
+        assert!(android_quick_start("emulator-5554").contains("adb -s emulator-5554"));
     }
 
     #[test]

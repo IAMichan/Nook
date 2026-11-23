@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { EventKind, EventState, RunEvent } from "./api";
 import {
-  blocks, categoryOf, containers, countLabel, duration, firstFailure, group, headline, live, nextMatch, parts, planFileName,
-  planPreview, planTitle, previousMatch, readableName, search, sentence, tally, toolLabel,
+  backgroundCommandOutputFile, backgroundCommandTail, backgroundLaunchNotice, blocks, categoryOf, containers, countLabel,
+  currentBackgroundCommands, currentSubagents, duration, firstFailure, group, headline, isBackgroundCommand,
+  isBackgroundNotice, isSubagentLaunch, listBackgroundCommands, listSubagents, live, nextMatch, orderedBackgroundCommands,
+  parts, planFileName, planPreview, planTitle, previousMatch, readableName, search, sentence, split, tally, toolLabel,
 } from "./timeline";
 
 describe("tool names", () => {
@@ -228,3 +230,101 @@ describe("plans, failures and durations", () => {
     expect(duration(72 * 3600)).toBe("3 d");
   });
 });
+
+describe("Subagents, background commands and wake turns (AG-73)", () => {
+  it("extracts subagent launches and keeps them out of tool groups", () => {
+    const sub = event("tool", "Task · Audit workspace", {
+      tool: "Task",
+      detail: JSON.stringify({ subagent_type: "Explore", description: "Audit workspace", prompt: "Check all files", run_in_background: true }),
+      output: "Async agent launched successfully.\nagentId: a1b2",
+      state: "running",
+      at: 10,
+    });
+    const read1 = event("tool", "Read · a.ts", { tool: "Read", state: "done", at: 11 });
+    const read2 = event("tool", "Read · b.ts", { tool: "Read", state: "done", at: 12 });
+
+    expect(isSubagentLaunch(sub)).toBe(true);
+    const list = listSubagents([sub, read1, read2]);
+    expect(list.length).toBe(1);
+    expect(list[0].kind).toBe("Explore");
+    expect(list[0].title).toBe("Audit workspace");
+    expect(list[0].prompt).toBe("Check all files");
+    expect(list[0].background).toBe(true);
+    expect(list[0].taskId).toBe("a1b2");
+    expect(list[0].isRunning).toBe(true);
+    expect(list[0].answer).toBeNull();
+
+    const g = group([read1, sub, read2]);
+    expect(g.map((b) => b.id)).toEqual([read1.id, sub.id, read2.id]);
+  });
+
+  it("extracts background commands, strips launch notes and orders running first", () => {
+    const cmd1 = event("tool", "Bash · npm run dev", {
+      tool: "Bash",
+      detail: JSON.stringify({ command: "npm run dev", description: "Start dev server", run_in_background: true }),
+      output: "Command running in background with ID: b3k9. Output is being written to: /tmp/claude/tasks/b3k9.output. Read on that file path. Ready on http://localhost:3000",
+      state: "running",
+      at: 15,
+    });
+    const cmd2 = event("tool", "Bash · cargo build", {
+      tool: "Bash",
+      detail: JSON.stringify({ command: "cargo build", run_in_background: true }),
+      output: "Finished dev",
+      state: "done",
+      at: 20,
+    });
+    const cmd3 = event("tool", "Bash · pytest", {
+      tool: "Bash",
+      detail: JSON.stringify({ command: "pytest", run_in_background: true }),
+      output: "1 failed",
+      state: "failed",
+      at: 25,
+    });
+
+    expect(isBackgroundCommand(cmd1)).toBe(true);
+    const cmds = listBackgroundCommands([cmd2, cmd3, cmd1]);
+    expect(cmds.length).toBe(3);
+    expect(cmds[2].title).toBe("Start dev server");
+    expect(cmds[2].command).toBe("npm run dev");
+    expect(cmds[2].printed).toBe("Ready on http://localhost:3000");
+    expect(cmds[2].outputFile).toBe("/tmp/claude/tasks/b3k9.output");
+    expect(backgroundCommandOutputFile(cmd1.output)).toBe("/tmp/claude/tasks/b3k9.output");
+    expect(backgroundCommandTail("line1\nline2\nline3\nline4\nline5", 3)).toBe("line3\nline4\nline5");
+
+    const ordered = orderedBackgroundCommands(cmds);
+    expect(ordered.map((c) => c.id)).toEqual([cmd1.id, cmd3.id, cmd2.id]);
+  });
+
+  it("joins wake turns into the user turn and folds intermediate wake results cleanly", () => {
+    const timeline = [
+      event("user", "Run background build and report", { at: 0 }),
+      event("tool", "Bash · cargo build", {
+        tool: "Bash",
+        detail: JSON.stringify({ command: "cargo build", run_in_background: true }),
+        state: "done",
+        at: 5,
+      }),
+      event("assistant", "task-148 has been launched in the background. I will wait for it to complete before proceeding.", { at: 6 }),
+      event("result", "6s", { state: "done", at: 6 }),
+      event("system", "Wake", { tool: "wake", at: 30 }),
+      event("tool", "Read · build.log", { tool: "Read", state: "done", at: 32 }),
+      event("assistant", "The build succeeded with 0 warnings.", { state: "done", at: 35 }),
+      event("result", "35s", { state: "done", at: 35 }),
+    ];
+
+    expect(backgroundLaunchNotice(timeline[2].text)).toEqual(["task-148"]);
+    expect(isBackgroundNotice(timeline[2])).toBe(true);
+
+    const turns = split(timeline);
+    expect(turns.length).toBe(1);
+
+    const b = blocks(timeline, false);
+    expect(b.map((x) => x.type)).toEqual(["event", "fold", "event", "event"]);
+    expect(b[2].type === "event" && b[2].event.text).toBe("The build succeeded with 0 warnings.");
+
+    // currentSubagents and currentBackgroundCommands include running items from earlier turns
+    expect(currentBackgroundCommands(timeline).length).toBe(1);
+    expect(currentSubagents(timeline).length).toBe(0);
+  });
+});
+

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Eén regel in de tijdlijn (`EventRow` op de Mac): berichten, het denken van de agent, tool-aanroepen met invoer en
-  // uitkomst, gewijzigde bestanden, toestemmingsvragen, fouten, systeemregels en het einde van een beurt.
+  // uitkomst, subagents en achtergrondcommando's (AG-73), gewijzigde bestanden, toestemmingsvragen, fouten, systeemregels
+  // en het einde van een beurt.
   import Icon from "../../../components/Icon.svelte";
   import Ico from "../../../components/ui/Ico.svelte";
   import { isPicture, timeline } from "../../../lib/workspace/context-refs";
@@ -8,7 +9,13 @@
   import MarkdownBody from "../../../components/MarkdownBody.svelte";
   import { tr, locale } from "../../../lib/i18n.svelte";
   import type { RunEvent } from "../../../lib/workspace/api";
-  import { toolLabel } from "../../../lib/workspace/timeline";
+  import {
+    backgroundCommandFromEvent,
+    backgroundCommandTail,
+    backgroundLaunchNotice,
+    subagentFromEvent,
+    toolLabel,
+  } from "../../../lib/workspace/timeline";
 
   let {
     event,
@@ -62,6 +69,28 @@
   const approvalState = $derived<Record<string, string>>({
     pending: tr("wacht", "waiting"), allowed: tr("toegestaan", "allowed"), denied: tr("geweigerd", "denied"), expired: tr("verlopen", "expired"),
   });
+
+  // AG-73: Subagent row, background command row, and background launch notice
+  const subagent = $derived(subagentFromEvent(event));
+  const bgCommand = $derived(backgroundCommandFromEvent(event));
+  const bgNoticeTasks = $derived(event.kind === "assistant" ? backgroundLaunchNotice(event.text) : []);
+
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!subagent?.isRunning && !bgCommand?.isRunning) return;
+    const timer = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+
+  function formatElapsed(isoDate: string): string {
+    const secs = Math.max(0, Math.floor((now - Date.parse(isoDate)) / 1000));
+    if (secs < 60) return `${secs}s`;
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}m ${s}s`;
+  }
 
   function copy(text: string) {
     navigator.clipboard?.writeText(text).catch(() => {});
@@ -121,6 +150,12 @@
         <span>{time}</span>
       </div>
     </div>
+  {:else if event.kind === "assistant" && bgNoticeTasks.length > 0}
+    <!-- Background launch notice ("task-148 has been launched in the background…") as a quiet work line (`BackgroundWork.notice` on macOS, AG-73). -->
+    <div class="work-line" title={time}>
+      <span class="work-icon"><Ico name="terminal" size={15} stroke={1.8} /></span>
+      <span class="label">{tr("Op de achtergrond gestart · {tasks}", "Started in the background · {tasks}", { tasks: bgNoticeTasks.join(", ") })}</span>
+    </div>
   {:else if event.kind === "assistant"}
     <!-- The agent's answer has no bubble at all. -->
     <div class="turn assistant">
@@ -145,13 +180,64 @@
       <span class="head"><Icon name="brain" size={13} /> {event.state === "running" ? tr("Denkt na…", "Thinking…") : tr("Denkstappen", "Thinking")}{#if longThought}<span class="chev" class:open={expanded}><Icon name="chevron-right" size={12} /></span>{/if}</span>
       <span class="text" class:clamp={longThought && !expanded}>{event.text}</span>
     </button>
+  {:else if event.kind === "tool" && subagent}
+    <!-- SubagentRow (`RunTimelineRows.swift` on macOS, AG-73) -->
+    <div class="tool subagent-row">
+      <button class="line" onclick={toggle} title={tr("Klik om opdracht en antwoord van subagent te zien", "Click to see subagent task and answer")}>
+        <span class="sym {subagent.failed ? 'failed' : subagent.isRunning ? 'running' : 'done'}">
+          {#if subagent.isRunning}
+            <span class="spin"><Icon name="loader" size={13} /></span>
+          {:else if subagent.failed}
+            <Icon name="x" size={13} />
+          {:else}
+            <Icon name="bot" size={13} />
+          {/if}
+        </span>
+        <span class="label"><strong>{subagent.title}</strong></span>
+        <span class="subagent-kind">{subagent.kind}</span>
+        {#if subagent.background}
+          <span class="subagent-bg">{tr("achtergrond", "background")}</span>
+        {/if}
+        {#if subagent.isRunning}
+          <span class="subagent-elapsed">{formatElapsed(subagent.started)}</span>
+        {/if}
+        <span class="chev" class:open={expanded}><Icon name="chevron-right" size={12} /></span>
+      </button>
+      {#if expanded}
+        {#if subagent.prompt}
+          <div class="code">
+            <div class="code-head"><span>{tr("Opdracht", "Task")}</span><button class="ghost tiny" onclick={() => copy(subagent.prompt)}>{tr("Kopieer", "Copy")}</button></div>
+            <pre>{subagent.prompt}</pre>
+          </div>
+        {/if}
+        {#if subagent.answer}
+          <div class="code" class:failed={subagent.failed}>
+            <div class="code-head"><span>{tr("Antwoord", "Answer")}</span><button class="ghost tiny" onclick={() => copy(subagent.answer ?? "")}>{tr("Kopieer", "Copy")}</button></div>
+            <pre>{subagent.answer}</pre>
+          </div>
+        {:else if subagent.isRunning}
+          <span class="faint small subagent-status">{tr("Subagent werkt…", "Subagent is working…")}</span>
+        {/if}
+      {/if}
+    </div>
   {:else if event.kind === "tool"}
     <div class="tool">
       <button class="line" onclick={toggle} title={tr("Klik om invoer en uitkomst te zien", "Click to see input and output")}>
         <span class="sym {event.state ?? 'done'}">{#if event.state === "running"}<span class="spin"><Icon name="loader" size={13} /></span>{:else if event.state === "failed"}<Icon name="x" size={13} />{:else}<Icon name={symbol(event.tool ?? "")} size={13} />{/if}</span>
         <span class="label">{event.text}</span>
+        {#if bgCommand}
+          <span class="subagent-bg">{bgCommand.isRunning ? tr("Op de achtergrond · {time}", "In the background · {time}", { time: formatElapsed(bgCommand.started) }) : tr("Achtergrond", "Background")}</span>
+        {/if}
         <span class="chev" class:open={expanded}><Icon name="chevron-right" size={12} /></span>
       </button>
+      {#if bgCommand && !expanded}
+        {@const tail = backgroundCommandTail(bgCommand.printed, 1)}
+        {#if tail}
+          <button class="bg-cmd-link" onclick={toggle}>
+            <span class="mono">{tail}</span>
+          </button>
+        {/if}
+      {/if}
       {#if expanded}
         {#if event.detail && event.detail !== "{}"}
           <div class="code">
@@ -162,7 +248,7 @@
         {#if event.output}
           <div class="code" class:failed={event.state === "failed"}>
             <div class="code-head"><span>{tr("Uitkomst", "Output")}</span><button class="ghost tiny" onclick={() => copy(event.output ?? "")}>{tr("Kopieer", "Copy")}</button></div>
-            <pre>{event.output}</pre>
+            <pre>{bgCommand?.printed ?? event.output}</pre>
           </div>
         {:else if event.state === "running"}
           <span class="faint small">{tr("Loopt nog…", "Still running…")}</span>
@@ -283,4 +369,10 @@
   .work-line.compacting, .work-line.compacting .work-icon { color: var(--amber); }
   .work-line.failed, .work-line.failed .work-icon { color: color-mix(in srgb, var(--coral) 60%, transparent); }
   .small { font-size: 11.5px; }
+  .subagent-kind { font: var(--text-caption); color: var(--text3); padding: 1px var(--space-6); border-radius: var(--radius-chip); background: var(--smoke); flex: none; }
+  .subagent-bg { font: var(--text-caption); color: var(--text3); flex: none; font-variant-numeric: tabular-nums; }
+  .subagent-elapsed { font: var(--text-caption); color: var(--text3); flex: none; font-variant-numeric: tabular-nums; }
+  .subagent-status { margin-left: 25px; }
+  .bg-cmd-link { margin-left: 25px; padding: 2px var(--space-8); border-radius: var(--radius-control); background: var(--well); border: 1px solid var(--line2); color: var(--text3); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bg-cmd-link:hover { color: var(--paper); }
 </style>

@@ -522,6 +522,168 @@ async fn write_message(app: &AppHandle, c: &Connectors, key: &str, instruction: 
     }
 }
 
+/// Edits one of your own messages in `key` (`chat_inbox_edit_message`, CH-47).
+#[tauri::command]
+pub async fn chat_inbox_edit_message(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    message: String,
+    text: String,
+) -> Res<()> {
+    chat_inbox_message(app, c, key, message, "edit".into(), Some(text)).await
+}
+
+/// Deletes a message for everyone in `key` (`chat_inbox_delete_for_everyone`, CH-47).
+#[tauri::command]
+pub async fn chat_inbox_delete_for_everyone(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    message: String,
+) -> Res<()> {
+    chat_inbox_message(app, c, key, message, "revoke".into(), None).await
+}
+
+/// Deletes a message for you alone in `key`, recording it in `ChatHiddenMessages` (`chat_inbox_delete_for_me`, CH-47).
+#[tauri::command]
+pub async fn chat_inbox_delete_for_me(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    message: String,
+) -> Res<()> {
+    chat_inbox_message(app, c, key, message, "deleteForMe".into(), None).await
+}
+
+/// Detailed metadata for one message in `key` (`MessageInfoPopover`, CH-47).
+#[tauri::command]
+pub fn chat_inbox_message_info(
+    c: State<'_, Connectors>,
+    key: String,
+    message: String,
+) -> Option<nook_core::chats::inbox::MessageInfo> {
+    c.env.chats.read(|inbox| inbox.message_info(&key, &message))
+}
+
+/// Result of an inline `@nook` request in a chat composer (`chat_inline_nook`, CH-63).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineNookResult {
+    /// `"draft"` when the text should be placed in the composer field; `"answer"` when it answers a lookup question.
+    pub kind: String,
+    pub text: String,
+    pub instruction: String,
+}
+
+fn is_lookup_question(instruction: &str) -> bool {
+    let lower = instruction.trim().to_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    if lower.ends_with('?') {
+        return true;
+    }
+    const LOOKUP_PREFIXES: [&str; 22] = [
+        "what ",
+        "when ",
+        "where ",
+        "who ",
+        "why ",
+        "how ",
+        "which ",
+        "summarize",
+        "summary",
+        "explain",
+        "find ",
+        "search ",
+        "look up",
+        "lookup",
+        "check ",
+        "did ",
+        "wat ",
+        "wanneer ",
+        "waar ",
+        "wie ",
+        "waarom ",
+        "hoe ",
+    ];
+    LOOKUP_PREFIXES.iter().any(|p| lower.starts_with(p))
+}
+
+/// Inline `@nook <instruction>` in a chat composer (`ChatDraft`, CH-63): drafts a reply, refines an existing draft
+/// when `current_draft` is provided, or answers a lookup question about the chat in a dismissible popover.
+#[tauri::command]
+pub async fn chat_inline_nook(
+    app: AppHandle,
+    c: State<'_, Connectors>,
+    key: String,
+    instruction: String,
+    current_draft: Option<String>,
+) -> Res<InlineNookResult> {
+    use nook_core::brain::service;
+    use nook_core::chats::draft;
+
+    let clean_inst = draft::instruction(&instruction).unwrap_or_else(|| instruction.trim().to_string());
+    let existing = current_draft.unwrap_or_default().trim().to_string();
+    let is_lookup = existing.is_empty() && is_lookup_question(&clean_inst);
+
+    if is_lookup {
+        let state = app.state::<crate::state::AppState>();
+        let settings = state.settings();
+        if !service::brain_ready(&settings, state.key_for(settings.provider).is_some_and(|k| !k.is_empty())) {
+            return Err("Nook has no brain ready to answer with. Choose one in Settings › Brain.".into());
+        }
+        let (app_name, name, lines, _) =
+            transcript(&c, &key).ok_or_else(|| "This chat is no longer in Nook.".to_string())?;
+        let env = crate::commands::chat::brain_env(&app, &settings);
+        let system = "You answer the user's question about the chat transcript below concisely and accurately, in the user's language. Do not draft a message to send; answer the user directly in 1–3 sentences.";
+        let prompt = format!(
+            "{app_name} chat with {name}. The newest messages, oldest first (\"You\" is the user):\n{}\n\nThe user's question about this chat:\n{clean_inst}",
+            if lines.is_empty() { "(no messages yet)" } else { &lines }
+        );
+        let answer = match tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            service::complete(&settings, &env, system, &prompt),
+        )
+        .await
+        {
+            Ok(Ok(ans)) => ans.trim().to_string(),
+            Ok(Err(e)) => return Err(e.to_string()),
+            Err(_) => return Err("Nook took too long to answer.".into()),
+        };
+        if answer.is_empty() {
+            return Err("Nook could not find an answer in this chat.".into());
+        }
+        return Ok(InlineNookResult {
+            kind: "answer".into(),
+            text: answer,
+            instruction: clean_inst,
+        });
+    }
+
+    let full_instruction = if !existing.is_empty() {
+        let change = if clean_inst.is_empty() {
+            "Try another version in a similar tone."
+        } else {
+            clean_inst.as_str()
+        };
+        format!("Your draft so far:\n{existing}\n\nThe change: {change}")
+    } else {
+        clean_inst.clone()
+    };
+
+    let text = write_message(&app, &c, &key, &full_instruction, 90)
+        .await?
+        .ok_or_else(|| "Nook could not write a message for this chat.".to_string())?;
+
+    Ok(InlineNookResult {
+        kind: "draft".into(),
+        text,
+        instruction: clean_inst,
+    })
+}
+
 /// "@nook …" in a chat's field: the message Nook writes from the chat and what you asked, for the field. Never sent.
 #[tauri::command]
 pub async fn chat_draft(app: AppHandle, c: State<'_, Connectors>, key: String, instruction: String) -> Res<String> {

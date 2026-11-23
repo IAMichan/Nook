@@ -54,6 +54,31 @@
     latestReport: WorktreeCleanupReport | null;
   }
 
+  interface BuildLeftoverItem {
+    path: string;
+    worktree: string;
+    kind: string;
+    label: string;
+    bytes: number;
+  }
+
+  interface BuildLeftoverSweepReport {
+    removed: BuildLeftoverItem[];
+    bytesFreed: number;
+  }
+
+  interface WorktreeDiskStatus {
+    availableBytes: number | null;
+    lowDiskSpace: boolean;
+    lowBytesThreshold: number;
+    recoveredBytesThreshold: number;
+    worktreesBytes: number;
+    buildLeftoversCount: number;
+    buildLeftoversBytes: number;
+    archiveCount: number;
+    archiveBytes: number;
+  }
+
   const DEFAULT_WORKTREES: WorktreeSettings = {
     fastWorktrees: true,
     submodules: "recursive",
@@ -69,7 +94,10 @@
 
   let ws = $state<WorkspaceSettings | null>(null);
   let status = $state<WorktreeCleanupStatus | null>(null);
+  let diskStatus = $state<WorktreeDiskStatus | null>(null);
+  let sweepReport = $state<BuildLeftoverSweepReport | null>(null);
   let cleaning = $state(false);
+  let sweepingLeftovers = $state(false);
   let error = $state<string | null>(null);
 
   const rules = $derived.by<WorktreeSettings>(() => {
@@ -82,6 +110,11 @@
       status = await invoke<WorktreeCleanupStatus>("workspace_worktree_cleanup_status");
     } catch {
       // Command may not be wired yet in older builds; keep UI usable.
+    }
+    try {
+      diskStatus = await invoke<WorktreeDiskStatus>("workspace_worktree_disk_status");
+    } catch {
+      // Keep UI usable when disk status command is unavailable.
     }
   }
 
@@ -159,6 +192,19 @@
       error = String(e);
     } finally {
       cleaning = false;
+    }
+  }
+
+  async function sweepBuildLeftovers() {
+    sweepingLeftovers = true;
+    error = null;
+    try {
+      sweepReport = await invoke<BuildLeftoverSweepReport>("workspace_build_leftovers_sweep");
+      await refreshStatus();
+    } catch (e) {
+      error = String(e);
+    } finally {
+      sweepingLeftovers = false;
     }
   }
 
@@ -484,6 +530,85 @@
         {/each}
       </div>
     {/if}
+
+    {#if diskStatus}
+      {#if diskStatus.lowDiskSpace && diskStatus.availableBytes != null}
+        <div class="disk-warning">
+          <div class="summary-col">
+            <span class="label">{tr("Weinig schijfruimte", "Low disk space")}</span>
+            <small>
+              {tr(
+                "Nog {free} vrij op de schijf ({used} in worktrees). Ruim build-restanten of oude worktrees op om ruimte vrij te maken.",
+                "{free} available on disk ({used} in worktrees). Clean up build leftovers or stale worktrees to free space.",
+                {
+                  free: readableSize(diskStatus.availableBytes),
+                  used: readableSize(diskStatus.worktreesBytes),
+                },
+              )}
+            </small>
+          </div>
+        </div>
+      {/if}
+
+      <div class="row cleanup-action">
+        <div class="summary-col">
+          <span class="label">{tr("Build-restanten", "Build leftovers")}</span>
+          <small class="faint">
+            {#if diskStatus.buildLeftoversCount > 0}
+              {tr(
+                "{count} build-mappen ({size}) in niet-actieve worktrees (target, .build, .next, DerivedData).",
+                "{count} build folders ({size}) in idle worktrees (target, .build, .next, DerivedData).",
+                {
+                  count: diskStatus.buildLeftoversCount,
+                  size: readableSize(diskStatus.buildLeftoversBytes),
+                },
+              )}
+            {:else}
+              {tr("Geen build-restanten in niet-actieve worktrees.", "No build leftovers in idle worktrees.")}
+            {/if}
+          </small>
+          {#if sweepReport && sweepReport.removed.length > 0}
+            <small class="faint">
+              {tr(
+                "{count} build-mappen verwijderd · {size} vrijgemaakt",
+                "{count} build folders removed · {size} freed",
+                {
+                  count: sweepReport.removed.length,
+                  size: readableSize(sweepReport.bytesFreed),
+                },
+              )}
+            </small>
+          {/if}
+        </div>
+        <button
+          class="small"
+          disabled={sweepingLeftovers || diskStatus.buildLeftoversCount === 0}
+          onclick={sweepBuildLeftovers}
+        >
+          {sweepingLeftovers
+            ? tr("Opruimen…", "Cleaning up…")
+            : tr("Ruim build-restanten op", "Clean up build leftovers")}
+        </button>
+      </div>
+
+      {#if diskStatus.archiveCount > 0}
+        <div class="row">
+          <div class="summary-col">
+            <span class="label">{tr("Gearchiveerde .scratch-mappen", "Archived .scratch folders")}</span>
+            <small class="faint">
+              {tr(
+                "{count} bewaarde .scratch-mappen ({size}) uit opgeruimde worktrees.",
+                "{count} saved .scratch folders ({size}) from cleaned-up worktrees.",
+                {
+                  count: diskStatus.archiveCount,
+                  size: readableSize(diskStatus.archiveBytes),
+                },
+              )}
+            </small>
+          </div>
+        </div>
+      {/if}
+    {/if}
   </div>
 
   {#if orphans.length > 0}
@@ -524,6 +649,7 @@
   .cleanup-action { align-items: flex-start; }
   .summary-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; flex: 1; }
   .label { color: var(--paper); font: var(--text-body); }
+  .disk-warning { display: flex; align-items: flex-start; gap: var(--space-8); padding: var(--space-8); border-radius: var(--radius-control); background: color-mix(in srgb, var(--amber) 14%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent); }
   .report-list { display: flex; flex-direction: column; border-top: 1px solid var(--separator); padding: var(--space-8) 0; gap: var(--space-8); }
   .report-entry { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) 0; }
   .entry-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }

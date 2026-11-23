@@ -180,6 +180,112 @@
   let linkBusy = $state(false);
   let linkError = $state<string | null>(null);
 
+  // 1Password secret provider (`SecretProvidersSection` / `OnePasswordProvider`, CH-97).
+  interface OnePasswordStatus {
+    enabled: boolean;
+    available: boolean;
+    mode: "cli" | "serviceAccount" | "connect";
+    cliPath: string | null;
+    version: string | null;
+    signedIn: boolean;
+    account: string | null;
+    hasServiceAccount: boolean;
+    hasConnect: boolean;
+    connectHost: string | null;
+    reason: string | null;
+  }
+
+  let opStatus = $state<OnePasswordStatus | null>(null);
+  let opExpanded = $state(false);
+  let opServiceToken = $state("");
+  let opConnectHost = $state("");
+  let opConnectToken = $state("");
+  let opProbeRef = $state("op://Private/Example/password");
+  let opProbeResult = $state<{ ok: boolean; text: string } | null>(null);
+  let opBusy = $state(false);
+
+  async function loadOnePassword() {
+    try {
+      const s = await invoke<OnePasswordStatus>("secrets_onepassword_status");
+      opStatus = s;
+      if (s.connectHost && !opConnectHost) opConnectHost = s.connectHost;
+    } catch {
+      opStatus = {
+        enabled: true,
+        available: false,
+        mode: "cli",
+        cliPath: null,
+        version: null,
+        signedIn: false,
+        account: null,
+        hasServiceAccount: false,
+        hasConnect: false,
+        connectHost: null,
+        reason: null,
+      };
+    }
+  }
+
+  async function setOnePasswordEnabled(on: boolean) {
+    try {
+      await invoke("secret_set", { account: "secrets.onepassword.enabled", value: on ? "true" : "false" });
+    } catch {
+      // Fallback for preview mode without Tauri backend.
+    }
+    if (opStatus) opStatus = { ...opStatus, enabled: on };
+    await loadOnePassword();
+  }
+
+  async function saveOnePasswordServiceToken() {
+    opBusy = true;
+    opProbeResult = null;
+    try {
+      await invoke("secret_set", { account: "secrets.onepassword.service_account_token", value: opServiceToken.trim() });
+      opServiceToken = "";
+      await loadOnePassword();
+    } catch (e) {
+      opProbeResult = { ok: false, text: String(e) };
+    } finally {
+      opBusy = false;
+    }
+  }
+
+  async function saveOnePasswordConnect() {
+    opBusy = true;
+    opProbeResult = null;
+    try {
+      await invoke("secret_set", { account: "secrets.onepassword.connect_host", value: opConnectHost.trim() });
+      if (opConnectToken.trim()) {
+        await invoke("secret_set", { account: "secrets.onepassword.connect_token", value: opConnectToken.trim() });
+        opConnectToken = "";
+      }
+      await loadOnePassword();
+    } catch (e) {
+      opProbeResult = { ok: false, text: String(e) };
+    } finally {
+      opBusy = false;
+    }
+  }
+
+  async function testOnePasswordReference() {
+    const ref = opProbeRef.trim();
+    if (!ref) return;
+    opBusy = true;
+    opProbeResult = null;
+    try {
+      const val = await invoke<string>("secrets_onepassword_resolve", { value: ref });
+      const length = val ? val.length : 0;
+      opProbeResult = {
+        ok: true,
+        text: tr("Gelukt ({n} tekens gelezen uit 1Password).", "Resolved ({n} characters read from 1Password).", { n: length }),
+      };
+    } catch (e) {
+      opProbeResult = { ok: false, text: String(e) };
+    } finally {
+      opBusy = false;
+    }
+  }
+
   const ADD_GROUPS = $derived<{ id: AddGroup; title: string }[]>([
     { id: "mail", title: tr("Mail en agenda", "Mail & Calendar") },
     { id: "chats", title: tr("Chat-apps", "Chat apps") },
@@ -329,6 +435,7 @@
   async function load() {
     overview = await connectorsApi.overview();
     connectorsApi.whatsapp().then((v) => (whatsappView = v)).catch(() => {});
+    loadOnePassword();
     invoke<{ accounts: { provider: string }[] }>("mail_accounts_list")
       .then((m) => {
         mailAccountCount = m?.accounts?.length ?? 0;

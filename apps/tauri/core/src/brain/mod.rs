@@ -67,6 +67,7 @@ pub mod message_trust;
 pub mod model_download;
 pub mod network_guard;
 pub mod open_browser_tab;
+pub mod os_settings;
 pub mod prepare;
 pub mod private_brief;
 pub mod privacy_level;

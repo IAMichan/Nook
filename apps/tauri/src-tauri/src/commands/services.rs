@@ -642,3 +642,85 @@ pub async fn telemetry_test(
     Ok(OtlpExporter::new().test_connection(signal, &target, &headers).await)
 }
 
+// 1Password `op://` secret provider (`SecretProvidersSection` on the Mac, CH-97)
+
+/// Returns 1Password CLI (`op`) installation status, version, sign-in mode, and optionally updates enabled/token config.
+#[tauri::command]
+pub async fn secrets_onepassword_status(
+    app: AppHandle,
+    enabled: Option<bool>,
+    service_account_token: Option<String>,
+    connect_host: Option<String>,
+    connect_token: Option<String>,
+) -> Res<nook_core::secrets::OnePasswordStatus> {
+    use nook_core::secrets::{
+        OnePasswordProvider, OP_CONNECT_HOST_KEY, OP_CONNECT_TOKEN_KEY, OP_ENABLED_KEY,
+        OP_SERVICE_ACCOUNT_KEY,
+    };
+    blocking(move || {
+        let state = app.state::<crate::state::AppState>();
+        if let Some(en) = enabled {
+            let _ = state.secrets.write(OP_ENABLED_KEY, if en { "true" } else { "false" });
+        }
+        if let Some(tok) = service_account_token {
+            let _ = state.secrets.write(OP_SERVICE_ACCOUNT_KEY, &tok);
+        }
+        if let Some(host) = connect_host {
+            let _ = state.secrets.write(OP_CONNECT_HOST_KEY, &host);
+        }
+        if let Some(tok) = connect_token {
+            let _ = state.secrets.write(OP_CONNECT_TOKEN_KEY, &tok);
+        }
+        let cfg = OnePasswordProvider::config_from_store(&*state.secrets);
+        let provider = OnePasswordProvider::new();
+        provider.status(&cfg)
+    })
+    .await
+}
+
+/// Resolves an `op://vault/item/field` reference via `op read --no-newline`, or tests sign-in (`op whoami`) when
+/// `reference` is empty (`SecretProviderSheet.test` on the Mac, CH-97).
+#[tauri::command]
+pub async fn secrets_onepassword_resolve(
+    app: AppHandle,
+    reference: String,
+    mask_value: Option<bool>,
+) -> Res<String> {
+    use nook_core::secrets::{OnePasswordProvider, SecretReference};
+    let mask_out = mask_value.unwrap_or(false);
+    blocking(move || {
+        let state = app.state::<crate::state::AppState>();
+        let cfg = OnePasswordProvider::config_from_store(&*state.secrets);
+        let provider = OnePasswordProvider::new();
+        let trimmed = reference.trim();
+        if trimmed.is_empty() {
+            return provider.check(&cfg, None).map_err(|e| e.message());
+        }
+        let parsed = SecretReference::parse(trimmed)
+            .ok_or_else(|| nook_core::secrets::OnePasswordFailure::NotReference.message())?;
+        let secret = provider.read(&parsed, &cfg).map_err(|e| e.message())?;
+        if mask_out {
+            Ok(nook_core::secrets::mask(&secret))
+        } else {
+            Ok(secret)
+        }
+    })
+    .await?
+}
+
+// `nook://` deep links (`AppModel+IncomingLinks` on the Mac, CH-100)
+
+/// Parses and routes a `nook://` deep link URL, emitting a `nook-deep-link` event to the frontend window.
+#[tauri::command]
+pub fn handle_deep_link(
+    app: AppHandle,
+    url: String,
+) -> Res<nook_core::services::deep_link::DeepLinkRoute> {
+    use tauri::Emitter;
+    let route = nook_core::services::deep_link::DeepLinkRoute::parse(&url)
+        .ok_or_else(|| "Invalid or unsupported nook:// link.".to_string())?;
+    let _ = app.emit("nook-deep-link", &route);
+    Ok(route)
+}
+
+

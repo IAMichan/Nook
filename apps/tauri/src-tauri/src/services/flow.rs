@@ -166,13 +166,55 @@ pub async fn deliver(app: &AppHandle, heard: &str, seconds: f64) {
     }
 }
 
+/// Builds the dictation vocabulary (`SV-49`): personal dictionary words, active workspace project & branch names,
+/// active window title, and focused field context.
+pub fn context_words(app: &AppHandle) -> Vec<String> {
+    let services = app.state::<Services>();
+    let dict_words = services.flow.lock().unwrap_or_else(|e| e.into_inner()).words.clone();
+    let mut projects = Vec::new();
+    let mut branches = Vec::new();
+    if let Some(ws) = app.try_state::<crate::workspace::WorkspaceState>() {
+        for run in ws.manager.runs().into_iter().take(25) {
+            let proj = nook_core::services::dictation_context::folder_name(&run.project_path);
+            if !proj.is_empty() && !projects.contains(&proj) {
+                projects.push(proj);
+            }
+            if let Some(b) = run.branch {
+                if !b.is_empty() && !branches.contains(&b) {
+                    branches.push(b);
+                }
+            }
+        }
+    }
+    let active_window = services.platform.screen.active_app().map(|a| a.title);
+    let focused_field = services
+        .platform
+        .text_input
+        .focused_field()
+        .ok()
+        .map(|f| format!("{} {}", f.window_title, f.before));
+    nook_core::services::dictation_context::prompt_words(
+        &dict_words,
+        &projects,
+        &branches,
+        active_window.as_deref(),
+        focused_field.as_deref(),
+    )
+}
+
+/// Formatted initial prompt string for speech recognizers (`SV-49`).
+pub fn initial_prompt(app: &AppHandle) -> String {
+    nook_core::services::dictation_context::prompt(&context_words(app))
+}
+
 /// De woordenlijst erin, en opschonen met het brein als dat aanstaat en het geen terminal of editor is.
 async fn shape(app: &AppHandle, heard: &str, target: Option<&(String, String)>) -> String {
     let services = app.state::<Services>();
-    let (prepared, settings, style, words) = {
+    let (prepared, settings, style) = {
         let store = services.flow.lock().unwrap_or_else(|e| e.into_inner());
-        (store.prepare(heard), store.settings.clone(), store.style(target.map(|t| t.0.as_str())), store.words.clone())
+        (store.prepare(heard), store.settings.clone(), store.style(target.map(|t| t.0.as_str())))
     };
+    let words = context_words(app);
     let transform = settings.prompt_mode || !settings.translate_to.is_empty();
     let body = prepared.text.clone();
     let wants = transform || (settings.cleanup && style != FlowStyle::Verbatim && flow::word_count(&body) >= 3);
@@ -194,3 +236,4 @@ async fn shape(app: &AppHandle, heard: &str, target: Option<&(String, String)>) 
     }
     flow::finish(&body, &prepared.snippets)
 }
+

@@ -628,8 +628,9 @@ pub fn workspace_continue_interrupted(state: State<'_, WorkspaceState>, skip: Ve
 /// Leaves a question asked before a restart unanswered (`runq:<run>:<request>`).
 #[tauri::command]
 pub fn workspace_dismiss_question(state: State<'_, WorkspaceState>, id: String) -> Res<()> {
-    let rest = id.strip_prefix("runq:").ok_or("Deze vraag bestaat niet meer.")?;
-    let (run, request) = rest.split_once(':').ok_or("Deze vraag bestaat niet meer.")?;
+    let missing = || nook_core::i18n::tr("Deze vraag bestaat niet meer.", "This question no longer exists.");
+    let rest = id.strip_prefix("runq:").ok_or_else(missing)?;
+    let (run, request) = rest.split_once(':').ok_or_else(missing)?;
     state.manager.dismiss_question(self::id(run)?, request);
     Ok(())
 }
@@ -1848,4 +1849,196 @@ pub async fn workspace_side_chat(
         created_at: Utc::now(),
     })
 }
+
+// MARK: Text generation — session title regeneration & next-prompt suggestions (AG-70)
+
+const TITLE_SYSTEM: &str = "You write short, specific titles for coding-agent sessions in Nook. \
+Return only the title itself on a single line (3 to 7 words, no quotes, no trailing period, no markdown). \
+Use the same language as the user's messages.";
+
+const NEXT_PROMPT_SYSTEM: &str = "You suggest the single most natural next message the user might send to their coding agent in Nook, \
+based on the conversation so far and the agent's latest reply. \
+Write from the user's perspective as a direct instruction or question to the agent (one short sentence, under 120 characters, no quotes, no 'Prompt:' prefix, no markdown). \
+Use the same language as the user's messages. If no follow-up makes sense, reply with NONE.";
+
+fn fallback_session_title(user_messages: &[String], goal: Option<&str>, task: &str) -> String {
+    let source = user_messages
+        .last()
+        .map(String::as_str)
+        .or(goal)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(task);
+    let first_line = source
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("Session");
+    let words: Vec<&str> = first_line.split_whitespace().take(7).collect();
+    let candidate = words.join(" ").trim_matches(|c: char| c == '"' || c == '\'' || c == '.' || c == ':').to_string();
+    if candidate.is_empty() {
+        "Session".into()
+    } else {
+        nook_core::agents::text::shorten(&candidate, 60)
+    }
+}
+
+/// Regenerates a session title from the user messages in its timeline (and active goal / project title instructions),
+/// updates the run in `WorkspaceManager`, emits `workspace-changed`, and returns the new title (AG-70).
+#[tauri::command]
+pub async fn workspace_regenerate_title(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    run: String,
+) -> Res<String> {
+    let run_id = id(&run)?;
+    let session = state
+        .manager
+        .run(run_id)
+        .ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
+    let events = state.manager.timeline(run_id);
+    let mut user_messages: Vec<String> = events
+        .iter()
+        .filter(|e| !e.rolled_back.unwrap_or(false) && e.kind == EventKind::User && !e.text.trim().is_empty())
+        .map(|e| e.text.trim().to_string())
+        .collect();
+    if user_messages.is_empty() && !session.task.trim().is_empty() {
+        user_messages.push(session.task.trim().to_string());
+    }
+    if user_messages.is_empty() {
+        return Err(tr(
+            "Stuur eerst een bericht voordat je de titel opnieuw laat maken.",
+            "Send a message first before regenerating the title.",
+        )
+        .to_string());
+    }
+
+    let custom_instructions = {
+        let ws_settings = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+        let defaults = ws_settings.defaults_for(&session.project_path);
+        let trimmed = defaults.title_instructions.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    };
+
+    let mut prompt = String::new();
+    if let Some(ref goal) = session.goal {
+        if !goal.trim().is_empty() {
+            prompt.push_str(&format!("Active goal: {}\n\n", goal.trim()));
+        }
+    }
+    prompt.push_str("User messages in this session:\n");
+    for (idx, msg) in user_messages.iter().rev().take(6).rev().enumerate() {
+        prompt.push_str(&format!("{}. {}\n", idx + 1, nook_core::agents::text::shorten(msg, 400)));
+    }
+    if let Some(ref extra) = custom_instructions {
+        prompt.push_str(&format!("\nAdditional project title instructions: {extra}\n"));
+    }
+
+    let app_state = app.state::<crate::state::AppState>();
+    let settings = app_state.settings();
+    let env = nook_core::brain::service::BrainEnv {
+        key: app_state.key_for(settings.provider),
+        memory_gb: crate::brain::memory_gb(),
+        country: crate::brain::country(),
+        timezone: crate::brain::timezone(),
+    };
+
+    let generated = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        nook_core::brain::service::complete(&settings, &env, TITLE_SYSTEM, &prompt),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .map(|raw| {
+        raw.lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == '.')
+            .trim()
+            .to_string()
+    })
+    .filter(|s| !s.is_empty());
+
+    let new_title = generated.unwrap_or_else(|| fallback_session_title(&user_messages, session.goal.as_deref(), &session.task));
+    state.manager.rename(run_id, &new_title);
+    let _ = app.emit("workspace-changed", ());
+    Ok(new_title)
+}
+
+/// Suggests the single next follow-up prompt after a completed turn (`None` while running or before the first assistant reply) (AG-70).
+#[tauri::command]
+pub async fn workspace_suggest_next_prompt(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    run: String,
+) -> Res<Option<String>> {
+    let run_id = id(&run)?;
+    let Some(session) = state.manager.run(run_id) else {
+        return Ok(None);
+    };
+    if session.status.is_active() {
+        return Ok(None);
+    }
+    let events = state.manager.timeline(run_id);
+    let visible: Vec<_> = events
+        .iter()
+        .filter(|e| !e.rolled_back.unwrap_or(false) && matches!(e.kind, EventKind::User | EventKind::Assistant) && !e.text.trim().is_empty())
+        .collect();
+    let has_user = visible.iter().any(|e| e.kind == EventKind::User);
+    let ends_with_assistant = visible.last().is_some_and(|e| e.kind == EventKind::Assistant);
+    if !has_user || !ends_with_assistant {
+        return Ok(None);
+    }
+
+    let mut prompt = String::new();
+    prompt.push_str(&format!("Session title: {}\n", session.title));
+    if let Some(ref goal) = session.goal {
+        if !goal.trim().is_empty() {
+            prompt.push_str(&format!("Active goal: {}\n", goal.trim()));
+        }
+    }
+    prompt.push_str("\nRecent conversation:\n");
+    let start = visible.len().saturating_sub(6);
+    for ev in &visible[start..] {
+        let role = if ev.kind == EventKind::User { "User" } else { "Assistant" };
+        prompt.push_str(&format!("{role}: {}\n", nook_core::agents::text::shorten(ev.text.trim(), 600)));
+    }
+
+    let app_state = app.state::<crate::state::AppState>();
+    let settings = app_state.settings();
+    let env = nook_core::brain::service::BrainEnv {
+        key: app_state.key_for(settings.provider),
+        memory_gb: crate::brain::memory_gb(),
+        country: crate::brain::country(),
+        timezone: crate::brain::timezone(),
+    };
+
+    let raw = match tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        nook_core::brain::service::complete(&settings, &env, NEXT_PROMPT_SYSTEM, &prompt),
+    )
+    .await
+    {
+        Ok(Ok(reply)) => reply,
+        _ => return Ok(None),
+    };
+
+    let first_line = raw.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let stripped = first_line
+        .strip_prefix("Prompt:")
+        .or_else(|| first_line.strip_prefix("Suggestion:"))
+        .unwrap_or(first_line)
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`')
+        .trim();
+    if stripped.is_empty()
+        || stripped.len() > 240
+        || matches!(stripped.to_ascii_lowercase().as_str(), "none" | "null" | "n/a" | "-")
+    {
+        return Ok(None);
+    }
+    Ok(Some(stripped.to_string()))
+}
+
 

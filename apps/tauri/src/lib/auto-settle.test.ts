@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { emptyState, unsettle, type InboxRow } from "./agent-inbox";
-import { autoSettle, cleanedRules, decide, DEFAULT_RULES } from "./auto-settle";
+import {
+  autoSettle,
+  cleanedRules,
+  cleanedSettleActions,
+  decide,
+  DEFAULT_RULES,
+  DEFAULT_SETTLE_ACTIONS,
+  planSettleActions,
+  type SettleableRow,
+} from "./auto-settle";
 
 const DAY = 86_400_000;
 const now = 100 * DAY;
-const row = (id: string, daysAgo: number, attention: InboxRow["attention"] = "idle", extra: Partial<InboxRow> = {}): InboxRow =>
+const row = (id: string, daysAgo: number, attention: InboxRow["attention"] = "idle", extra: Partial<SettleableRow> = {}): SettleableRow =>
   ({ id, title: id, project: "p", attention, lastActivity: now - daysAgo * DAY, ...extra });
 const rules = { enabled: true, inactivityDays: 7 };
 
@@ -38,9 +47,43 @@ describe("auto-settle", () => {
     expect(autoSettle([active], reopened, rules, first.autoSettled, later).settled).toEqual(["old"]);
   });
 
-  it("cleans stored rules to 1…30 days", () => {
+  it("cleans stored rules to 1…30 days and preserves pull-request toggles", () => {
     expect(cleanedRules(null)).toEqual(DEFAULT_RULES);
-    expect(cleanedRules({ enabled: false, inactivityDays: 99 })).toEqual({ enabled: false, inactivityDays: 30 });
+    expect(cleanedRules({ enabled: false, inactivityDays: 99 })).toEqual({
+      ...DEFAULT_RULES,
+      enabled: false,
+      inactivityDays: 30,
+    });
     expect(cleanedRules({ inactivityDays: 0 }).inactivityDays).toBe(1);
+    expect(cleanedRules({ settleOnMergedPullRequest: false }).settleOnClosedPullRequest).toBe(false);
+    expect(cleanedRules({ settleOnMergedPullRequest: false, settleOnClosedPullRequest: true }).settleOnClosedPullRequest).toBe(true);
+  });
+
+  it("settles merged or closed pull requests immediately and keeps open pull requests when configured (AG-110)", () => {
+    expect(decide(row("pr-merged", 1, "idle", { pullRequest: "merged" }), emptyState(), DEFAULT_RULES, {}, now)).toEqual({ settle: true });
+    expect(decide(row("pr-closed", 1, "idle", { pullRequest: "closed" }), emptyState(), DEFAULT_RULES, {}, now)).toEqual({ settle: true });
+    expect(
+      decide(
+        row("pr-open", 15, "idle", { pullRequest: "open" }),
+        emptyState(),
+        { ...DEFAULT_RULES, keepWithOpenPullRequest: true },
+        {},
+        now,
+      ),
+    ).toEqual({ settle: false, reason: "openPullRequest" });
+  });
+
+  it("plans settle actions only when no other unsettled session shares the folder (AG-111)", () => {
+    expect(cleanedSettleActions(null)).toEqual(DEFAULT_SETTLE_ACTIONS);
+    const actions = { stopDevServersOnSettle: true, closeIdleTerminalsOnSettle: true, settleCommand: " git status " };
+    expect(planSettleActions("/repo/a/", ["/repo/b"], actions)).toEqual({
+      folder: "/repo/a",
+      stopDevServers: true,
+      closeIdleTerminals: true,
+      command: "git status",
+    });
+    expect(planSettleActions("/repo/a", ["/repo/a/"], actions)).toBeNull();
+    expect(planSettleActions("/repo/a", [], DEFAULT_SETTLE_ACTIONS)).toBeNull();
   });
 });
+

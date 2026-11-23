@@ -33,13 +33,30 @@
   ];
 
   const s = $derived(nook.settings!);
-  const rules = $derived(s.noticeRules ?? { styles: {}, apps: {}, quietHours: null, quietWhileWatching: false });
+  const rules = $derived(
+    (s.noticeRules ?? { styles: {}, apps: {}, quietHours: null, quietWhileWatching: false }) as typeof s.noticeRules & {
+      suppressBots?: boolean;
+      respectAppMute?: boolean;
+    },
+  );
   let prefs = $state<ServicePrefs | null>(null);
   let query = $state("");
 
   $effect(() => {
     services.prefs().then((p) => (prefs = p)).catch(() => {});
   });
+
+  const suppressBots = $derived(rules.suppressBots ?? true);
+  const respectAppMute = $derived(rules.respectAppMute ?? true);
+
+  function setChatRule(patch: { suppressBots?: boolean; respectAppMute?: boolean }) {
+    nook.saveSettings({
+      noticeRules: {
+        ...rules,
+        ...patch,
+      } as typeof s.noticeRules,
+    });
+  }
 
   const normalized = (name: string) => name.trim().toLowerCase();
   const appKey = (source: NoticeSource, id: string) => `${source}:${normalized(id)}`;
@@ -151,6 +168,39 @@
       <p class="note">{tr("Meldingen voor chatberichten staan op “Alleen in de lijst”. Pas dat aan bij Meldingen om deze schakelaars te gebruiken.", "Notifications for chat messages are set to “Only in the list”. Change that under Notifications to use these switches.")}</p>
     {/if}
   </div>
+
+  {#if !q}
+    <h3>{tr("Van wie", "From whom")}</h3>
+    <p class="section-info">{tr("Wie bij chatberichten wel en geen melding geeft; het bericht zelf verschijnt altijd in Chats.", "Who triggers a chat notification and who stays quiet; the message itself always shows in Chats.")}</p>
+    <div class="group" class:dimmed={chatsOff}>
+      <label class="row">
+        <span>
+          {tr("Bots en automatische afzenders stil houden", "Keep bots and automated senders quiet")}<br />
+          <small>{tr("Geen melding bij berichten van bots, nieuwsbrieven en no-reply-afzenders.", "No notification for messages from bots, newsletters and no-reply senders.")}</small>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          disabled={chatsOff}
+          checked={suppressBots}
+          onchange={(e) => setChatRule({ suppressBots: e.currentTarget.checked })}
+        />
+      </label>
+      <label class="row">
+        <span>
+          {tr("Gedempt in de eigen app ook in Nook stil houden", "Keep chats muted in their own app quiet in Nook too")}<br />
+          <small>{tr("Als een gesprek of groep in WhatsApp, Telegram of Slack gedempt is, stoort Nook je er ook niet voor.", "If a chat or group is muted in WhatsApp, Telegram or Slack, Nook does not interrupt you for it either.")}</small>
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          disabled={chatsOff}
+          checked={respectAppMute}
+          onchange={(e) => setChatRule({ respectAppMute: e.currentTarget.checked })}
+        />
+      </label>
+    </div>
+  {/if}
 {/if}
 
 {#if suggestionApps.length > 0}

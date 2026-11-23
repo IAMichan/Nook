@@ -383,6 +383,10 @@
         <input type="checkbox" role="switch" checked={!!ws.keepTraffic} onchange={(e) => setTraffic(e.currentTarget.checked)} />
       </label>
     {/if}
+    <label class="row">
+      <span>{tr("Voorbeelddata tonen (om rond te kijken)", "Show demo data (to explore)")}<br /><small>{tr("Vult Nook met voorbeeldgesprekken, voorbeeldsessies en meldingen zodat je elke functie kunt uitproberen zonder eigen accounts.", "Fills Nook with sample conversations, sample sessions, and notices so you can explore every feature without your own accounts.")}</small></span>
+      <input type="checkbox" role="switch" checked={!!nook.settings?.demoData} onchange={(e) => nook.saveSettings({ demoData: e.currentTarget.checked })} />
+    </label>
     <div class="row">
       <span>{tr("Diagnose exporteren", "Export diagnostics")}<br /><small>{tr("Kopieert versies, instellingen en het logboek van het afgelopen halfuur, zonder mailadressen, sleutels, telefoonnummers of je naam in paden. Er wordt niets verstuurd.", "Copies versions, set-up facts and the log of the last half hour, without mail addresses, keys, phone numbers or your name in paths. Nothing is sent.")}</small></span>
       <span class="inline"><button class="small" onclick={showLogs}>{tr("Logbestanden tonen", "Show log files")}</button><button class="small" onclick={copyDiagnostics}>{tr("Diagnose kopiëren", "Copy diagnostics")}</button></span>

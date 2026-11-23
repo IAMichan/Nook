@@ -73,13 +73,94 @@
   let folder = $state<string | null>(null);
   let message = $state<string | null>(null);
 
+  type DictationLanguageSettings = {
+    mode: string;
+    spokenLanguages: string[];
+    lastHeard: string;
+  };
+  type DictationLanguageOption = { code: string; name: string };
+  type VoiceDictationLanguagesView = {
+    settings: DictationLanguageSettings;
+    candidates: string[];
+    available: DictationLanguageOption[];
+    contextPreview: string;
+  };
+  type SpeechModelCatalogEntry = {
+    id: string;
+    name: string;
+    runtime: "whisperCpp" | "parakeetOnnx";
+    repoId: string;
+    sizeMb: number;
+    multilingual: boolean;
+    description: string;
+  };
+  type ReusableModelCopy = {
+    modelId: string;
+    name: string;
+    runtime: "whisperCpp" | "parakeetOnnx";
+    repoId: string;
+    snapshotPath: string;
+    sizeBytes: number;
+    alreadyLinked: boolean;
+  };
+  type VoiceModelsView = {
+    catalog: SpeechModelCatalogEntry[];
+    reusable: ReusableModelCopy[];
+    modelsDir: string;
+    linkedPath: string | null;
+  };
+
+  let dictationLang = $state<VoiceDictationLanguagesView | null>(null);
+  let voiceModels = $state<VoiceModelsView | null>(null);
+  let showAllSpokenLanguages = $state(false);
+
+  const COMMON_LANG_CODES = ["nl", "en", "de", "fr", "es", "it", "pt", "pl", "sv", "da", "no", "tr", "ja", "zh"];
+
   const load = async () => {
     [prefs, info, flow] = await Promise.all([services.prefs(), services.voiceInfo(), services.flowView()]);
     dictionary = flow.dictionary;
+    if (part === "dictation") {
+      invoke<VoiceDictationLanguagesView>("voice_dictation_languages")
+        .then((v) => (dictationLang = v))
+        .catch(() => {});
+      invoke<VoiceModelsView>("voice_reusable_models")
+        .then((v) => (voiceModels = v))
+        .catch(() => {});
+    }
   };
   $effect(() => {
     load();
   });
+
+  async function saveDictationLang(next: DictationLanguageSettings) {
+    try {
+      dictationLang = await invoke<VoiceDictationLanguagesView>("voice_dictation_languages", { update: next });
+    } catch (e) {
+      message = String(e);
+    }
+  }
+
+  async function toggleSpokenLanguage(code: string, checked: boolean) {
+    if (!dictationLang) return;
+    const current = dictationLang.settings.spokenLanguages;
+    const nextList = checked ? (current.includes(code) ? current : [...current, code]) : current.filter((c) => c !== code);
+    await saveDictationLang({ ...dictationLang.settings, spokenLanguages: nextList });
+  }
+
+  async function reuseHfModel(copy: ReusableModelCopy) {
+    try {
+      const res = await invoke<VoiceModelsView>("voice_reusable_models", {
+        reuseModelId: copy.modelId,
+        snapshotPath: copy.snapshotPath,
+      });
+      voiceModels = res;
+      if (res.linkedPath) {
+        await save({ whisperModel: res.linkedPath });
+      }
+    } catch (e) {
+      message = String(e);
+    }
+  }
 
   async function save(patch: Partial<ServicePrefs>) {
     if (!prefs) return;
@@ -116,6 +197,7 @@
     { id: "openai", title: "OpenAI", detail: tr("Je opname gaat naar {service}, met je eigen sleutel (Instellingen › Brein).", "Your recording goes to {service}, with your own key (Settings › Brain).", { service: "OpenAI" }) },
     { id: "groq", title: "Groq", detail: tr("Je opname gaat naar {service}, met je eigen sleutel (Instellingen › Brein).", "Your recording goes to {service}, with your own key (Settings › Brain).", { service: "Groq" }) },
   ]);
+
 
   // Nooit stilletjes naar de cloud: een externe herkenning kies je pas na een tweede klik.
   let pending = $state<SpeechEngine | null>(null);
@@ -179,6 +261,57 @@
     </label>
     {#if flow.settings.enabled}
       <label class="row"><span>{tr("Toets", "Key")}</span><input value={flow.settings.key} onchange={(e) => saveFlow({ key: e.currentTarget.value })} /></label>
+      {#if dictationLang}
+        <label class="row">
+          <span>
+            {tr("Dicteertaal", "Dictation language")}<br />
+            <small class="faint">
+              {dictationLang.settings.mode === "auto"
+                ? tr("Automatisch luistert in je gekozen talen tegelijk (laatst gehoord eerst, tot 3 kandidaten).", "Automatic listens in your chosen languages at once (last heard first, up to 3 candidates).")
+                : tr("Vaste taal voor spraakherkenning.", "Fixed language for speech recognition.")}
+            </small>
+          </span>
+          <select
+            value={dictationLang.settings.mode}
+            onchange={(e) => saveDictationLang({ ...dictationLang!.settings, mode: e.currentTarget.value })}
+          >
+            <option value="auto">{tr("Automatisch (meerdere talen)", "Automatic (multiple languages)")}</option>
+            {#each dictationLang.available as lang (lang.code)}
+              <option value={lang.code}>{lang.name} ({lang.code})</option>
+            {/each}
+          </select>
+        </label>
+        {#if dictationLang.settings.mode === "auto"}
+          {@const shownLangs = showAllSpokenLanguages
+            ? dictationLang.available
+            : dictationLang.available.filter((l) => COMMON_LANG_CODES.includes(l.code) || dictationLang!.settings.spokenLanguages.includes(l.code))}
+          <div class="col">
+            <div class="lang-header">
+              <span>{tr("Talen die je spreekt", "Languages you speak")}</span>
+              <span class="faint">
+                {tr("Actief:", "Active:")} {dictationLang.candidates.join(", ").toUpperCase()}
+              </span>
+            </div>
+            <div class="lang-grid">
+              {#each shownLangs as lang (lang.code)}
+                <label class="lang-chip" class:checked={dictationLang.settings.spokenLanguages.includes(lang.code)}>
+                  <input
+                    type="checkbox"
+                    checked={dictationLang.settings.spokenLanguages.includes(lang.code)}
+                    onchange={(e) => toggleSpokenLanguage(lang.code, e.currentTarget.checked)}
+                  />
+                  <span>{lang.name}</span>
+                </label>
+              {/each}
+            </div>
+            <div class="inline">
+              <button class="ghost" onclick={() => (showAllSpokenLanguages = !showAllSpokenLanguages)}>
+                {showAllSpokenLanguages ? tr("Minder talen tonen", "Show fewer languages") : tr("Alle talen tonen", "Show all languages")}
+              </button>
+            </div>
+          </div>
+        {/if}
+      {/if}
       <label class="row">
         <span>{tr("Netjes maken door Nook", "Tidy up by Nook")}<br /><small class="faint">{tr("Haalt eh, herhalingen en verbeteringen weg (\"om 3 uur, nee 4 uur\" → \"om 4 uur\"). Met je eigen brein. In terminals en code-editors blijft het letterlijk.", "Removes ums, repetitions and corrections (\"at 3, no 4\" → \"at 4\"). With your own brain. In terminals and code editors it stays verbatim.")}</small></span>
         <input type="checkbox" role="switch" checked={flow.settings.cleanup} onchange={(e) => saveFlow({ cleanup: e.currentTarget.checked })} />
@@ -202,6 +335,9 @@
         <span>{tr("Woordenboek", "Dictionary")}</span>
         <textarea rows="4" bind:value={dictionary} onchange={() => services.saveFlowDictionary(dictionary)}></textarea>
         <small class="faint">{tr("Eén per regel. Een woord: altijd zo gespeld (Supabase). \"cloud code => Claude Code\": vervangen. \"mijn handtekening :: Groet,\\nMichan\": zeg de korte zin en krijg de hele tekst.", "One per line. A word: always spelled this way (Supabase). \"cloud code => Claude Code\": replace. \"my signature :: Regards,\\nMichan\": say the short phrase and get the whole text.")}</small>
+        {#if dictationLang?.contextPreview}
+          <small class="faint">{tr("Actieve contextwoorden (woordenboek, projecten & venster):", "Active context words (dictionary, projects & window):")} {dictationLang.contextPreview}</small>
+        {/if}
       </div>
       {#if flow.words > 0}
         <div class="row"><span>{tr("Gedicteerd", "Dictated")}</span><span class="faint">{tr("{n} woorden", "{n} words", { n: flow.words })} · {tr("{n} woorden per minuut", "{n} words per minute", { n: flow.wordsPerMinute })} · {tr("{n} minuten bespaard", "{n} minutes saved", { n: Math.round(flow.minutesSaved) })} · {tr("{n} dagen op rij", "{n} days in a row", { n: flow.streak })}</span></div>
@@ -239,10 +375,47 @@
         <span>{tr("Model van whisper.cpp", "whisper.cpp model")}<br /><small class="faint">{info?.whisper ? tr("Gevonden: {path}.", "Found: {path}.", { path: info.whisper }) : tr("whisper-cli staat niet op deze computer.", "whisper-cli isn't on this computer.")} {tr("Het pad naar een ggml-….bin-bestand.", "The path to a ggml-….bin file.")}</small></span>
         <input placeholder={tr("/pad/naar/ggml-base.bin", "/path/to/ggml-base.bin")} value={prefs.whisperModel} onchange={(e) => save({ whisperModel: e.currentTarget.value.trim() })} />
       </label>
+
+      {#if voiceModels}
+        <div class="col">
+          <span>{tr("Ondersteunde lokale modellen (Parakeet & Whisper)", "Supported local models (Parakeet & Whisper)")}</span>
+          {#each voiceModels.catalog as item (item.id)}
+            <div class="model-row">
+              <div class="model-meta">
+                <strong>{item.name}</strong>
+                <small class="faint">{item.repoId} · {item.sizeMb} MB · {item.multilingual ? tr("Meertalig", "Multilingual") : tr("Engels", "English")}</small>
+              </div>
+              <button
+                class="ghost"
+                onclick={() => save({ whisperModel: item.id })}
+              >
+                {prefs.whisperModel.includes(item.id) ? tr("Gekozen", "Selected") : tr("Kiezen", "Choose")}
+              </button>
+            </div>
+          {/each}
+        </div>
+        {#if voiceModels.reusable.length > 0}
+          <div class="col">
+            <span>{tr("Gevonden in Hugging Face-cache (hergebruiken zonder downloaden)", "Found in Hugging Face cache (reuse without downloading)")}</span>
+            {#each voiceModels.reusable as copy (copy.snapshotPath)}
+              <div class="model-row">
+                <div class="model-meta">
+                  <strong>{copy.name}</strong>
+                  <small class="faint">{copy.repoId} · {Math.max(1, Math.round(copy.sizeBytes / (1024 * 1024)))} MB</small>
+                </div>
+                <button class="capsule" onclick={() => reuseHfModel(copy)}>
+                  {copy.alreadyLinked ? tr("Gekoppeld", "Linked") : tr("Hergebruiken", "Reuse")}
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      {/if}
     {/if}
     {#if info?.speechEngineReady}<p class="err note">{info.speechEngineReady}</p>{:else}<p class="faint note">{tr("Klaar om te luisteren.", "Ready to listen.")}</p>{/if}
   </div>
 {/if}
+
 
 
 {#if part === "notices" && caps?.desktop}
@@ -383,4 +556,41 @@
   .confirm span:first-child { color: var(--amber); }
   .sound-choice { display: inline-flex; align-items: center; gap: var(--space-4); }
   .hour { display: inline-flex; align-items: center; gap: var(--space-6); color: var(--text2); }
+  .lang-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+  .lang-grid { display: flex; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-4) 0; }
+  .lang-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-4) var(--space-8);
+    border: 1px solid var(--line2);
+    border-radius: var(--radius-chip);
+    background: var(--well);
+    font: var(--text-detail);
+    color: var(--text2);
+    cursor: pointer;
+  }
+  .lang-chip.checked {
+    border-color: var(--mint);
+    color: var(--paper);
+    background: var(--row-selected);
+  }
+  .model-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-12);
+    padding: var(--space-6) 0;
+  }
+  .model-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .model-meta strong {
+    font: var(--text-emphasis);
+    color: var(--paper);
+  }
 </style>
+
