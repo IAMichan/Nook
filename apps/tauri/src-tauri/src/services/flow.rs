@@ -94,6 +94,7 @@ pub fn sync_hold_key(app: &AppHandle, setting: Option<&str>) {
 }
 
 /// Another key while the modifier is held: a shortcut, not dictation.
+#[cfg(target_os = "windows")]
 pub fn other_key(app: &AppHandle) {
     let services = app.state::<Services>();
     let action = services.flow_state.logic.lock().unwrap_or_else(|e| e.into_inner()).other_key();
