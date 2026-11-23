@@ -13,6 +13,8 @@ struct AgentsTab: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    /// The sessions open as tabs in the session's header (`SessionTabStrip`).
+    @ObservedObject private var sessionTabs = SessionTabs.shared
     @State private var palette = false
     /// The palette opened by the new-session button, on the projects to start in.
     @State private var paletteOnProjects = false
@@ -138,6 +140,7 @@ struct AgentsTab: View {
                     }
                 }
                 .environment(\.sessionHeaderInset, collapsed ? PanelSidebarMetrics.collapsedHeaderInset : 0)
+                .environment(\.sessionTabs, tabsContext(entries, selection: selection))
                 // A page without a session's header starts under the title bar's row, clear of the traffic lights.
                 .padding(.top, collapsed && !workbench(selection) ? PanelSidebarMetrics.titleBand - PanelSidebarMetrics.contentTop : 0)
                 .padding(.leading, listShown ? 10 : collapsed ? PanelSidebarMetrics.collapsedContentLeading : 0)
@@ -170,13 +173,19 @@ struct AgentsTab: View {
         .onAppear {
             finishedMarks.reconcile(busy: entries.busyKeys)
             if let openLive { viewModel.lastOpenLiveSession = openLive }
-            if Self.isSession(selectedID(selection)) { SessionHistory.shared.opened(selectedID(selection)) }
+            if Self.isSession(selectedID(selection)) {
+                SessionHistory.shared.opened(selectedID(selection))
+                sessionTabs.open(selectedID(selection))
+            }
         }
         .onChange(of: openLive) { _, session in
             if let session { viewModel.lastOpenLiveSession = session }
         }
         .onChange(of: selectedID(selection)) { _, new in
-            if Self.isSession(new) { SessionHistory.shared.opened(new) }
+            if Self.isSession(new) {
+                SessionHistory.shared.opened(new)
+                sessionTabs.open(new)
+            }
             // The session you left is marked seen by `PanelViewModel.selectedAgentID`. The one you open, and the reads
             // of its neighbours, wait until its first frame is drawn: each visit redraws the whole tab.
             Task { @MainActor in
@@ -309,6 +318,52 @@ struct AgentsTab: View {
         return true
     }
 
+    // MARK: Session tabs
+
+    /// The tabs for the open session's header: only beside a session (not a footer page or the new-session composer).
+    /// A tab whose session is gone from the list is left out, except the open one, which the header names itself.
+    private func tabsContext(_ entries: AgentListEntries, selection: Selection) -> SessionTabsContext? {
+        let current = selectedID(selection)
+        guard !app.demoMode, Self.isSession(current) else { return nil }
+        var rows: [String: AgentListItem] = [:]
+        for item in entries.running + entries.earlier { rows[item.id] = item }
+        var ids = sessionTabs.list.ids
+        if !ids.contains(current) { ids.append(current) }
+        let tabs = ids.compactMap { id -> SessionTabsContext.Tab? in
+            // A sub-thread has no row of its own: its tab looks like the row that stands in for it.
+            let item = rows[id] ?? rows[entries.rowID(id)]
+            guard item != nil || id == current else { return nil }
+            return SessionTabsContext.Tab(id: id, item: item)
+        }
+        return SessionTabsContext(
+            tabs: tabs, current: current,
+            select: { open($0) },
+            close: { id in
+                if let next = sessionTabs.close(id, active: current) {
+                    open(next)
+                } else if id == current {
+                    // The last tab: the place to start a new session, as when nothing is open.
+                    open("new")
+                }
+            },
+            closeOthers: { id in
+                sessionTabs.closeOthers(than: id)
+                if id != current { open(id) }
+            },
+            closeRight: { id in
+                let ids = tabs.map(\.id)
+                let index = ids.firstIndex(of: id) ?? 0
+                sessionTabs.closeRight(of: id)
+                if let open = ids.firstIndex(of: current), open > index { self.open(id) }
+            },
+            closeAll: {
+                sessionTabs.closeAll()
+                open("new")
+            },
+            move: { sessionTabs.move($0, onto: $1) },
+            newSession: { viewModel.requestNewSession() })
+    }
+
     // MARK: Keys for the open session
 
     /// A session of the list, not a page of the footer or the new-session composer: what back and forward step through.
@@ -402,6 +457,7 @@ struct AgentsTab: View {
                     let target = "run:" + taken.uuidString
                     DispatchQueue.main.async { [viewModel, app] in
                         guard viewModel.selectedAgentID == id else { return }
+                        SessionTabs.shared.replace(id, with: target)
                         if app.workspace.run(taken)?.archived == true { app.workspace.setArchived(taken, false) }
                         app.workspace.selectedRunID = taken
                         viewModel.selectedAgentID = target
