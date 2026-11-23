@@ -790,8 +790,16 @@ pub mod worktree_archive {
         std::fs::symlink_metadata(path).map(|m| m.file_type().is_dir() && !m.file_type().is_symlink()).unwrap_or(false)
     }
 
-    fn set_modified(path: &Path, time: SystemTime) {
-        if let Ok(file) = std::fs::File::open(path) {
+    pub(super) fn set_modified(path: &Path, time: SystemTime) {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            opts.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+        }
+        if let Ok(file) = opts.open(path).or_else(|_| std::fs::File::open(path)) {
             let _ = file.set_modified(time);
         }
     }
@@ -1072,7 +1080,7 @@ mod tests {
         let plan = CheckoutPlan::new("a/b", 1, "feature", false);
         let root = base.join("wt").to_string_lossy().into_owned();
         let path = checkout(&git, &plan, CheckoutMode::Worktree, &c, &root, &[], "dirty").unwrap();
-        assert_eq!(std::fs::read_to_string(Path::new(&path).join("a.txt")).unwrap(), "2\n");
+        assert_eq!(std::fs::read_to_string(Path::new(&path).join("a.txt")).unwrap().replace("\r\n", "\n"), "2\n");
         // A second worktree of the same branch: git refuses, with its own words.
         assert!(worktree(&git, &plan, &c, &root, &[]).is_err());
 
@@ -1110,9 +1118,7 @@ mod tests {
         let mtime = now - Duration::from_secs(age_secs);
         for p in [&build, &folder.join("info.plist"), &folder.to_path_buf()] {
             if p.exists() {
-                if let Ok(f) = std::fs::File::open(p) {
-                    let _ = f.set_modified(mtime);
-                }
+                worktree_archive::set_modified(p, mtime);
             }
         }
         folder.to_path_buf()

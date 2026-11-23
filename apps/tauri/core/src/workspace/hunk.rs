@@ -317,6 +317,7 @@ diff --git a/src/other.rs b/src/other.rs
         git.run(&["init"], &repo).unwrap();
         git.run(&["config", "user.email", "test@nook.local"], &repo).unwrap();
         git.run(&["config", "user.name", "Nook Test"], &repo).unwrap();
+        git.run(&["config", "core.autocrlf", "false"], &repo).unwrap();
 
         let file_path = dir.join("sample.txt");
         let original = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n") + "\n";
@@ -342,7 +343,7 @@ diff --git a/src/other.rs b/src/other.rs
         assert_eq!(HunkPatch::parse(&unstaged).count(), 1);
         apply_hunk_to_repo(&git, &repo, &unstaged, 0, HunkAction::Discard).unwrap();
 
-        let after_discard = std::fs::read_to_string(&file_path).unwrap();
+        let after_discard = std::fs::read_to_string(&file_path).unwrap().replace("\r\n", "\n");
         assert!(after_discard.contains("line 2 edited\n"));
         assert!(after_discard.contains("line 18\n"));
         assert!(!after_discard.contains("line 18 edited"));
