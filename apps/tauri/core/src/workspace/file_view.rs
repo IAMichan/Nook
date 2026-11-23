@@ -74,10 +74,8 @@ pub fn decode(data: &[u8], modified: Option<u64>) -> Option<FileEditText> {
     let mut file = FileEditText { modified, ..Default::default() };
     let text = if data.starts_with(&[0xFF, 0xFE]) || data.starts_with(&[0xFE, 0xFF]) {
         let little = data[0] == 0xFF;
-        let units: Vec<u16> = data[2..]
-            .chunks_exact(2)
-            .map(|c| if little { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
-            .collect();
+        let units: Vec<u16> =
+            data[2..].as_chunks::<2>().0.iter().map(|&c| if little { u16::from_le_bytes(c) } else { u16::from_be_bytes(c) }).collect();
         file.encoding = if little { FileEncoding::Utf16Le } else { FileEncoding::Utf16Be };
         file.byte_order_mark = true;
         String::from_utf16(&units).ok()?
