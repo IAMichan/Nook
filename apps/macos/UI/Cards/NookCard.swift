@@ -126,6 +126,8 @@ struct BubbleQuote: Equatable {
     var text: String
     /// Your own message.
     var mine = false
+    /// The answered message itself, when the chat has it: a click on the quote scrolls to it.
+    var id: String? = nil
 }
 
 /// One emoji on a message, with how many people put it there and whether you are one of them.
@@ -158,7 +160,7 @@ extension ChatBubble {
 
     /// This message as an answer quotes it: who wrote it (`contact` in a private chat) and its text.
     func quote(contact: String) -> BubbleQuote {
-        BubbleQuote(sender: fromMe ? tr("chat.you") : (sender.isEmpty ? contact : sender), text: copyText, mine: fromMe)
+        BubbleQuote(sender: fromMe ? tr("chat.you") : (sender.isEmpty ? contact : sender), text: copyText, mine: fromMe, id: id)
     }
 
     /// The message's own text, or the file's name when it came without one.
