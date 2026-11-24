@@ -168,7 +168,7 @@ extension AgentRunPanel {
                     ConversationRows(items: shownBlocks, eager: eager,
                                      holdsHeight: active && !finding,
                                      holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start),
-                                     holdsSplit: !scroll.shouldFollowEnd) { block in
+                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             // The held step is in the last block; its block is drawn again when it lets go of it.
