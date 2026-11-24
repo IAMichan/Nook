@@ -29,20 +29,24 @@ extension WorkspaceBridge {
             guard !folder.isEmpty, WorkspacePathPolicy.verdict(for: folder) == .ok else { return .error("That folder cannot be used: \(path)") }
         }
         let defaults = workspace.settings.sessionDefaults(for: folder)
+        // A session Nook runs starts its sessions on its own agent, account and model unless it names others.
+        let parent: WorkspaceRun? = if case .run(let id) = caller.kind { workspace.run(id) } else { nil }
         var providers: [RunProvider] = []
         var choices: [StartChoice] = []
         for (index, session) in plan.sessions.enumerated() {
             let which = plan.sessions.count == 1 ? "" : " (session \(index + 1))"
             let name = session.agent.lowercased()
-            guard let provider = name.isEmpty ? defaults.provider
+            guard let provider = name.isEmpty ? (parent?.provider ?? defaults.provider)
                     : RunProvider.allCases.first(where: { $0.rawValue == name || $0.displayName.lowercased() == name }) else {
                 return .error("Unknown agent \"\(session.agent)\". Call orchestrator_capabilities for the list.")
             }
             guard workspace.executable(provider) != nil else { return .error("\(provider.displayName) is not installed.") }
             providers.append(provider)
-            // The account: the one named, else the agent's first connected one (your preferred account first).
+            // The account: the one named, else the caller's own on the same agent, else the agent's first connected one
+            // (your preferred account first).
             let accounts = app.profiles.profiles(for: provider.kind)
-            var profileID = (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
+            var profileID = parent.flatMap { $0.provider == provider ? $0.profileID : nil }
+                ?? (app.connectedProfiles(for: provider).first ?? app.profiles.preferredProfile(provider.kind)).id
             if !session.account.isEmpty {
                 let named = accounts.map { (id: $0.id, label: AccountLabel.name($0, app: app)) }
                 guard let id = BridgeSessionArguments.account(session.account, among: named) else {
@@ -78,7 +82,7 @@ extension WorkspaceBridge {
                 var started: [[String: Any]] = []
                 for ((session, provider), choice) in zip(zip(plan.sessions, providers), choices) {
                     started.append(await startOne(session, provider: provider, choice: choice, place: plan.place, folder: folder,
-                                                  caller: caller, app: app))
+                                                  caller: caller, parent: parent, app: app))
                 }
                 let ok = started.contains { $0["sessionId"] != nil }
                 let data = try? JSONSerialization.data(withJSONObject: ["sessions": started],
@@ -111,7 +115,7 @@ extension WorkspaceBridge {
 
     private func startOne(_ session: BridgeSessionArguments.Start.Session, provider: RunProvider, choice: StartChoice,
                           place: BridgeSessionArguments.Start.Place, folder: String, caller: BridgeCaller,
-                          app: AppModel) async -> [String: Any] {
+                          parent: WorkspaceRun?, app: AppModel) async -> [String: Any] {
         let workspace = app.workspace
         let name = session.task.isEmpty ? session.title : session.task
         var config = NewRunConfig()
@@ -137,8 +141,9 @@ extension WorkspaceBridge {
             projectPath = made
         }
         config.projectPath = projectPath
-        let defaults = workspace.settings.sessionDefaults(for: projectPath)
-        config.model = session.model.isEmpty ? defaults.model(for: provider) : session.model
+        config.model = BridgeSessionArguments.model(session.model, provider: provider,
+                                                    caller: parent.map { ($0.provider, $0.model, $0.autoModel == true) },
+                                                    folderDefault: workspace.settings.composerDefaults(for: projectPath).model(for: provider))
         if config.isolation == .worktree {
             config.branchName = WorktreeNaming.branchName(task: name, id: UUID())
             if case .worktree(_, let base?) = place {

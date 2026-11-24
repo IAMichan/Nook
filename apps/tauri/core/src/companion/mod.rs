@@ -287,10 +287,11 @@ mod tests {
         let android = store.complete_pairing("Pixel", now).unwrap();
         let event = PushEvent {
             kind: PushKind::Approval,
-            session: "S1".into(),
+            // Long enough that the sealed (random base64) body never holds them by chance, as "S1" sometimes did.
+            session: "session-secret-S1".into(),
             item: Some("P1".into()),
             agent: "Claude Code".into(),
-            title: "geheim".into(),
+            title: "geheim-onderwerp".into(),
             can_allow: false,
         };
 
@@ -322,10 +323,10 @@ mod tests {
         assert_eq!(body.service.as_deref(), Some("fcm"));
         assert_eq!(body.token, fcm);
         assert_eq!(body.room, super::transport::relay_room(&key));
-        assert!(!sent[0].body.contains("S1") && !sent[0].body.contains("geheim"), "the relay sees no ids or words");
+        assert!(!sent[0].body.contains("session-secret") && !sent[0].body.contains("geheim-onderwerp"), "the relay sees no ids or words");
         let envelope = serde_json::to_vec(&body.sealed).unwrap();
         let content = relay_push::open(&envelope, &relay_push::push_key(&key)).expect("the phone opens it");
-        assert_eq!((content.session.as_str(), content.item.as_deref()), ("S1", Some("P1")));
+        assert_eq!((content.session.as_str(), content.item.as_deref()), ("session-secret-S1", Some("P1")));
         assert_eq!(content.mac.as_deref(), Some(android.id.as_str()));
         assert!(server.last_push().unwrap_or_default().contains("Pixel: ok"));
 

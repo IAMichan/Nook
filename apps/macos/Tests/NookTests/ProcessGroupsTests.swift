@@ -176,6 +176,9 @@ final class ProcessGroupsTests: XCTestCase {
 
         XCTAssertTrue(process.signalGroup(SIGTERM))
         wait(for: [ended, exited], timeout: 10)
+        // Its stdout closes while it is still on its way out: on Linux /proc lists it a moment longer (group -1).
+        let gone = Date().addingTimeInterval(2)
+        while ProcessIdentity.of(child) != nil, Date() < gone { usleep(10_000) }
         XCTAssertNil(ProcessIdentity.of(child), "the agent's child was stopped with it")
     }
 

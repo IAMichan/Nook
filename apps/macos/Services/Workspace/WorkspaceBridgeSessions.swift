@@ -121,6 +121,16 @@ enum BridgeSessionArguments {
                                       rights: rights))
     }
 
+    /// The model a started session runs on: the one asked for; else, when it runs the caller's agent, the caller's own
+    /// model ("auto" when the caller is on Auto, empty when it runs on the agent's default); else the folder's default.
+    static func model(_ requested: String, provider: RunProvider, caller: (provider: RunProvider, model: String, auto: Bool)?,
+                      folderDefault: String) -> String {
+        let asked = requested.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !asked.isEmpty { return asked }
+        if let caller, caller.provider == provider { return caller.auto ? AutoModel.id : caller.model }
+        return folderDefault
+    }
+
     /// The rights a started session gets: what it asked for, or "Ask". Refused when that is more than the caller has
     /// (nil for a script the user ran: they approve the card) or when the agent does not offer it.
     static func rights(_ requested: PermissionPolicy?, caller: PermissionPolicy?,

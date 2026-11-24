@@ -14,7 +14,7 @@ use nook_core::workspace::bridge_sessions::{
     self as args, OrganizeAction, PendingApprovalNotice, PendingQuestionView, Place, QuestionAction, SendMode, StartSession,
 };
 use nook_core::workspace::delegation;
-use nook_core::workspace::models::{branch_name, ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider};
+use nook_core::workspace::models::{branch_name, ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider, WorkspaceRun};
 use nook_core::workspace::paths;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -116,7 +116,9 @@ pub(super) async fn session_start(
         }
         None => String::new(),
     };
-    let default = lock(&ws.settings).default_provider;
+    // A session Nook runs starts its sessions on its own agent and model unless it names others.
+    let parent = caller.run.as_deref().and_then(|r| Uuid::parse_str(r).ok()).and_then(|id| ws.manager.run(id));
+    let default = parent.as_ref().map(|p| p.provider).unwrap_or_else(|| lock(&ws.settings).default_provider);
     let providers = plan.sessions.iter().map(|s| provider_named(&s.agent, default)).collect::<Result<Vec<_>, _>>()?;
     if let Some(p) = providers.iter().find(|p| !super::tasks::installed(**p)) {
         return Err(format!("{} is not installed.", p.display_name()));
@@ -125,7 +127,11 @@ pub(super) async fn session_start(
     let mut choices: Vec<StartChoice> = Vec::new();
     for (index, (session, provider)) in plan.sessions.iter().zip(&providers).enumerate() {
         let which = if plan.sessions.len() == 1 { String::new() } else { format!(" (session {})", index + 1) };
-        let mut profile_id = automation::default_profile(app, *provider);
+        // The caller's own account on the same agent, else the agent's default one.
+        let mut profile_id = match &parent {
+            Some(p) if p.provider == *provider => p.profile_id.clone(),
+            _ => automation::default_profile(app, *provider),
+        };
         let mut account_label = String::new();
         if !session.account.is_empty() {
             let accounts = account_choices(app, *provider);
@@ -184,7 +190,7 @@ pub(super) async fn session_start(
     }
     let mut started = Vec::new();
     for ((session, provider), choice) in plan.sessions.iter().zip(&providers).zip(&choices) {
-        started.push(start_one(app, session, *provider, choice, &plan.place, &folder, caller));
+        started.push(start_one(app, session, *provider, choice, &plan.place, &folder, caller, parent.as_ref()));
     }
     let ok = started.iter().any(|s| s.get("sessionId").is_some());
     let text = serde_json::to_string_pretty(&json!({"sessions": started})).unwrap_or_default();
@@ -243,6 +249,7 @@ fn start_one(
     place: &Place,
     folder: &str,
     caller: &BridgeCaller,
+    parent: Option<&WorkspaceRun>,
 ) -> Value {
     let Some(ws) = workspace(app) else { return json!({"title": session.task, "error": "Nook is not ready."}) };
     let name = session.task.clone();
@@ -271,11 +278,12 @@ fn start_one(
         task: session.task.clone(),
         provider,
         profile_id: choice.profile_id.clone(),
-        model: if session.model.is_empty() {
-            settings.default_models.get(provider.id()).cloned().unwrap_or_default()
-        } else {
-            session.model.clone()
-        },
+        model: args::model(
+            &session.model,
+            provider,
+            parent.map(|p| (p.provider, p.model.as_str())),
+            settings.default_models.get(provider.id()).map(String::as_str).unwrap_or_default(),
+        ),
         // Ask like any other session, unless the caller chose rights (never more than its own).
         permission: choice.permission,
         mode: if session.plan && caps.plan_mode { ExecutionMode::Plan } else { ExecutionMode::Agent },

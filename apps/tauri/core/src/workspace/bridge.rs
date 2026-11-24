@@ -506,8 +506,8 @@ impl BridgeTool {
                 json!({
                     "task": {"type": "string", "description": "Self-contained first message."},
                     "title": {"type": "string", "description": "Session title (default: from the task)."},
-                    "agent": {"type": "string", "description": "Agent id (default: Nook's default agent)."},
-                    "model": {"type": "string", "description": "Model id (default: the agent's)."},
+                    "agent": {"type": "string", "description": "Agent id (default: yours, else Nook's default agent)."},
+                    "model": {"type": "string", "description": "Model id (default: yours on your agent, else the agent's)."},
                     "plan": {"type": "boolean", "description": "Start in Plan mode."},
                     "account": {"type": "string", "description": "Account id or label (default: agent's; see orchestrator_capabilities)."},
                     "rights": {"type": "string", "enum": ["ask", "acceptEdits", "bypass"], "description": "Starting rights (default ask; never above yours)."},
