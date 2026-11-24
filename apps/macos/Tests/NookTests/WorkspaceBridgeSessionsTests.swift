@@ -10,6 +10,17 @@ final class WorkspaceBridgeSessionsTests: XCTestCase {
 
     // MARK: Policy
 
+    func testAStartedSessionRunsOnTheCallersModel() {
+        let opus = (provider: RunProvider.claude, model: "claude-opus-5-5", auto: false)
+        XCTAssertEqual(BridgeSessionArguments.model("", provider: .claude, caller: opus, folderDefault: "claude-sonnet-5-5"), "claude-opus-5-5")
+        XCTAssertEqual(BridgeSessionArguments.model(" claude-haiku-5-5 ", provider: .claude, caller: opus, folderDefault: "x"), "claude-haiku-5-5")
+        XCTAssertEqual(BridgeSessionArguments.model("", provider: .claude, caller: (.claude, "", false), folderDefault: "x"), "")
+        XCTAssertEqual(BridgeSessionArguments.model("", provider: .claude, caller: (.claude, "claude-opus-5-5", true), folderDefault: "x"),
+                       AutoModel.id)
+        XCTAssertEqual(BridgeSessionArguments.model("", provider: .codex, caller: opus, folderDefault: "gpt-5"), "gpt-5")
+        XCTAssertEqual(BridgeSessionArguments.model("", provider: .claude, caller: nil, folderDefault: "claude-sonnet-5-5"), "claude-sonnet-5-5")
+    }
+
     func testSearchingIsReading() {
         XCTAssertEqual(BridgeTool.sessionSearch.effect, .read)
         XCTAssertEqual(BridgePolicy.verdict(tool: .sessionSearch, caller: run(.plan)), .allow)

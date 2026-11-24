@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::bridge_nook::shielded;
 use super::delegation::Snapshot;
-use super::models::{EventKind, PermissionPolicy, RunEvent, WorkspaceRun};
+use super::models::{EventKind, PermissionPolicy, RunEvent, RunProvider, WorkspaceRun};
 use crate::agents::models::QuestionItem;
 
 pub const MAX_START: usize = 20;
@@ -221,6 +221,19 @@ pub fn start(arguments: &Map<String, Value>, caller_folder: &str) -> Result<Star
         }
     };
     Ok(Start { sessions, place })
+}
+
+/// The model a started session runs on: the one asked for; else, when it runs the caller's agent, the caller's own
+/// model (empty when the caller runs on the agent's default); else the default model of Settings.
+pub fn model(requested: &str, provider: RunProvider, caller: Option<(RunProvider, &str)>, default: &str) -> String {
+    let asked = requested.trim();
+    if !asked.is_empty() {
+        return asked.to_string();
+    }
+    match caller {
+        Some((agent, model)) if agent == provider => model.to_string(),
+        _ => default.to_string(),
+    }
 }
 
 /// A git ref an agent may name as a base: `main`, `origin/main`, `release/1.2`. Never an option or a range.
@@ -940,6 +953,16 @@ mod tests {
         assert_eq!(start_account(" work ", &accounts).as_deref(), Some("claude-work"));
         assert_eq!(start_account("home", &accounts), None);
         assert_eq!(start_account("", &accounts), None);
+    }
+
+    #[test]
+    fn a_started_session_runs_on_the_callers_model() {
+        let opus = Some((RunProvider::Claude, "claude-opus-5-5"));
+        assert_eq!(model("", RunProvider::Claude, opus, "claude-sonnet-5-5"), "claude-opus-5-5");
+        assert_eq!(model(" claude-haiku-5-5 ", RunProvider::Claude, opus, "claude-sonnet-5-5"), "claude-haiku-5-5");
+        assert_eq!(model("", RunProvider::Claude, Some((RunProvider::Claude, "")), "claude-sonnet-5-5"), "");
+        assert_eq!(model("", RunProvider::Codex, opus, "gpt-5"), "gpt-5");
+        assert_eq!(model("", RunProvider::Claude, None, "claude-sonnet-5-5"), "claude-sonnet-5-5");
     }
 
     #[test]

@@ -281,8 +281,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             let one: [String: Any] = [
                 "task": ["type": "string", "description": "Self-contained first message; omit to start idle."],
                 "title": ["type": "string", "description": "Session title (required without task)."],
-                "agent": ["type": "string", "description": "Agent id (default: folder's)."],
-                "model": ["type": "string", "description": "Model id (default: folder's)."],
+                "agent": ["type": "string", "description": "Agent id (default: yours)."],
+                "model": ["type": "string", "description": "Model id (default: yours on your agent, else folder's)."],
                 "plan": ["type": "boolean", "description": "Start in Plan mode."],
                 "account": ["type": "string", "description": "Account id or label (default: agent's; see orchestrator_capabilities)."],
                 "rights": ["type": "string", "enum": PermissionPolicy.allCases.map(\.rawValue),
