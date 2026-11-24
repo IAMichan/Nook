@@ -175,9 +175,14 @@ enum RowsInView {
 
     /// `rows` is how many rows the conversation has, `drawn` where the drawn ones stand, `top` and `height` the part
     /// of the conversation in view. Blank: rows to show, and none of them reaches into the view.
-    static func blank(rows: Int, drawn: some Collection<Span>, top: Double, height: Double) -> Bool {
+    /// `drawnFrom` is where the part drawn in full starts (`ConversationRows`): from there down nothing can be blank, and
+    /// what stands under the rows (the live line and its task list, a card, the room held under rows that folded) is
+    /// something to see as well. Without it, a view resting on that part counted as blank, and the guard scrolled the
+    /// conversation up to its last row and back down (and made it again) while nothing happened.
+    static func blank(rows: Int, drawn: some Collection<Span>, top: Double, height: Double, drawnFrom: Double? = nil) -> Bool {
         guard rows > 0, height > margin * 2 else { return false }
         let bottom = top + height
+        if let drawnFrom, bottom - margin > drawnFrom { return false }
         return !drawn.contains { $0.bottom - $0.top > 1 && $0.bottom > top + margin && $0.top < bottom - margin }
     }
 

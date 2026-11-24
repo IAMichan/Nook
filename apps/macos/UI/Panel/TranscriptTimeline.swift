@@ -165,7 +165,7 @@ struct TranscriptConversation: View {
                         ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
                                          holdsHeight: working && !finding,
                                          holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start),
-                                         holdsSplit: !scroll.shouldFollowEnd) { row in
+                                         holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     TimelineNewDivider()

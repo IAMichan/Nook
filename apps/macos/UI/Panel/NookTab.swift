@@ -429,7 +429,7 @@ struct NookChatView: View {
                     // step folding away leaves room instead of bouncing the conversation down. A new message lets go.
                     ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl,
                                      holdsHeight: chat.busy, holdKey: chat.messages.count,
-                                     holdsSplit: !scroll.shouldFollowEnd) { message in
+                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
                         // (and their Markdown) are not laid out again for every few words.
                         ChatMessageView(message: message, isLast: message.id == newest && !chat.busy, isNewest: message.id == newest, app: app)

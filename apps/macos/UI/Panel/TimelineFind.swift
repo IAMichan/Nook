@@ -154,6 +154,8 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
     /// (`HistoryWindow.heldSplit`). A row that moves is made again and its height guessed, so every move of the split
     /// changed the height of everything above what you read, by thousands of points at once in a long session.
     var holdsSplit = false
+    /// Learns where the part drawn in full starts (`RowsInView.blank`): the blank guard leaves that part alone.
+    var drawn: DrawnRows? = nil
     @ViewBuilder let row: (Item) -> Row
     /// The first row drawn in full while the split is held; not state any view draws from.
     @State private var firstEager = Unobserved<Item.ID?>(nil)
@@ -170,6 +172,7 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
         HeldHeightStack(spacing: spacing, holds: holdsHeight, key: holdKey &* 31 &+ split) {
             ForEach(items[split...]) { row($0) }
         }
+        .onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.name)).minY } action: { drawn?.drawnFrom = $0 }
     }
 
     /// How many of the rows go into the lazy stack, held while you read back (`holdsSplit`).
@@ -245,6 +248,10 @@ final class DrawnRows {
     /// conversation counted as blank (and was made again) for good.
     private var copies: [AnyHashable: Int] = [:]
     fileprivate var changed: (() -> Void)?
+    /// Where the rows drawn in full start (`ConversationRows`); everything from there down is always drawn.
+    fileprivate var drawnFrom: Double? {
+        didSet { if drawnFrom != oldValue { changed?() } }
+    }
 
     var count: Int { spans.count + pending.count }
 
@@ -350,7 +357,7 @@ private final class BlankRowsWatch<ID: Hashable> {
 
     var blank: Bool {
         guard let drawn else { return false }
-        return RowsInView.blank(rows: rows, drawn: drawn.spans.values, top: top, height: height)
+        return RowsInView.blank(rows: rows, drawn: drawn.spans.values, top: top, height: height, drawnFrom: drawn.drawnFrom)
     }
 
     func reported(_ ids: [ID]) {
@@ -404,7 +411,7 @@ private final class BlankRowsWatch<ID: Hashable> {
         let nearest = spans.min { abs($0.top - top) < abs($1.top - top) }
         Log.app.notice("""
             Blank conversation, recovering (try \(attempt)): rows \(self.rows), drawn \(spans.count) + \(self.drawn?.pending.count ?? 0) unplaced, \
-            view \(Int(self.top))–\(Int(self.top + self.height)) of \(Int(self.content)), nearest row \(Int(nearest?.top ?? -1))–\(Int(nearest?.bottom ?? -1)), \
+            view \(Int(self.top))–\(Int(self.top + self.height)) of \(Int(self.content)), drawn in full from \(Int(self.drawn?.drawnFrom ?? -1)), nearest row \(Int(nearest?.top ?? -1))–\(Int(nearest?.bottom ?? -1)), \
             reported in view \(self.reportedInView), idle \(self.idle()), rebuilds \(RowsInView.rebuilds(attempt: attempt))
             """)
     }
@@ -439,7 +446,8 @@ private struct BlankRowsGuard<ID: Hashable>: ViewModifier {
         return content
             .onScrollTargetVisibilityChange(idType: ID.self, threshold: 0) { watch.reported($0) }
             .onScrollGeometryChange(for: BlankRowsView.self) { geometry in
-                BlankRowsView(top: geometry.contentOffset.y, height: geometry.containerSize.height,
+                // From under the toolbar: `containerSize` is the height between the insets (`ScrollFrame.maxOffset`).
+                BlankRowsView(top: geometry.contentOffset.y + geometry.contentInsets.top, height: geometry.containerSize.height,
                               content: geometry.contentSize.height)
             } action: { _, view in watch.viewed(view) }
             .onDisappear { watch.stop() }
