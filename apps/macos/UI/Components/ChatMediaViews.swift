@@ -50,7 +50,7 @@ extension ChatBubble {
     static func quote(of quote: InboxQuote, in byID: [String: InboxMessage], chat: String) -> BubbleQuote? {
         if let id = quote.id, let answered = byID[id] {
             let sender = answered.isMine ? tr("chat.you") : (answered.sender.isEmpty ? chat : answered.sender)
-            return BubbleQuote(sender: sender, text: answered.summary, mine: answered.isMine)
+            return BubbleQuote(sender: sender, text: answered.summary, mine: answered.isMine, id: answered.id)
         }
         let text = quote.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }

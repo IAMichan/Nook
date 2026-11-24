@@ -79,6 +79,13 @@ struct ChatTranscript: View, Equatable {
     @State private var reading = TranscriptReadingAnchor()
     /// Where `reading` scrolls the chat to; in `@State`, so a scroll that writes it does not redraw the chat.
     @State private var scrollTarget = TranscriptScrollTarget()
+    /// The answered message a click on its quote asked for: the chat scrolls to it (`scroller`).
+    @State private var quoteJump: String?
+    /// The answered message just scrolled to, lit for a moment so the eye finds it.
+    @State private var litQuote: String?
+
+    /// How long the answered message stays lit after a click on its quote.
+    private static let litFor: TimeInterval = 1.4
 
     /// The end of the chat, under its last message and whoever is typing: where the chat stays while you are there.
     private static let bottomID = "\u{1}bottom"
@@ -92,6 +99,9 @@ struct ChatTranscript: View, Equatable {
     static let page = 30
     /// How many more it lays out each time you reach the top: a small step, so reaching the top never stalls the chat.
     static let olderPage = 30
+    /// How many messages before an answered one are drawn when a quote scrolls to it: room above it, so the chat is
+    /// not at its top (which draws the next page) once the message is in the middle.
+    static let quoteRoom = 10
 
     /// Drawn again only when what it shows changed: the chat around it redraws for every key you type in its field.
     /// The actions only count by whether they are there: they do the same for the same messages.
@@ -302,6 +312,24 @@ struct ChatTranscript: View, Equatable {
                 DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo(anchor, anchor: .top) } }
             }
             // Someone starts typing: their bubble comes into view under the last message.
+            // A click on a quote: the answered message is drawn (with a few before it, so reaching the top does not draw
+            // a page at once) and glides to the middle of the chat.
+            .onChange(of: quoteJump) { _, id in
+                guard let id else { return }
+                quoteJump = nil
+                userScrolled()
+                if fills, !drawsAll, !drawn.contains(where: { $0.id == id }),
+                   let index = bubbles.firstIndex(where: { $0.id == id }) {
+                    drawnFrom = bubbles[max(index - Self.quoteRoom, 0)].id
+                }
+                // Not at the newest any more: the chat does not follow its end while it glides up.
+                atBottom = false
+                drawingOlder = true
+                DispatchQueue.main.async {
+                    withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) }
+                    drawingOlder = false
+                }
+            }
             .onChange(of: typing != nil) { _, shown in
                 // Only while you are at the newest message: reading back, someone typing does not pull you down.
                 guard shown, atBottom, !interacting.value else { return }
@@ -413,8 +441,16 @@ struct ChatTranscript: View, Equatable {
                                        onForward: forwardAction(bubble),
                                        onCopyChat: { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) },
                                        onVote: voteAction(bubble),
-                                       onVersions: versionsAction(bubble))
+                                       onVersions: versionsAction(bubble),
+                                       onQuote: quoteAction(bubble))
                             .equatable()
+                            .background {
+                                if litQuote == bubble.id {
+                                    NookTheme.shape(NookTheme.Radius.card)
+                                        .fill(NookTheme.blue.opacity(0.14))
+                                        .transition(.opacity)
+                                }
+                            }
                             .background(TranscriptPickMark(selection: selection, id: bubble.id))
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TranscriptSelection.space)) } action: {
                                 selection.place(bubble.id, at: $0)
@@ -454,6 +490,22 @@ struct ChatTranscript: View, Equatable {
     }
 
     // A message still on its way (`ChatBubble.local`) has nothing to answer, react to, change or delete yet.
+
+    /// Showing the message an answer quotes, where the chat has it.
+    private func quoteAction(_ bubble: ChatBubble) -> (() -> Void)? {
+        guard let id = bubble.quote?.id, id != bubble.id, bubbles.contains(where: { $0.id == id }) else { return nil }
+        return { showQuoted(id) }
+    }
+
+    /// Scrolls to the answered message (in a chat that scrolls) and lights it up for a moment.
+    private func showQuoted(_ id: String) {
+        quoteJump = id
+        withAnimation(NookTheme.reveal) { litQuote = id }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.litFor) {
+            guard litQuote == id else { return }
+            withAnimation(NookTheme.reveal) { litQuote = nil }
+        }
+    }
 
     private func replyAction(_ bubble: ChatBubble) -> (() -> Void)? {
         guard let onReply, !bubble.local, !bubble.deleted else { return nil }
@@ -537,6 +589,8 @@ private struct ChatBubbleView: View, Equatable {
     let onCopyChat: () -> Void
     let onVote: (([String]) -> Void)?
     var onVersions: (() async -> [ChatVersion])? = nil
+    /// Scrolling to the message this one answers; nil where the chat does not have it.
+    var onQuote: (() -> Void)? = nil
     @State private var expanded = false
     @State private var hovering = false
     /// The emoji to react with are open beside the bubble.
@@ -573,7 +627,7 @@ private struct ChatBubbleView: View, Equatable {
             && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil) && (a.onForward == nil) == (b.onForward == nil)
-            && (a.onVersions == nil) == (b.onVersions == nil)
+            && (a.onVersions == nil) == (b.onVersions == nil) && (a.onQuote == nil) == (b.onQuote == nil)
     }
 
     /// What the chevron's menu and a right-click on the bubble offer: one menu, so both always show the same.
@@ -893,7 +947,7 @@ private struct ChatBubbleView: View, Equatable {
                 }
             }
             if let quote = bubble.quote {
-                QuotedMessage(quote: quote)
+                QuotedMessage(quote: quote, onShow: onQuote)
                     .padding(.bottom, NookTheme.Spacing.xxs)
             }
             if let poll = bubble.poll {
@@ -1214,11 +1268,25 @@ enum ChatReactions {
 }
 
 /// The message a bubble answers, at the bubble's top: a bar, who wrote it and the start of its text.
+/// A click on it scrolls to that message, where the chat has it (`onShow`).
 struct QuotedMessage: View {
     let quote: BubbleQuote
+    var onShow: (() -> Void)? = nil
 
     var body: some View {
+        if let onShow {
+            Button(action: onShow) { label }
+                .buttonStyle(.nookPlain)
+                .nookTip(tr("chat.quote.show"))
+                .accessibilityHint(tr("chat.quote.show"))
+        } else {
+            label
+        }
+    }
+
+    private var label: some View {
         ChatQuote(sender: quote.sender, text: quote.text, mine: quote.mine, maxWidth: PhotoButton.maxWidth)
+            .contentShape(Rectangle())
             .accessibilityLabel(tr("chat.quote", quote.sender.isEmpty ? quote.text : "\(quote.sender): \(quote.text)"))
     }
 }
