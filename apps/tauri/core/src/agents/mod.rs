@@ -2,6 +2,7 @@
 //! van hun transcripten en accounts, en de proceslijst. Zoals `AgentHub`, `AgentConfigInstaller`, `AgentHistory` en
 //! `AgentProfiles` op de Mac.
 
+pub mod granted_rules;
 pub mod history;
 pub mod hook;
 pub mod hub;
@@ -11,6 +12,7 @@ pub mod line_diff;
 pub mod liveness;
 pub mod mcp_name;
 pub mod models;
+pub mod permission_scope;
 pub mod plugins;
 pub mod profiles;
 pub mod registry;
@@ -19,6 +21,8 @@ pub mod scanner;
 pub mod sessions;
 pub mod text;
 pub mod transcript;
+pub mod updates;
+pub mod usage;
 
 use std::path::{Path, PathBuf};
 
@@ -119,7 +123,41 @@ impl AgentKind {
         match self {
             Self::Claude => Some("CLAUDE_CONFIG_DIR"),
             Self::Codex => Some("CODEX_HOME"),
+            // Gemini CLI's variable stands in for your home folder: it keeps its data in `$GEMINI_CLI_HOME/.gemini`.
+            Self::Gemini => Some("GEMINI_CLI_HOME"),
             _ => None,
+        }
+    }
+
+    /// What `home_variable` gets for an account kept in `home`: the folder itself, or for Gemini CLI the one around its
+    /// `.gemini` folder (an account's `home` is always where the agent's data is, as `default_home` is).
+    pub fn home_value(self, home: &str) -> String {
+        if self == Self::Gemini {
+            let path = std::path::Path::new(home);
+            if path.file_name().is_some_and(|n| n == ".gemini") {
+                if let Some(parent) = path.parent() {
+                    return parent.to_string_lossy().into_owned();
+                }
+            }
+        }
+        home.to_string()
+    }
+
+    /// The reverse of `home_value`: the account folder a running agent's `home_variable` points at.
+    pub fn home_from_variable(self, value: &str) -> String {
+        if self == Self::Gemini {
+            return std::path::Path::new(value).join(".gemini").to_string_lossy().into_owned();
+        }
+        value.to_string()
+    }
+
+    /// Suggested folder for an extra account: `~/.claude-werk`, or for Gemini CLI `~/.gemini-werk/.gemini`.
+    pub fn suggested_home(self, slug: &str) -> PathBuf {
+        let home = home_dir();
+        match self {
+            Self::Claude => home.join(format!(".claude-{slug}")),
+            Self::Codex => home.join(format!(".codex-{slug}")),
+            _ => home.join(format!(".gemini-{slug}")).join(".gemini"),
         }
     }
 

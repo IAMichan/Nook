@@ -234,6 +234,15 @@ impl Updater {
                 let _ = std::fs::remove_file(&receipt_path);
             }
         }
+        // This build was put back by a rollback: say so once.
+        if let Some(rolled) = crate::update_runner::rollback_to_report() {
+            inner.failure = Some(trf(
+                "Nook is teruggegaan naar versie {from}, want versie {to} stopte onverwacht. Je gegevens zijn teruggezet.",
+                "Nook went back to version {from} because version {to} crashed. Your data was put back too.",
+                &[("from", &rolled.from), ("to", &rolled.to)],
+            ));
+            inner.phase = Some(Phase::Failed);
+        }
         Self { build, kind, policy, inner: Mutex::new(inner) }
     }
 
@@ -622,6 +631,17 @@ fn restart_into(app: &AppHandle, prepared: &Prepared) -> Result<(), String> {
     crate::connectors::shutdown(app);
     if let Some(workspace) = app.try_state::<crate::workspace::WorkspaceState>() {
         workspace.manager.flush();
+    }
+    // The new build is on trial from its first launch: the previous app and the database are kept for a rollback.
+    if let (Some(build), Ok(exe)) = (&updater.build, std::env::current_exe()) {
+        let target = match &updater.kind {
+            InstallKind::WindowsSetup | InstallKind::WindowsMsi => exe.parent().map(Path::to_path_buf),
+            InstallKind::AppImage { path } => Some(PathBuf::from(path)),
+            _ => None,
+        };
+        if let Some(target) = target {
+            crate::update_runner::begin(&build.version.to_string(), &prepared.version, &target);
+        }
     }
     let started = match &updater.kind {
         InstallKind::WindowsSetup => run_setup(&prepared.file),

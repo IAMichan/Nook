@@ -1,12 +1,12 @@
 <script lang="ts">
-  // Settings › Instructions (`SettingsView+Instructions` on the Mac): the default answer style and your own standing
-  // instructions. Both go with every question to the brain (`nook_core::instructions`); only the voice and the length
-  // change, never the facts. The text is saved when you leave the field.
+  // Settings › Instructions (`SettingsView+Instructions` on the Mac, UI-22): the default answer style, your own standing
+  // instructions, saved prompts library manager, spaces manager, and context inspector. Both style and instructions go
+  // with every question to the brain (`nook_core::instructions`); only the voice and the length change, never the facts.
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import type { Settings } from "../../lib/types";
   import { toast } from "../../lib/toast.svelte";
-  import { instructionsApi, partText, promptLine, type InstructionsView, type PartKind } from "../../lib/instructions";
+  import { instructionsApi, partText, promptLine, type InstructionsView, type PartKind, type SavedPrompt } from "../../lib/instructions";
   import ConfirmedButton from "../../components/ui/ConfirmedButton.svelte";
   import DisclosureChevron from "../../components/ui/DisclosureChevron.svelte";
   import Ico from "../../components/ui/Ico.svelte";
@@ -41,16 +41,53 @@
     return () => { off.then((f) => f()); };
   });
 
+  let promptFilter = $state("");
+  const filteredPrompts = $derived.by(() => {
+    const list = view?.prompts ?? [];
+    const q = promptFilter.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => p.title.toLowerCase().includes(q) || p.trigger.toLowerCase().includes(q) || p.body.toLowerCase().includes(q));
+  });
+
+  function extractVariables(body: string): string[] {
+    const out: string[] = [];
+    const re = /\{\{([^}|]+)(?:\|[^}]*)?\}\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(body)) !== null) {
+      const name = m[1].trim();
+      if (name && !out.includes(name)) out.push(name);
+    }
+    return out;
+  }
+
   let addingPrompt = $state(false);
+  let editingPromptId = $state<string | null>(null);
   let promptForm = $state({ title: "", trigger: "", body: "", rejected: false });
   const canSavePrompt = $derived(!!promptForm.title.trim() && !!promptForm.body.trim());
+
+  function openNewPrompt() {
+    editingPromptId = null;
+    promptForm = { title: "", trigger: "", body: "", rejected: false };
+    addingPrompt = true;
+  }
+
+  function openEditPrompt(p: SavedPrompt) {
+    editingPromptId = p.id;
+    promptForm = { title: p.title, trigger: p.trigger, body: p.body, rejected: false };
+    addingPrompt = true;
+  }
+
   async function savePrompt() {
     if (!canSavePrompt) return;
+    if (editingPromptId) {
+      await instructionsApi.removePrompt(editingPromptId).catch(() => {});
+    }
     const kept = await instructionsApi.savePrompt(promptForm.title, promptForm.body, promptForm.trigger);
     promptForm.rejected = !kept;
     if (kept) {
       toast.success(tr("{name} toegevoegd", "{name} added", { name: promptForm.title.trim() }));
       addingPrompt = false;
+      editingPromptId = null;
       promptForm = { title: "", trigger: "", body: "", rejected: false };
     }
   }
@@ -93,7 +130,7 @@
       {#each styles as st (st.id)}<option value={st.id}>{st.name}</option>{/each}
     </select>
   </label>
-  <p class="faint note">{tr("Alleen de toon en de lengte veranderen, nooit de feiten.", "Only the voice and the length change, never the facts.")}</p>
+  <p class="faint note">{tr("Alleen de toon en de lengte veranderen, nooit de feiten. Elk gesprek kan een eigen stijl kiezen met het opdrachtenpalet (Ctrl+K).", "Only the voice and the length change, never the facts. Each conversation can pick its own style with the command palette (Ctrl+K).")}</p>
 </div>
 <h3>{tr("Jouw instructies", "Your instructions")}</h3>
 <div class="group">
@@ -111,15 +148,29 @@
 
 <div class="head">
   <div class="head-text"><h3>{tr("Bewaarde prompts", "Saved prompts")}</h3><span class="sub">{tr("Een variabele wordt gevraagd als je de prompt gebruikt; de tekst na | is de standaardwaarde.", "A variable is asked for when you use the prompt; the text after | is its default.")}</span></div>
-  <button class="ghost add" onclick={() => (addingPrompt = true)}><Ico name="plus" size={14} />{tr("Prompt toevoegen", "Add prompt")}</button>
+  <button class="ghost add" onclick={openNewPrompt}><Ico name="plus" size={14} />{tr("Prompt toevoegen", "Add prompt")}</button>
 </div>
 <div class="group">
+  {#if (view?.prompts.length ?? 0) > 2}
+    <div class="row">
+      <input class="search" type="search" bind:value={promptFilter} placeholder={tr("Filter bewaarde prompts…", "Filter saved prompts…")} aria-label={tr("Filter bewaarde prompts…", "Filter saved prompts…")} />
+    </div>
+  {/if}
   {#if view && !view.prompts.length}
     <div class="empty"><strong>{tr("Nog geen bewaarde prompts.", "No saved prompts yet.")}</strong><span class="faint">{tr("Een bewaarde prompt is tekst die je vaak gebruikt. Typ zijn trigger na een schuine streep in een gesprek om hem in te vullen.", "A saved prompt is text you use often. Type its trigger after a slash in any conversation to fill it in.")}</span></div>
   {/if}
-  {#each view?.prompts ?? [] as prompt (prompt.id)}
+  {#each filteredPrompts as prompt (prompt.id)}
+    {@const vars = extractVariables(prompt.body)}
     <div class="row item">
-      <div class="text"><span>{prompt.title}</span><span class="detail">{promptLine(prompt)}</span></div>
+      <div class="text">
+        <div class="title-line">
+          <span>{prompt.title}</span>
+          {#if prompt.trigger}<span class="pill mono">/{prompt.trigger}</span>{/if}
+          {#each vars as v (v)}<span class="pill">{`{{${v}}}`}</span>{/each}
+        </div>
+        <span class="detail">{promptLine(prompt)}</span>
+      </div>
+      <button class="ghost icon" onclick={() => openEditPrompt(prompt)} aria-label={tr("Bewerk", "Edit")}><Ico name="edit-3" size={14} /></button>
       <ConfirmedButton class="ghost icon" question={tr("“{name}” verwijderen?", "Remove “{name}”?", { name: prompt.title })} confirmTitle={tr("Verwijder", "Delete")} onconfirm={() => instructionsApi.removePrompt(prompt.id)}><Ico name="trash-2" size={14} /></ConfirmedButton>
     </div>
   {/each}
@@ -136,7 +187,15 @@
   {#each view?.spaces ?? [] as space (space.id)}
     <div class="space">
       <div class="row item">
-        <div class="text"><strong>{space.name}</strong><span class="detail">{tr("{n} gesprekken", "{n} conversations", { n: space.conversations })}</span></div>
+        <div class="text">
+          <div class="title-line">
+            <strong>{space.name}</strong>
+            {#if space.attachments?.length}
+              <span class="pill">{space.attachments.length}</span>
+            {/if}
+          </div>
+          <span class="detail">{tr("{n} gesprekken", "{n} conversations", { n: space.conversations })}</span>
+        </div>
         <ConfirmedButton class="ghost icon" question={tr("“{name}” verwijderen?", "Remove “{name}”?", { name: space.name })} confirmTitle={tr("Verwijder", "Delete")} onconfirm={() => instructionsApi.removeSpace(space.id)}><Ico name="trash-2" size={14} /></ConfirmedButton>
       </div>
       <textarea rows="2" value={space.instructions} placeholder={tr("Instructies voor deze ruimte", "Instructions for this space")} aria-label={tr("Instructies voor deze ruimte", "Instructions for this space")}
@@ -148,6 +207,11 @@
 <h3>{tr("Contextinspecteur", "Context inspector")}</h3>
 <div class="group">
   {#if view?.lastContext}
+    {#if view.lastContext.fill !== null}
+      <div class="meter-wrap">
+        <div class="meter-track"><div class="meter-fill" style:width={`${Math.min(100, Math.max(2, view.lastContext.fill))}%`}></div></div>
+      </div>
+    {/if}
     {#each view.lastContext.parts as part (part.kind)}
       <div class="part">
         <button class="part-head" aria-expanded={!!openParts[part.kind]} onclick={() => (openParts[part.kind] = !openParts[part.kind])}>
@@ -205,16 +269,25 @@
   .head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .head-text h3 { margin-bottom: var(--space-2); }
   .sub { font: var(--text-detail); color: var(--text2); }
-  .add { display: inline-flex; align-items: center; gap: var(--space-6); font: var(--text-control); color: var(--text-strong); white-space: nowrap; }
+  /* The Mac's header action: plain text with a plus, flush with the card's right edge, the card 8 px under the header. */
+  .add { display: inline-flex; align-items: center; gap: var(--space-6); padding: 0; height: auto; margin-bottom: var(--space-4); background: none; font: var(--text-control); color: var(--text-strong); white-space: nowrap; }
+  .add:hover:not(:disabled) { background: none; color: var(--paper); }
+  .head + :global(.group) { margin-top: var(--space-8); }
   .divided { border-top: 1px solid var(--separator); padding-top: 12px; }
   .item { display: flex; align-items: center; gap: var(--space-8); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .title-line { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; }
+  .pill { font: var(--text-caption); color: var(--text2); background: var(--surface2); padding: 1px 6px; border-radius: var(--radius-pill); }
+  .search { width: 100%; }
   .detail { font: var(--text-detail); color: var(--text2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   .empty { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-16) 0; font: var(--text-detail); }
   .empty strong { font: var(--text-title); }
   .space { padding: var(--space-8) 0; border-bottom: 1px solid var(--separator); }
   .space:last-child { border-bottom: 0; }
   .space textarea { width: 100%; resize: vertical; font: var(--text-detail); margin-bottom: var(--space-4); }
+  .meter-wrap { padding: var(--space-8) 0 var(--space-4); }
+  .meter-track { height: 6px; background: var(--surface2); border-radius: var(--radius-pill); overflow: hidden; }
+  .meter-fill { height: 100%; background: var(--iris); border-radius: var(--radius-pill); }
   .part { border-bottom: 1px solid var(--separator); }
   .part-head { all: unset; cursor: pointer; display: flex; align-items: center; gap: var(--space-8); width: 100%; padding: 12px 0; }
   .part-head:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; border-radius: var(--radius-chip); }

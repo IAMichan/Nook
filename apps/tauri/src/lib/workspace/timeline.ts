@@ -152,12 +152,337 @@ export interface LiveActivity {
   thought: string | null;
 }
 
-/// Een beurt begint bij elk bericht van jou; wat ervoor staat is een beurt op zich.
+// ============================================================================
+// AG-73: Subagents, Background Commands, Wake Turns & Agent Progress
+// ============================================================================
+
+const SUBAGENT_TOOLS = new Set([
+  "task",
+  "agent",
+  "invoke_subagent",
+  "delegate_task",
+  "spawn_agent",
+  "subagent",
+  "mcp__nook__delegate_task",
+  "mcp__nook__session_start",
+]);
+
+export function isSubagentTool(name: string): boolean {
+  const lower = name.trim().toLowerCase();
+  if (SUBAGENT_TOOLS.has(lower)) return true;
+  if (lower.startsWith("mcp__") && (lower.endsWith("__delegate_task") || lower.endsWith("__invoke_subagent") || lower.endsWith("__spawn_agent"))) {
+    return true;
+  }
+  return false;
+}
+
+function parseInput(detail: string | undefined): Record<string, unknown> {
+  if (!detail) return {};
+  try {
+    const o = JSON.parse(detail);
+    return o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/// The event is a subagent the agent started (not a nested call of a subagent's own, which starts with "↳").
+export function isSubagentLaunch(e: RunEvent): boolean {
+  return e.kind === "tool" && !!e.tool && isSubagentTool(e.tool) && !e.text.startsWith("↳");
+}
+
+/// The subagent was started with `run_in_background`: its call returns at once, and it ends later.
+export function isBackgroundSubagent(e: RunEvent): boolean {
+  if (!isSubagentLaunch(e) || !e.detail || !e.detail.includes("run_in_background")) return false;
+  return parseInput(e.detail).run_in_background === true;
+}
+
+export function isSubagentLaunchNote(output: string | undefined): boolean {
+  return !!output && output.trimStart().startsWith("Async agent launched");
+}
+
+export function subagentTaskId(output: string | undefined): string | null {
+  if (!output || !isSubagentLaunchNote(output)) return null;
+  const idx = output.indexOf("agentId: ");
+  if (idx < 0) return null;
+  const rest = output.slice(idx + "agentId: ".length);
+  const match = rest.match(/^([^\s,)]+)/);
+  return match?.[1] || null;
+}
+
+export interface SubagentInfo {
+  id: string;
+  kind: string;
+  title: string;
+  prompt: string;
+  state?: RunEvent["state"];
+  output?: string;
+  background: boolean;
+  started: string;
+  taskId: string | null;
+  isRunning: boolean;
+  failed: boolean;
+  answer: string | null;
+}
+
+export function subagentFromEvent(e: RunEvent): SubagentInfo | null {
+  if (!isSubagentLaunch(e)) return null;
+  const input = parseInput(e.detail);
+  const subagentsArr = Array.isArray(input.Subagents) ? (input.Subagents as Record<string, unknown>[]) : null;
+  const firstSub = subagentsArr && subagentsArr.length > 0 && typeof subagentsArr[0] === "object" ? subagentsArr[0] : null;
+  const rawKind =
+    (typeof input.subagent_type === "string" && input.subagent_type) ||
+    (typeof input.TypeName === "string" && input.TypeName) ||
+    (firstSub && typeof firstSub.TypeName === "string" && firstSub.TypeName) ||
+    (typeof input.agent === "string" && input.agent) ||
+    "agent";
+  const rawTitle =
+    (typeof input.description === "string" && input.description) ||
+    (typeof input.Role === "string" && input.Role) ||
+    (firstSub && typeof firstSub.Role === "string" && firstSub.Role) ||
+    (typeof input.title === "string" && input.title) ||
+    e.text.replace(/^(?:Task|Agent|invoke_subagent)\s*·\s*/i, "");
+  const rawPrompt =
+    (typeof input.prompt === "string" && input.prompt) ||
+    (typeof input.Prompt === "string" && input.Prompt) ||
+    (firstSub && typeof firstSub.Prompt === "string" && firstSub.Prompt) ||
+    (typeof input.task === "string" && input.task) ||
+    "";
+  const isRunning = !e.state || e.state === "running" || e.state === "pending";
+  const failed = e.state === "failed" || e.state === "denied" || e.state === "expired";
+  const out = e.output?.trim() ?? "";
+  const answer = !isRunning && out && !isSubagentLaunchNote(out) ? out : null;
+  return {
+    id: e.id,
+    kind: rawKind.trim() || "agent",
+    title: rawTitle.trim() || e.text,
+    prompt: rawPrompt,
+    state: e.state,
+    output: e.output,
+    background: input.run_in_background === true,
+    started: e.date,
+    taskId: subagentTaskId(e.output),
+    isRunning,
+    failed,
+    answer,
+  };
+}
+
+export function listSubagents(events: RunEvent[]): SubagentInfo[] {
+  const out: SubagentInfo[] = [];
+  for (const e of events) {
+    const info = subagentFromEvent(e);
+    if (info) out.push(info);
+  }
+  return out;
+}
+
+/// Subagents started since the user's last message (wake turns belong to the same work), plus any earlier ones still running.
+export function currentSubagents(events: RunEvent[]): SubagentInfo[] {
+  const start = Math.max(0, findLastIndex(events, (e) => e.kind === "user"));
+  const recent = listSubagents(events.slice(start));
+  const earlier = listSubagents(events.slice(0, start)).filter((a) => a.isRunning);
+  return [...earlier, ...recent];
+}
+
+export function subagentSignature(agents: SubagentInfo[]): string {
+  return agents.map((a) => `${a.id}${a.isRunning ? "+" : "-"}`).join(",");
+}
+
+/// Whether a tool call asks to run in the background (`run_in_background`) and is not a subagent launch.
+export function asksBackgroundCommand(e: RunEvent): boolean {
+  if (e.kind !== "tool" || isSubagentLaunch(e) || e.text.startsWith("↳")) return false;
+  if (!e.detail || !e.detail.includes("run_in_background")) return false;
+  return parseInput(e.detail).run_in_background === true;
+}
+
+export function isBackgroundCommandNote(output: string | undefined): boolean {
+  if (!output) return false;
+  const t = output.trimStart();
+  return (
+    t.startsWith("Command running in background with ID:") ||
+    (t.startsWith("Command did not complete within") && t.includes("moved to the background"))
+  );
+}
+
+/// Whether `e` is a command left running in the background.
+export function isBackgroundCommand(e: RunEvent): boolean {
+  if (e.kind !== "tool" || isSubagentLaunch(e) || e.text.startsWith("↳")) return false;
+  if ((e as RunEvent & { background?: boolean }).background === true) return true;
+  if (asksBackgroundCommand(e)) return true;
+  if (isBackgroundCommandNote(e.output)) return true;
+  const lowerTool = (e.tool ?? "").toLowerCase();
+  if (lowerTool === "monitor" || lowerTool.startsWith("monitor ") || lowerTool.endsWith("__monitor")) return true;
+  return false;
+}
+
+export function extractCommandText(e: RunEvent): string {
+  const input = parseInput(e.detail);
+  for (const k of ["command", "CommandLine", "cmd", "script"]) {
+    if (typeof input[k] === "string" && (input[k] as string).trim()) return (input[k] as string).trim();
+  }
+  const stripped = e.text.replace(/^[^·]+·\s*/, "").trim();
+  return stripped || e.detail || e.text;
+}
+
+export function stripBackgroundLaunchNote(output: string | undefined): string | null {
+  if (!output) return null;
+  let text = output.trim();
+  if (!text) return null;
+  if (
+    text.startsWith("Command running in background with ID:") ||
+    (text.startsWith("Command did not complete within") && text.includes("moved to the background"))
+  ) {
+    const marker = "Read on that file path";
+    const idx = text.indexOf(marker);
+    if (idx < 0) {
+      const notifyIdx = text.indexOf("You will be notified when it completes.");
+      if (notifyIdx < 0) return null;
+      text = text.slice(notifyIdx + "You will be notified when it completes.".length).replace(/^[.\s]+/, "");
+    } else {
+      text = text.slice(idx + marker.length).replace(/^[.\s]+/, "");
+    }
+  }
+  return text.trim() || null;
+}
+
+export function backgroundCommandOutputFile(output: string | undefined): string | null {
+  if (!output) return null;
+  const m = output.match(/Output is being written to:\s*([^\s]+?)(?:\.\s|\.$|\s|$)/);
+  return m?.[1] ?? null;
+}
+
+export interface BackgroundCommandInfo {
+  id: string;
+  title: string;
+  command: string;
+  state?: RunEvent["state"];
+  output?: string;
+  started: string;
+  isRunning: boolean;
+  failed: boolean;
+  printed: string | null;
+  outputFile: string | null;
+}
+
+export function backgroundCommandFromEvent(e: RunEvent): BackgroundCommandInfo | null {
+  if (!isBackgroundCommand(e)) return null;
+  const input = parseInput(e.detail);
+  const command = extractCommandText(e);
+  const desc = typeof input.description === "string" && input.description.trim() ? input.description.trim() : null;
+  const isRunning = !e.state || e.state === "running" || e.state === "pending";
+  const failed = e.state === "failed" || e.state === "denied" || e.state === "expired";
+  return {
+    id: e.id,
+    title: desc ?? oneLine(command, 120),
+    command,
+    state: e.state,
+    output: e.output,
+    started: e.date,
+    isRunning,
+    failed,
+    printed: stripBackgroundLaunchNote(e.output),
+    outputFile: backgroundCommandOutputFile(e.output),
+  };
+}
+
+export function listBackgroundCommands(events: RunEvent[]): BackgroundCommandInfo[] {
+  const out: BackgroundCommandInfo[] = [];
+  for (const e of events) {
+    const info = backgroundCommandFromEvent(e);
+    if (info) out.push(info);
+  }
+  return out;
+}
+
+/// Commands started since the user's last message, plus any earlier ones still running (`BackgroundCommands.current` on macOS).
+export function currentBackgroundCommands(events: RunEvent[]): BackgroundCommandInfo[] {
+  const start = Math.max(0, findLastIndex(events, (e) => e.kind === "user"));
+  const recent = listBackgroundCommands(events.slice(start));
+  const earlier = listBackgroundCommands(events.slice(0, start)).filter((c) => c.isRunning);
+  return [...earlier, ...recent];
+}
+
+/// Running first, then failed, then completed; newest first within each group (`BackgroundCommands.ordered` on macOS).
+export function orderedBackgroundCommands(commands: BackgroundCommandInfo[]): BackgroundCommandInfo[] {
+  const rank = (c: BackgroundCommandInfo) => (c.isRunning ? 0 : c.failed ? 1 : 2);
+  return commands
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => (rank(a.item) !== rank(b.item) ? rank(a.item) - rank(b.item) : b.index - a.index))
+    .map((x) => x.item);
+}
+
+export function backgroundCommandSignature(commands: BackgroundCommandInfo[]): string {
+  return commands.map((c) => `${c.id}${c.isRunning ? "+" : "-"}`).join(",");
+}
+
+export function backgroundCommandTail(text: string | null | undefined, maxLines = 4): string | null {
+  if (!text) return null;
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  return lines.slice(-maxLines).join("\n");
+}
+
+const NOTICE_CHUNK_RE =
+  /^\s*([\w.-]+) has been (?:launched|started) in the background\.?(?:\s*I will wait for it to (?:complete|finish) before proceeding\.?)?\s*/i;
+
+/// Antigravity background launch notice ("task-148 has been launched in the background. I will wait for it to complete before proceeding.").
+export function backgroundLaunchNotice(text: string): string[] {
+  if (!text || text.length > 2000) return [];
+  const tasks: string[] = [];
+  let rest = text;
+  while (rest.length > 0) {
+    const m = rest.match(NOTICE_CHUNK_RE);
+    if (!m || !m[0]) return [];
+    tasks.push(m[1]);
+    rest = rest.slice(m[0].length);
+  }
+  return tasks;
+}
+
+export function isBackgroundNotice(e: RunEvent): boolean {
+  return e.kind === "assistant" && backgroundLaunchNotice(e.text).length > 0;
+}
+
+/// Where the agent woke up by itself after background work ended (`TimelinePresentation.isWake` on macOS).
+export function isWake(e: RunEvent): boolean {
+  return e.kind === "system" && e.tool === "wake";
+}
+
+export function isNews(e: RunEvent): boolean {
+  return e.kind === "system" && e.tool === "prwatch";
+}
+
+export function isSessionChange(e: RunEvent): boolean {
+  return e.kind === "system" && !!e.tool && ["switch", "handoff", "resume", "clear"].includes(e.tool);
+}
+
+/// Whether `e` is a foreground tool call the agent is actively waiting on right now (`TimelinePresentation.isLive` on macOS).
+export function isLiveTool(e: RunEvent): boolean {
+  return e.kind === "tool" && e.state === "running" && !isBackgroundSubagent(e) && !isBackgroundCommand(e);
+}
+
+/// Splits a session's timeline into turns. Wake turns (`system` with `tool === "wake"`) join onto the preceding user turn
+/// so consecutive wake turns / subagent wakeups fold and read as one coherent piece of work alongside the user's request,
+/// while a wake event at the very start of a timeline or after a session change starts a turn if none exists yet.
 export function split(events: RunEvent[]): RunEvent[][] {
   const turns: RunEvent[][] = [];
+  let ended = false;
   for (const e of events) {
-    if (e.kind === "user" || turns.length === 0) turns.push([e]);
-    else turns[turns.length - 1].push(e);
+    if (e.kind === "user" || turns.length === 0 || (ended && (isNews(e) || isSessionChange(e)))) {
+      turns.push([e]);
+      ended = false;
+    } else if (isWake(e)) {
+      // Join wake turns into the current turn so subagent / background command wakeups don't fragment the turn.
+      turns[turns.length - 1].push(e);
+      ended = false;
+    } else {
+      turns[turns.length - 1].push(e);
+    }
+    if (e.kind === "result") ended = true;
   }
   return turns;
 }
@@ -186,32 +511,40 @@ function present(turn: RunEvent[], open: boolean): TimelineBlock[] {
   const finished = findLast(turn, (e) => e.kind === "result");
   const troubled =
     turn.some((e) => e.kind === "error" || (e.kind === "approval" && e.state === "pending")) || finished?.state === "failed";
-  const answer = findLastIndex(turn, (e) => e.kind === "assistant");
+  const answer = findLastIndex(turn, (e) => e.kind === "assistant" && !isBackgroundNotice(e));
   // Alleen een beurt die goed afliep vouwt: het antwoord blijft staan, het werk ertussen gaat dicht.
-  if (open || first.kind !== "user" || !finished || troubled || answer < 0) return group(turn);
-  const work = turn.filter((e, i) => i !== 0 && i !== answer && e.kind !== "result");
-  if (!work.some((e) => e.kind !== "assistant")) return group(turn);
+  if (open || (first.kind !== "user" && !isNews(first)) || !finished || troubled || answer < 0) return group(turn);
+  // A card the agent put up for you (a suggested session, a page) stays in sight under the answer, never in the fold.
+  const card = (e: RunEvent) => e.kind === "system" && (e.tool === "session_suggestion" || e.tool === "render_page");
+  // Drop intermediate `result` events from joined wake turns inside the fold while keeping the final `finished` result.
+  const work = turn.filter((e, i) => i !== 0 && i !== answer && e.kind !== "result" && !card(e) && !isWake(e));
+  const cards = turn.filter(card).map(ev);
+  if (!work.some((e) => e.kind !== "assistant" || isBackgroundNotice(e))) return group(turn);
   const seconds = Math.max(0, (Date.parse(finished.date) - Date.parse(first.date)) / 1000);
   // De vouw krijgt het id van het eerste werk dat hij verbergt: nooit hetzelfde als een blok ernaast.
-  return [ev(first), { type: "fold", id: work[0].id, seconds, blocks: group(work) }, ev(turn[answer]), ev(finished)];
+  return [ev(first), { type: "fold", id: work[0].id, seconds, blocks: group(work) }, ev(turn[answer]), ...cards, ev(finished)];
 }
 
-/// Twee of meer tool-aanroepen achter elkaar worden één blok. De rest staat op zichzelf: het denken blijft leesbaar,
-/// en fouten en toestemmingsvragen verdwijnen nooit in een groep.
+/// Twee of meer tool-aanroepen achter elkaar worden één blok. Subagent-starts krijgen altijd hun eigen rij (`!isSubagentLaunch`),
+/// en gedachten of achtergrond-meldingen (`isBackgroundNotice`) tussen twee tools vouwen mee in de groep.
 export function group(events: RunEvent[]): TimelineBlock[] {
   const out: TimelineBlock[] = [];
   let run: RunEvent[] = [];
-  const isWork = (e: RunEvent) => e.kind === "tool" || e.kind === "fileChange";
+  const isWork = (e: RunEvent) => (e.kind === "tool" && !isSubagentLaunch(e)) || e.kind === "fileChange";
   const flush = () => {
+    const leading: RunEvent[] = [];
+    while (run.length && !isWork(run[0])) leading.push(run.shift()!);
     const trailing: RunEvent[] = [];
     while (run.length && !isWork(run[run.length - 1])) trailing.unshift(run.pop()!);
+    out.push(...leading.filter((e) => !isWake(e)).map(ev));
     if (run.filter(isWork).length >= 2) out.push({ type: "tools", id: run[0].id, events: run, tally: tally(run) });
     else out.push(...run.map(ev));
-    out.push(...trailing.map(ev));
+    out.push(...trailing.filter((e) => !isWake(e)).map(ev));
     run = [];
   };
   for (const e of events) {
-    if (isWork(e)) {
+    if (isWake(e)) continue;
+    if (isWork(e) || (run.length > 0 && isBackgroundNotice(e))) {
       run.push(e);
     } else {
       flush();
@@ -250,7 +583,9 @@ export function headline(text: string, limit = 110): string {
 export function live(events: RunEvent[]): LiveActivity {
   const turns = split(events);
   const turn = turns[turns.length - 1] ?? [];
-  const tool = findLast(turn, (e) => e.kind === "tool" && e.state === "running") ?? findLast(turn, (e) => e.kind === "tool");
+  const tool =
+    findLast(turn, isLiveTool) ??
+    findLast(turn, (e) => e.kind === "tool" && !isBackgroundSubagent(e) && !isBackgroundCommand(e));
   const thinking = findLast(turn, (e) => e.kind === "thinking");
   const thought = thinking ? headline(thinking.text) : null;
   return { tool: tool?.text ?? null, thought: thought || null };

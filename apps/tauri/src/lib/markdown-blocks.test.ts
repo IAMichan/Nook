@@ -58,6 +58,9 @@ describe("details blocks and streaming", () => {
       body: "line 1",
       next: 3,
     });
+
+    const nestedTags = parseDetailsBlock(["<details><summary><scr<script>ipt>Safe</script></summary>", "ok", "</details>"], 0);
+    expect(nestedTags?.summary).toBe("Safe");
   });
 });
 
@@ -100,8 +103,8 @@ describe("tables", () => {
     expect(isNumericColumn(rows, 1)).toBe(true);
     expect(isNumericColumn(rows, 2)).toBe(true);
 
-    expect(tableToMarkdown(["Month", "Amount"], [["Jan", "a | b"]])).toBe(
-      "| Month | Amount |\n| --- | --- |\n| Jan | a \\| b |",
+    expect(tableToMarkdown(["Month", "Amount"], [["Jan", "a \\| b"]])).toBe(
+      "| Month | Amount |\n| --- | --- |\n| Jan | a \\\\\\| b |",
     );
     expect(tableToCsv(["Item", "Note"], [["**Box**", 'a, "b"']])).toBe('Item,Note\nBox,"a, ""b"""');
   });

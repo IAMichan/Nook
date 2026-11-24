@@ -1,31 +1,35 @@
 <script lang="ts">
   // "Start with" on the empty Nook chat (`SuggestionGrid` on the Mac): starters two per row, each with the icon of what
   // it is about; under the pointer it brightens and shows an arrow. In the bar (`compact`) they are small pills.
-  import Icon from "./Icon.svelte";
+  import Ico from "./ui/Ico.svelte";
 
   let { starters, onask, compact = false }: { starters: string[]; onask: (text: string) => void; compact?: boolean } = $props();
 
-  type IconName = "message" | "calendar" | "code" | "agents" | "note" | "tasks" | "globe" | "chart" | "sparkle";
-  // The icon of what a starter is about, from its words (in any of Nook's languages); a sparkle for the rest.
-  const topics: [RegExp, IconName][] = [
-    [/mail|bericht|message|nachricht|correo|whatsapp|inbox/i, "message"],
+  // The icon of what a starter is about, from its words (in any of Nook's languages): the Lucide icon the Mac gives the
+  // same suggestion (`SmartSuggestions`), a sparkle for the rest.
+  const topics: [RegExp, string][] = [
+    [/afmaken|finish|erledig|terminer|terminar/i, "circle-check"],
+    [/elke ochtend|every morning|jeden morgen|chaque matin|cada mañana|update|überblick/i, "clock"],
+    [/samenvat|summar|zusammenfass|résum|resum/i, "text-align-start"],
+    [/prioriteit|priority|priorität|priorité|prioridad/i, "target"],
+    [/morgen|tomorrow|demain|mañana/i, "calendar"],
+    [/week|woche|semaine|semana/i, "chart-column"],
+    [/open punt|loose end|offene|en suspens|pendiente/i, "list-checks"],
+    [/mail|bericht|message|nachricht|correo|whatsapp|inbox/i, "message-circle"],
     [/agenda|calendar|kalender|calendrier|calendario|meeting|vergader|réunion|reunión|afspra|termin/i, "calendar"],
     [/pull request|\bpr\b|code|github|commit|branch|bug/i, "code"],
-    [/agent|claude|codex|gemini|cursor/i, "agents"],
-    [/taak|taken|task|aufgabe|tâche|tarea|todo|to-do|plan/i, "tasks"],
-    [/notitie|note|samenvat|summar|zusammenfass|résum|resum/i, "note"],
+    [/agent|claude|codex|gemini|cursor/i, "terminal"],
     [/web|zoek|search|such|cherch|busca|nieuws|news/i, "globe"],
-    [/stripe|omzet|revenue|umsatz|chiffre|ingres|cijfer|stat/i, "chart"],
   ];
-  const icon = (text: string): IconName => topics.find(([re]) => re.test(text))?.[1] ?? "sparkle";
+  const icon = (text: string): string => topics.find(([re]) => re.test(text))?.[1] ?? "sparkles";
 </script>
 
 <div class="starters" class:compact>
   {#each starters as s (s)}
     <button onclick={() => onask(s)}>
-      {#if !compact}<span class="logo"><Icon name={icon(s)} size={14} /></span>{/if}
+      {#if !compact}<span class="logo"><Ico name={icon(s)} size={15} /></span>{/if}
       <span class="text">{s}</span>
-      {#if !compact}<span class="go" aria-hidden="true">↗</span>{/if}
+      {#if !compact}<span class="go" aria-hidden="true"><Ico name="arrow-up-right" size={13} /></span>{/if}
     </button>
   {/each}
 </div>
@@ -36,7 +40,7 @@
   .starters button:hover:not(:disabled) { background: var(--graphite); color: var(--paper); border-color: transparent; }
   .logo { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: var(--radius-control); background: color-mix(in srgb, var(--text2) 12%, transparent); color: var(--text2); }
   .text { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
-  .go { flex: none; font-size: 11px; font-weight: 600; color: var(--text3); opacity: 0; transition: opacity 120ms ease; }
+  .go { display: inline-flex; flex: none; color: var(--text3); opacity: 0; transition: opacity 120ms ease; }
   .starters button:hover .go, .starters button:focus-visible .go { opacity: 1; }
   .compact { display: flex; flex-wrap: wrap; justify-content: center; }
   .compact button { min-height: 0; padding: var(--space-6) var(--space-12); border-radius: 999px; font: var(--text-detail); color: var(--text2); background: transparent; border: 1px solid var(--line2); }

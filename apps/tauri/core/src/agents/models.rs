@@ -63,8 +63,19 @@ impl AgentStep {
     }
 }
 
+/// Localized text for a live compaction step (`ws.activity.compacting` on macOS).
+pub fn compacting_step_text() -> &'static str {
+    crate::i18n::tr("Vat het gesprek samen…", "Compacting the conversation…")
+}
+
+/// Whether `text` is the compaction step text in the active or any catalog language.
+pub fn is_compacting_text(text: &str) -> bool {
+    text == compacting_step_text()
+        || ["en", "de", "fr", "es"].into_iter().any(|lang| crate::i18n::translate(lang, "", "Compacting the conversation…") == text)
+}
+
 /// Een agentsessie zoals de interface hem toont.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSession {
     pub id: String,
@@ -96,11 +107,84 @@ pub struct AgentSession {
     pub updated: Option<DateTime<Utc>>,
     /// Het proces achter een gevonden sessie.
     pub pid: Option<u32>,
+    /// The session whose shell started this one (`LaunchedSessions` on the Mac): "Started by an agent in …". Found from
+    /// the processes the hook came from, so an agent's test run or helper is not read as a chat you started.
+    #[serde(default)]
+    pub launched_by: Option<String>,
 }
 
 impl AgentSession {
     pub fn is_detected(&self) -> bool {
         self.status == AgentStatus::Detected
+    }
+
+    /// True while the agent is summarizing/compacting its conversation (`PreCompact` hook active).
+    pub fn is_compacting(&self) -> bool {
+        self.steps.last().is_some_and(|s| s.mark == StepMark::Running && is_compacting_text(&s.text))
+    }
+}
+
+impl Serialize for AgentSession {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            id: &'a str,
+            name: &'a str,
+            project: &'a str,
+            status: AgentStatus,
+            file: &'a str,
+            placeholder: &'a str,
+            steps: &'a [AgentStep],
+            diff: &'a [DiffLine],
+            cwd: &'a str,
+            host: &'a str,
+            home: &'a str,
+            approval_id: &'a Option<String>,
+            question_id: &'a Option<String>,
+            lines_added: usize,
+            lines_removed: usize,
+            summary: &'a str,
+            is_linked: bool,
+            session_id: &'a str,
+            transcript_path: &'a str,
+            last_prompt: &'a str,
+            last_reply: &'a str,
+            started: Option<DateTime<Utc>>,
+            updated: Option<DateTime<Utc>>,
+            pid: Option<u32>,
+            launched_by: &'a Option<String>,
+            compacting: bool,
+        }
+        Wire {
+            id: &self.id,
+            name: &self.name,
+            project: &self.project,
+            status: self.status,
+            file: &self.file,
+            placeholder: &self.placeholder,
+            steps: &self.steps,
+            diff: &self.diff,
+            cwd: &self.cwd,
+            host: &self.host,
+            home: &self.home,
+            approval_id: &self.approval_id,
+            question_id: &self.question_id,
+            lines_added: self.lines_added,
+            lines_removed: self.lines_removed,
+            summary: &self.summary,
+            is_linked: self.is_linked,
+            session_id: &self.session_id,
+            transcript_path: &self.transcript_path,
+            last_prompt: &self.last_prompt,
+            last_reply: &self.last_reply,
+            started: self.started,
+            updated: self.updated,
+            pid: self.pid,
+            launched_by: &self.launched_by,
+            compacting: self.is_compacting(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -131,6 +215,9 @@ pub struct ApprovalRequest {
     pub assessment: CommandAssessment,
     pub can_always: bool,
     pub created: DateTime<Utc>,
+    /// What "Always" would allow and how far it reaches (`PermissionScope.preview`), when it is offered.
+    #[serde(default)]
+    pub always_scope: Option<String>,
 }
 
 impl ApprovalRequest {
@@ -189,6 +276,9 @@ pub struct AgentApproval {
     pub can_terminal: bool,
     pub session_key: String,
     pub created: DateTime<Utc>,
+    /// What "Always" would allow and how far it reaches, as a line under the buttons; `None` when not offered.
+    #[serde(default)]
+    pub always_scope: Option<String>,
 }
 
 impl AgentApproval {
@@ -208,6 +298,7 @@ impl AgentApproval {
             can_terminal: true,
             session_key: r.session_key.clone(),
             created: r.created,
+            always_scope: r.always_scope.clone(),
         }
     }
 }
@@ -216,6 +307,23 @@ impl AgentApproval {
 pub struct QuestionOption {
     pub label: String,
     pub description: String,
+    /// What the option would look like (a mock-up, a code snippet, an ASCII layout), shown in the code font under it;
+    /// empty when the agent sent none (`QuestionPreview`).
+    #[serde(default)]
+    pub preview: String,
+}
+
+/// The most of a preview that is kept: enough for a screen-sized mock-up, not a whole file.
+pub const PREVIEW_LIMIT: usize = 4_000;
+
+/// An option's preview as it came, trimmed and cut at `PREVIEW_LIMIT`; empty when there is none.
+pub fn read_preview(option: &Value) -> String {
+    let raw = option.get("preview").and_then(Value::as_str).unwrap_or("").trim();
+    if raw.chars().count() > PREVIEW_LIMIT {
+        format!("{}…", raw.chars().take(PREVIEW_LIMIT).collect::<String>())
+    } else {
+        raw.to_string()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -236,6 +344,9 @@ pub struct QuestionRequest {
     pub agent_name: String,
     pub project: String,
     pub items: Vec<QuestionItem>,
+    /// Asked before Nook restarted: your answer goes to the agent as a message and picks the conversation up again.
+    #[serde(default)]
+    pub restored: bool,
 }
 
 impl QuestionRequest {
@@ -256,7 +367,7 @@ impl QuestionRequest {
             for option in options {
                 let label = option.get("label")?.as_str().filter(|l| !l.is_empty())?;
                 let description = option.get("description").and_then(Value::as_str).unwrap_or("");
-                parsed.push(QuestionOption { label: label.into(), description: description.into() });
+                parsed.push(QuestionOption { label: label.into(), description: description.into(), preview: read_preview(option) });
             }
             let header: String = entry.get("header").and_then(Value::as_str).unwrap_or("").chars().take(16).collect();
             items.push(QuestionItem {

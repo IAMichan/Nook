@@ -36,9 +36,10 @@ impl InboxStore {
         Self::open(paths::support_directory().join(FILE_NAME))
     }
 
-    /// The inbox saved at `path`; an unreadable or missing file starts empty (the apps bring their chats again).
+    /// The inbox saved at `path`; a missing file starts empty (the apps bring their chats again), a damaged one is set
+    /// aside with a notice (`storage_recovery`).
     pub fn open(path: PathBuf) -> Self {
-        let mut inbox: ChatInbox = std::fs::read(&path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
+        let mut inbox: ChatInbox = crate::storage_recovery::read_json_plain(&path);
         inbox.trim(Utc::now());
         Self { inbox: Mutex::new(inbox), path: Some(path), dirty: AtomicBool::new(false) }
     }

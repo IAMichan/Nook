@@ -4,16 +4,37 @@
 //! new, what is read, what is kept and what goes, the same for every app. WhatsApp was the first app on it; Telegram,
 //! Signal, Slack and the others reach it through the chat helper (CH-02) and their own bridges.
 
+pub mod abilities;
+pub mod apps;
 pub mod bridge;
+pub mod call;
 pub mod chatd;
+pub mod draft;
+pub mod follow_up;
+pub mod forward;
+pub mod giphy;
 pub mod inbox;
 pub mod link;
+pub mod link_preview;
+pub mod membership;
+pub mod person_notes;
+pub mod poll;
+pub mod priority;
+pub mod profile;
 pub mod store;
+pub mod tools;
+pub mod typing;
+pub mod voice;
 
 use serde::{Deserialize, Serialize};
 
+pub use abilities::{ChatAbilities, ChatAction, ChatActionRefusal, OutgoingKind};
 pub use bridge::ChatBridge;
-pub use inbox::{BridgedChat, ChatInbox, ChatReadState, InboxMessage, InboxThread};
+pub use forward::{ChatForward, ForwardAttachment, ForwardParts};
+pub use inbox::{BridgedChat, ChatInbox, ChatReadState, FilledMessage, InboxMessage, InboxThread, MessageReadDetail, MessageReader};
+pub use membership::{ChatGroupChange, ChatMembership, GroupChangeKind, MembershipChange};
+pub use priority::{ChatNoticeMode, NoticePriorityLevel, NoticeScore, PriorityReason};
+pub use profile::ChatProfile;
 pub use store::InboxStore;
 
 /// The kinds of chat, the same for every app (`ChatKind` on the Mac): its app says which, else Nook guesses a person's

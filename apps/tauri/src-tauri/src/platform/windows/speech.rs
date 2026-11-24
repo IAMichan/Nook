@@ -309,4 +309,15 @@ impl WakeWord for WindowsWake {
             let _ = session.StopAsync().and_then(|o| o.join());
         }
     }
+
+    /// The recogniser stays set up (the constraints are compiled once); only its session starts and stops, so it can
+    /// follow the loudness of the room.
+    fn listen(&self, on: bool) -> Result<(), String> {
+        let guard = self.session.lock().unwrap_or_else(|e| e.into_inner());
+        let Some((_, session)) = guard.as_ref() else { return Ok(()) };
+        let result = if on { session.StartAsync() } else { session.StopAsync() };
+        // Starting a session that runs, or stopping one that does not, is not a failure.
+        let _ = result.and_then(|o| o.join());
+        Ok(())
+    }
 }

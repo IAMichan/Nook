@@ -118,8 +118,8 @@
     padding: 8px 6px 8px 12px;
     background: var(--graphite);
     border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
-    border-radius: 10px;
-    box-shadow: 0 6px 14px rgb(0 0 0 / 45%);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-popover);
     transform-origin: top center;
     transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.28s ease-out;
   }
@@ -136,16 +136,16 @@
     border-radius: 50%;
     background: var(--tone);
     color: var(--graphite);
-    font-size: 10px;
+    font: var(--text-caption);
     font-weight: 800;
     display: grid;
     place-items: center;
   }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; user-select: text; }
-  .title { font-size: 13px; font-weight: 600; color: var(--paper); }
-  .detail { font-size: 11.5px; color: var(--text2); display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  .icon { flex: none; width: 24px; height: 20px; padding: 0; background: transparent; border: none; color: var(--text2); font-size: 11px; }
-  .act { flex: none; align-self: center; padding: 3px 10px; font-size: 12px; font-weight: 600; border-radius: 999px; background: color-mix(in srgb, var(--tone) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent); color: var(--paper); }
+  .title { font: var(--text-control); font-weight: 600; color: var(--paper); }
+  .detail { font: var(--text-label); font-weight: 400; color: var(--text2); display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .icon { flex: none; width: 24px; height: 20px; padding: 0; background: transparent; border: none; color: var(--text2); font: var(--text-label); }
+  .act { flex: none; align-self: center; padding: 3px 10px; font: var(--text-detail); font-weight: 600; border-radius: 999px; background: color-mix(in srgb, var(--tone) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent); color: var(--paper); }
   .icon:hover { color: var(--paper); }
   @media (prefers-reduced-motion: reduce) { .stack, .toast, .row { transition: none; } }
 </style>

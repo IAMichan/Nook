@@ -786,7 +786,15 @@ pub async fn whatsapp_save(c: State<'_, Connectors>, settings: WhatsAppSettings)
     if !cfg!(desktop) {
         settings.auto_start = false;
     }
-    c.whatsapp.update_settings(|s| *s = settings);
+    // What Settings › WhatsApp does not edit stays as stored: the accounts and what Nook installed.
+    c.env.store.update(|cfg| {
+        let kept = std::mem::take(&mut cfg.whatsapp);
+        settings.accounts = kept.accounts;
+        settings.main_name = kept.main_name;
+        settings.gowa_version = kept.gowa_version;
+        cfg.whatsapp = settings;
+    });
+    c.whatsapp_accounts.settings_changed();
     Ok(())
 }
 
@@ -803,30 +811,32 @@ pub async fn whatsapp_test(c: State<'_, Connectors>) -> Res<String> {
 /// De gesprekken die de interface toont (geen stille groepen, geen genegeerde chats).
 #[tauri::command]
 pub async fn whatsapp_chats(c: State<'_, Connectors>) -> Res<Vec<Conversation>> {
-    Ok(c.whatsapp.visible())
+    Ok(c.whatsapp_accounts.links().iter().flat_map(|l| l.visible()).collect())
 }
 
 /// Every chat for the Chats tab: those with messages here and the rest of the phone's chats, hidden ones left out.
 #[tauri::command]
 pub async fn whatsapp_chat_list(c: State<'_, Connectors>) -> Res<Vec<Conversation>> {
-    Ok(c.whatsapp.chat_list())
+    let mut all: Vec<Conversation> = c.whatsapp_accounts.links().iter().flat_map(|l| l.chat_list()).collect();
+    all.sort_by_key(|c| std::cmp::Reverse(c.last_activity));
+    Ok(all)
 }
 
 /// Een antwoord dat de gebruiker zelf typte (geen plan nodig: de gebruiker drukte zelf op Versturen).
 #[tauri::command]
 pub async fn whatsapp_reply(c: State<'_, Connectors>, chat: String, text: String) -> Res<String> {
-    c.whatsapp.send(&text, &chat).await.map_err(|e| e.message)
+    c.wa(&chat).send(&text, &chat).await.map_err(|e| e.message)
 }
 
 #[tauri::command]
 pub async fn whatsapp_mark_read(c: State<'_, Connectors>, chat: String) -> Res<()> {
-    c.whatsapp.mark_read(&chat);
+    c.wa(&chat).mark_read(&chat);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn whatsapp_ignore(c: State<'_, Connectors>, chat: String) -> Res<()> {
-    c.whatsapp.ignore(&chat);
+    c.wa(&chat).ignore(&chat);
     Ok(())
 }
 

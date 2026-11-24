@@ -37,6 +37,21 @@ export function conversationGroups(items: ConversationSummary[], activeId: strin
     .filter((group) => group.items.length);
 }
 
+/**
+ * The open list in its parts, newest first (`ConversationList.sections` on the Mac): what asks something of you (a new
+ * answer, a plan waiting, one working; pinned or not, on the "For you" card), the pinned ones, and the rest. Without a
+ * search a scheduled task's run that asks nothing of you is left out (its task's row opens it), unless pinned; an empty
+ * Nook only shows while it is the open one.
+ */
+export function conversationSections(items: ConversationSummary[], options: { searching: boolean; activeId: string | null }) {
+  const recentFirst = (a: ConversationSummary, b: ConversationSummary) => b.updated.localeCompare(a.updated);
+  const shown = items.filter((i) => !i.archived && (i.preview || i.pinned || i.status !== "idle" || i.id === options.activeId)).sort(recentFirst);
+  // Pinned first, then the newest, as the Mac's `ConversationList.visible` orders every part.
+  const attention = shown.filter((i) => i.status !== "idle").sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  const settled = shown.filter((i) => i.status === "idle" && (i.pinned || options.searching || !i.scheduledTask));
+  return { attention, pinned: settled.filter((i) => i.pinned), rest: settled.filter((i) => !i.pinned) };
+}
+
 type ConversationListState = {
   activeId: string | null;
   active: Conversation | null;

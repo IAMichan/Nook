@@ -46,6 +46,6 @@
   .plain:hover { background: none; }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .text span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .small { font-size: 11px; }
+  .small { font: var(--text-detail); }
   .warn { color: var(--amber); }
 </style>

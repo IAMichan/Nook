@@ -2,9 +2,12 @@
 //! Notetaker, Vandaag en het weekoverzicht. Eigen staat (`Services`), eigen vensters, eigen sneltoetsen; de regels
 //! staan in `nook_core::services`, het platform in `crate::platform`.
 
+pub mod attention;
 pub mod autocomplete;
+pub mod buddy;
 pub mod energy;
 pub mod flow;
+pub mod lyrics;
 pub mod media;
 pub mod notes;
 pub mod part;
@@ -84,7 +87,11 @@ pub fn setup(app: &AppHandle) {
         platform,
         prefs: RwLock::new(ServicePrefs::load()),
         live: Mutex::new(LiveScreen::default()),
-        think: Mutex::new(ThinkAlong::default()),
+        // The backoff after offers you declined lasts across restarts (`ThinkAlongBackoff` on the Mac).
+        think: Mutex::new(ThinkAlong::resuming(
+            nook_core::services::think_along::Backoff::load(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
+        )),
         nudge: Mutex::new(None),
         flow: Mutex::new(FlowStore::open_default()),
         notes: Mutex::new(NoteStore::open_default()),
@@ -113,6 +120,8 @@ pub fn start(app: &AppHandle) {
         media::start(app);
         voice::start_wake_word(app);
         quiet::start(app);
+        // Nook's own moments (SV-19).
+        buddy::start(app);
     }
     speech::listen(app);
     // "Hé Nook" volgt de instelling.
@@ -142,7 +151,9 @@ pub fn register_shortcuts(app: &AppHandle) {
     if !prefs.notes_shortcut.trim().is_empty() {
         keys.push((prefs.notes_shortcut.clone(), "notes"));
     }
-    if flow.enabled && !flow.key.trim().is_empty() {
+    // A held modifier alone goes through the keyboard hook (SV-46); any other key is a global shortcut.
+    flow::sync_hold_key(app, flow.enabled.then_some(flow.key.as_str()));
+    if flow.enabled && !flow.key.trim().is_empty() && nook_core::services::flow_hold::HoldKey::parse(&flow.key).is_none() {
         keys.push((flow.key.clone(), "flow"));
     }
     for (accelerator, action) in keys {

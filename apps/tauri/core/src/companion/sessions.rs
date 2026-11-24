@@ -194,12 +194,19 @@ mod tests {
             question: "Welke database?".into(),
             header: "Opslag".into(),
             options: vec![
-                QuestionOption { label: "SQLite".into(), description: String::new() },
-                QuestionOption { label: "Postgres".into(), description: String::new() },
+                QuestionOption { label: "SQLite".into(), description: String::new(), preview: String::new() },
+                QuestionOption { label: "Postgres".into(), description: String::new(), preview: String::new() },
             ],
             multi_select: false,
         };
-        PendingQuestion { id: "q1".into(), run_id: Uuid::new_v4(), items: vec![item; n], input: json!({}), created: Utc::now() }
+        PendingQuestion {
+            id: "q1".into(),
+            run_id: Uuid::new_v4(),
+            items: vec![item; n],
+            input: json!({}),
+            created: Utc::now(),
+            restored: false,
+        }
     }
 
     #[test]

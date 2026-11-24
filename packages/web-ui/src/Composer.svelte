@@ -38,6 +38,7 @@
   import type { Snippet } from "svelte";
   import type { Draft, DraftDocument } from "./draft.svelte";
   import { Recall } from "./recall";
+  import { hasMarkdown, richRuns } from "./rich";
 
   let {
     draft,
@@ -57,6 +58,8 @@
     controls,
     extras,
     under,
+    plus,
+    rich = false,
   }: {
     draft: Draft;
     texts: ComposerTexts;
@@ -82,9 +85,17 @@
     controls?: Snippet;
     extras?: Snippet;
     under?: Snippet;
+    /** Replaces the attach button with a menu of its own (the Mac's `ComposerMoreMenu`); `pickFile` opens the file picker. */
+    plus?: Snippet<[{ pickFile: () => void; disabled: boolean }]>;
+    /** Markdown shows its style as you type (the Mac's rich composer); what is sent stays plain Markdown. */
+    rich?: boolean;
   } = $props();
 
   let field = $state<HTMLTextAreaElement>();
+  let layer = $state<HTMLDivElement>();
+  /// The styled layer under the field: only with something to style, so plain text costs nothing.
+  const styled = $derived(rich && hasMarkdown(draft.text));
+  const runs = $derived(styled ? richRuns(draft.text) : []);
   let fileInput = $state<HTMLInputElement>();
   let dragging = $state(false);
   const recall = new Recall();
@@ -204,22 +215,35 @@
       </div>
     {/if}
     {#if draft.fileError}<p class="err">{draft.fileError}</p>{/if}
-    <textarea
-      bind:this={field}
-      bind:value={draft.text}
-      onkeydown={key}
-      onpaste={paste}
-      oninput={() => recall.reset()}
-      rows="1"
-      {disabled}
-      aria-label={texts.field}
-      {placeholder}
-    ></textarea>
+    <div class="field" class:styled>
+      {#if styled}
+        <!-- The same characters as the field, drawn with their Markdown style; the field above it shows only the caret
+             and the selection. -->
+        <div class="layer" bind:this={layer} aria-hidden="true">{#each runs as run, i (i)}<span class={run.styles.join(" ")}>{run.text}</span>{/each}{"\u200b"}</div>
+      {/if}
+      <textarea
+        bind:this={field}
+        bind:value={draft.text}
+        onkeydown={key}
+        onpaste={paste}
+        oninput={() => recall.reset()}
+        onscroll={() => { if (layer && field) layer.scrollTop = field.scrollTop; }}
+        rows="1"
+        {disabled}
+        aria-label={texts.field}
+        {placeholder}
+      ></textarea>
+    </div>
     <div class="row">
       <input class="file-input" type="file" multiple {accept} bind:this={fileInput} onchange={picked} oncancel={() => (draft.picking = false)} aria-label={texts.attach} />
-      <button type="button" class="icon" onclick={pickFile} title={texts.attach} aria-label={texts.attach} disabled={disabled || draft.reading}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3" /></svg>
-      </button>
+      {#if plus}
+        {@render plus({ pickFile, disabled: disabled || draft.reading })}
+      {:else}
+        <button type="button" class="icon" onclick={pickFile} title={texts.attach} aria-label={texts.attach} disabled={disabled || draft.reading}>
+          <!-- The Mac's plus, where its composer opens the attach menu (`ComposerMoreMenu`). -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      {/if}
       {@render controls?.()}
       <span class="grow"></span>
       {@render extras?.()}
@@ -261,24 +285,52 @@
   textarea {
     width: 100%;
     box-sizing: border-box;
-    min-height: 24px;
+    min-height: var(--nc-field-min, 20px);
     max-height: 160px;
     field-sizing: content;
     resize: none;
     margin: 0;
-    padding: 2px 2px 0;
+    padding: var(--nc-field-pad, 2px 2px 0);
     border: 0;
     outline: none;
     box-shadow: none;
     background: transparent;
     color: var(--nc-text, #27272a);
     font: inherit;
-    line-height: 1.5;
+    line-height: var(--nc-line-height, 1.25);
   }
   textarea::placeholder { color: var(--nc-faint, #62626c); }
+  /* The rich composer: the layer and the field share one box, font and wrapping, so every character sits in the same
+     place; widths never change (bold is drawn with a shadow, code with a tint), so the caret stays on its character. */
+  .field { position: relative; display: flex; min-width: 0; }
+  .layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    padding: var(--nc-field-pad, 2px 2px 0);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    color: var(--nc-text, #27272a);
+    font: inherit;
+    line-height: var(--nc-line-height, 1.25);
+    pointer-events: none;
+  }
+  .styled textarea { color: transparent; caret-color: var(--nc-text, #27272a); position: relative; }
+  .styled textarea::selection { color: transparent; }
+  .layer .marker { color: var(--nc-faint, #62626c); }
+  .layer .bold, .layer .heading { text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor; }
+  .layer .heading { color: var(--nc-text-strong, var(--nc-text, #27272a)); }
+  .layer .italic { color: var(--nc-text-soft, color-mix(in srgb, var(--nc-text, #27272a) 82%, transparent)); }
+  .layer .strike { text-decoration: line-through; }
+  .layer .code, .layer .codeBlock { background: var(--nc-code, color-mix(in srgb, var(--nc-text, #27272a) 10%, transparent)); border-radius: 3px; }
+  .layer .link { color: var(--nc-accent, #1e1e22); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+  .layer .list.marker, .layer .quote.marker { color: var(--nc-accent, #1e1e22); }
+  .layer .quote { color: var(--nc-faint, #62626c); }
   textarea:focus-visible { box-shadow: none; outline: none; }
   textarea:disabled { cursor: default; }
-  .row { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 -4px; min-width: 0; }
+  .row { display: flex; align-items: center; gap: var(--nc-row-gap, 6px); margin: var(--nc-row-margin, 6px 0 0 -4px); min-width: 0; min-height: 32px; }
+  /* Match macOS `ComposerDictationButton` (30pt) inside the 32pt control row so the composer stays 84pt tall. */
+  .row :global(button.mic) { width: 30px; height: 30px; }
   .grow { flex: 1; }
   .file-input { display: none; }
   button.icon, button.round {

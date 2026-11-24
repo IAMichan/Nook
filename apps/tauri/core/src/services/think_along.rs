@@ -16,7 +16,10 @@ use super::screen::is_excluded;
 pub const SETTLE: f64 = 25.0;
 pub const MIN_LOOK_GAP: f64 = 120.0;
 pub const SAME_WINDOW_GAP: f64 = 240.0;
-pub const BASE_OFFER_GAP: f64 = 180.0;
+/// The wait after an offer (`ThinkAlongBackoff` on the Mac): a quarter of an hour, doubled after every no (an offer left
+/// unanswered counts as one), up to two hours; a yes starts over.
+pub const BASE_OFFER_GAP: f64 = 900.0;
+pub const MAX_OFFER_GAP: f64 = 7200.0;
 /// Zo lang zonder muis of toetsenbord en Nook kijkt niet meer mee.
 pub const IDLE_LIMIT: f64 = 120.0;
 
@@ -25,18 +28,29 @@ pub struct ThinkAlong {
     focus_key: String,
     focus_since: f64,
     last_look: Option<f64>,
-    last_offer: Option<f64>,
     looked: HashMap<String, (f64, u64)>,
     offered: Vec<(f64, String)>,
-    declines: u32,
+    backoff: Backoff,
+    /// Wall-clock seconds at `now == 0`, so the backoff, kept across restarts, can be read in this run's clock.
+    epoch: f64,
     /// At least this long between two looks, on top of the usual gap: the energy plan's `think_along_gap`.
     extra_gap: f64,
 }
 
 impl ThinkAlong {
-    /// Hoe lang Nook wacht na een aanbod: langer na elke nee, tot hooguit een half uur.
+    /// A think-along that goes on from a backoff kept since the last run; `epoch` is the wall clock at `now == 0`.
+    pub fn resuming(backoff: Backoff, epoch: f64) -> Self {
+        ThinkAlong { backoff, epoch, ..Default::default() }
+    }
+
+    /// The backoff to keep for the next run.
+    pub fn backoff(&self) -> &Backoff {
+        &self.backoff
+    }
+
+    /// Hoe lang Nook wacht na een aanbod: langer na elke nee, tot hooguit twee uur.
     pub fn offer_gap(&self) -> f64 {
-        (BASE_OFFER_GAP * 2f64.powi(self.declines.min(4) as i32)).min(1800.0)
+        self.backoff.gap()
     }
 
     /// The energy plan's minimum gap between two looks (0 at full speed).
@@ -62,7 +76,7 @@ impl ThinkAlong {
         let since = |t: Option<f64>| t.map(|t| now - t).unwrap_or(f64::INFINITY);
         if now - self.focus_since < SETTLE
             || since(self.last_look) < MIN_LOOK_GAP.max(self.extra_gap)
-            || since(self.last_offer) < self.offer_gap()
+            || !self.backoff.allows(self.epoch + now)
         {
             return false;
         }
@@ -95,22 +109,84 @@ impl ThinkAlong {
     }
 
     pub fn did_offer(&mut self, text: &str, now: f64) {
-        self.last_offer = Some(now);
+        self.backoff.offered(self.epoch + now);
         self.offered.push((now, normalize(text)));
         let excess = self.offered.len().saturating_sub(30);
         self.offered.drain(..excess);
     }
 
     pub fn accepted(&mut self) {
+        self.backoff.accepted();
+    }
+
+    pub fn declined(&mut self) {
+        self.backoff.declined();
+    }
+
+    pub fn declines(&self) -> u32 {
+        self.backoff.declines
+    }
+}
+
+/// How long Nook waits after an offer, kept across restarts (`ThinkAlongBackoff` on the Mac, in
+/// `think-along.json`). Times are wall-clock seconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Backoff {
+    /// Offers declined (or left unanswered) since the last one you accepted.
+    pub declines: u32,
+    /// Whether the last offer got an answer; one that went by unanswered counts as a no for the next gap.
+    pub answered: bool,
+    pub last_offer: Option<f64>,
+}
+
+impl Default for Backoff {
+    fn default() -> Self {
+        Backoff { declines: 0, answered: true, last_offer: None }
+    }
+}
+
+impl Backoff {
+    /// The wait after the last offer; the offer still out there without an answer counts already.
+    pub fn gap(&self) -> f64 {
+        let noes = self.declines + u32::from(!self.answered);
+        (BASE_OFFER_GAP * 2f64.powi(noes.min(4) as i32)).min(MAX_OFFER_GAP)
+    }
+
+    pub fn allows(&self, now: f64) -> bool {
+        self.last_offer.is_none_or(|last| now - last >= self.gap())
+    }
+
+    pub fn offered(&mut self, now: f64) {
+        if !self.answered {
+            self.declines += 1;
+        }
+        self.answered = false;
+        self.last_offer = Some(now);
+    }
+
+    pub fn accepted(&mut self) {
         self.declines = 0;
+        self.answered = true;
     }
 
     pub fn declined(&mut self) {
         self.declines += 1;
+        self.answered = true;
     }
 
-    pub fn declines(&self) -> u32 {
-        self.declines
+    pub fn file() -> std::path::PathBuf {
+        crate::paths::support_directory().join("think-along.json")
+    }
+
+    pub fn load() -> Backoff {
+        std::fs::read_to_string(Self::file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        if let Ok(text) = serde_json::to_string(self) {
+            let _ = std::fs::write(Self::file(), text);
+        }
     }
 }
 
@@ -200,16 +276,31 @@ mod tests {
         assert!(!think.should_look("Kladblok", "plan.txt", 3, 500.0, &muted, 400.0), "weg van de computer");
 
         think.did_offer("Zal ik dit in je agenda zetten?", 300.0);
+        assert_eq!(think.offer_gap(), 1800.0, "an offer without an answer counts as a no already");
         think.declined();
         think.declined();
-        assert_eq!(think.offer_gap(), 720.0);
+        assert_eq!(think.offer_gap(), 3600.0);
         assert!(think.already_offered("zal ik dit in je agenda zetten", 400.0));
         think.accepted();
         assert_eq!(think.offer_gap(), BASE_OFFER_GAP);
         for _ in 0..10 {
             think.declined();
         }
-        assert_eq!(think.offer_gap(), 1800.0, "hooguit een half uur");
+        assert_eq!(think.offer_gap(), MAX_OFFER_GAP, "at most two hours");
+    }
+
+    #[test]
+    fn the_backoff_carries_over_a_restart() {
+        let mut first = ThinkAlong::resuming(Backoff::default(), 1_000_000.0);
+        first.did_offer("Zal ik helpen?", 10.0);
+        first.declined();
+        let kept: Backoff = serde_json::from_str(&serde_json::to_string(first.backoff()).unwrap()).unwrap();
+        // A new run, a minute later on the wall clock: still within the doubled gap.
+        let mut next = ThinkAlong::resuming(kept, 1_000_070.0);
+        let muted = BTreeMap::new();
+        next.should_look("Kladblok", "plan.txt", 1, 0.0, &muted, 0.0);
+        assert!(!next.should_look("Kladblok", "plan.txt", 1, 0.0, &muted, 30.0));
+        assert!(next.should_look("Kladblok", "plan.txt", 1, 0.0, &muted, 1800.0));
     }
 
     #[test]

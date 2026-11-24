@@ -204,10 +204,8 @@ fn dangerous_use(program: &str, arguments: &[String], lower: &[String]) -> Optio
                 return Some("Deletes folders without asking, cannot be undone");
             }
         }
-        "chmod" | "chown" | "chgrp" => {
-            if (flags.contains(&'R') || has("--recursive")) && arguments.iter().any(|a| is_broad_target(a)) {
-                return Some("Changes permissions of your whole disk or home folder");
-            }
+        "chmod" | "chown" | "chgrp" if (flags.contains(&'R') || has("--recursive")) && arguments.iter().any(|a| is_broad_target(a)) => {
+            return Some("Changes permissions of your whole disk or home folder");
         }
         "git" => {
             let sub = lower.first()?.as_str();
@@ -247,41 +245,37 @@ fn dangerous_use(program: &str, arguments: &[String], lower: &[String]) -> Optio
                 return Some("Throws away stashed work");
             }
         }
-        "diskutil" => {
+        "diskutil"
             if lower.iter().any(|a| {
                 ["erase", "erasedisk", "erasevolume", "partitiondisk", "zerodisk", "secureerase", "reformat", "apfs"].contains(&a.as_str())
-            }) {
-                return Some("Erases or changes a disk");
-            }
+            }) =>
+        {
+            return Some("Erases or changes a disk");
         }
-        "launchctl" => {
-            if lower.iter().any(|a| ["unload", "remove", "bootout", "disable", "load", "bootstrap"].contains(&a.as_str())) {
-                return Some("Changes background services");
-            }
+        "launchctl" if lower.iter().any(|a| ["unload", "remove", "bootout", "disable", "load", "bootstrap"].contains(&a.as_str())) => {
+            return Some("Changes background services");
         }
-        "systemctl" => {
-            if lower.iter().any(|a| ["disable", "mask", "stop", "enable"].contains(&a.as_str())) {
-                return Some("Changes background services");
-            }
+        "systemctl" if lower.iter().any(|a| ["disable", "mask", "stop", "enable"].contains(&a.as_str())) => {
+            return Some("Changes background services");
         }
         "defaults" if lower.first().is_some_and(|f| f == "delete") => return Some("Deletes app or system settings"),
-        "security" => {
+        "security"
             if lower.iter().any(|a| {
                 a.starts_with("dump-keychain")
                     || a.starts_with("find-generic-password")
                     || a.starts_with("find-internet-password")
                     || a.starts_with("delete-")
                     || a == "export"
-            }) {
-                return Some("Reads or deletes passwords from the keychain");
-            }
+            }) =>
+        {
+            return Some("Reads or deletes passwords from the keychain");
         }
-        "killall" | "pkill" => {
+        "killall" | "pkill"
             if lower.iter().any(|a| {
                 ["finder", "dock", "windowserver", "loginwindow", "systemuiserver", "explorer", "explorer.exe"].contains(&a.as_str())
-            }) {
-                return Some("Stops part of the operating system");
-            }
+            }) =>
+        {
+            return Some("Stops part of the operating system");
         }
         "find" if has("-delete") && arguments.iter().any(|a| is_broad_target(a)) => {
             return Some("Deletes files across your disk or home folder");

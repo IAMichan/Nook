@@ -349,20 +349,14 @@ fn dangerous_use(program: &str, arguments: &[String], lower: &[String]) -> Optio
                 return Some("Wijzigt de rechten van je hele schijf of thuismap");
             }
         }
-        "icacls" => {
-            if lower.iter().any(|a| a == "/t") && lower.iter().any(|a| is_broad_target(a)) {
-                return Some("Wijzigt de rechten van je hele schijf of thuismap");
-            }
+        "icacls" if lower.iter().any(|a| a == "/t") && lower.iter().any(|a| is_broad_target(a)) => {
+            return Some("Wijzigt de rechten van je hele schijf of thuismap");
         }
-        "reg" | "reg.exe" => {
-            if lower.first().is_some_and(|s| s == "delete" || s == "add" || s == "import" || s == "restore") {
-                return Some("Wijzigt het Windows-register");
-            }
+        "reg" | "reg.exe" if lower.first().is_some_and(|s| s == "delete" || s == "add" || s == "import" || s == "restore") => {
+            return Some("Wijzigt het Windows-register");
         }
-        "remove-itemproperty" | "set-itemproperty" | "new-itemproperty" => {
-            if lower.iter().any(|a| a.starts_with("hk")) {
-                return Some("Wijzigt het Windows-register");
-            }
+        "remove-itemproperty" | "set-itemproperty" | "new-itemproperty" if lower.iter().any(|a| a.starts_with("hk")) => {
+            return Some("Wijzigt het Windows-register");
         }
         "git" => {
             let sub = lower.first()?;
@@ -423,26 +417,26 @@ fn dangerous_use(program: &str, arguments: &[String], lower: &[String]) -> Optio
                 return Some("Wijzigt achtergronddiensten");
             }
         }
-        "defaults" => {
-            if lower.first().is_some_and(|f| f == "delete") {
-                return Some("Wist instellingen van apps of het systeem");
-            }
+        "defaults" if lower.first().is_some_and(|f| f == "delete") => {
+            return Some("Wist instellingen van apps of het systeem");
         }
-        "security" => {
+        "security"
             if lower.iter().any(|a| {
                 a.starts_with("dump-keychain")
                     || a.starts_with("find-generic-password")
                     || a.starts_with("find-internet-password")
                     || a.starts_with("delete-")
                     || a == "export"
-            }) {
-                return Some("Leest of wist wachtwoorden uit de sleutelhanger");
-            }
+            }) =>
+        {
+            return Some("Leest of wist wachtwoorden uit de sleutelhanger");
         }
-        "cmdkey" | "secret-tool" => {
-            if lower.iter().any(|a| a.starts_with("/list") || a.starts_with("/delete") || a == "lookup" || a == "clear" || a == "search") {
-                return Some("Leest of wist wachtwoorden uit de kluis");
-            }
+        "cmdkey" | "secret-tool"
+            if lower
+                .iter()
+                .any(|a| a.starts_with("/list") || a.starts_with("/delete") || a == "lookup" || a == "clear" || a == "search") =>
+        {
+            return Some("Leest of wist wachtwoorden uit de kluis");
         }
         "killall" | "pkill" | "taskkill" => {
             let words = [
@@ -460,15 +454,11 @@ fn dangerous_use(program: &str, arguments: &[String], lower: &[String]) -> Optio
                 return Some("Stopt een deel van het besturingssysteem");
             }
         }
-        "find" => {
-            if lower.iter().any(|a| a == "-delete") && arguments.iter().any(|a| is_broad_target(a)) {
-                return Some("Wist bestanden op je hele schijf of in je thuismap");
-            }
+        "find" if lower.iter().any(|a| a == "-delete") && arguments.iter().any(|a| is_broad_target(a)) => {
+            return Some("Wist bestanden op je hele schijf of in je thuismap");
         }
-        "chattr" => {
-            if lower.iter().any(|a| a.contains('i')) && arguments.iter().any(|a| is_broad_target(a)) {
-                return Some("Wijzigt de bescherming van systeembestanden");
-            }
+        "chattr" if lower.iter().any(|a| a.contains('i')) && arguments.iter().any(|a| is_broad_target(a)) => {
+            return Some("Wijzigt de bescherming van systeembestanden");
         }
         "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe" if lower.iter().any(|a| a.starts_with("-enc") || a == "-e") => {
             return Some("Draait verborgen (gecodeerde) PowerShell-code");

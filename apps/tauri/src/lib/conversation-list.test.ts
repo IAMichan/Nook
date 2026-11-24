@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationGroups, dayBucket, recoverDeletedConversation } from "./conversation-list";
+import { conversationGroups, conversationSections, dayBucket, recoverDeletedConversation } from "./conversation-list";
 import type { ConversationSummary } from "./types";
 
 const item = (id: string, patch: Partial<ConversationSummary> = {}): ConversationSummary => ({
@@ -17,6 +17,19 @@ describe("conversation list", () => {
     expect(dayBucket(at(7), NOW)).toBe("previous7");
     expect(dayBucket(at(30), NOW)).toBe("older");
     expect(dayBucket(new Date(2026, 9, 23).toISOString(), NOW)).toBe("today");
+  });
+
+  it("puts what asks for you on top and leaves settled scheduled runs out unless searched or pinned", () => {
+    const rows = [
+      item("new", { status: "unread", updated: at(0) }), item("plan", { status: "waiting", pinned: true, updated: at(1) }),
+      item("pin", { pinned: true }), item("old", { updated: at(3) }), item("run", { scheduledTask: "t1" }),
+      item("runpin", { scheduledTask: "t1", pinned: true }), item("empty", { preview: "" }), item("gone", { archived: true }),
+    ];
+    const open = conversationSections(rows, { searching: false, activeId: null });
+    expect(open.attention.map((r) => r.id)).toEqual(["plan", "new"]);
+    expect(open.pinned.map((r) => r.id)).toEqual(["pin", "runpin"]);
+    expect(open.rest.map((r) => r.id)).toEqual(["old"]);
+    expect(conversationSections(rows, { searching: true, activeId: "empty" }).rest.map((r) => r.id).sort()).toEqual(["empty", "old", "run"]);
   });
 
   it("lists every age group in order and leaves empty ones out", () => {

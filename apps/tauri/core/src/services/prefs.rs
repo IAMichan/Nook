@@ -43,6 +43,9 @@ pub struct ServicePrefs {
     pub call_notes: bool,
     /// Het overzicht van vorige week op maandag gezien (maandag als "2026-10-19").
     pub recap_seen: String,
+    /// Music: look up lyrics on lrclib.net (sends the title, artist, album and length of the playing track). Off until
+    /// you turn it on, as on the Mac.
+    pub online_lyrics: bool,
 }
 
 impl Default for ServicePrefs {
@@ -57,6 +60,7 @@ impl Default for ServicePrefs {
             files: true,
             call_notes: true,
             recap_seen: String::new(),
+            online_lyrics: false,
         }
     }
 }

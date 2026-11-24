@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Watched pull requests (`WatchedPullRequestsBlock` on the Mac): organizations ("acme") and repositories ("acme/web",
+  // Watched pull requests (`WatchedPullRequestsSection` on the Mac, Settings › Projects & pull requests › Pull requests): organizations ("acme") and repositories ("acme/web",
   // or a GitHub link) whose pull requests show under Agents › Pull requests as well. Nook searches them with every
   // connected GitHub account; the core checks and normalizes what is typed.
   import { tr } from "../../lib/i18n.svelte";
@@ -33,26 +33,24 @@
 </script>
 
 <h3>{tr("Gevolgde pull requests", "Watched pull requests")}</h3>
+<p class="section-info">{tr("Hun open pull requests staan naast die van jou bij Agents, gezocht met elk gekoppeld GitHub-account.", "Their open pull requests show next to yours under Agents, searched with every connected GitHub account.")}</p>
 <div class="group">
   {#each entries as entry (entry)}
     <div class="row">
-      <span class="text"><span>{entry}</span><span class="faint small">{entry.includes("/") ? tr("Repository", "Repository") : tr("Organisatie", "Organization")}</span></span>
-      <button class="ghost danger" title={tr("Niet meer volgen", "Stop watching")} onclick={() => remove(entry)}>{tr("Niet meer volgen", "Stop watching")}</button>
+      <span class="text"><span>{entry}</span><span class="small">{entry.includes("/") ? tr("Repository", "Repository") : tr("Organisatie", "Organization")}</span></span>
+      <button title={tr("Niet meer volgen", "Stop watching")} onclick={() => remove(entry)}>{tr("Niet meer volgen", "Stop watching")}</button>
     </div>
   {/each}
-  <div class="row">
-    <span class="inline wide">
-      <input placeholder={tr("organisatie of eigenaar/repository", "organization or owner/repository")} aria-label={tr("Toevoegen", "Add")} bind:value={text} oninput={() => (error = null)} onkeydown={(e) => e.key === "Enter" && text.trim() && add()} />
-      <button onclick={add} disabled={!text.trim() || entries.length >= LIMIT}>{tr("Toevoegen", "Add")}</button>
-    </span>
+  <div class="row add">
+    <input placeholder={tr("organisatie of eigenaar/repository", "organization or owner/repository")} aria-label={tr("Toevoegen", "Add")} bind:value={text} oninput={() => (error = null)} onkeydown={(e) => e.key === "Enter" && text.trim() && add()} />
+    <button onclick={add} disabled={!text.trim() || entries.length >= LIMIT}>{tr("Organisatie volgen", "Watch organization")}</button>
   </div>
-  {#if error}<p class="err">{error}</p>{:else if entries.length >= LIMIT}<p class="faint small">{tr("Je kunt tot {n} organisaties en repositories volgen.", "You can watch up to {n} organizations and repositories.", { n: LIMIT })}</p>{/if}
+  {#if error}<p class="note err">{error}</p>{:else if entries.length >= LIMIT}<p class="note">{tr("Je kunt tot {n} organisaties en repositories volgen.", "You can watch up to {n} organizations and repositories.", { n: LIMIT })}</p>{/if}
 </div>
-<p class="faint small">{tr("Open pull requests in deze organisaties en repositories staan ook onder Agents › Pull requests, naast die van jou en die op jouw review wachten. Nook doorzoekt ze met elk gekoppeld GitHub-account.", "Open pull requests in these organizations and repositories also show under Agents › Pull requests, next to yours and the ones waiting for your review. Nook searches them with every connected GitHub account.")}</p>
 
 <style>
-  .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .small { font-size: 11px; }
-  .wide { width: 100%; }
-  .wide input { flex: 1; }
+  .text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .small { font: var(--text-detail); color: var(--text2); }
+  .add { flex-wrap: nowrap; }
+  .add input { flex: 1; min-width: 0; }
 </style>

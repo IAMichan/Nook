@@ -12,9 +12,13 @@ describe("shell shortcuts", () => {
   });
 
   it("leaves repeated, composing, modified and already handled events alone", () => {
-    for (const flag of ["repeat", "isComposing", "altKey", "shiftKey", "defaultPrevented"]) {
+    for (const flag of ["repeat", "isComposing", "altKey", "defaultPrevented"]) {
       expect(shellShortcut({ ...key, [flag]: true }, context)).toBeNull();
     }
+  });
+
+  it("opens the command palette with Ctrl+Shift+K", () => {
+    expect(shellShortcut({ ...key, shiftKey: true }, context)).toBe("palette");
   });
 
   it("keeps sidebar shortcuts out of editors, terminals and other routes", () => {

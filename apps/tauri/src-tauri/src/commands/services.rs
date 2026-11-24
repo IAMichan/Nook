@@ -324,6 +324,13 @@ pub fn screen_status(app: AppHandle, services: State<'_, Services>) -> ScreenSta
     }
 }
 
+/// Settings › Privacy › Screen text: forgets every window's text Nook read, so nothing it saw goes along with a
+/// question until it reads the screen again (`forgetScreenText` on the Mac).
+#[tauri::command]
+pub fn screen_forget(services: State<'_, Services>) {
+    *services.live.lock().unwrap_or_else(|e| e.into_inner()) = nook_core::services::screen::LiveScreen::default();
+}
+
 // Energy, meetings and screen sharing
 
 /// The energy plan and the status line for Settings › General › Energy.
@@ -461,12 +468,37 @@ pub fn recap_view(services: State<'_, Services>) -> RecapView {
 
 // Geluiden
 
-/// Het eigen geluid als data-URL, of niets (dan speelt de interface het ingebouwde).
+/// The sound to play as a data URL, or nothing (then the interface plays its built-in tone). `choice` is the moment's
+/// stored choice: "" or "file" is your own file in the Sounds folder, anything else a system sound by name.
 #[tauri::command]
-pub fn sound_file(name: String) -> Option<String> {
-    let path = NookSound::parse(&name)?.custom_file()?;
+pub fn sound_file(name: String, choice: Option<String>) -> Option<String> {
+    let sound = NookSound::parse(&name)?;
+    let path = match choice.as_deref().unwrap_or("") {
+        "" | "file" => sound.custom_file()?,
+        "none" => return None,
+        system => sounds::system_file_in(&sounds::system_folder()?, system)?,
+    };
     let bytes = std::fs::read(&path).ok().filter(|b| b.len() < 3_000_000)?;
     Some(format!("data:{};base64,{}", sounds::mime(&path), base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// The system's sounds a moment can play (Windows' Media folder), and which moments have a file of your own.
+#[tauri::command]
+pub fn system_sounds() -> SoundChoicesView {
+    SoundChoicesView {
+        system: sounds::system_sounds(),
+        custom: ["attention", "permission", "done", "error"]
+            .into_iter()
+            .filter(|n| NookSound::parse(n).and_then(|s| s.custom_file()).is_some())
+            .map(String::from)
+            .collect(),
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct SoundChoicesView {
+    system: Vec<String>,
+    custom: Vec<String>,
 }
 
 #[tauri::command]
@@ -476,4 +508,209 @@ pub fn open_sounds_folder(app: AppHandle) -> Res<String> {
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
     Ok(folder.display().to_string())
+}
+
+// OpenTelemetry export (`TelemetrySettingsSection` on the Mac)
+
+/// Gives Nook's own export (`nook_telemetry`) the configuration in effect: Settings with `OTEL_EXPORTER_OTLP_*` from
+/// Nook's environment on top. The keychain is read only when there is an endpoint to send its headers to.
+pub fn reload_telemetry(app: &AppHandle) {
+    use nook_core::services::telemetry::{OtlpConfig, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings().telemetry;
+    let mut config = OtlpConfig::resolve_process(&settings, "");
+    if !config.is_empty() {
+        let headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+        config = OtlpConfig::resolve_process(&settings, &headers);
+    }
+    let runtime = tauri::async_runtime::handle().inner().clone();
+    nook_core::services::nook_telemetry::shared().reload(config, Some(runtime), &app.package_info().version.to_string());
+}
+
+/// At launch: read the export settings, then record the launch (a span from the process's start until now).
+pub fn telemetry_launched(app: &AppHandle) {
+    use nook_core::services::nook_telemetry;
+    reload_telemetry(app);
+    if let Some(started) = nook_telemetry::process_start() {
+        nook_telemetry::shared().app_launched(started, chrono::Utc::now());
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetrySignalStatus {
+    signal: nook_core::services::telemetry::OtlpSignal,
+    endpoint: Option<String>,
+    env_variable: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryStatusView {
+    signals: Vec<TelemetrySignalStatus>,
+    protocol: nook_core::services::telemetry::OtlpProtocol,
+    protocol_env: Option<String>,
+    headers_env: Option<String>,
+    headers_count: usize,
+    has_saved_headers: bool,
+    sdk_disabled: bool,
+}
+
+/// Effective OTLP configuration (Settings merged with `OTEL_EXPORTER_OTLP_*` environment variables) and whether
+/// headers are saved in the system keychain, without ever returning the raw header secrets to the UI.
+#[tauri::command]
+pub fn telemetry_status(app: AppHandle) -> TelemetryStatusView {
+    use nook_core::services::telemetry::{OtlpConfig, OtlpSignal, OtlpSource, HEADERS_SECRET_ACCOUNT};
+    // Settings › Maintenance asks for this after every change it saves: Nook's own export follows at once.
+    reload_telemetry(&app);
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings().telemetry;
+    let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+    let has_saved_headers = !saved_headers.trim().is_empty();
+    let cfg = OtlpConfig::resolve_process(&settings, &saved_headers);
+    let env_name = |src: Option<&OtlpSource>| match src {
+        Some(OtlpSource::Environment(var)) => Some(var.clone()),
+        _ => None,
+    };
+    let signals = OtlpSignal::ALL
+        .into_iter()
+        .map(|signal| TelemetrySignalStatus {
+            signal,
+            endpoint: cfg.endpoint(signal).map(String::from),
+            env_variable: env_name(cfg.endpoint_sources.get(&signal)),
+        })
+        .collect();
+    TelemetryStatusView {
+        signals,
+        protocol: cfg.protocol,
+        protocol_env: env_name(Some(&cfg.protocol_source)),
+        headers_env: env_name(Some(&cfg.headers_source)),
+        headers_count: cfg.headers.len(),
+        has_saved_headers,
+        sdk_disabled: cfg.sdk_disabled,
+    }
+}
+
+/// Saves OTLP headers (`key=value,key2=value2`) in the system keychain; empty string removes them.
+#[tauri::command]
+pub fn telemetry_save_headers(app: AppHandle, headers: String) -> Res<bool> {
+    use nook_core::services::telemetry::{OtlpHeader, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let trimmed = headers.trim();
+    if trimmed.is_empty() {
+        state.secrets.remove(HEADERS_SECRET_ACCOUNT)?;
+        reload_telemetry(&app);
+        return Ok(false);
+    }
+    if OtlpHeader::parse(trimmed).is_empty() {
+        return Err(nook_core::i18n::tr(
+            "Schrijf de headers als sleutel=waarde, gescheiden door komma's.",
+            "Write the headers as key=value, separated by commas.",
+        )
+        .into());
+    }
+    state.secrets.write(HEADERS_SECRET_ACCOUNT, trimmed)?;
+    reload_telemetry(&app);
+    Ok(true)
+}
+
+/// Sends an empty OTLP/HTTP JSON export to test connectivity for one signal (`traces`, `metrics`, or `logs`).
+/// Saved keychain headers are only attached when `url` matches the effective configured endpoint (matching macOS).
+#[tauri::command]
+pub async fn telemetry_test(
+    app: AppHandle,
+    signal: nook_core::services::telemetry::OtlpSignal,
+    url: Option<String>,
+) -> Res<nook_core::services::telemetry::OtlpTestResult> {
+    use nook_core::services::telemetry::{validate_http_url, OtlpConfig, OtlpExporter, OtlpSource, HEADERS_SECRET_ACCOUNT};
+    let state = app.state::<crate::state::AppState>();
+    let settings = state.settings().telemetry;
+    let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+    let cfg = OtlpConfig::resolve_process(&settings, &saved_headers);
+
+    let env_endpoint = matches!(cfg.endpoint_sources.get(&signal), Some(OtlpSource::Environment(_)))
+        .then(|| cfg.endpoint(signal).map(String::from))
+        .flatten();
+    let target = match env_endpoint {
+        Some(u) => u,
+        None => {
+            let candidate = url.unwrap_or_else(|| settings.endpoint_for(signal).to_string());
+            validate_http_url(&candidate)
+                .ok_or_else(|| nook_core::i18n::tr("Vul een http- of https-adres in.", "Enter an http or https address.").to_string())?
+        }
+    };
+    let configured_match =
+        cfg.endpoint(signal).is_some_and(|e| e == target) || validate_http_url(settings.endpoint_for(signal)).is_some_and(|e| e == target);
+    let headers = if configured_match { cfg.headers } else { Vec::new() };
+    Ok(OtlpExporter::new().test_connection(signal, &target, &headers).await)
+}
+
+// 1Password `op://` secret provider (`SecretProvidersSection` on the Mac, CH-97)
+
+/// Returns 1Password CLI (`op`) installation status, version, sign-in mode, and optionally updates enabled/token config.
+#[tauri::command]
+pub async fn secrets_onepassword_status(
+    app: AppHandle,
+    enabled: Option<bool>,
+    service_account_token: Option<String>,
+    connect_host: Option<String>,
+    connect_token: Option<String>,
+) -> Res<nook_core::secrets::OnePasswordStatus> {
+    use nook_core::secrets::{OnePasswordProvider, OP_CONNECT_HOST_KEY, OP_CONNECT_TOKEN_KEY, OP_ENABLED_KEY, OP_SERVICE_ACCOUNT_KEY};
+    blocking(move || {
+        let state = app.state::<crate::state::AppState>();
+        if let Some(en) = enabled {
+            let _ = state.secrets.write(OP_ENABLED_KEY, if en { "true" } else { "false" });
+        }
+        if let Some(tok) = service_account_token {
+            let _ = state.secrets.write(OP_SERVICE_ACCOUNT_KEY, &tok);
+        }
+        if let Some(host) = connect_host {
+            let _ = state.secrets.write(OP_CONNECT_HOST_KEY, &host);
+        }
+        if let Some(tok) = connect_token {
+            let _ = state.secrets.write(OP_CONNECT_TOKEN_KEY, &tok);
+        }
+        let cfg = OnePasswordProvider::config_from_store(&*state.secrets);
+        let provider = OnePasswordProvider::new();
+        provider.status(&cfg)
+    })
+    .await
+}
+
+/// Resolves an `op://vault/item/field` reference via `op read --no-newline`, or tests sign-in (`op whoami`) when
+/// `reference` is empty (`SecretProviderSheet.test` on the Mac, CH-97).
+#[tauri::command]
+pub async fn secrets_onepassword_resolve(app: AppHandle, reference: String, mask_value: Option<bool>) -> Res<String> {
+    use nook_core::secrets::{OnePasswordProvider, SecretReference};
+    let mask_out = mask_value.unwrap_or(false);
+    blocking(move || {
+        let state = app.state::<crate::state::AppState>();
+        let cfg = OnePasswordProvider::config_from_store(&*state.secrets);
+        let provider = OnePasswordProvider::new();
+        let trimmed = reference.trim();
+        if trimmed.is_empty() {
+            return provider.check(&cfg, None).map_err(|e| e.message());
+        }
+        let parsed = SecretReference::parse(trimmed).ok_or_else(|| nook_core::secrets::OnePasswordFailure::NotReference.message())?;
+        let secret = provider.read(&parsed, &cfg).map_err(|e| e.message())?;
+        if mask_out {
+            Ok(nook_core::secrets::mask(&secret))
+        } else {
+            Ok(secret)
+        }
+    })
+    .await?
+}
+
+// `nook://` deep links (`AppModel+IncomingLinks` on the Mac, CH-100)
+
+/// Parses and routes a `nook://` deep link URL, emitting a `nook-deep-link` event to the frontend window.
+#[tauri::command]
+pub fn handle_deep_link(app: AppHandle, url: String) -> Res<nook_core::services::deep_link::DeepLinkRoute> {
+    use tauri::Emitter;
+    let route =
+        nook_core::services::deep_link::DeepLinkRoute::parse(&url).ok_or_else(|| "Invalid or unsupported nook:// link.".to_string())?;
+    let _ = app.emit("nook-deep-link", &route);
+    Ok(route)
 }

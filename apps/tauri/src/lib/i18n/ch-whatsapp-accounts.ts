@@ -1,0 +1,25 @@
+// German, French, and Spanish for WhatsApp's accounts and GOWA installed by Nook (`whatsapp.accounts.*`,
+// `whatsapp.install.*` on the Mac, with "this Mac" as "this computer").
+import type { Table } from "./catalog";
+
+export const table: Table = {
+  "WhatsApp gateway (GOWA)": { de: "WhatsApp-Gateway (GOWA)", fr: "Passerelle WhatsApp (GOWA)", es: "Pasarela de WhatsApp (GOWA)" },
+  "One click: Nook gets GOWA from GitHub, checks the file and runs it on this computer only.": { de: "Ein Klick: Nook holt GOWA von GitHub, prüft die Datei und startet es nur auf diesem Computer.", fr: "En un clic : Nook récupère GOWA depuis GitHub, vérifie le fichier et l'exécute uniquement sur cet ordinateur.", es: "Un clic: Nook obtiene GOWA de GitHub, comprueba el archivo y lo ejecuta solo en este ordenador." },
+  "Looking for the latest version…": { de: "Suche die neueste Version…", fr: "Recherche de la dernière version…", es: "Buscando la última versión…" },
+  "Downloading ({n} MB)…": { de: "Lade herunter ({n} MB)…", fr: "Téléchargement ({n} Mo)…", es: "Descargando ({n} MB)…" },
+  "GOWA {version} is installed and running.": { de: "GOWA {version} ist installiert und läuft.", fr: "GOWA {version} est installé et en cours d'exécution.", es: "GOWA {version} está instalado y en ejecución." },
+  "Update GOWA": { de: "GOWA aktualisieren", fr: "Mettre à jour GOWA", es: "Actualizar GOWA" },
+  "Nook gets the newest GOWA from GitHub; your link stays. A GOWA before 9.3 shows no polls.": { de: "Nook holt das neueste GOWA von GitHub; deine Verbindung bleibt. Ein GOWA vor 9.3 zeigt keine Umfragen.", fr: "Nook récupère le dernier GOWA sur GitHub ; votre liaison reste. Un GOWA antérieur à 9.3 n’affiche pas les sondages.", es: "Nook descarga el GOWA más reciente de GitHub; tu vinculación se mantiene. Un GOWA anterior a 9.3 no muestra encuestas." },
+  "Another WhatsApp account": { de: "Noch ein WhatsApp-Konto", fr: "Un autre compte WhatsApp", es: "Otra cuenta de WhatsApp" },
+  "Link your business number or a second phone too. Each account gets its own QR code.": { de: "Verknüpfe auch deine geschäftliche Nummer oder ein zweites Telefon. Jedes Konto bekommt seinen eigenen QR-Code.", fr: "Connectez aussi votre numéro professionnel ou un deuxième téléphone. Chaque compte a son propre code QR.", es: "Vincula también tu número de empresa o un segundo teléfono. Cada cuenta tiene su propio código QR." },
+  "Add account": { de: "Konto hinzufügen", fr: "Ajouter un compte", es: "Añadir cuenta" },
+  "Remove {name}?": { de: "{name} entfernen?", fr: "Supprimer {name} ?", es: "¿Eliminar {name}?" },
+  "Nook unlinks this account at the gateway and forgets what it kept of it on this computer. Your chats stay on your phone.": { de: "Nook trennt dieses Konto beim Gateway und vergisst, was es davon auf diesem Computer behalten hat. Deine Chats bleiben auf deinem Telefon.", fr: "Nook déconnecte ce compte de la passerelle et oublie ce qu'il en gardait sur cet ordinateur. Vos discussions restent sur votre téléphone.", es: "Nook desvincula esta cuenta en la pasarela y olvida lo que guardaba de ella en este ordenador. Tus chats siguen en tu teléfono." },
+  Personal: { de: "Privat", fr: "Personnel", es: "Personal" },
+  "Name the account": { de: "Konto benennen", fr: "Nommer le compte", es: "Ponle nombre a la cuenta" },
+  "Scan the QR code with WhatsApp on your phone": { de: "Scanne den QR-Code mit WhatsApp auf deinem Telefon", fr: "Scannez le code QR avec WhatsApp sur votre téléphone", es: "Escanea el código QR con WhatsApp en tu teléfono" },
+  "Open WhatsApp or WhatsApp Business on this account's phone › Settings › Linked devices › Link a device, and scan this code.": { de: "Öffne WhatsApp oder WhatsApp Business auf dem Telefon dieses Kontos › Einstellungen › Verknüpfte Geräte › Gerät hinzufügen und scanne diesen Code.", fr: "Ouvrez WhatsApp ou WhatsApp Business sur le téléphone de ce compte › Réglages › Appareils connectés › Connecter un appareil, et scannez ce code.", es: "Abre WhatsApp o WhatsApp Business en el teléfono de esta cuenta › Ajustes › Dispositivos vinculados › Vincular un dispositivo, y escanea este código." },
+  "Once its phone has scanned the code, Nook says the account is linked.": { de: "Sobald das Telefon den Code gescannt hat, sagt Nook, dass das Konto verknüpft ist.", fr: "Dès que son téléphone a scanné le code, Nook indique que le compte est lié.", es: "En cuanto su teléfono haya escaneado el código, Nook dice que la cuenta está vinculada." },
+  "{name} is linked: your chats show in the Chats tab.": { de: "{name} ist verbunden: deine Chats erscheinen im Chats-Tab.", fr: "{name} est lié : vos discussions apparaissent dans l’onglet Discussions.", es: "{name} está vinculado: tus chats aparecen en la pestaña Chats." },
+  "Port {port} is taken: Nook checks every 20 seconds itself.": { de: "Port {port} ist belegt: Nook schaut alle 20 Sekunden selbst nach.", fr: "Le port {port} est occupé : Nook vérifie lui-même toutes les 20 secondes.", es: "El puerto {port} está ocupado: Nook comprueba por su cuenta cada 20 segundos." },
+};

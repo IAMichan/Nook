@@ -8,12 +8,19 @@ pub mod cli;
 mod commands;
 mod companion;
 mod connectors;
+mod diagnostics;
 mod games;
+mod keybindings;
+mod notice_history;
 mod notices;
+mod permissions;
+mod person_notes;
 mod platform;
 mod services;
 mod state;
+mod storage;
 mod tools;
+mod update_runner;
 mod updates;
 mod workspace;
 
@@ -21,6 +28,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    diagnostics::start();
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
@@ -40,7 +48,7 @@ pub fn run() {
             }))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             // Starten bij het inloggen: de aan/uit-knop staat in Instellingen > Algemeen.
-            .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+            .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--login"])))
             .plugin(tauri_plugin_dialog::init());
     }
 
@@ -56,8 +64,11 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 nook_core::paths::set_support_directory(dir);
             }
+            // A new build that crashed before it proved healthy is rolled back here, before the database opens.
+            update_runner::at_launch();
             app.manage(state::AppState::new(platform::secrets::system_store()));
             app.manage(commands::instructions::InstructionsState::load());
+            app.manage(services::attention::Attention::load());
             notices::setup(app.handle());
             companion::setup(app.handle());
             connectors::setup(app.handle());
@@ -69,6 +80,9 @@ pub fn run() {
             updates::setup(app.handle());
             services::start(app.handle());
             updates::start(app.handle());
+            update_runner::start(app.handle());
+            // OpenTelemetry export (Settings › Maintenance): off unless an endpoint is set.
+            commands::services::telemetry_launched(app.handle());
             #[cfg(desktop)]
             games::start(app.handle());
             #[cfg(desktop)]
@@ -78,6 +92,9 @@ pub fn run() {
                 let args: Vec<String> = std::env::args().collect();
                 if let Some(route) = platform::desktop::route_from_args(&args) {
                     platform::desktop::show_main(app.handle(), route);
+                } else if app.state::<state::AppState>().settings().open_window_at_launch {
+                    // Started at login (`--login` from autostart): the window opens behind the app you are in.
+                    platform::desktop::open_at_launch(app.handle(), args.iter().any(|a| a == "--login"));
                 }
             }
             #[cfg(mobile)]
@@ -95,6 +112,8 @@ pub fn run() {
                     platform::desktop::closed_main(window.app_handle());
                     platform::desktop::remember_main(window.app_handle());
                     let _ = window.hide();
+                } else if window.label().starts_with("tab-") {
+                    platform::tab_windows::closed(window.app_handle(), window.label());
                 }
             }
             #[cfg(not(desktop))]
@@ -102,7 +121,48 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            #[cfg(desktop)]
+            platform::tab_windows::open_tab_window,
+            #[cfg(desktop)]
+            platform::tab_windows::close_tab_window,
+            #[cfg(desktop)]
+            platform::tray_live::tray_live,
+            #[cfg(desktop)]
+            platform::desktop::quit_nook,
+            platform::desktop::quit_now,
+            workspace::clones::clone_jobs,
+            keybindings::keybindings_read,
+            keybindings::keybindings_write,
+            storage::storage_incidents,
+            services::attention::attention_record,
+            services::attention::attention_weights,
+            storage::storage_incident_dismiss,
+            storage::storage_reveal,
+            notice_history::notice_history,
+            notice_history::notice_history_unseen,
+            notice_history::notice_history_seen,
+            notice_history::notice_history_remove,
+            notice_history::notice_history_record,
+            person_notes::person_note,
+            person_notes::person_note_set,
+            person_notes::birthdays_today,
+            services::lyrics::music_lyrics,
+            #[cfg(desktop)]
+            platform::file_preview::file_preview,
+            #[cfg(desktop)]
+            platform::file_preview::file_open_in_app,
+            workspace::clones::clone_hide,
+            workspace::clones::clone_cancel,
             commands::get_settings,
+            commands::bar_visible,
+            commands::screen_names,
+            commands::look_export,
+            commands::look_read,
+            diagnostics::diagnostics_report,
+            notices::notice_decide,
+            permissions::permissions_overview,
+            permissions::permissions_open,
+            diagnostics::diagnostics_show_logs,
             commands::instructions::instructions_view,
             commands::instructions::prompt_save,
             commands::instructions::prompt_remove,
@@ -127,6 +187,12 @@ pub fn run() {
             commands::set_key,
             commands::nooks_list,
             commands::nooks_search,
+            commands::search::search_everything,
+            commands::search::search_ai_plan,
+            commands::search::search_ai_answer,
+            commands::search::search_open_note,
+            commands::suggestions::suggest_actions,
+            commands::suggestions::run_suggested_actions,
             commands::nook_get,
             commands::nook_active,
             commands::nook_new,
@@ -235,6 +301,36 @@ pub fn run() {
             commands::connectors::whatsapp_ignore,
             commands::connectors::whatsapp_unmute,
             chats::helper::chat_helper_status,
+            chats::inbox::chat_inbox_list,
+            chats::inbox::chat_inbox_send_poll,
+            chats::inbox::chat_inbox_vote,
+            chats::gifs::chat_gifs,
+            chats::gifs::chat_gif_file,
+            chats::gifs::chat_giphy_key_set,
+            chats::gifs::chat_giphy_key_save,
+            chats::gifs::chat_giphy_key_remove,
+            chats::inbox::chat_inbox_thread,
+            chats::info::chat_common_groups,
+            chats::info::chat_export,
+            chats::inbox::chat_inbox_mark_read,
+            chats::inbox::chat_inbox_mark_unread,
+            chats::inbox::chat_inbox_mark_all_read,
+            chats::inbox::chat_inbox_send,
+            chats::inbox::chat_inbox_remove,
+            chats::inbox::chat_inbox_message,
+            chats::inbox::chat_inbox_older,
+            chats::inbox::chat_inbox_in_app,
+            chats::inbox::chat_inbox_send_file,
+            chats::inbox::chat_inbox_people,
+            chats::inbox::chat_link_preview,
+            chats::inbox::chat_draft,
+            chats::inbox::chat_suggest_reply,
+            chats::follow_up::chat_owed,
+            chats::follow_up::chat_follow_up_wait,
+            chats::follow_up::chat_snooze,
+            chats::follow_up::chat_schedule,
+            chats::follow_up::chat_scheduled,
+            chats::follow_up::chat_schedule_cancel,
             chats::link::chat_link_networks,
             chats::link::chat_link_start,
             chats::link::chat_link_session,
@@ -242,9 +338,20 @@ pub fn run() {
             chats::link::chat_link_cancel,
             chats::link::chat_link_remove,
             chats::link::chat_link_sign_in,
+            chats::call::chat_call_start,
+            chats::call::chat_call_active,
+            chats::call::chat_call_dismiss,
+            chats::call::chat_call_open_app,
             commands::whatsapp::whatsapp_card,
             commands::whatsapp::whatsapp_card_load,
             commands::whatsapp::whatsapp_avatars,
+            commands::whatsapp::whatsapp_accounts,
+            commands::whatsapp::whatsapp_account_add,
+            commands::whatsapp::whatsapp_account_remove,
+            commands::whatsapp::whatsapp_account_rename,
+            commands::whatsapp::whatsapp_account_retry,
+            commands::whatsapp::whatsapp_gowa_state,
+            commands::whatsapp::whatsapp_install_gowa,
             commands::whatsapp::whatsapp_open_file,
             commands::whatsapp::whatsapp_audio,
             commands::whatsapp::whatsapp_ask_nook,
@@ -299,6 +406,7 @@ pub fn run() {
             commands::services::aside_expand,
             commands::services::aside_hide,
             commands::services::aside_show,
+            commands::services::screen_forget,
             commands::services::screen_status,
             commands::services::energy_status,
             commands::services::quiet_status,
@@ -309,6 +417,7 @@ pub fn run() {
             commands::services::today_items,
             commands::services::recap_view,
             commands::services::sound_file,
+            commands::services::system_sounds,
             commands::services::open_sounds_folder,
             commands::autocomplete::autocomplete_view,
             commands::autocomplete::autocomplete_pause,
@@ -331,6 +440,9 @@ pub fn run() {
             commands::brain::use_local_model,
             commands::brain::brain_test,
             commands::brain::brain_eval,
+            commands::brain::brain_local_eval_questions,
+            commands::brain::brain_local_eval_run,
+            commands::brain::brain_local_eval_cancel,
             commands::brain::mail_update,
             commands::brain::mail_send,
             commands::brain::mail_open,
@@ -346,7 +458,14 @@ pub fn run() {
             commands::brain::plan_include,
             commands::brain::plan_run_again,
             commands::agents::agents_overview,
+            agents::usage::agents_usage_refresh,
+            agents::usage::agents_codex_usage,
+            agents::usage::agents_limits,
+            agents::updates::agents_updates,
+            agents::updates::agents_update,
+            agents::usage::agents_use_reset_credit,
             commands::agents::agents_decide,
+            commands::agents::agents_deny,
             commands::agents::agents_decide_in_terminal,
             commands::agents::agents_answer,
             commands::agents::agents_answer_in_terminal,
@@ -357,6 +476,11 @@ pub fn run() {
             commands::agents::agents_history,
             commands::agents::agents_integrations,
             commands::agents::agents_prepare_link,
+            commands::agents::agents_granted_rules,
+            commands::agents::agents_revoke_rule,
+            commands::agents::agents_revoke_project_rules,
+            commands::agents::agents_approval_audit,
+            commands::agents::agents_clear_approval_audit,
             commands::agents::agents_apply_link,
             commands::agents::agents_discard_link,
             commands::agents::agents_profiles,
@@ -373,13 +497,42 @@ pub fn run() {
             commands::agents::agents_terminal_name,
             commands::agents::agents_sound,
             commands::workspace::workspace_overview,
+            commands::session_cards::workspace_suggestion_chosen,
+            commands::session_cards::workspace_page_html,
             commands::workspace::workspace_save_settings,
+            commands::workspace::workspace_project_settings,
+            commands::workspace::workspace_set_project_settings,
             commands::workspace::workspace_forget_project,
             commands::workspace::workspace_toggle_favorite_project,
             commands::workspace::workspace_timeline,
             commands::workspace::workspace_queue,
             commands::workspace::workspace_inspect,
             commands::workspace::workspace_start,
+            commands::workspace::workspace_keep_scratch,
+            commands::workspace::workspace_clear,
+            commands::workspace::workspace_resources,
+            commands::workspace::workspace_search,
+            commands::workspace::workspace_models,
+            commands::workspace::workspace_model_list_date,
+            commands::workspace::workspace_prompts,
+            commands::workspace::workspace_save_prompt,
+            commands::workspace::workspace_delete_prompt,
+            commands::workspace::workspace_files,
+            commands::workspace::workspace_skills,
+            commands::workspace::workspace_fork,
+            commands::workspace::workspace_apply_hunk,
+            commands::file_view::workspace_file_read,
+            commands::workspace_tools::workspace_dev_servers,
+            commands::workspace_tools::workspace_stop_dev_server,
+            commands::file_view::workspace_file_save,
+            commands::workspace::workspace_save_picture,
+            commands::workspace::workspace_favicon,
+            commands::workspace::workspace_agent_commands,
+            commands::workspace::antigravity_setup,
+            commands::workspace::antigravity_install,
+            commands::workspace::antigravity_uninstall,
+            commands::workspace::workspace_save_markdown,
+            commands::workspace::workspace_init_git,
             commands::workspace::workspace_adopt,
             commands::workspace::workspace_configure,
             commands::workspace::workspace_send,
@@ -394,6 +547,8 @@ pub fn run() {
             commands::workspace::workspace_retry,
             commands::workspace::workspace_rename,
             commands::workspace::workspace_set_auto_resume,
+            commands::workspace::workspace_continue_interrupted,
+            commands::workspace::workspace_dismiss_question,
             commands::workspace::workspace_archive,
             commands::workspace::workspace_mark_reviewed,
             commands::workspace::workspace_delete,
@@ -404,8 +559,30 @@ pub fn run() {
             commands::workspace::workspace_push,
             commands::workspace::workspace_can_revert,
             commands::workspace::workspace_revert,
+            commands::workspace::workspace_set_goal,
+            commands::workspace::workspace_context_usage,
             commands::workspace::workspace_worktrees,
             commands::workspace::workspace_remove_worktree,
+            commands::workspace::workspace_agent_versions,
+            commands::workspace::workspace_skills_catalog,
+            commands::workspace::workspace_read_skill,
+            commands::workspace::workspace_toggle_skill,
+            commands::workspace::workspace_open_skills_folder,
+            commands::workspace::workspace_worktree_cleanup_status,
+            commands::workspace::workspace_worktree_cleanup_now,
+            commands::workspace::workspace_reveal_path,
+            commands::services::telemetry_status,
+            commands::services::telemetry_save_headers,
+            commands::services::telemetry_test,
+            commands::mail::mail_accounts_list,
+            commands::mail::mail_microsoft_start,
+            commands::mail::mail_microsoft_finish,
+            commands::mail::mail_google_sign_in,
+            commands::mail::mail_account_set_calendar,
+            commands::mail::mail_account_rename,
+            commands::mail::mail_account_remove,
+            commands::mail::mail_save_client_config,
+            commands::mail::mail_send_linked,
             commands::workspace::workspace_continue_live,
             commands::workspace::workspace_quick,
             commands::workspace::workspace_clone,
@@ -439,6 +616,63 @@ pub fn run() {
             commands::workspace_tools::browser_step,
             commands::workspace_tools::browser_read,
             commands::workspace_tools::browser_close,
+            commands::workspace_tools::workspace_editors,
+            commands::workspace_tools::workspace_open_in,
+            commands::workspace_tools::workspace_terminals,
+            commands::workspace_tools::workspace_open_terminal,
+            commands::workspace_tools::open_in_prefs,
+            commands::workspace_tools::open_in_set_prefs,
+            commands::workspace_tools::browser_history_count,
+            commands::workspace_tools::browser_history_clear,
+            commands::workspace_tools::browser_history_suggest,
+            commands::search::buddy_moment,
+            commands::search::buddy_breathe,
+            commands::whatsapp::chat_forward,
+            commands::whatsapp::chat_abilities,
+            commands::whatsapp::chat_mark_unread,
+            commands::whatsapp::chat_set_pinned,
+            commands::whatsapp::chat_set_muted,
+            commands::whatsapp::chat_set_archived,
+            commands::whatsapp::chat_delete,
+            commands::whatsapp::chat_ask_nook,
+            commands::workspace::workspace_side_chat,
+            workspace::bridge::bridge_submit_secret,
+            chats::inbox::chat_inbox_edit_message,
+            chats::inbox::chat_inbox_delete_for_everyone,
+            chats::inbox::chat_inbox_delete_for_me,
+            chats::inbox::chat_inbox_message_info,
+            chats::inbox::chat_inline_nook,
+            commands::search::music_overview,
+            commands::search::music_search,
+            commands::search::music_queue,
+            commands::search::music_queue_add,
+            commands::search::music_playlists,
+            commands::search::music_playlist_create,
+            commands::search::music_playlist_modify,
+            commands::search::music_library,
+            commands::search::music_history_stats,
+            commands::search::music_outputs,
+            commands::search::music_select_output,
+            commands::search::music_spotify_connect,
+            commands::search::music_spotify_disconnect,
+            commands::search::voice_dictation_languages,
+            commands::search::voice_reusable_models,
+            commands::services::secrets_onepassword_status,
+            commands::services::secrets_onepassword_resolve,
+            commands::services::handle_deep_link,
+            commands::workspace::workspace_regenerate_title,
+            commands::workspace::workspace_suggest_next_prompt,
+            commands::workspace_tools::browser_pick_element,
+            commands::workspace_tools::browser_cancel_pick,
+            commands::workspace_tools::browser_clear_picks,
+            commands::workspace_tools::browser_elements,
+            commands::workspace_tools::workspace_pr_local_folder,
+            commands::workspace_tools::workspace_pr_checkout,
+            commands::workspace_tools::workspace_worktree_disk_status,
+            commands::workspace_tools::workspace_build_leftovers_scan,
+            commands::workspace_tools::workspace_build_leftovers_sweep,
+            commands::workspace_tools::workspace_worktree_archive,
+            commands::workspace_tools::workspace_worktree_move,
         ])
         .build(tauri::generate_context!())
         .expect("Nook kon niet starten")
@@ -451,6 +685,7 @@ pub fn run() {
                 // Bij afsluiten: de WhatsApp-gateway en lopende agents van de werkruimte netjes stoppen.
                 connectors::shutdown(app);
                 workspace::shutdown(app);
+                update_runner::clean_exit();
             }
         });
 }

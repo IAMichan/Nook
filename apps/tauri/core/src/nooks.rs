@@ -439,6 +439,89 @@ pub struct ConversationSummary {
     pub archived: bool,
     /// The automation whose run this conversation is.
     pub scheduled_task: Option<String>,
+    /// What the list's hover card says of it (`NookHoverCard` on the Mac).
+    pub card: ConversationCard,
+}
+
+/// What a Nook did, for the hover card in the list: its plan, a mail draft, a chart, the sources it searched, the
+/// question it started with, its last answer in short, and when it started.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationCard {
+    pub created: DateTime<Utc>,
+    pub messages: usize,
+    /// The latest plan's steps done and in all; 0 of 0 without a plan.
+    pub tasks_done: usize,
+    pub tasks_total: usize,
+    /// The step working now, else the last one done.
+    pub task: Option<String>,
+    pub task_active: bool,
+    /// The last mail draft's addressee ("" for a draft without one); None without a draft.
+    pub mail_to: Option<String>,
+    /// The last chart's title ("" for one without); None without a chart.
+    pub chart: Option<String>,
+    /// Up to three sources it searched, by name.
+    pub sources: Vec<String>,
+    /// The first question, on one line, when it says more than the title.
+    pub request: String,
+    /// The last answer, on one line, up to 200 characters.
+    pub summary: String,
+    /// The sources it may use when you limited them ("Only Calendar and Mail").
+    pub scope: Option<String>,
+}
+
+impl Conversation {
+    /// The hover card's lines for this conversation.
+    pub fn card(&self) -> ConversationCard {
+        use crate::brain::task_steps::StepStatus;
+        let one_line = |text: &str| text.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
+        let clip = |text: String, n: usize| {
+            if text.chars().count() > n {
+                format!("{}…", text.chars().take(n - 1).collect::<String>())
+            } else {
+                text
+            }
+        };
+        let tasks = self.messages.iter().rev().find(|m| !m.tasks.is_empty()).map(|m| m.tasks.as_slice()).unwrap_or(&[]);
+        let active = tasks.iter().find(|t| t.status == StepStatus::Active);
+        let done = tasks.iter().rev().find(|t| t.status == StepStatus::Done);
+        let mut sources: Vec<String> = vec![];
+        for step in self.messages.iter().flat_map(|m| m.retrieval.iter()) {
+            if !step.source_title.is_empty() && !sources.contains(&step.source_title) {
+                sources.push(step.source_title.clone());
+            }
+        }
+        sources.truncate(3);
+        let request = self
+            .messages
+            .iter()
+            .find(|m| m.from_user)
+            .map(|m| one_line(&m.text))
+            .filter(|r| !r.is_empty() && *r != self.title)
+            .unwrap_or_default();
+        let summary = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| !m.from_user && !m.text.is_empty())
+            .map(|m| m.text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).collect::<Vec<_>>().join(" "))
+            .map(|t| t.chars().filter(|c| !"#*_`>|".contains(*c)).collect::<String>().trim().to_string())
+            .unwrap_or_default();
+        ConversationCard {
+            created: self.created,
+            messages: self.messages.len(),
+            tasks_done: tasks.iter().filter(|t| t.status == StepStatus::Done).count(),
+            tasks_total: tasks.len(),
+            task: active.or(done).map(|t| t.text.clone()),
+            task_active: active.is_some(),
+            mail_to: self.messages.iter().flat_map(|m| m.mails.iter()).last().map(|d| d.to.trim().to_string()),
+            chart: self.messages.iter().flat_map(|m| m.charts.iter()).last().map(|c| c.title.clone()),
+            sources,
+            request: clip(request, 120),
+            summary: clip(summary, 200),
+            scope: self.scope.as_ref().filter(|s| s.is_restricted()).map(|s| s.label()),
+        }
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -603,6 +686,7 @@ impl NookChat {
                 pinned: c.pinned,
                 archived: c.archived,
                 scheduled_task: c.scheduled_task.clone(),
+                card: c.card(),
             })
             .collect()
     }

@@ -334,12 +334,14 @@ impl Toast {
             Some(Ok(run)) => NoticeTarget::Run(run),
             _ => NoticeTarget::Agent(session.id.clone()),
         };
+        // A session Nook runs takes your answer from the toast (`AgentStatusNotice`'s reply); one in a terminal can't.
+        let kind = if matches!(target, NoticeTarget::Run(_)) { ToastKind::Reply } else { ToastKind::Notice };
         Some(Self {
             id: format!("agent-notice:{}", session.id),
             title,
             subtitle: banner::subtitle(&folder, topic),
             body: banner::gist(said, banner::LIMIT),
-            kind: ToastKind::Notice,
+            kind,
             level,
             target,
             thread: None,

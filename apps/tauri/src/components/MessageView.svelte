@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tr } from "../lib/i18n.svelte";
+  import { locale, tr } from "../lib/i18n.svelte";
+  import { chatFocus } from "../lib/chat-focus.svelte";
   // Eén bericht: boven het antwoord wat er opgezocht is, dan het antwoord zelf (Markdown met bronlabels), grafieken,
   // mailconcepten, het plan, meldingen en vervolgknoppen. Bij een fout de knop die hem oplost.
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -22,6 +23,9 @@
   import MarkdownBody from "./MarkdownBody.svelte";
   import PlanCard from "./PlanCard.svelte";
   import SourcesView from "./SourcesView.svelte";
+  import CopyIconButton from "./ui/CopyIconButton.svelte";
+  import IconButton from "./ui/IconButton.svelte";
+  import Ico from "./ui/Ico.svelte";
 
   let { message, nookId, last = false }: { message: ChatMessage; nookId: string; last?: boolean } = $props();
   const text = $derived(message.streaming ? (nook.streaming[message.id] ?? message.text ?? "") : message.text);
@@ -222,13 +226,29 @@
           : tr("Er ging iets mis bij het maken van het antwoord. Probeer het opnieuw.", "Something went wrong while making the answer. Try again."),
   );
 
-  let copied = $state(false);
-  async function copyAnswer() {
-    try {
-      await navigator.clipboard.writeText(withoutSourceList(text));
-      copied = true;
-      setTimeout(() => (copied = false), 1500);
-    } catch { /* The clipboard can be busy; the button simply stays. */ }
+  // Read aloud with the system voice (`ReadAloudButton`); a second press stops it.
+  let speaking = $state(false);
+  function readAloud() {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+    if (!synth) return;
+    if (speaking) { synth.cancel(); speaking = false; return; }
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(withoutSourceList(text).replace(/[*_`#>|]/g, ""));
+    u.lang = locale();
+    u.onend = u.onerror = () => (speaking = false);
+    speaking = true;
+    synth.speak(u);
+  }
+  $effect(() => () => { if (speaking) window.speechSynthesis?.cancel(); });
+
+  /** `TranscriptTime`: the time today, otherwise the day, month and time. */
+  function replyTime(date: string): string {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "";
+    const today = d.toDateString() === new Date().toDateString();
+    return today
+      ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   }
 
   function click(e: MouseEvent) {
@@ -299,7 +319,7 @@
   }
 </script>
 
-<div class="msg" class:user={message.fromUser} class:error={message.isError}>
+<div class="msg" class:user={message.fromUser} class:error={message.isError} class:found={chatFocus.marked === message.id} data-message-id={message.id}>
   {#if message.fromUser && message.scheduled}
     <ScheduledRunMarker text={message.text} date={message.date} />
   {:else if message.fromUser}
@@ -318,9 +338,13 @@
     {/each}
     {#if message.attachment}<div class="file">📄 {message.attachment}</div>{/if}
     <div class="bubble">{message.text}</div>
+    <!-- `TranscriptMessageFooter` under your message: the time and copy on hover, at the trailing edge, where its room
+         is kept so the conversation does not move. -->
+    <div class="footer trailing">
+      <span class="time">{replyTime(message.date)}</span>
+      <CopyIconButton oncopy={() => navigator.clipboard.writeText(message.text)} />
+    </div>
   {:else}
-    <SourcesView {message} live={message.streaming} onRetry={last ? () => brainApi.retryLast(nookId) : undefined} />
-    {#if message.tasks?.length}<TaskChecklist steps={message.tasks} live={message.streaming} />{/if}
     {#if message.isError && !message.streaming}
       <div class="error-card">
         <div class="error-head">
@@ -339,47 +363,66 @@
           {#if showDetails}<pre class="raw">{message.text}</pre>{/if}
         </div>
       </div>
-    {:else if message.streaming && !text}
-      <WorkingIndicator status={message.status} since={message.date} />
-    {:else if text}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="answer-body" bind:this={markdownEl} onclick={click}>
-        <MarkdownBody text={withoutSourceList(text)} {citation} />
+    {:else}
+      <!-- `TranscriptReply`: the words, then what came with them in the Mac's order (the plan's steps, a chart, a mail,
+           notices, what left this computer, where Nook looked, the plan to approve, what it can do next), and on hover
+           the footer with copy, read aloud, try again and the time. -->
+      <div class="reply">
+        {#if text}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <div class="answer-body" bind:this={markdownEl} onclick={click}>
+            <MarkdownBody text={withoutSourceList(text)} {citation} />
+          </div>
+        {/if}
+        {#if message.tasks?.length}<TaskChecklist steps={message.tasks} live={message.streaming} />{/if}
+        {#if message.streaming && !text && !(message.charts ?? []).length && !(message.mails ?? []).length}
+          <WorkingIndicator status={message.status} since={message.date} />
+        {/if}
+        {#each message.charts ?? [] as chart (chart.id)}<ChartView {chart} />{/each}
+        {#each message.mails ?? [] as draft (draft.id)}<MailDraftView {draft} {nookId} />{/each}
+        {#if notices.length}
+          <div class="notices">
+            {#each notices as notice (notice)}<div class="notice"><span class="mark">!</span><span>{notice}</span></div>{/each}
+          </div>
+        {/if}
+        {#if message.privateBrief && !message.streaming}
+          <details class="brief">
+            <summary>{tr("Wat deze computer heeft verlaten", "What left this computer")}</summary>
+            <p>{message.privateBrief}</p>
+          </details>
+        {/if}
+        <SourcesView {message} live={message.streaming} onRetry={last ? () => brainApi.retryLast(nookId) : undefined} />
+        {#if message.actions.length}
+          <PlanCard {nookId} {message} {last} />
+        {/if}
+        {#if message.recovery}
+          <div class="offers">
+            <button class:primary={message.recovery.kind === "openLocalServer"} disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>
+          </div>
+        {/if}
+        {#if message.offers.length && !message.streaming}
+          <div class="offers">
+            {#each message.offers as offer (offer)}
+              <button onclick={() => nook.ask(offer)}>{offer}</button>
+            {/each}
+          </div>
+        {/if}
+        {#if message.streaming && text && message.status}
+          <WorkingIndicator status={message.status} since={message.date} />
+        {/if}
       </div>
-      {#if !message.streaming && !message.isError}
-        <div class="tools"><button class="ghost" onclick={copyAnswer} title={tr("Antwoord kopiëren", "Copy answer")} aria-label={tr("Antwoord kopiëren", "Copy answer")}>{copied ? tr("✓ Gekopieerd", "✓ Copied") : tr("Kopieer", "Copy")}</button></div>
+      {#if text && !message.streaming}
+        <div class="footer">
+          <CopyIconButton oncopy={() => navigator.clipboard.writeText(withoutSourceList(text))} />
+          <IconButton title={speaking ? tr("Stop met voorlezen", "Stop reading") : tr("Voorlezen", "Read aloud")} onclick={readAloud}>
+            <Ico name={speaking ? "square" : "volume-2"} size={13} />
+          </IconButton>
+          {#if last}
+            <IconButton title={tr("Opnieuw", "Retry")} onclick={() => brainApi.retryLast(nookId)}><Ico name="rotate-cw" size={13} /></IconButton>
+          {/if}
+          <span class="time">{replyTime(message.date)}</span>
+        </div>
       {/if}
-    {/if}
-    {#each message.charts ?? [] as chart (chart.id)}<ChartView {chart} />{/each}
-    {#each message.mails ?? [] as draft (draft.id)}<MailDraftView {draft} {nookId} />{/each}
-    {#if message.actions.length}
-      <PlanCard {nookId} {message} {last} />
-    {/if}
-    {#if notices.length}
-      <div class="notices">
-        {#each notices as notice (notice)}<div class="notice"><span class="mark">!</span><span>{notice}</span></div>{/each}
-      </div>
-    {/if}
-    {#if message.streaming && text && message.status}
-      <WorkingIndicator status={message.status} since={message.date} />
-    {/if}
-    {#if message.privateBrief && !message.streaming}
-      <details class="brief">
-        <summary>{tr("Wat deze computer heeft verlaten", "What left this computer")}</summary>
-        <p>{message.privateBrief}</p>
-      </details>
-    {/if}
-    {#if !message.isError && message.recovery}
-      <div class="offers">
-        {#if message.recovery}<button class:primary={message.recovery.kind === "openLocalServer"} disabled={starting} onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
-      </div>
-    {/if}
-    {#if message.offers.length && !message.streaming}
-      <div class="offers">
-        {#each message.offers as offer (offer)}
-          <button onclick={() => nook.ask(offer)}>{offer}</button>
-        {/each}
-      </div>
     {/if}
   {/if}
 </div>
@@ -400,9 +443,12 @@
 {/if}
 
 <style>
-  .msg { padding: 14px 0; max-width: 100%; line-height: 1.7; overflow-wrap: anywhere; }
+  /* The Mac's rows are 24 pt apart (`ConversationRows` spacing xxl), each with its hover footer's room under it. */
+  .msg { padding: calc(var(--space-12) - var(--space-2)) 0; max-width: 100%; line-height: 1.7; overflow-wrap: anywhere; border-radius: var(--radius-card); transition: background var(--motion-slow); }
+  /* What search everything opened: marked for a moment, as the Mac lights the passage it scrolled to. */
+  .msg.found { background: color-mix(in srgb, var(--iris) 8%, transparent); }
   .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
-  .bubble { background: var(--smoke); border-radius: 14px 14px 4px 14px; padding: 12px 16px; max-width: 85%; white-space: pre-wrap; user-select: text; }
+  .bubble { background: var(--bubble); color: var(--paper); border-radius: var(--radius-bubble); padding: var(--space-12); max-width: 85%; white-space: pre-wrap; user-select: text; line-height: 1.3; }
   .pic-btn { background: none; border: none; padding: 0; margin: 0 0 4px; display: inline-flex; max-width: 100%; border-radius: 10px; }
   .pic { display: block; max-width: 180px; max-height: 140px; border-radius: 10px; cursor: zoom-in; transition: max-width 0.2s ease, max-height 0.2s ease; }
   .pic.enlarged { width: auto; height: auto; min-width: min(100%, 240px); max-width: min(100%, 520px); max-height: 420px; object-fit: contain; cursor: zoom-out; }
@@ -411,21 +457,31 @@
   .error-card { margin-top: 4px; padding: 14px; border-radius: var(--radius-sheet); background: color-mix(in srgb, var(--coral) 7%, transparent); }
   .error-head { display: flex; gap: 10px; align-items: flex-start; }
   .error-head .mark { color: var(--coral); font-weight: 600; width: 16px; text-align: center; }
-  .error-title { font-weight: 600; }
+  .error-title { color: var(--paper); font-weight: 600; }
   .error-detail { color: var(--text2); font: var(--text-detail); }
   .error-actions { padding-left: 26px; }
   .details { font: var(--text-detail); color: var(--text3); padding: 4px 0; margin-top: 6px; }
   .raw { font: var(--text-label); color: var(--text3); white-space: pre-wrap; user-select: text; margin: 6px 0 0; padding: 10px; border-radius: var(--radius-control); background: var(--well, var(--smoke)); }
-  .brief { margin-top: 8px; font: var(--text-detail); color: var(--text3); }
+  .brief { font: var(--text-detail); color: var(--text3); }
   .brief summary { cursor: pointer; }
   .brief p { margin: 6px 0 0; white-space: pre-wrap; }
-  .notices { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
+  .notices { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--amber) 6%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 18%, transparent); }
   .notice { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text2); user-select: text; }
   .mark { flex: none; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%; background: var(--amber); color: var(--ink); font-size: 10px; font-weight: 700; display: grid; place-items: center; }
-  .tools { display: flex; gap: 4px; margin-top: 2px; opacity: 0; transition: opacity 0.15s; }
-  .msg:hover .tools, .tools:focus-within { opacity: 1; }
-  .tools button { font-size: 11px; padding: 2px 8px; color: var(--text3); }
-  .tools button:hover { color: var(--paper); }
-  .offers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .reply { display: flex; flex-direction: column; gap: var(--space-16); padding: 0 var(--space-2); }
+  .reply > :global(*) { margin-top: 0; margin-bottom: 0; }
+  /* Running assistant prose uses `text-strong` while bold keeps full `paper` contrast (macOS `MarkdownView`). */
+  .answer-body { color: var(--text-strong); }
+  .answer-body :global(.markdown) { color: var(--text-strong); }
+  .answer-body :global(.markdown strong), .answer-body :global(.markdown b) { color: var(--paper); }
+  /* `TranscriptMessageFooter`: kept in place while hidden so nothing jumps, shown on hover. */
+  .footer { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-6) 0 0 calc(var(--space-2) - var(--space-4)); opacity: 0; transition: opacity var(--motion-hover); }
+  .msg:hover .footer, .footer:focus-within { opacity: 1; }
+  /* The footer's buttons are the Mac's 22 pt (`ToolbarIconButton(height: 22)`). */
+  .footer :global(.icon-button) { width: 22px !important; height: 22px !important; }
+  .footer.trailing { margin: var(--space-4) calc(var(--space-2) - var(--space-4)) 0 0; }
+  .footer.trailing .time { margin: 0 var(--space-4) 0 0; }
+  .time { font: var(--text-caption); color: var(--text3); font-variant-numeric: tabular-nums; margin-left: var(--space-4); }
+  .offers { display: flex; flex-wrap: wrap; gap: 6px; }
   .offers button { font-size: 12px; padding: 4px 10px; border-radius: 999px; }
 </style>

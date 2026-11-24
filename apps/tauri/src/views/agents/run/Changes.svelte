@@ -8,8 +8,13 @@
   import { isActive, workspaceApi, type FileChange, type GitView, type QuickAction, type QuickView, type TreeRow, type WorkspaceRun } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import UnifiedDiffView from "../UnifiedDiffView.svelte";
+  import Ico from "../../../components/ui/Ico.svelte";
+  import { ask } from "../../../lib/confirm.svelte";
+  import { toast } from "../../../lib/toast.svelte";
+  import { reviewMessage, reviews } from "../../../lib/workspace/review-comments.svelte";
+  import type { DiffRow } from "../../../lib/workspace/unifiedDiff";
 
-  let { run, file = null, onclose }: { run: WorkspaceRun; file?: string | null; onclose: () => void } = $props();
+  let { run, file = null, embedded = false, onclose }: { run: WorkspaceRun; file?: string | null; embedded?: boolean; onclose: () => void } = $props();
 
   let view = $state<GitView | null>(null);
   let quick = $state<QuickView | null>(null);
@@ -94,6 +99,41 @@
     } catch (e) {
       diffError = String(e);
     }
+  }
+
+  /// Stages (accept) or discards (reject) one hunk; discarding asks first, as it cannot be undone.
+  async function applyHunk(index: number, action: "stage" | "discard") {
+    const f = selected ? fileFor(selected) : null;
+    if (!f || !selected) return;
+    const name = selected.split("/").pop() ?? selected;
+    if (action === "discard") {
+      const yes = await ask({
+        question: tr("Deze wijziging weggooien?", "Discard this change?"),
+        detail: tr("De regels van dit blok worden weer uit {file} gehaald. Dit kan niet ongedaan worden gemaakt.", "The lines of this hunk are taken out of {file} again. This cannot be undone.", { file: name }),
+        confirmTitle: tr("Weggooien", "Discard"),
+      });
+      if (!yes) return;
+    }
+    try {
+      await workspaceApi.applyHunk(run.id, f, index, action);
+      toast.success(action === "stage" ? tr("Blok gestaged", "Hunk staged") : tr("Blok weggegooid", "Hunk discarded"), name);
+      await select(selected);
+    } catch (e) {
+      toast.error(tr("Dit blok kon niet worden toegepast", "This hunk could not be applied"), e);
+    }
+  }
+
+  // Comments on lines of the diff, sent to the agent as one message (`ReviewCommentsBar`).
+  const comments = $derived(reviews.byRun[run.id] ?? []);
+  function comment(row: DiffRow, text: string) {
+    if (!selected) return;
+    reviews.add(run.id, { path: selected, line: row.kind === "remove" ? null : row.new, code: row.raw, text });
+  }
+  async function sendComments() {
+    const message = reviewMessage(comments);
+    reviews.clear(run.id);
+    const ok = await workspace.act(() => (isActive(run.status) ? workspaceApi.enqueue(run.id, message) : workspaceApi.send(run.id, message)));
+    if (ok !== undefined) onclose();
   }
 
   function toggleFolder(path: string) {
@@ -222,9 +262,9 @@
   }
 </script>
 
-<div class="changes">
+<div class="changes" class:embedded>
   <div class="top">
-    <strong>{tr("Wijzigingen", "Changes")}</strong>
+    {#if !embedded}<strong>{tr("Wijzigingen", "Changes")}</strong>{/if}
     <span class="faint small">{run.branch ? tr("Op {branch}", "On {branch}", { branch: run.branch }) : ""}{view?.snapshot?.status ? " · " + tr("{n} bestanden", "{n} files", { n: files.length }) : ""}</span>
     <span class="spacer"></span>
     {#if quick?.pullRequest}<button class="ghost" onclick={() => openUrl(quick!.pullRequest!)}>{tr("Bekijk PR", "View PR")}</button>{/if}
@@ -236,7 +276,7 @@
       <button class="ghost" disabled={active || !!busy} title={tr("Zet deze wijzigingen op een nieuwe branch met een eigen pull request.", "Put these changes on a new branch with its own pull request.")} onclick={() => quickClick(other)}>{label(other)}</button>
     {/each}
     <button class="ghost" title={tr("Opnieuw lezen", "Reload")} onclick={() => load(true)}>↻</button>
-    <button class="ghost" onclick={onclose}>{tr("Sluit", "Close")}</button>
+    {#if !embedded}<button class="ghost" onclick={onclose}>{tr("Sluit", "Close")}</button>{/if}
   </div>
   {#if quick && !quick.action && quick.reason}<p class="faint small">{quick.reason}</p>{/if}
   {#if quick?.action && quick.destination && !busy}<p class="faint small">{quick.destination}</p>{/if}
@@ -308,6 +348,15 @@
       {/each}
     </div>
     <div class="diff">
+      {#if comments.length}
+        <!-- `ReviewCommentsBar`: the comments waiting for the agent, sent as one message. -->
+        <div class="review-bar">
+          <Ico name="message-square" size={14} />
+          <span class="review-count">{tr("{count} opmerkingen klaar voor de agent", "{count} comments ready for the agent", { count: comments.length })}</span>
+          <button class="ghost small" onclick={() => reviews.clear(run.id)}>{tr("Weggooien", "Discard")}</button>
+          <button class="primary small" onclick={sendComments}>{tr("Stuur naar agent", "Send to agent")}</button>
+        </div>
+      {/if}
       {#if diffError}
         <p class="err">{tr("Diff niet beschikbaar: {error}", "Diff not available: {error}", { error: diffError })}</p>
       {:else if diff === null}
@@ -315,13 +364,15 @@
       {:else if !diff.trim()}
         <p class="faint small">{tr("Geen verschil", "No difference")}</p>
       {:else}
-        <UnifiedDiffView {diff} />
+        <UnifiedDiffView {diff} onhunk={applyHunk} oncomment={comment} comments={comments.filter((c) => c.path === selected)} />
       {/if}
     </div>
   </div>
 </div>
 
 <style>
+  .review-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--space-8); padding: var(--space-8) var(--space-12); border-bottom: 1px solid var(--line2); background: var(--surface); color: var(--amber); }
+  .review-count { flex: 1; font: var(--text-body); color: var(--text2); }
   .changes { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
   .top { display: flex; align-items: center; gap: 8px; }
   .spacer { flex: 1; }

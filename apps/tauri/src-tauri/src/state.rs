@@ -38,7 +38,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(secrets: Arc<dyn SecretStore>) -> Self {
-        let store = NookStore::open_default().or_else(|_| NookStore::in_memory()).expect("database");
+        // A damaged nook.sqlite is set aside and started fresh, and the main window says so (`storage_recovery`, SV-81).
+        let store =
+            nook_core::storage_recovery::open(&nook_core::paths::database_file(), |p| NookStore::open(p).map_err(|e| e.to_string()))
+                .or_else(|| NookStore::in_memory().ok())
+                .expect("database");
         Self {
             settings: RwLock::new(Settings::load()),
             chat: Mutex::new(NookChat::load()),

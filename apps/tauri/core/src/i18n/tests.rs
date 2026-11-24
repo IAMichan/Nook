@@ -188,7 +188,6 @@ const DUTCH_LEFT: &[(&str, usize)] = &[
     ("src-tauri/src/lib.rs", 1),
     ("src-tauri/src/platform/android.rs", 8),
     ("src-tauri/src/platform/audio.rs", 8),
-    ("src-tauri/src/platform/desktop.rs", 3),
     ("src-tauri/src/platform/linux/apps.rs", 1),
     ("src-tauri/src/platform/linux/atspi.rs", 1),
     ("src-tauri/src/platform/linux/mod.rs", 14),

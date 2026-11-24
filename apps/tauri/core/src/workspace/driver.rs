@@ -29,6 +29,53 @@ pub enum DriverEvent {
     FileChange { path: String, kind: String },
     /// A note in the timeline.
     System(String),
+    /// The `/` commands the agent offers (ACP `available_commands_update`), for the composer's `/` list.
+    Commands(Vec<SlashCommand>),
+    /// The agent took in a message of yours (a Codex app-server `userMessage` item): a steer it read (`SteerReceipts`).
+    UserMessageRead(String),
+    /// A Codex app-server turn started (with its turn id when reported), for conversation rollback tracking.
+    TurnStarted(Option<String>),
+    /// The agent's task list changed (Codex `turn/plan/updated`, an ACP `plan` update).
+    Tasks(Vec<super::tasks::RunTaskStep>),
+    /// Codex `thread/rollback` (or `thread/revert`) succeeded before starting the turn.
+    RollbackApplied,
+    /// Codex `thread/rollback` (and `thread/revert` fallback) failed; carries the error message.
+    RollbackFailed(String),
+}
+
+/// A `/` command an agent offers itself (`AgentSlashCommand` on the Mac): its name without the slash, what it does in
+/// the agent's words, and whether it takes text after it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlashCommand {
+    pub name: String,
+    pub detail: String,
+    pub takes_input: bool,
+}
+
+impl SlashCommand {
+    /// The commands of an `availableCommands` list. A name is one word without the slash; anything else is dropped.
+    pub fn list(value: &serde_json::Value) -> Vec<Self> {
+        value
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|c| {
+                        let name = c.get("name")?.as_str()?.trim().trim_start_matches('/').to_string();
+                        if name.is_empty() || name.chars().any(char::is_whitespace) {
+                            return None;
+                        }
+                        Some(Self {
+                            name,
+                            detail: c.get("description").and_then(|d| d.as_str()).unwrap_or("").trim().to_string(),
+                            takes_input: c.get("input").is_some_and(|i| !i.is_null()),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// One step: events for the timeline and lines to write to the agent.

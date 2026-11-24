@@ -95,8 +95,8 @@ fn calendar_events(app: &AppHandle) -> Vec<Event> {
         .collect()
 }
 
-/// What is going on right now.
-fn situation(app: &AppHandle, settings: &Settings) -> QuietSituation {
+/// What is going on right now. Also read by Nook's moments (`buddy`), which never show in a meeting or a share.
+pub(crate) fn situation(app: &AppHandle, settings: &Settings) -> QuietSituation {
     if settings.demo_data {
         return QuietSituation::default();
     }

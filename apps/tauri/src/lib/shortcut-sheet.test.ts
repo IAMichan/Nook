@@ -16,7 +16,7 @@ describe("shortcut cheat sheet", () => {
 
   it("covers every shell shortcut", () => {
     const listed = new Set(SHEET.map((e) => e.shell));
-    for (const id of ["palette", "sidebar", "new", "settings", "stop", "search", "go-1"]) expect(listed.has(id)).toBe(true);
+    for (const id of ["palette", "sidebar", "new", "settings", "stop", "search", "back", "forward", "cheatsheet", "go-1"]) expect(listed.has(id)).toBe(true);
   });
 
   it("names Ctrl, or ⌘ on a Mac keyboard", () => {

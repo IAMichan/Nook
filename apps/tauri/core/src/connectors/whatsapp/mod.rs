@@ -6,6 +6,8 @@
 //!   GOWA   — github.com/aldinokemal/go-whatsapp-web-multidevice
 //!   OpenWA — github.com/rmyndharis/OpenWA
 
+pub mod accounts;
+pub mod gowa_install;
 pub mod link;
 pub mod provider;
 
@@ -95,6 +97,12 @@ pub struct WhatsAppSettings {
     /// "GOWA automatisch starten" (alleen op de desktop).
     pub auto_start: bool,
     pub gowa_path: String,
+    /// GOWA's version once Nook installed it itself (`whatsappGOWAVersion` on the Mac).
+    pub gowa_version: String,
+    /// The accounts linked besides the first one, in the order they were added (`WhatsAppSettings.accounts`).
+    pub accounts: Vec<accounts::WaAccount>,
+    /// What you call the first account; empty, it goes by its number.
+    pub main_name: String,
 }
 
 impl Default for WhatsAppSettings {
@@ -113,6 +121,9 @@ impl Default for WhatsAppSettings {
             modes: BTreeMap::new(),
             auto_start: false,
             gowa_path: String::new(),
+            gowa_version: String::new(),
+            accounts: vec![],
+            main_name: String::new(),
         }
     }
 }
@@ -133,6 +144,17 @@ impl WhatsAppSettings {
         } else {
             DEFAULT_PORT
         }
+    }
+
+    /// The port of an account's webhook: the first account's own, each added account the next one up, in the order they
+    /// were added. `None` for an account that is gone or would pass the last port.
+    pub fn webhook_port_of(&self, account: &str) -> Option<u16> {
+        let first = self.webhook_port();
+        if account.is_empty() {
+            return Some(first);
+        }
+        let index = self.accounts.iter().position(|a| a.id == account)?;
+        u16::try_from(usize::from(first) + index + 1).ok()
     }
 
     pub fn filters(&self) -> Filters {
@@ -189,6 +211,12 @@ pub struct Message {
     /// Your own message's ticks; `None` when unknown (someone else's message, or history without a status).
     #[serde(default)]
     pub receipt: Option<Receipt>,
+    /// The message this one answers, by its id (GOWA's `replied_to_id`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+    /// A poll this message asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<crate::chats::poll::ChatPoll>,
 }
 
 impl Message {
@@ -205,6 +233,8 @@ impl Message {
             mentions_me: false,
             chat_name: None,
             receipt: None,
+            reply_to: None,
+            poll: None,
         }
     }
 }
@@ -322,8 +352,11 @@ pub mod jid {
         }
     }
 
-    /// Dezelfde persoon in zijn verschillende vormen: "336…:12@s.whatsapp.net" en "336…@c.us" zijn één gesprek.
+    /// Dezelfde persoon in zijn verschillende vormen: "336…:12@s.whatsapp.net" en "336…@c.us" zijn één gesprek. A chat's
+    /// key across accounts ("<account>~<JID>", [`super::accounts::split`]) comes down to its JID: every account's link
+    /// takes either.
     pub fn normalized(jid: &str) -> String {
+        let jid = super::accounts::split(jid).1;
         let Some((user, server)) = jid.split_once('@') else { return jid.to_string() };
         let user = user.split(':').next().unwrap_or(user);
         let server = if server == "c.us" { "s.whatsapp.net" } else { server };
@@ -370,6 +403,12 @@ pub struct Inbox {
     order: VecDeque<String>,
     /// Receipts that came before their message (the webhook can beat the answer to the send itself).
     early_receipts: HashMap<String, Receipt>,
+    /// The account whose chats these are: empty for the first, else its id ([`accounts::WaAccount`]). Its chats carry
+    /// the key across accounts as their `chat_id`.
+    account: String,
+    /// The account's name on its chats while more than one account is linked ("Business"), so the Chats tab can tell
+    /// them apart.
+    label: Option<String>,
 }
 
 impl Default for Inbox {
@@ -383,12 +422,44 @@ pub const APP: &str = "whatsapp";
 
 impl Inbox {
     pub fn new(store: Arc<InboxStore>) -> Self {
-        Self { store, seen: HashSet::new(), order: VecDeque::new(), early_receipts: HashMap::new() }
+        Self::for_account(store, "")
     }
 
-    /// The shared inbox's key for a chat JID.
+    /// The chats of one account (empty: the first).
+    pub fn for_account(store: Arc<InboxStore>, account: &str) -> Self {
+        Self {
+            store,
+            seen: HashSet::new(),
+            order: VecDeque::new(),
+            early_receipts: HashMap::new(),
+            account: account.to_string(),
+            label: None,
+        }
+    }
+
+    /// The account's name on its chats from now on (`None`: no name, one account only).
+    pub fn set_label(&mut self, label: Option<String>) {
+        self.label = label;
+    }
+
+    /// The shared inbox's key for a chat of the first account, by JID.
     pub fn key(chat: &str) -> String {
-        ChatInbox::key(APP, &jid::normalized(chat))
+        Self::key_in("", chat)
+    }
+
+    /// The shared inbox's key for a chat of `account`, by its JID or its key across accounts.
+    pub fn key_in(account: &str, chat: &str) -> String {
+        ChatInbox::key(APP, &accounts::chat_key(&jid::normalized(chat), account))
+    }
+
+    /// The shared inbox's key for one of this account's chats.
+    pub fn key_of(&self, chat: &str) -> String {
+        Self::key_in(&self.account, chat)
+    }
+
+    /// Whether a thread of the shared inbox is one of this account's chats.
+    fn owns(&self, thread: &InboxThread) -> bool {
+        thread.app == APP && accounts::split(thread.chat_id.as_deref().unwrap_or("")).0 == self.account
     }
 
     /// A chat as the WhatsApp views show it. One brought back from disk without its messages (they never go there)
@@ -397,7 +468,7 @@ impl Inbox {
         if thread.messages.is_empty() {
             return None;
         }
-        let id = thread.chat_id.clone()?;
+        let id = accounts::split(thread.chat_id.as_deref()?).1.to_string();
         let kind = thread.kind.unwrap_or_else(|| jid::kind(&id));
         let messages = thread
             .messages
@@ -414,6 +485,8 @@ impl Inbox {
                 mentions_me: m.mentions_me,
                 chat_name: None,
                 receipt: m.receipt,
+                reply_to: m.reply_to.clone(),
+                poll: m.poll.clone(),
             })
             .collect();
         Some(Conversation {
@@ -429,11 +502,11 @@ impl Inbox {
 
     /// One chat by its JID.
     pub fn get(&self, chat: &str) -> Option<Conversation> {
-        self.store.read(|inbox| inbox.threads.get(&Self::key(chat)).and_then(Self::conversation))
+        self.store.read(|inbox| inbox.threads.get(&self.key_of(chat)).and_then(Self::conversation))
     }
 
     pub fn contains(&self, chat: &str) -> bool {
-        self.store.read(|inbox| inbox.threads.contains_key(&Self::key(chat)))
+        self.store.read(|inbox| inbox.threads.contains_key(&self.key_of(chat)))
     }
 
     /// Every WhatsApp chat, by JID.
@@ -443,7 +516,7 @@ impl Inbox {
 
     /// Nieuwste activiteit eerst.
     pub fn sorted(&self) -> Vec<Conversation> {
-        self.store.read(|inbox| inbox.sorted_of(APP).into_iter().filter_map(Self::conversation).collect())
+        self.store.read(|inbox| inbox.sorted_of(APP).into_iter().filter(|t| self.owns(t)).filter_map(Self::conversation).collect())
     }
 
     pub fn total_unread(&self) -> usize {
@@ -469,7 +542,7 @@ impl Inbox {
                 }
             }
         }
-        let key = Self::key(&chat);
+        let key = self.key_of(&chat);
         let kind = jid::kind(&chat);
         let (known_name, known_unread) = self.store.read(|inbox| inbox.threads.get(&key).map(|t| (t.name.clone(), t.unread))).unzip();
         // In een privégesprek noemt de ander het: nooit je eigen naam op je eigen bericht.
@@ -504,6 +577,12 @@ impl Inbox {
             mentions_me: mentions,
             edited: false,
             deleted: false,
+            reply_to: message.reply_to,
+            reactions: None,
+            versions: vec![],
+            poll: message.poll,
+            membership: None,
+            group_change: None,
         };
         // WhatsApp's gateway gives no unread count of its own: a new message from someone else is one more, your own
         // (answered from the phone) reads the chat there, and history is never new.
@@ -519,7 +598,8 @@ impl Inbox {
             name: chat_name,
             messages: vec![item],
             unread,
-            chat_id: Some(chat.clone()),
+            chat_id: Some(accounts::chat_key(&chat, &self.account)),
+            account: self.label.clone(),
             kind: Some(kind),
             history,
             ephemeral: true,
@@ -536,13 +616,14 @@ impl Inbox {
     /// A delivery or read receipt for your own messages: their ticks move forward, never back. Returns the chat whose
     /// ticks changed, `None` when none did (a receipt for an incoming message, or for one Nook doesn't keep).
     pub fn apply_receipt(&mut self, status: Receipt, ids: &[String], chat: &str) -> Option<String> {
-        let key = Self::key(chat);
+        let key = self.key_of(chat);
         let (changed, known) = self.store.with(|inbox| {
-            // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
+            // The gateway can name the chat differently (a person's @lid against their number): then every chat of this
+            // account is looked at.
             let keys: Vec<String> = if inbox.threads.contains_key(&key) {
                 vec![key.clone()]
             } else {
-                inbox.sorted_of(APP).iter().map(|t| t.id.clone()).collect()
+                inbox.sorted_of(APP).iter().filter(|t| self.owns(t)).map(|t| t.id.clone()).collect()
             };
             let mut changed = None;
             for k in &keys {
@@ -582,25 +663,25 @@ impl Inbox {
     }
 
     pub fn remove(&mut self, chat: &str) {
-        self.store.with(|inbox| inbox.remove(&Self::key(chat), Utc::now()));
+        self.store.with(|inbox| inbox.remove(&self.key_of(chat), Utc::now()));
     }
 
     pub fn mark_read(&mut self, chat: &str) {
-        self.store.with(|inbox| inbox.mark_read(&Self::key(chat), Utc::now()));
+        self.store.with(|inbox| inbox.mark_read(&self.key_of(chat), Utc::now()));
     }
 
     /// Unread by hand: a read chat counts one unread message again. False when the chat is not here or was unread.
     pub fn mark_unread(&mut self, chat: &str) -> bool {
-        self.store.with(|inbox| inbox.mark_unread(&Self::key(chat), Utc::now()))
+        self.store.with(|inbox| inbox.mark_unread(&self.key_of(chat), Utc::now()))
     }
 
     pub fn rename(&mut self, chat: &str, name: &str) {
-        self.store.with(|inbox| inbox.rename(&Self::key(chat), name));
+        self.store.with(|inbox| inbox.rename(&self.key_of(chat), name));
     }
 
-    /// Forgets WhatsApp's chats (unlinked): the other apps' chats stay.
+    /// Forgets this account's WhatsApp chats (unlinked): the other accounts' and apps' chats stay.
     pub fn clear(&mut self) {
-        self.store.with(|inbox| inbox.threads.retain(|_, t| t.app != APP));
+        self.store.with(|inbox| inbox.threads.retain(|_, t| !self.owns(t)));
         self.seen.clear();
         self.order.clear();
         self.early_receipts.clear();
@@ -721,7 +802,34 @@ pub enum WebhookEvent {
         chat: String,
         status: Receipt,
     },
-    /// Een geldige levering waar Nook niets mee hoeft (reacties, een test).
+    /// Someone put an emoji on a message ("" takes theirs back): it goes on that message, never in a bubble of its own.
+    Reaction {
+        chat: String,
+        message: String,
+        emoji: String,
+        sender: String,
+        from_me: bool,
+    },
+    /// A message got new words, on the phone or through Nook.
+    Edited {
+        chat: String,
+        message: String,
+        text: String,
+    },
+    /// A message was deleted for everyone.
+    Revoked {
+        chat: String,
+        message: String,
+    },
+    /// Someone voted on a poll (an empty choice takes their vote back): it moves that poll's counts, never a bubble.
+    PollVote {
+        chat: String,
+        poll: String,
+        voter: String,
+        choice: Vec<String>,
+        from_me: bool,
+    },
+    /// Een geldige levering waar Nook niets mee hoeft (een test, een poll die verandert).
     Ignored,
 }
 
@@ -778,14 +886,43 @@ fn parse_openwa_receipt(json: &Value) -> WebhookEvent {
 }
 
 fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
-    if json["event"] == "message.ack" {
+    let event = json["event"].as_str().unwrap_or("");
+    if event == "message.ack" {
         return parse_gowa_receipt(json);
     }
     let p = &json["payload"];
+    if event == "message.reaction" {
+        let (Some(chat), Some(target)) = (non_empty(&p["chat_id"]), non_empty(&p["reacted_message_id"])) else {
+            return WebhookEvent::Ignored;
+        };
+        let from_me = p["is_from_me"].as_bool().unwrap_or(false);
+        let sender = non_empty(&p["from"]).unwrap_or_else(|| if from_me { String::new() } else { chat.clone() });
+        return WebhookEvent::Reaction { chat, message: target, emoji: p["reaction"].as_str().unwrap_or("").to_string(), sender, from_me };
+    }
+    if matches!(event, "message.edited" | "message.revoked" | "message.deleted") {
+        let Some(chat) = non_empty(&p["chat_id"]).or_else(|| non_empty(&p["revoked_chat"])) else { return WebhookEvent::Ignored };
+        return gowa_change(event, p, &chat).unwrap_or(WebhookEvent::Ignored);
+    }
     let (Some("message"), Some(id), Some(chat)) = (json["event"].as_str(), non_empty(&p["id"]), non_empty(&p["chat_id"])) else {
         return WebhookEvent::Ignored;
     };
+    if let Some(change) = gowa_change(event, p, &chat) {
+        return change;
+    }
+    // A reaction some GOWA versions send as a message: it goes on the message it is about, never in a bubble.
+    if let Some(reaction) = gowa_reaction(p, &chat) {
+        return reaction;
+    }
     let from = non_empty(&p["from"]).unwrap_or_else(|| chat.clone());
+    let from_me = p["is_from_me"].as_bool().unwrap_or(false);
+    let (poll, vote) = crate::chats::poll::ChatPoll::gowa(&p["poll"]);
+    if let Some((poll, choice)) = vote {
+        return WebhookEvent::PollVote { chat, poll, voter: if from_me { String::new() } else { from }, choice, from_me };
+    }
+    if p["poll"].is_object() && poll.is_none() {
+        // A poll edited or given an option: no message of its own.
+        return WebhookEvent::Ignored;
+    }
     let text = p["body"].as_str().unwrap_or("").to_string();
     let mine = me.map(str::to_string).or_else(|| non_empty(&json["device_id"]));
     let mut m = Message::new(
@@ -799,7 +936,51 @@ fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
     );
     m.media = gowa_media(p);
     m.mentions_me = jid::is_group(&chat) && text_mentions(&text, mine.as_deref());
+    m.reply_to = non_empty(&p["replied_to_id"]);
+    if let Some(poll) = poll {
+        m.text = String::new();
+        m.poll = Some(poll);
+    }
     WebhookEvent::Message(m)
+}
+
+/// A message changed or deleted for everyone, as GOWA passes WhatsApp's protocol message on: `action: "message_edited"`
+/// with `edited_text`, or `action: "message_revoked"` with `revoked_message_id` (newer versions name the event itself
+/// `message.edited` / `message.revoked`). `None` for any other message.
+fn gowa_change(event: &str, p: &Value, chat: &str) -> Option<WebhookEvent> {
+    let action = p["action"].as_str().unwrap_or("");
+    let chat = non_empty(&p["revoked_chat"]).unwrap_or_else(|| chat.to_string());
+    if action == "message_revoked" || event == "message.revoked" || event == "message.deleted" {
+        let target = ["revoked_message_id", "original_message_id", "deleted_message_id", "id"].iter().find_map(|k| non_empty(&p[*k]));
+        return Some(target.map_or(WebhookEvent::Ignored, |message| WebhookEvent::Revoked { chat, message }));
+    }
+    if action == "message_edited" || event == "message.edited" {
+        let target = ["original_message_id", "edited_message_id", "id"].iter().find_map(|k| non_empty(&p[*k]));
+        let text = non_empty(&p["edited_text"]).or_else(|| non_empty(&p["body"]));
+        return Some(match (target, text) {
+            (Some(message), Some(text)) => WebhookEvent::Edited { chat, message, text },
+            _ => WebhookEvent::Ignored,
+        });
+    }
+    None
+}
+
+/// A reaction inside a `message` event: `reaction: {message: emoji, id: target}`, or `reaction: emoji` with
+/// `reacted_message_id`. `None` for any other message.
+fn gowa_reaction(p: &Value, chat: &str) -> Option<WebhookEvent> {
+    let from_me = p["is_from_me"].as_bool().unwrap_or(false);
+    let sender = non_empty(&p["from"]).unwrap_or_else(|| if from_me { String::new() } else { chat.to_string() });
+    let r = &p["reaction"];
+    if r.is_object() {
+        let Some(target) = non_empty(&r["id"]).or_else(|| non_empty(&p["reacted_message_id"])) else { return Some(WebhookEvent::Ignored) };
+        let emoji = r["message"].as_str().unwrap_or("").to_string();
+        return Some(WebhookEvent::Reaction { chat: chat.to_string(), message: target, emoji, sender, from_me });
+    }
+    if r.is_null() && p["reacted_message_id"].is_null() {
+        return None;
+    }
+    let Some(target) = non_empty(&p["reacted_message_id"]) else { return Some(WebhookEvent::Ignored) };
+    Some(WebhookEvent::Reaction { chat: chat.to_string(), message: target, emoji: r.as_str().unwrap_or("").to_string(), sender, from_me })
 }
 
 /// GOWA zet elke soort media onder een eigen sleutel; alleen het label telt.
@@ -853,6 +1034,13 @@ fn parse_openwa(json: &Value, me: Option<&str>) -> WebhookEvent {
         from_me,
     );
     m.media = openwa_media(kind, non_empty(&d["media"]["filename"]));
+    if kind == "poll" {
+        m.poll = crate::chats::poll::ChatPoll::openwa(&d["poll"]);
+        if m.poll.is_some() {
+            m.text = String::new();
+            m.media = Media::None;
+        }
+    }
     let is_group = d["isGroup"].as_bool().unwrap_or_else(|| jid::is_group(&chat));
     if let (true, Some(mine)) = (is_group, me) {
         let ids: Vec<&str> = crate::connectors::list(&d["mentionedIds"]).iter().filter_map(Value::as_str).collect();
@@ -1224,6 +1412,38 @@ mod tests {
     }
 
     #[test]
+    fn each_account_keeps_its_own_chats_in_the_shared_inbox() {
+        let store = Arc::new(InboxStore::memory());
+        let mut first = Inbox::new(store.clone());
+        let mut business = Inbox::for_account(store.clone(), "nook-biz001");
+        business.set_label(Some("Business".into()));
+        let f = Filters::default();
+        let chat = "31600000001@s.whatsapp.net";
+        first.add(msg("a1", chat, 0, false, false), &f, None, false);
+        business.add(msg("b1", chat, 1, false, false), &f, None, false);
+        business.add(msg("b2", chat, 2, false, false), &f, None, false);
+        // The same person in two accounts is two chats, each in its own account.
+        assert_eq!(first.sorted().len(), 1);
+        assert_eq!(first.get(chat).unwrap().unread, 1);
+        assert_eq!(business.get(chat).unwrap().unread, 2);
+        assert_eq!(business.sorted()[0].id, chat);
+        let key = Inbox::key_in("nook-biz001", chat);
+        assert_eq!(key, "whatsapp#nook-biz001~31600000001@s.whatsapp.net");
+        store.read(|inbox| {
+            let t = &inbox.threads[&key];
+            assert_eq!(t.chat_id.as_deref(), Some("nook-biz001~31600000001@s.whatsapp.net"));
+            assert_eq!(t.account.as_deref(), Some("Business"));
+        });
+        // Its link takes the key as well as the JID.
+        business.mark_read("nook-biz001~31600000001@s.whatsapp.net");
+        assert_eq!(business.get(chat).unwrap().unread, 0);
+        // Unlinking one account leaves the other's chats.
+        business.clear();
+        assert!(business.sorted().is_empty());
+        assert_eq!(first.sorted().len(), 1);
+    }
+
+    #[test]
     fn inbox_groups_by_chat_and_counts_unread() {
         let mut inbox = Inbox::default();
         let f = Filters::default();
@@ -1335,6 +1555,76 @@ mod tests {
         assert_eq!(ticks(&inbox, "old"), None);
         assert_eq!(Receipt::Read.advanced(Receipt::Failed), Receipt::Failed);
         assert_eq!(Receipt::from_status("retry"), None);
+    }
+
+    #[test]
+    fn polls_come_in_and_votes_move_their_counts() {
+        let made = br#"{"event":"message","payload":{"id":"P1","chat_id":"120363000000000001@g.us","from":"31600000001@s.whatsapp.net","body":"Lunch?","timestamp":"2026-11-20T10:00:00Z","poll":{"type":"creation","question":"Lunch?","options":[{"name":"Sushi"},{"name":"Pizza"}],"selectable_options_count":1}}}"#;
+        let Some(WebhookEvent::Message(m)) = parse_webhook(GatewayKind::Gowa, made, None) else { panic!("a poll is a message") };
+        assert_eq!(m.poll.as_ref().map(|p| p.options.len()), Some(2));
+        assert!(m.text.is_empty());
+        let vote = br#"{"event":"message","payload":{"id":"V1","chat_id":"120363000000000001@g.us","from":"31600000002@s.whatsapp.net","poll":{"type":"vote","poll_id":"P1","selected_options":["Pizza"]}}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, vote, None),
+            Some(WebhookEvent::PollVote {
+                chat: "120363000000000001@g.us".into(),
+                poll: "P1".into(),
+                voter: "31600000002@s.whatsapp.net".into(),
+                choice: vec!["Pizza".into()],
+                from_me: false
+            })
+        );
+        let mut inbox = Inbox::default();
+        inbox.add(m, &Filters::default(), None, false);
+        let key = Inbox::key("120363000000000001@g.us");
+        inbox.store.with(|i| {
+            i.ballot(&key, "P1", "2", crate::chats::poll::Ballot { name: "Bea".into(), mine: false, choice: vec!["Pizza".into()] })
+        });
+        let poll = inbox.get("120363000000000001@g.us").unwrap().messages[0].poll.clone().unwrap();
+        assert_eq!(poll.options[1].votes, 1);
+        let openwa = br#"{"event":"message.received","data":{"id":"O1","chatId":"31600000001@c.us","type":"poll","body":"","poll":{"name":"Q","options":["A","B"],"allowMultipleAnswers":true}}}"#;
+        let Some(WebhookEvent::Message(o)) = parse_webhook(GatewayKind::Openwa, openwa, None) else { panic!("OpenWA's poll") };
+        assert!(o.poll.unwrap().multiple);
+    }
+
+    #[test]
+    fn gowa_reactions_edits_deletions_and_replies() {
+        let chat = "31600000001@s.whatsapp.net";
+        let reaction = r#"{"event":"message.reaction","payload":{"id":"R1","chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","is_from_me":false,"reaction":"👍","reacted_message_id":"M1"}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, reaction.as_bytes(), None),
+            Some(WebhookEvent::Reaction {
+                chat: chat.into(),
+                message: "M1".into(),
+                emoji: "👍".into(),
+                sender: chat.into(),
+                from_me: false
+            })
+        );
+        let inside = br#"{"event":"message","payload":{"id":"R2","chat_id":"31600000001@s.whatsapp.net","is_from_me":true,"reaction":{"message":"","id":"M1"}}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, inside, None),
+            Some(WebhookEvent::Reaction {
+                chat: chat.into(),
+                message: "M1".into(),
+                emoji: String::new(),
+                sender: String::new(),
+                from_me: true
+            })
+        );
+        let edited = br#"{"event":"message","payload":{"id":"E1","chat_id":"31600000001@s.whatsapp.net","action":"message_edited","original_message_id":"M1","edited_text":"new words"}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, edited, None),
+            Some(WebhookEvent::Edited { chat: chat.into(), message: "M1".into(), text: "new words".into() })
+        );
+        let revoked = br#"{"event":"message.revoked","payload":{"chat_id":"31600000001@s.whatsapp.net","revoked_message_id":"M2"}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, revoked, None),
+            Some(WebhookEvent::Revoked { chat: chat.into(), message: "M2".into() })
+        );
+        let reply = br#"{"event":"message","payload":{"id":"M3","chat_id":"31600000001@s.whatsapp.net","body":"yes","timestamp":"2026-11-20T10:00:00Z","replied_to_id":"M1","quoted_body":"coming?"}}"#;
+        let Some(WebhookEvent::Message(m)) = parse_webhook(GatewayKind::Gowa, reply, None) else { panic!("no message") };
+        assert_eq!(m.reply_to.as_deref(), Some("M1"));
     }
 
     #[test]

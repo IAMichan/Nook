@@ -178,6 +178,41 @@ export interface WhatsAppSettings {
   modes: Record<string, WhatsAppChatMode>;
   autoStart: boolean;
   gowaPath: string;
+  /** GOWA's version once Nook installed it. */
+  gowaVersion?: string;
+  accounts?: { id: string; name: string }[];
+  mainName?: string;
+}
+
+/** One WhatsApp account as Settings lists it (the first has id ""). */
+export interface WhatsAppAccount {
+  id: string;
+  title: string;
+  given: string;
+  link: Tagged;
+  statusLine: string;
+  me: string | null;
+  qr: string | null;
+  portBusy: boolean;
+  port: number | null;
+}
+
+/** Where installing GOWA is (`WhatsAppGOWAInstaller.Step`). */
+export type GowaStep =
+  | { step: "idle" }
+  | { step: "checking" }
+  | { step: "downloading"; megabytes: number }
+  | { step: "verifying" }
+  | { step: "installing" }
+  | { step: "done"; version: string }
+  | { step: "failed"; message: string };
+
+export interface GowaState {
+  installed: boolean;
+  nooksOwn: boolean;
+  version: string;
+  step: GowaStep;
+  available: boolean;
 }
 
 export type Tagged = { kind: string; message?: string };
@@ -216,6 +251,7 @@ export interface WhatsAppMessage {
   date: string;
   fromMe: boolean;
   receipt?: WhatsAppReceipt | null;
+  poll?: import("./chat-poll").ChatPoll | null;
 }
 
 export interface WhatsAppConversation {
@@ -361,6 +397,13 @@ export const connectorsApi = {
   whatsappSetMode: (chat: string, mode: WhatsAppChatMode) => invoke<void>("whatsapp_set_mode", { chat, mode }),
   whatsappUnhide: (chat: string) => invoke<void>("whatsapp_unhide", { chat }),
   whatsappSettingsChats: () => invoke<WhatsAppSettingsChat[]>("whatsapp_settings_chats"),
+  whatsappAccounts: () => invoke<WhatsAppAccount[]>("whatsapp_accounts"),
+  whatsappAccountAdd: (name: string) => invoke<string>("whatsapp_account_add", { name }),
+  whatsappAccountRemove: (id: string) => invoke<void>("whatsapp_account_remove", { id }),
+  whatsappAccountRename: (id: string, name: string) => invoke<void>("whatsapp_account_rename", { id, name }),
+  whatsappAccountRetry: (id: string) => invoke<void>("whatsapp_account_retry", { id }),
+  whatsappGowaState: () => invoke<GowaState>("whatsapp_gowa_state"),
+  whatsappInstallGowa: (update: boolean) => invoke<void>("whatsapp_install_gowa", { update }),
 
   chatAccounts: (nookId: string) => invoke<ChatService[]>("chat_accounts", { nookId }),
   setChatAccounts: (nookId: string, excluded: string[]) => invoke<void>("chat_accounts_set", { nookId, excluded }),
@@ -368,12 +411,124 @@ export const connectorsApi = {
   serviceIcon: (domain: string) => invoke<string | null>("service_icon", { domain }),
 };
 
+/** Where a chat stands, the same for every app (`ChatReadState`). */
+export type ChatReadState = { state: "unread"; count: number } | { state: "readInNook" } | { state: "read" };
+
+/** One message of any chat app, as the shared inbox keeps it (`InboxMessage`). */
+export interface InboxMessage {
+  id: string;
+  sender: string;
+  senderId?: string;
+  text: string;
+  date: string;
+  fromMe: boolean;
+  media?: { kind: WhatsAppMedia["kind"]; name?: string | null };
+  receipt?: WhatsAppReceipt | null;
+  mentionsMe?: boolean;
+  edited?: boolean;
+  deleted?: boolean;
+  /** The message this one answers (Nook's id of it). */
+  replyTo?: string;
+  reactions?: ChatReaction[];
+  /** What it said before it was edited or deleted, oldest first. */
+  versions?: { text: string; replaced: string }[];
+  /** A poll this message asks. */
+  poll?: import("./chat-poll").ChatPoll | null;
+  /** A line about who came into the group or went out of it (`ChatMembership`). */
+  membership?: import("./chat-notice").ChatMembership | null;
+  /** A line about the group itself changing (`ChatGroupChange`). */
+  groupChange?: import("./chat-notice").ChatGroupChange | null;
+}
+
+/** One emoji on a message and who put it there by name ("" for you). */
+export interface ChatReaction { emoji: string; from: string[]; mine: boolean }
+
+/** One chat of any app as a row of the Chats list (`chat_inbox_list`). */
+export interface ChatSummary {
+  key: string;
+  app: string;
+  name: string;
+  kind: WhatsAppChatKind | null;
+  account: string | null;
+  read: ChatReadState;
+  last: InboxMessage | null;
+  activity: string;
+  members: number;
+  mutedInApp: boolean;
+  sends: boolean;
+}
+
+/** What a chat's app says about the chat itself (`ChatProfile`); admins by name, "\u0001me" for you. */
+export interface ChatProfile {
+  about?: string;
+  admins?: string[];
+  disappearAfter?: number;
+  username?: string;
+  phone?: string;
+  email?: string;
+  bot?: boolean;
+}
+
+export interface ChatThread extends ChatSummary {
+  messages: InboxMessage[];
+  people: string[];
+  hasOlder: boolean;
+  profile?: ChatProfile;
+}
+
+/** A group you share with a person (`chat_common_groups`). */
+export interface CommonGroup { key: string; app: string; name: string; members: string[] }
+
+/** The shared inbox of every chat app (`src-tauri/src/chats/inbox.rs`), by the inbox's key of a chat. */
+export const chatsApi = {
+  list: () => invoke<ChatSummary[]>("chat_inbox_list"),
+  thread: (key: string) => invoke<ChatThread | null>("chat_inbox_thread", { key }),
+  commonGroups: (key: string) => invoke<CommonGroup[]>("chat_common_groups", { key }),
+  exportChat: (path: string, contents: string) => invoke<void>("chat_export", { path, contents }),
+  markRead: (key: string, inApp: boolean) => invoke<void>("chat_inbox_mark_read", { key, inApp }),
+  markUnread: (key: string) => invoke<void>("chat_inbox_mark_unread", { key }),
+  markAllRead: (keys: string[]) => invoke<void>("chat_inbox_mark_all_read", { keys }),
+  send: (key: string, text: string, replyTo: string | null) => invoke<void>("chat_inbox_send", { key, text, replyTo }),
+  remove: (key: string) => invoke<void>("chat_inbox_remove", { key }),
+  /** A step on one message: edit (text), revoke (for everyone), deleteForMe, react (text the emoji, "" to take it off). */
+  message: (key: string, message: string, step: "edit" | "revoke" | "deleteForMe" | "react", text?: string) =>
+    invoke<void>("chat_inbox_message", { key, message, step, text: text ?? null }),
+  /** Older messages, scrolling back; true while the app has more. */
+  older: (key: string) => invoke<boolean>("chat_inbox_older", { key }),
+  /** Pin, mute or archive the chat in its app itself (the chat helper's apps). */
+  inApp: (key: string, change: { pinned?: boolean; muted?: boolean; archived?: boolean }) =>
+    invoke<void>("chat_inbox_in_app", { key, pinned: change.pinned ?? null, muted: change.muted ?? null, archived: change.archived ?? null }),
+  sendFile: (key: string, name: string, mime: string, base64: string, caption: string, replyTo: string | null = null, voice = false) =>
+    invoke<void>("chat_inbox_send_file", { key, name, mime, base64, caption, replyTo, voice }),
+  /** A group's people by name, for "@" in the field. */
+  people: (key: string) => invoke<string[]>("chat_inbox_people", { key }),
+  /** "@nook …": the message Nook writes for the field (never sent). */
+  draft: (key: string, instruction: string) => invoke<string>("chat_draft", { key, instruction }),
+  /** The answer you will likely send, for the empty field; null when there is nothing to answer. */
+  /** A poll you wrote (`ChatPollForm`), where the chat's app takes one. */
+  sendPoll: (key: string, poll: { question: string; options: string[]; multiple: boolean }) => invoke<void>("chat_inbox_send_poll", { key, poll }),
+  /** Your vote on a poll: its options' texts, empty takes it back. */
+  vote: (key: string, message: string, choice: string[]) => invoke<void>("chat_inbox_vote", { key, message, choice }),
+  suggestReply: (key: string) => invoke<string | null>("chat_suggest_reply", { key }),
+  /** A link's picture and title for its bubble; null when it cannot be fetched. */
+  linkPreview: (url: string) => invoke<{ title: string | null; image: string | null; video: boolean } | null>("chat_link_preview", { url }),
+  /** The chats you owe a reply, every app at once, questions first (`chats::follow_up::chat_owed`). */
+  owed: (limit = 3) => invoke<OwedTurn[]>("chat_owed", { limit }),
+};
+
+/** A chat whose newest message is someone else's and waits on your answer (`nook_core::chats::follow_up::Turn`). */
+export interface OwedTurn { chat: string; app: string; name: string; date: string | null; lastText: string; unread: number }
+
 export const connectorEvents = {
   onChanged: (cb: () => void): Promise<UnlistenFn> => listen("connectors-changed", () => cb()),
   onSignIn: (cb: (e: { service: string; ok: boolean; message: string }) => void): Promise<UnlistenFn> =>
     listen<{ service: string; ok: boolean; message: string }>("connector-signin", (e) => cb(e.payload)),
   onWhatsApp: (cb: (e: WhatsAppArrived) => void): Promise<UnlistenFn> => listen<WhatsAppArrived>("whatsapp-message", (e) => cb(e.payload)),
   onWhatsAppReceipt: (cb: (chat: string) => void): Promise<UnlistenFn> => listen<string>("whatsapp-receipt", (e) => cb(e.payload)),
+  /** The shared inbox changed: a chat app brought something, or a chat was read, sent to or removed. */
+  onChats: (cb: () => void): Promise<UnlistenFn> => listen("chats-changed", () => cb()),
+  /** A notification (or anything in Rust) asks for one chat to open, by its inbox key. */
+  onOpenChat: (cb: (key: string) => void): Promise<UnlistenFn> => listen<string>("open-chat", (e) => cb(e.payload)),
 };
 
 /// Hoe een koppeling ervoor staat, in de woorden van de Mac: werkt, bezig, uit, heeft je nodig, kapot, niet gekoppeld.

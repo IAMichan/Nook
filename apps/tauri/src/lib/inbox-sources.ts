@@ -1,16 +1,20 @@
 // What each Nook feature puts in Home's inbox. Every provider translates its feature's own data (the same calls the
 // feature's view makes) into `InboxItem`s and handles their actions; the inbox and Home know none of them by name.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { calendarBirthdays, type DayEvent } from "./birthdays";
 import { api, events } from "./api";
 import { agentApi, agentEvents } from "./agents";
-import { connectorEvents, connectorsApi } from "./connectors";
+import { chatsApi, connectorEvents, connectorsApi, health, healthLabel } from "./connectors";
+import { autocomplete } from "./autocomplete";
+import { appName } from "./chats-list";
 import { coachingText, games } from "./games";
 import { appLanguage, locale as uiLocale, tr } from "./i18n.svelte";
 import { inbox, type InboxProvider } from "./inbox.svelte";
 import type { InboxItem } from "./inbox";
 import { pullRequests } from "./pulls.svelte";
 import { serviceEvents, services } from "./services";
-import { nook } from "./state.svelte";
+import { nook, relativeTime } from "./state.svelte";
 
 type Unlisten = Promise<() => void>;
 const unlisten = (...all: Unlisten[]) => () => all.forEach((u) => u.then((f) => f()));
@@ -145,7 +149,18 @@ const agents: InboxProvider = {
       at: new Date().toISOString(),
       actions: [{ id: q.sessionKey, label: tr("Beantwoorden", "Answer") }],
     }));
-    return [...approvals, ...questions];
+    // A session that failed is something you missed (the Mac's Today: agents waiting or failed).
+    const failed = o.sessions.filter((x) => x.status === "failed").slice(0, 3).map((x): InboxItem => ({
+      id: `failed:${x.id}:${x.summary}`,
+      provider: "agents",
+      source: "agents",
+      type: "missed",
+      title: tr("{name} is mislukt", "{name} failed", { name: x.name || x.project }),
+      detail: [x.summary, x.project].filter(Boolean).join(" · "),
+      at: new Date().toISOString(),
+      actions: [{ id: x.id, label: tr("Bekijken", "Review") }],
+    }));
+    return [...approvals, ...questions, ...failed];
   },
   act: (_, action) => ({ kind: "agents", select: action }),
   watch: (changed) => unlisten(agentEvents.onChanged(changed), agentEvents.onApproval(changed), agentEvents.onQuestion(changed)),
@@ -182,6 +197,118 @@ const messages: InboxProvider = {
     return { kind: "nook", id: await connectorsApi.whatsappAskNook(chat) };
   },
   watch: (changed) => unlisten(connectorEvents.onWhatsApp(changed), connectorEvents.onChanged(changed)),
+};
+
+/// The chats you owe a reply in, every chat app at once (the Mac's `owedChatAttention`): the first few, questions first.
+const owed: InboxProvider = {
+  id: "owed",
+  async load() {
+    return (await chatsApi.owed(3)).map((t): InboxItem => ({
+      id: `owed:${t.chat}:${t.date ?? ""}`,
+      provider: "owed",
+      ref: t.chat,
+      source: "messages",
+      sourceLabel: appName(t.app),
+      type: "action_required",
+      cared: true,
+      title: tr("{name} wacht op je antwoord", "{name} is waiting for your reply", { name: t.name }),
+      detail: [appName(t.app), t.date ? relativeTime(t.date) : ""].filter(Boolean).join(" · "),
+      at: t.date ?? new Date().toISOString(),
+      actions: [{ id: "reply", label: tr("Antwoorden", "Reply") }],
+    }));
+  },
+  act: (item) => (item.ref ? { kind: "chat", key: item.ref } : undefined),
+  watch: (changed) => unlisten(connectorEvents.onChats(changed)),
+};
+
+/// Birthdays today (the Mac's `birthdayAttention`): the people you gave a birthday in a chat's info, with Reply in their
+/// chat, and all-day birthday events in your calendars.
+const celebrationReminders: InboxProvider = {
+  id: "birthdays",
+  async load() {
+    const today = new Date();
+    const people = await invoke<{ key: string; name: string; app: string }[]>("birthdays_today").catch(() => []);
+    const events = await invoke<DayEvent[]>("agenda_upcoming", { hours: 24 }).catch(() => []);
+    const named = new Set(people.map((p) => p.name.toLowerCase()));
+    const fromChats = people.map((p): InboxItem => ({
+      id: `birthday:${p.key}:${today.toDateString()}`,
+      provider: "birthdays",
+      ref: p.key,
+      source: "messages",
+      type: "reminder",
+      weight: 1,
+      title: tr("{name} is vandaag jarig", "It's {name}'s birthday today", { name: p.name }),
+      detail: appName(p.app),
+      at: today.toISOString(),
+      actions: [{ id: "reply", label: tr("Antwoorden", "Reply") }],
+    }));
+    const fromCalendar = calendarBirthdays(events, today)
+      .filter((b) => !named.has(b.name.toLowerCase()))
+      .map((b): InboxItem => ({
+        id: `birthday:calendar:${b.title}:${today.toDateString()}`,
+        provider: "birthdays",
+        source: "calendar",
+        type: "reminder",
+        weight: 1,
+        title: tr("{name} is vandaag jarig", "It's {name}'s birthday today", { name: b.name }),
+        detail: b.title,
+        at: today.toISOString(),
+        actions: [{ id: "write", label: tr("Felicitatie schrijven", "Write a congratulation") }],
+      }));
+    return [...fromChats, ...fromCalendar];
+  },
+  act: (item) => item.ref
+    ? { kind: "chat", key: item.ref }
+    : { kind: "newNook", ask: tr("Help me een korte felicitatie te schrijven voor: {detail}", "Help me write a short congratulation for: {detail}", { detail: item.detail ?? item.title }) },
+  watch: (changed) => unlisten(connectorEvents.onChanged(changed), listen("person-notes", changed)),
+};
+
+/// A linked service that stopped working or needs you to sign in again (the Mac's `connectors.needingAttention`), at most
+/// two, opening Settings › Connections.
+const connectorFailures: InboxProvider = {
+  id: "connectors",
+  async load() {
+    const o = await connectorsApi.overview();
+    return o.connectors
+      .filter((c) => { const h = health(c); return h === "broken" || h === "needsYou"; })
+      .slice(0, 2)
+      .map((c): InboxItem => ({
+        id: `connector:${c.id}:${c.status.headline}`,
+        provider: "connectors",
+        ref: c.id,
+        source: "system",
+        type: "action_required",
+        title: `${c.title}: ${c.status.headline || healthLabel[health(c)]}`,
+        detail: c.status.detail || c.status.items[0]?.title || "",
+        at: c.status.updated ?? new Date().toISOString(),
+        actions: [{ id: "view", label: tr("Bekijken", "View") }],
+      }));
+  },
+  act: () => ({ kind: "settings", section: "connections" }),
+  watch: (changed) => unlisten(connectorEvents.onChanged(changed)),
+};
+
+/// What autocomplete saved you today (the Mac's `autocompleteTodayItem`): a calm line, only when it completed something.
+const typing: InboxProvider = {
+  id: "typing",
+  async load() {
+    if (!nook.info?.capabilities.autocomplete) return [];
+    const view = await autocomplete.view();
+    const day = view.stats.today;
+    if (!day.takes) return [];
+    const minutes = Math.max(1, Math.round(day.words / 40));
+    return [{
+      id: `typing:${new Date().toDateString()}:${day.takes}`,
+      provider: "typing",
+      source: "system",
+      type: "update",
+      title: tr("{n}× aangevuld vandaag", "{n}× completed today", { n: day.takes }),
+      detail: tr("{words} woorden, zo'n {minutes} min typen bespaard", "{words} words, about {minutes} min of typing saved", { words: day.words, minutes }),
+      at: new Date().toISOString(),
+      actions: [{ id: "view", label: tr("Bekijken", "View") }],
+    }];
+  },
+  act: () => ({ kind: "settings", section: "autocompleteStats" }),
 };
 
 /// Pull requests waiting for your review, and your own whose checks fail, from the list Agents › Pull requests keeps.
@@ -279,5 +406,6 @@ let registered = false;
 export function registerInboxSources() {
   if (registered) return;
   registered = true;
-  for (const p of [agents, chats, tasks, calendar, messages, code, today, gamerMode]) inbox.register(p);
+  for (const p of [agents, chats, owed, tasks, calendar, messages, code, connectorFailures, today, typing, gamerMode]) inbox.register(p);
+  inbox.registerEphemeral(celebrationReminders);
 }

@@ -2,14 +2,15 @@
   // Wat Nook voor een antwoord gebruikte: één rustige regel met de iconen van de doorzochte bronnen ("3 bronnen
   // gebruikt", met apart "1 niet gelezen") die openklapt. Per bron een gekleurd label (gevonden, niets gevonden, als
   // context, niet gelezen, zoekt); bronnen die niet gelezen konden worden staan bovenaan, met de reden en Probeer
-  // opnieuw op één regel. Klapt vanzelf open als een bron niet gelezen kon worden.
+  // opnieuw op één regel. Na elk antwoord dicht, zoals op de Mac.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { citationsUsed, isOpenableUrl } from "../lib/citations";
-  import { sourceDomain, sourceGroups, sourcesSummary, sourceTitle, statusText, type SourceGroup } from "../lib/sources";
+  import { sourceSymbol, sourceDomain, sourceGroups, sourcesSummary, sourceTitle, statusText, type SourceGroup } from "../lib/sources";
   import type { ChatMessage, SourceReference } from "../lib/types";
   import ServiceIcon from "../views/connectors/ServiceIcon.svelte";
   import { tr } from "../lib/i18n.svelte";
   import CitationPreview from "./CitationPreview.svelte";
+  import Ico from "./ui/Ico.svelte";
 
   let { message, live = false, onRetry }: { message: ChatMessage; live?: boolean; onRetry?: () => void } = $props();
 
@@ -19,8 +20,12 @@
   const searching = $derived(live && groups.some((g) => g.status === "running"));
   const summary = $derived(sourcesSummary(groups, live));
   let expanded = $state(false);
+  // Closed after every answer (`SourcesDisclosure`): opened while Nook searched, it folds away once the answer is done;
+  // a source that could not be read shows as the badge on the line.
+  let wasLive = false;
   $effect(() => {
-    if (failed > 0) expanded = true;
+    if (wasLive && !live) expanded = false;
+    wasLive = live;
   });
 
   let previewRef = $state<SourceReference | null>(null);
@@ -95,19 +100,19 @@
     >
       <span class="stack" aria-hidden="true">
         {#each groups.slice(0, 4) as g (g.title)}
-          <span class="mini"><ServiceIcon domain={sourceDomain(g.sourceId)} title={g.title} size={14} /></span>
+          <span class="mini"><ServiceIcon domain={sourceDomain(g.sourceId)} glyph={sourceSymbol(g.sourceId ?? "")} title={g.title} size={14} /></span>
         {/each}
       </span>
       <span>{summary}</span>
       {#if failed > 0 && !searching}<span class="badge">{tr("{n} niet gelezen", "{n} not read", { n: failed })}</span>{/if}
-      <span class="chev" class:open={expanded}>▾</span>
+      <span class="chev" class:open={expanded} aria-hidden="true"><Ico name="chevron-down" size={8} stroke={2.6} /></span>
     </button>
     {#if expanded}
       <div class="list">
         {#each groups as g (g.title)}
           <div class="group" class:failed={g.status === "failed"}>
             <div class="head" title={help(g)}>
-              <ServiceIcon domain={sourceDomain(g.sourceId)} title={g.title} size={16} />
+              <ServiceIcon domain={sourceDomain(g.sourceId)} glyph={sourceSymbol(g.sourceId ?? "")} title={g.title} size={16} />
               <span class="name">{g.title}</span>
               <span class="chip {g.status}">
                 {#if g.status === "running"}<span class="spin"></span>{/if}
@@ -164,14 +169,14 @@
 {/if}
 
 <style>
-  .sources { margin: 2px 0 6px; font-size: 12px; }
-  .toggle { display: inline-flex; align-items: center; gap: 7px; background: none; border: none; padding: 2px 0; color: var(--text2); font-size: 12px; font-weight: 500; }
+  .sources { font-size: 12px; }
+  .toggle { display: inline-flex; align-items: center; gap: 7px; background: none; border: none; padding: 3px 0; color: var(--text2); font: var(--text-label); }
   .toggle:hover { background: none; color: var(--paper); }
   .stack { display: inline-flex; }
   .stack .mini { display: inline-flex; padding: 1.5px; border-radius: 50%; background: var(--graphite); border: 1px solid var(--ink); margin-left: -4px; overflow: hidden; }
   .stack .mini:first-child { margin-left: 0; }
   .badge { font-size: 10.5px; font-weight: 600; color: var(--amber); padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--amber) 12%, transparent); }
-  .chev { font-size: 9px; color: var(--text3); transition: transform 0.16s ease-out; }
+  .chev { display: inline-flex; color: var(--text3); transition: transform 0.16s ease-out; }
   .chev.open { transform: rotate(180deg); }
   .list { margin-top: 6px; padding: 4px; border-radius: 12px; background: var(--field); border: 1px solid color-mix(in srgb, var(--line2) 70%, transparent); }
   .group { padding: 7px 8px; border-radius: 9px; display: flex; flex-direction: column; gap: 4px; }

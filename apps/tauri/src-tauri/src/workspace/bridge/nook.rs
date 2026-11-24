@@ -55,7 +55,7 @@ pub(super) async fn call(
 
 /// What the user keeps on this device: never for an agent, whatever brain Nook Chat runs on.
 fn kept(app: &AppHandle) -> BTreeSet<String> {
-    app.state::<AppState>().settings().local_only_sources
+    app.state::<AppState>().settings().kept_here()
 }
 
 /// The Nook tools an agent may use now: those of the sources that are on, without the ones kept on this device.
@@ -88,9 +88,10 @@ fn nook_tools(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, Str
     rules::catalog(&infos, super::arg(a, "tool"), super::arg(a, "query"), &kept).map(ToolResult::text)
 }
 
-/// Text from the user's apps as an agent gets it.
-fn data(text: &str) -> ToolResult {
-    ToolResult::text(nook_core::brain::text::wrap_untrusted(&rules::shielded(text)))
+/// Text from the user's apps as an agent gets it: secrets out, and contact details too at the strict privacy level.
+fn data(app: &AppHandle, text: &str) -> ToolResult {
+    let level = app.state::<AppState>().settings().privacy_level;
+    ToolResult::text(nook_core::brain::text::wrap_untrusted(&rules::shielded(&level.apply(text))))
 }
 
 /// `chat_list`, `chat_read` and `chat_send`: Nook's own chat tools under names for agents, run through `nook_use`, so a
@@ -109,7 +110,7 @@ async fn chats(
         return Err(if offered {
             "The user keeps their chats on this device (Settings › Privacy): agents cannot read or send them.".into()
         } else {
-            "Nook has no chats for agents yet. Ask the user to link WhatsApp in Nook.".into()
+            "Nook has no chats for agents yet. Ask the user to link a chat app in Nook (Settings › Connections).".into()
         });
     }
     let mut use_args = Map::new();
@@ -117,7 +118,9 @@ async fn chats(
     use_args.insert("arguments".into(), input);
     let mut result = nook_use(app, &use_args, caller, context).await?;
     if tool == BridgeTool::ChatList && !result.is_error {
-        result.text.push_str("\n\nchat_send can write in these WhatsApp chats. Nook Chat itself: nook_chat_list and nook_chat_send.");
+        result
+            .text
+            .push_str("\n\nchat_send can write in the chats of the apps Nook links. Nook Chat itself: nook_chat_list and nook_chat_send.");
     }
     Ok(result)
 }
@@ -145,10 +148,13 @@ async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller
         if !problems.is_empty() {
             return Err(format!("{}\nArguments (JSON schema):\n{}", problems.join(" "), rules::pretty(&spec.schema)));
         }
-        return match tokio::time::timeout(Duration::from_secs(120), (spec.run)(input)).await {
+        // The chat apps kept on this device stay hidden from the agent, also inside `chat_inbox` (CH-81).
+        let withheld: Vec<String> = kept(app).into_iter().collect();
+        let run = tools::chats::WITHHELD.scope(withheld, (spec.run)(input));
+        return match tokio::time::timeout(Duration::from_secs(120), run).await {
             Ok(Ok(output)) => {
                 audit(app, BridgeTool::NookUse, caller, &name, "gelezen");
-                Ok(data(&output))
+                Ok(data(app, &output))
             }
             Ok(Err(e)) => {
                 audit(app, BridgeTool::NookUse, caller, &name, &format!("mislukt: {e}"));
@@ -190,11 +196,13 @@ async fn nook_use(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller
     }
     let executor = Executor { app: app.clone(), ctx: ToolCtx::new(app, ""), all: loop_tools, caller: caller.agent.clone() };
     let step = Step { tool: name.clone(), input };
-    let states = action_gate::run_plan(&executor, std::slice::from_ref(&step), &[], &[true], &[]).await;
+    let withheld: Vec<String> = kept(app).into_iter().collect();
+    let states =
+        tools::chats::WITHHELD.scope(withheld, action_gate::run_plan(&executor, std::slice::from_ref(&step), &[], &[true], &[])).await;
     match states.into_iter().next() {
         Some(StepState::Done(r)) | Some(StepState::Verified(r)) => {
             audit(app, BridgeTool::NookUse, caller, &name, "uitgevoerd");
-            Ok(data(&r))
+            Ok(data(app, &r))
         }
         Some(StepState::Duplicate(when)) => Err(format!("This exact action already ran ({when}); Nook does not repeat it.")),
         Some(StepState::Failed(e)) => {
@@ -253,7 +261,7 @@ fn limit(a: &Map<String, Value>, default: u64, max: u64) -> usize {
 fn nook_chat_list(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
     let kept = kept(app);
     let text = app.state::<AppState>().with_chat(|c| rules::chat_list(&c.conversations, limit(a, 15, 40), &kept));
-    Ok(data(&text))
+    Ok(data(app, &text))
 }
 
 fn nook_chat_read(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult, String> {
@@ -261,7 +269,7 @@ fn nook_chat_read(app: &AppHandle, a: &Map<String, Value>) -> Result<ToolResult,
     let id = super::arg(a, "conversation_id").to_string();
     let conversation =
         app.state::<AppState>().with_chat(|c| c.get(&id).cloned()).ok_or("No such conversation. Use an id from nook_chat_list.")?;
-    Ok(data(&rules::chat_read(&conversation, limit(a, 20, 60), &kept, &|tool, input| tools::summarize(tool, input))))
+    Ok(data(app, &rules::chat_read(&conversation, limit(a, 20, 60), &kept, &|tool, input| tools::summarize(tool, input))))
 }
 
 async fn nook_chat_send(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller, context: &Context) -> Result<ToolResult, String> {
@@ -346,7 +354,7 @@ async fn nook_chat_send(app: &AppHandle, a: &Map<String, Value>, caller: &Bridge
     } else if let Some(reply) = conversation.messages.last().filter(|m| !m.from_user) {
         lines.push(rules::render(reply, &kept, &|tool, input| tools::summarize(tool, input)));
     }
-    Ok(data(&lines.join("\n\n")))
+    Ok(data(app, &lines.join("\n\n")))
 }
 
 // MARK: The screen

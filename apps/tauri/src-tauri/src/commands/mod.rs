@@ -7,12 +7,15 @@ pub mod automation;
 pub mod brain;
 pub mod chat;
 pub mod companion;
+pub mod file_view;
 pub mod games;
 pub mod instructions;
+pub mod mail;
 pub mod maintenance;
 pub mod plans;
 pub mod screen_work;
 pub mod selection_ask;
+pub mod session_cards;
 pub mod workspace;
 pub mod workspace_tools;
 
@@ -30,7 +33,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::state::AppState;
 
 pub mod connectors;
+pub mod search;
 pub mod services;
+pub mod suggestions;
 pub mod whatsapp;
 
 type Res<T> = Result<T, String>;
@@ -79,7 +84,13 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
         if before.shortcuts != saved.shortcuts {
             crate::platform::desktop::register_shortcuts(&app);
         }
-        if before.placement != saved.placement || before.panel_large != saved.panel_large {
+        if before.placement != saved.placement
+            || before.panel_large != saved.panel_large
+            || before.screen_choice != saved.screen_choice
+            || before.bar_on_all_screens != saved.bar_on_all_screens
+            || before.show_bar != saved.show_bar
+            || before.hide_when_idle != saved.hide_when_idle
+        {
             crate::platform::desktop::place_bar(&app, false);
         }
         if before.provider != saved.provider && saved.start_local_brain {
@@ -192,11 +203,16 @@ pub fn nook_set_flags(
     pinned: Option<bool>,
     archived: Option<bool>,
     title: Option<String>,
+    unread: Option<bool>,
 ) {
     state.with_chat(|c| {
         if let Some(conv) = c.get_mut(&id) {
             if let Some(p) = pinned {
                 conv.pinned = p;
+            }
+            // Mark read or unread from the list (several selected, `NookList`), as the Mac's `setUnread`.
+            if let Some(u) = unread {
+                conv.unread = u;
             }
             if let Some(a) = archived {
                 conv.archived = a;
@@ -303,6 +319,57 @@ pub fn bar_expand(app: AppHandle, expanded: bool, notice: Option<bool>, chip: Op
     crate::platform::desktop::place_bar_sized(&app, expanded, notice.unwrap_or(false), chip.unwrap_or(false));
     #[cfg(not(desktop))]
     let _ = (app, expanded, notice, chip);
+}
+
+/// Shows or hides the closed bar for "Hide Nook when idle"; the bar says when it has nothing to show.
+#[tauri::command]
+pub fn bar_visible(app: AppHandle, visible: bool) {
+    #[cfg(desktop)]
+    crate::platform::desktop::set_bar_visible(&app, visible);
+    #[cfg(not(desktop))]
+    let _ = (app, visible);
+}
+
+/// Writes a `.nooklook` file (Settings › Appearance › Share your look, `NookLookShare` on the Mac) to the path chosen in
+/// the save dialog. Only that extension is written, so the command cannot overwrite anything else.
+#[tauri::command]
+pub fn look_export(path: String, contents: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(path);
+    if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("nooklook")) != Some(true) {
+        return Err("A look is saved as a .nooklook file.".into());
+    }
+    if contents.len() > 1_000_000 {
+        return Err("This look is too large.".into());
+    }
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+/// Reads a file picked in the open dialog for Settings › Appearance: a `.nooklook` look or a VS Code theme (`.json`,
+/// `.jsonc`). Only those extensions, and at most 2 MB, so the command reads nothing else.
+#[tauri::command]
+pub fn look_read(path: String) -> Result<String, String> {
+    let path = std::path::PathBuf::from(path);
+    let allowed = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+    if !matches!(allowed.as_deref(), Some("nooklook" | "json" | "jsonc")) {
+        return Err("Only a .nooklook look or a VS Code theme can be read here.".into());
+    }
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size > 2_000_000 {
+        return Err("This file is too large.".into());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+/// The connected screens by name, for Settings › General › Bar & windows.
+#[tauri::command]
+pub fn screen_names(app: AppHandle) -> Vec<String> {
+    #[cfg(desktop)]
+    return crate::platform::desktop::screen_names(&app);
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        vec![]
+    }
 }
 
 #[tauri::command]

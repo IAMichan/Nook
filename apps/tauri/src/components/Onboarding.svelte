@@ -81,19 +81,19 @@
 
 <style>
   .overlay { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--notch) 70%, transparent); padding: 16px; }
-  .card { width: min(560px, 100%); max-height: 100%; overflow-y: auto; background: var(--graphite); border: 1px solid var(--line2); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .card { width: min(560px, 100%); max-height: 100%; overflow-y: auto; background: var(--graphite); border: 1px solid var(--line2); border-radius: var(--radius-composer); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
   .head { display: flex; justify-content: space-between; align-items: baseline; }
-  h2 { margin: 0; font-size: 18px; }
-  h3 { margin: 0; font-size: 15px; }
-  .progress { height: 3px; background: var(--line2); border-radius: 2px; overflow: hidden; }
+  h2 { margin: 0; font: var(--text-heading); }
+  h3 { margin: 0; font: var(--text-title); }
+  .progress { height: 3px; background: var(--line2); border-radius: 999px; overflow: hidden; }
   .progress div { height: 100%; background: var(--iris); transition: width 0.2s; }
   .body { display: flex; flex-direction: column; gap: 10px; min-height: 220px; }
   .body p { margin: 0; }
   .ok { color: var(--mint); }
   .toggles { display: flex; flex-direction: column; gap: 8px; }
   .toggles label { display: flex; gap: 8px; align-items: center; }
-  .link { background: none; border: none; padding: 0; color: var(--text2); text-align: left; font-size: 12px; text-decoration: underline; }
-  .hint { font-size: 12px; }
+  .link { background: none; border: none; padding: 0; color: var(--text2); text-align: left; font: var(--text-detail); text-decoration: underline; }
+  .hint { font: var(--text-detail); }
   .body > button { align-self: flex-start; }
   .buttons { display: flex; gap: 8px; align-items: center; }
   .spacer { flex: 1; }

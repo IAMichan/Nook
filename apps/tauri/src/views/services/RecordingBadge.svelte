@@ -35,10 +35,10 @@
 </div>
 
 <style>
-  .badge { display: flex; align-items: center; gap: 8px; height: 100vh; padding: 0 8px 0 12px; background: rgba(0, 0, 0, 0.88); border-radius: 999px; border: 1px solid var(--line2); }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff5a52; }
-  strong { font-variant-numeric: tabular-nums; font-size: 12px; }
-  .faint { font-size: 12px; white-space: nowrap; }
+  .badge { display: flex; align-items: center; gap: 8px; height: 100vh; padding: 0 8px 0 12px; background: color-mix(in srgb, var(--notch) 88%, transparent); border-radius: 999px; border: 1px solid var(--line2); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--coral); }
+  strong { font-variant-numeric: tabular-nums; font: var(--text-detail); }
+  .faint { font: var(--text-detail); white-space: nowrap; }
   .spacer { flex: 1; }
-  button { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(255, 255, 255, 0.16); border: none; }
+  button { padding: 3px 10px; border-radius: 999px; font: var(--text-detail); font-weight: 600; background: color-mix(in srgb, var(--paper) 16%, transparent); border: none; }
 </style>

@@ -13,6 +13,7 @@ mod browser;
 mod browser_tab;
 mod calls;
 mod charts;
+pub mod chats;
 mod clipboard;
 mod connectors;
 mod files;
@@ -25,6 +26,7 @@ mod screen;
 mod settings;
 mod system;
 mod terminal;
+mod ui_control;
 mod web;
 
 use std::sync::Arc;
@@ -148,6 +150,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(connectors::Hub("resend")),
         Box::new(connectors::Hub("customsources")),
         Box::new(connectors::Hub("whatsapp")),
+        Box::new(chats::Chats),
         Box::new(connectors::Mcp),
         Box::new(connectors::Sources),
         Box::new(memory::Memory),
@@ -160,6 +163,7 @@ pub fn sources() -> Vec<Box<dyn ToolSource>> {
         Box::new(plan::Plan),
         Box::new(mail::Mail),
         Box::new(system::System),
+        Box::new(ui_control::UiControl),
         Box::new(screen::Screen),
         Box::new(files::Files),
         Box::new(clipboard::Clipboard),
@@ -195,13 +199,18 @@ fn tools_of(source: &dyn ToolSource, ctx: &ToolCtx) -> Vec<LoopTool> {
         .collect()
 }
 
+fn dedup_tools(list: impl IntoIterator<Item = LoopTool>) -> Vec<LoopTool> {
+    let mut seen = std::collections::HashSet::new();
+    list.into_iter().filter(|t| seen.insert(t.name.clone())).collect()
+}
+
 pub fn tools(ctx: &ToolCtx) -> Vec<LoopTool> {
-    allowed(ctx).iter().flat_map(|s| tools_of(s.as_ref(), ctx)).filter(|t| ctx.scope.allows_tool(&t.name)).collect()
+    dedup_tools(allowed(ctx).iter().flat_map(|s| tools_of(s.as_ref(), ctx)).filter(|t| ctx.scope.allows_tool(&t.name)))
 }
 
 /// Alle tools, ook van bronnen die deze vraag niet mag gebruiken (voor de plankaart en het controleren bij uitvoeren).
 pub fn all_tools(ctx: &ToolCtx) -> Vec<LoopTool> {
-    sources().iter().flat_map(|s| tools_of(s.as_ref(), ctx)).collect()
+    dedup_tools(sources().iter().flat_map(|s| tools_of(s.as_ref(), ctx)))
 }
 
 /// De bronnen die nu gelezen kunnen worden: die met minstens één tool.

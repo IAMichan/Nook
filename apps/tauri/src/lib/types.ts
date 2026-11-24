@@ -37,10 +37,35 @@ export interface Settings {
   screenChoice: string;
   accentHex: number;
   hideWhenIdle: boolean;
+  /** How tightly Nook guards what an external brain sees (Settings › Privacy › Privacy level). */
+  privacyLevel?: "open" | "balanced" | "strict";
+  /** Resting the pointer on the closed bar opens the panel (`openOnHover` on the Mac). */
+  openOnHover?: boolean;
   panelLarge: boolean;
+  /** Quitting asks first while a session is at work (Settings › General › Confirmations). */
+  confirmQuit: boolean;
+  /** The bar shows at the top of the screen; off, only a shortcut or the tray opens it. */
+  showBar: boolean;
+  /** Every connected screen gets a bar (`notchOnAllScreens` on the Mac). */
+  barOnAllScreens?: boolean;
+  /** Apps Nook never reads, as exe names without ".exe". */
+  neverReadApps?: string[];
+  /** Settings › Notifications: how chats, Nook and suggestions show, apps switched off, quiet hours (the agents' style is
+   *  `agentNotice`). */
+  noticeRules: {
+    styles: Record<string, "card" | "strip" | "system" | "off">;
+    apps: Record<string, boolean>;
+    quietHours: { from: number; to: number; allowsUrgent: boolean } | null;
+    quietWhileWatching: boolean;
+  };
+  /** The main window opens when Nook starts (Settings › General › Bar & windows). */
+  openWindowAtLaunch: boolean;
   /// How large an agent notice is in the bar: a card ("detailed") or one line in the bar ("compact").
-  agentNotice: "detailed" | "compact" | "system";
+  agentNotice: "detailed" | "compact" | "system" | "off";
   sounds: boolean;
+  /** Which sound each moment plays, by sound name: "" or missing is Nook's own (your file first), "none" is silent,
+   *  anything else a system sound's name (`services::sounds`). */
+  soundChoices?: Record<string, string>;
   speakAnswers: boolean;
   wakeWord: boolean;
   webSearch: boolean;
@@ -89,6 +114,31 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   /** How much room text and rows get. */
   density: "compact" | "comfortable" | "spacious";
+  /** The theme in dark and in light (`lib/palette.ts`): a built-in id or an imported theme's. */
+  darkTheme: string;
+  lightTheme: string;
+  /** Imported VS Code themes (`ColorTheme` in `lib/palette.ts`). */
+  customThemes: unknown[];
+  /** Colors set one by one over the themes, per appearance: token to "#rrggbb". */
+  colorOverrides: { dark: Record<string, string>; light: Record<string, string> };
+  /** Added and removed lines: green and red, or blue and orange. */
+  diffColors: "redGreen" | "blueOrange";
+  /** Math in answers and Markdown is typeset (KaTeX, offline). */
+  renderMath: boolean;
+  /** Markdown shows its style in the composer as you type; what is sent stays plain Markdown. */
+  richComposer: boolean;
+  /** Nook offers above the field what it can do for what a conversation says; nothing runs until Do it. */
+  suggestChatActions: boolean;
+  /** The model of the brain's service that looks for those; empty is the brain's own. */
+  actionSuggestionModel: string;
+  /** Nook's face (`NookLook` on the Mac). */
+  nookLook: NookLook;
+  /** Nook as a buddy: the small moments (hello, waking up, a giggle, a blush). */
+  buddyMoments: boolean;
+  /** How Nook words his moments: "calm", "warm" or "playful". */
+  buddyTone?: "calm" | "warm" | "playful";
+  /** Your birthday as "MM-DD", empty when not set. */
+  birthday?: string;
   /** The default answer style (Settings › Instructions). */
   answerStyle: "standard" | "concise" | "explanatory" | "formal" | "casual";
   /** The user's own standing instructions, sent with every question. */
@@ -234,6 +284,24 @@ export interface ConversationSummary {
   archived: boolean;
   /** The automation whose run this conversation is. */
   scheduledTask?: string | null;
+  /** What the list's hover card says of it (`ConversationCard`). */
+  card?: ConversationCard;
+}
+
+/** What a Nook did, for the hover card in the list (`NookHoverCard` on the Mac). */
+export interface ConversationCard {
+  created: string;
+  messages: number;
+  tasksDone: number;
+  tasksTotal: number;
+  task: string | null;
+  taskActive: boolean;
+  mailTo: string | null;
+  chart: string | null;
+  sources: string[];
+  request: string;
+  summary: string;
+  scope: string | null;
 }
 
 export interface OpenLoop {
@@ -257,6 +325,8 @@ export interface PlanStep {
   summary: string;
   fields: ActionField[];
   tag: string;
+  /** The source the step acts on, for its icon and name (`StepSourceIcon`). */
+  source?: string | null;
 }
 
 export interface StreamEvent {
@@ -269,3 +339,19 @@ export interface ChatTerminal {
   folder: string;
   id: string;
 }
+
+/** Nook's face (Settings › Appearance): eyes, mouth, gloss, glow and blush (`NookLook` on the Mac). */
+export interface NookLook {
+  eyes: "round" | "bars" | "dots";
+  mouth: "expressive" | "line" | "none";
+  gloss: boolean;
+  glow: boolean;
+  cheeks: boolean;
+}
+
+/** The ready-made looks (`NookLook.presets`). */
+export const LOOK_PRESETS: { id: "minimal" | "classic" | "playful"; look: NookLook }[] = [
+  { id: "minimal", look: { eyes: "dots", mouth: "none", gloss: false, glow: false, cheeks: false } },
+  { id: "classic", look: { eyes: "bars", mouth: "none", gloss: true, glow: true, cheeks: true } },
+  { id: "playful", look: { eyes: "round", mouth: "expressive", gloss: true, glow: true, cheeks: true } },
+];

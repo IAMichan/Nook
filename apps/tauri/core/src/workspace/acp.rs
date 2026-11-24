@@ -259,6 +259,8 @@ pub struct AcpDriver {
     bridge: Option<Value>,
     /// From `initialize`.
     load: bool,
+    /// The agent takes pictures as `image` blocks (`promptCapabilities.image`); else they go as links.
+    images: bool,
     resume_method: bool,
     auth_methods: Vec<String>,
     signed_in: bool,
@@ -283,6 +285,70 @@ pub struct AcpDriver {
     signed_in_note: bool,
 }
 
+/// The pictures at the end of a message, each path on a line of its own (`ImageAttachment.splittingPaths`).
+pub fn picture_paths(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in text.trim().lines().rev() {
+        let line = line.trim();
+        let path = line.strip_prefix('"').and_then(|l| l.strip_suffix('"')).unwrap_or(line);
+        let absolute = path.starts_with('/') || path.starts_with("\\\\") || path.get(1..3).is_some_and(|d| d == ":\\" || d == ":/");
+        if !absolute || path.len() < 2 || !is_picture(path) {
+            break;
+        }
+        out.insert(0, path.to_string());
+    }
+    out
+}
+
+fn is_picture(path: &str) -> bool {
+    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+    matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "bmp" | "tif" | "tiff")
+}
+
+/// The picture types models read; others (HEIC, TIFF, BMP) go as a link to the file.
+fn mime_type(path: &str) -> Option<&'static str> {
+    match path.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+/// Larger pictures go as a link: a prompt is one JSON line.
+const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+
+fn file_uri(path: &str) -> String {
+    let p = path.replace('\\', "/");
+    let p = if p.starts_with('/') { p } else { format!("/{p}") };
+    format!("file://{}", p.replace(' ', "%20"))
+}
+
+/// The pictures of a prompt as content blocks (`AcpRPC.attachments`): the picture itself (`image`, base64) for an agent
+/// that takes them and a type it knows, else a `resource_link` to its file, which every ACP agent reads.
+pub fn attachments(paths: &[String], images: bool, read: impl Fn(&str) -> Option<Vec<u8>>) -> Vec<Value> {
+    use base64::Engine;
+    paths
+        .iter()
+        .map(|path| {
+            let kind = mime_type(path);
+            if let (true, Some(kind)) = (images, kind) {
+                if let Some(data) = read(path).filter(|d| d.len() <= MAX_IMAGE_BYTES) {
+                    let data = base64::engine::general_purpose::STANDARD.encode(data);
+                    return json!({"type": "image", "mimeType": kind, "data": data, "uri": file_uri(path)});
+                }
+            }
+            let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+            let mut link = json!({"type": "resource_link", "uri": file_uri(path), "name": name});
+            if let Some(kind) = kind {
+                link["mimeType"] = json!(kind);
+            }
+            link
+        })
+        .collect()
+}
+
 impl AcpDriver {
     pub fn new(input: &CommandInput) -> Self {
         let bridge = input.bridge.as_ref().map(|b| {
@@ -298,6 +364,7 @@ impl AcpDriver {
             permission: input.permission,
             effort: input.effort.clone().filter(|e| !e.is_empty()),
             prompt: input.prompt.clone(),
+            images: false,
             instructions: driver::instructions(input),
             resume: input.resume_session_id.clone().filter(|s| !s.is_empty()),
             bridge,
@@ -482,7 +549,10 @@ impl AcpDriver {
 
     fn send_prompt(&mut self, step: &mut Step, text: String) {
         let session = self.session.clone().unwrap_or_default();
-        let line = self.request(Call::Prompt, "session/prompt", json!({"sessionId": session, "prompt": [{"type": "text", "text": text}]}));
+        // Pictures you added (their paths end the message) also go as pictures, or links the agent opens itself.
+        let mut prompt = vec![json!({"type": "text", "text": text})];
+        prompt.extend(attachments(&picture_paths(&self.prompt), self.images, |p| std::fs::read(p).ok()));
+        let line = self.request(Call::Prompt, "session/prompt", json!({"sessionId": session, "prompt": prompt}));
         step.replies.push(line);
     }
 
@@ -498,6 +568,7 @@ impl AcpDriver {
                     json!({"loadSession": !session.is_null(), "sessionCapabilities": if session.is_null() { json!({}) } else { json!({"resume": {}}) }})
                 });
                 self.load = agent.get("loadSession").and_then(Value::as_bool).unwrap_or(false);
+                self.images = agent.pointer("/promptCapabilities/image").and_then(Value::as_bool).unwrap_or(false);
                 self.resume_method = agent.pointer("/sessionCapabilities/resume").is_some_and(Value::is_object);
                 self.auth_methods = result
                     .get("authMethods")
@@ -606,6 +677,7 @@ impl AcpDriver {
                     step.event(ClaudeEvent::TextDelta(t));
                 }
             }
+            Some("plan") => step.events.push(DriverEvent::Tasks(super::tasks::acp(update))),
             Some("agent_thought_chunk") => {
                 if let Some(t) = text(update.get("content")) {
                     let starts = self.thought.is_empty();
@@ -632,6 +704,10 @@ impl AcpDriver {
                     step.event(ClaudeEvent::ToolUse { id: call.id.clone(), name, input, nested: false });
                 }
                 self.settle(step, &call);
+            }
+            Some("available_commands_update") => {
+                let list = super::driver::SlashCommand::list(update.get("availableCommands").unwrap_or(&Value::Null));
+                step.events.push(DriverEvent::Commands(list));
             }
             Some("usage_update") => {
                 self.used = number(update.get("used")).map(|n| n as u64);
@@ -825,6 +901,8 @@ mod tests {
             working_directory: "/w".into(),
             resume_session_id: resume.map(str::to_string),
             fork_session: false,
+            resume_at: None,
+            pending_rollback: None,
             account_environment: BTreeMap::new(),
             run_id: "run-1".into(),
             profile_id: "default".into(),
@@ -963,5 +1041,30 @@ mod tests {
         assert_eq!(sent(&lines[1])["method"], "session/cancel");
         let s = d.receive(r#"{"jsonrpc":"2.0","id":5,"result":{"stopReason":"cancelled"}}"#);
         assert!(matches!(claude(&s).last(), Some(ClaudeEvent::Result(r)) if !r.is_error && r.subtype == "cancelled"));
+    }
+
+    #[test]
+    fn keeps_the_commands_the_agent_announces() {
+        let mut d = AcpDriver::new(&input(RunProvider::Grok, PermissionPolicy::Ask, None));
+        let s = d.receive(r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s-1","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"compress","description":"Shrink the context","input":null},{"name":"web","description":"Search","input":{"hint":"query"}},{"name":"two words"}]}}}"#);
+        let Some(DriverEvent::Commands(list)) = s.events.first() else { panic!("no commands: {:?}", s.events) };
+        assert_eq!(list.iter().map(|c| (c.name.as_str(), c.takes_input)).collect::<Vec<_>>(), vec![("compress", false), ("web", true)]);
+    }
+
+    #[test]
+    fn pictures_at_the_end_go_as_images_or_links() {
+        let text = "Look at this\n\nC:\\Users\\me\\shot.png\n/home/me/scan.heic";
+        let paths = picture_paths(text);
+        assert_eq!(paths, vec!["C:\\Users\\me\\shot.png".to_string(), "/home/me/scan.heic".to_string()]);
+        assert!(picture_paths("just words\n/home/me/notes.txt").is_empty());
+        let blocks = attachments(&paths, true, |_| Some(vec![1, 2, 3]));
+        assert_eq!(blocks[0]["type"], "image");
+        assert_eq!(blocks[0]["mimeType"], "image/png");
+        assert_eq!(blocks[0]["data"], "AQID");
+        assert_eq!(blocks[0]["uri"], "file:///C:/Users/me/shot.png");
+        assert_eq!(blocks[1]["type"], "resource_link");
+        assert_eq!(blocks[1]["name"], "scan.heic");
+        // An agent without image support gets links only.
+        assert!(attachments(&paths, false, |_| Some(vec![1])).iter().all(|b| b["type"] == "resource_link"));
     }
 }

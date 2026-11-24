@@ -31,10 +31,21 @@ export function offered(raw: string): string | null {
   return chars.slice(0, CHARACTER_LIMIT - 1).join("").trim() + "…";
 }
 
+/// The selection formatted as a Markdown blockquote (`> line`).
+export function formatQuote(selection: string): string {
+  return normalize(selection).split("\n").map((line) => "> " + line).join("\n");
+}
+
+/// Appends a quoted selection to an agent composer's draft, ready to type underneath (`ComposerQuotes` on the Mac).
+export function appendQuote(draft: string, selection: string): string {
+  const quote = formatQuote(selection);
+  const existing = draft.replace(/\s+$/, "");
+  return existing ? `${existing}\n\n${quote}\n\n` : `${quote}\n\n`;
+}
+
 /// The message Nook gets (and the chat shows): the selection as a Markdown quote, then what to do with it.
 export function message(selection: string, instruction: string): string {
-  const quote = selection.split("\n").map((line) => "> " + line).join("\n");
-  return [quote, instruction.trim()].filter(Boolean).join("\n\n");
+  return [formatQuote(selection), instruction.trim()].filter(Boolean).join("\n\n");
 }
 
 /// Whether a mouse-up ends a deliberate selection: a drag, or a double or triple click. A plain click leaves the
@@ -102,4 +113,45 @@ export function wanted(enabled: boolean, s: SelectionSnapshot | null): string | 
   if (!enabled || !s || s.collapsed) return null;
   if (skips(s.start) || skips(s.end)) return null;
   return offered(s.text);
+}
+
+// MARK: Messages in a conversation (`SelectionAsk.contextRange`, `chatNote` on the Mac)
+
+/// How many messages before a selection go with it as context, and how many after it (the answer it got).
+export const CONTEXT_BEFORE = 20;
+export const CONTEXT_AFTER = 3;
+
+/// The messages that go with a selection from message `first` through `last` of `count` (indices, oldest first).
+export function contextRange(first: number, last: number, count: number): [number, number] {
+  return [Math.max(Math.min(first, last) - CONTEXT_BEFORE, 0), Math.min(Math.max(first, last) + CONTEXT_AFTER, count - 1)];
+}
+
+/// Added to the hidden note for a selection in a conversation: the messages around it, as material, never as
+/// instructions. `you` is how the lines mark the user's own messages. Written in English for the brain, as the Mac's.
+export function chatNote(contact: string, transcript: string, you: string): string {
+  const withWho = contact ? ` with ${contact}` : "";
+  return `The selection comes from the user's chat${withWho}. The messages around it follow, oldest first; lines from `
+    + `"${you}" are the user's own. Use them to understand what the selection is about. When the selection is a `
+    + `message someone sent the user, answer it the way the user could reply, from what the chat shows.\n${transcript}`;
+}
+
+/// The conversation as lines "Speaker: text" for the messages `range` covers.
+export function transcript(messages: { speaker: string; text: string }[], range: [number, number]): string {
+  return messages.slice(range[0], range[1] + 1).map((m) => `${m.speaker}: ${m.text.trim()}`).filter((l) => !l.endsWith(": ")).join("\n");
+}
+
+/// Builds the hidden conversation note for a selection spanning `firstId`..`lastId` inside a message list (Nook Chat or
+/// the Chats tab). Returns null when either endpoint is missing or the surrounding messages carry no text.
+export function chatContextFromRows(
+  rows: { id: string; speaker: string; text: string }[],
+  firstId: string,
+  lastId: string,
+  contact: string,
+  you: string,
+): string | null {
+  const a = rows.findIndex((m) => m.id === firstId);
+  const b = rows.findIndex((m) => m.id === lastId);
+  if (a < 0 || b < 0) return null;
+  const body = transcript(rows, contextRange(a, b, rows.length));
+  return body ? chatNote(contact, body, you) : null;
 }

@@ -755,10 +755,8 @@ fn parse_codex(path: &Path) -> Parsed {
                         session.title = text.into();
                     }
                 }
-                "agent_message" => {
-                    if !s(payload, "message").is_empty() {
-                        session.last_reply = s(payload, "message").into();
-                    }
+                "agent_message" if !s(payload, "message").is_empty() => {
+                    session.last_reply = s(payload, "message").into();
                 }
                 "token_count" => {
                     // Het totaal van de sessie tot nu; het verschil met de vorige regel is het nieuwe gebruik.

@@ -1,17 +1,28 @@
 <script lang="ts">
   // Asking Nook about words selected anywhere in this window (`SelectionAsk` on the Mac): a small bar above the
-  // selection (Ask Nook, Explain, Translate, Copy) and, after a click, the answer in a card beside it. Mounted once per
-  // window. It costs nothing at rest: it only listens to the selection changing and the pointer going up, and reads the
-  // selection once when one was just made. The card's question goes through the same `ask` command as the chat.
+  // selection (Ask Nook, Explain, Translate, Quote in an agent session, Copy) and, after a click, the answer in a card
+  // beside it. Mounted once per window. It costs nothing at rest: it only listens to the selection changing and the
+  // pointer going up, and reads the selection once when one was just made. The card's question goes through the same
+  // `ask` command as the chat.
   import { onMount } from "svelte";
+  import { onCommands } from "../lib/commands";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { api, events } from "../lib/api";
   import { tr } from "../lib/i18n.svelte";
-  import { isDeliberate, message, origin, wanted, type Rect, type SelectionMode } from "../lib/selection-ask";
+  import {
+    appendQuote,
+    chatContextFromRows,
+    isDeliberate,
+    message,
+    origin,
+    wanted,
+    type Rect,
+    type SelectionMode,
+  } from "../lib/selection-ask";
   import { nook } from "../lib/state.svelte";
   import { toast } from "../lib/toast.svelte";
   import type { Conversation } from "../lib/types";
-  import Icon from "./Icon.svelte";
+  import Ico from "./ui/Ico.svelte";
   import MessageView from "./MessageView.svelte";
 
   const CARD_WIDTH = 400;
@@ -25,7 +36,13 @@
   let conversationId = $state<string | null>(null);
   let conversation = $state<Conversation | null>(null);
   let draft = $state("");
+  /// The messages a selection starts and ends in (`data-message-id`), plus its Chats detail container when inside the
+  /// Chats tab, so the surrounding conversation goes with the question as hidden context.
+  let within: { first: string; last: string; chatRoot: Element | null } | null = null;
+  /// When the selection is inside an agent session panel, its reply textarea receives "Quote".
+  let quoteTarget = $state<HTMLTextAreaElement | null>(null);
   let root = $state<HTMLDivElement | null>(null);
+  let answerEl = $state<HTMLDivElement | null>(null);
   let field = $state<HTMLInputElement | null>(null);
 
   const enabled = $derived(nook.settings?.selectionAsk !== false);
@@ -35,6 +52,7 @@
   // What came after the question the bar asked (that one shows as the quote on top).
   const messages = $derived(conversation?.messages.slice(1) ?? []);
   const lastId = $derived(messages[messages.length - 1]?.id);
+  const lastStream = $derived(lastId ? nook.streaming[lastId] ?? "" : "");
   const place = $derived(
     origin(
       { width: width || (stage === "card" ? CARD_WIDTH : 320), height: height || 36 },
@@ -45,10 +63,19 @@
     ),
   );
 
-  const modes: { mode: SelectionMode; icon: "sparkle" | "memory" | "globe" }[] = [
-    { mode: "answer", icon: "sparkle" },
-    { mode: "explain", icon: "memory" },
-    { mode: "translate", icon: "globe" },
+  // Follow the growing answer as tokens stream in (`.defaultScrollAnchor(.bottom, for: .sizeChanges)` on the Mac).
+  $effect(() => {
+    void messages.length;
+    void lastStream;
+    if (stage === "card" && answerEl) {
+      answerEl.scrollTop = answerEl.scrollHeight;
+    }
+  });
+
+  const modes: { mode: SelectionMode; icon: string }[] = [
+    { mode: "answer", icon: "sparkles" },
+    { mode: "explain", icon: "lightbulb" },
+    { mode: "translate", icon: "languages" },
   ];
 
   function title(mode: SelectionMode): string {
@@ -84,15 +111,29 @@
     return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
   }
 
+  /// Finds the agent session's reply textarea when the selection sits inside a session panel (outside its composer).
+  function findQuoteTarget(start: Element | null, end: Element | null): HTMLTextAreaElement | null {
+    if (!start || !end) return null;
+    if (start.closest(".composer") || end.closest(".composer")) return null;
+    const panel = start.closest(".panel");
+    if (!panel || panel !== end.closest(".panel")) return null;
+    const area = panel.querySelector<HTMLTextAreaElement>(".composer textarea");
+    return area && !area.disabled ? area : null;
+  }
+
   function look() {
     const s = document.getSelection();
     const text = s && s.rangeCount ? s.toString() : "";
-    const found = wanted(enabled, s && s.rangeCount ? { text, collapsed: s.isCollapsed, start: elementOf(s.anchorNode), end: elementOf(s.focusNode) } : null);
+    const startEl = s ? elementOf(s.anchorNode) : null;
+    const endEl = s ? elementOf(s.focusNode) : null;
+    const target = findQuoteTarget(startEl, endEl);
+    // In an agent session, Quote is offered even when Selection Ask is turned off (`quoteOnly` on the Mac).
+    const found = wanted(enabled || !!target, s && s.rangeCount ? { text, collapsed: s.isCollapsed, start: startEl, end: endEl } : null);
     if (!found || !s) {
       if (stage === "bar") hide();
       return;
     }
-    if (stage === "bar" && found === selection) return;
+    if (stage === "bar" && found === selection && target === quoteTarget) return;
     const range = s.getRangeAt(0);
     // The line the selection ends on is where the eye is; a selection over several lines uses its whole box.
     const box = range.getBoundingClientRect();
@@ -100,6 +141,19 @@
     // The card is open about something else: a new selection outside it asks about the new words instead.
     if (stage === "card") closeCard();
     selection = found;
+    quoteTarget = target;
+    const messageElOf = (el: Element | null) => el?.closest("[data-message-id]") ?? null;
+    const firstEl = messageElOf(startEl), lastEl = messageElOf(endEl);
+    const first = firstEl?.getAttribute("data-message-id") ?? null;
+    const last = lastEl?.getAttribute("data-message-id") ?? null;
+    const chatRoot = firstEl?.hasAttribute("data-chat-key") || lastEl?.hasAttribute("data-chat-key")
+      ? (firstEl ?? lastEl)?.closest(".detail") ?? null
+      : null;
+    within = first && last
+      ? { first, last, chatRoot }
+      : first || last
+        ? { first: (first ?? last)!, last: (last ?? first)!, chatRoot }
+        : null;
     anchor = { left: box.left, top: box.top, width: box.width, height: box.height };
     viewport = { width: window.innerWidth, height: window.innerHeight };
     width = 0;
@@ -150,6 +204,18 @@
   function scrolled(e: Event) {
     if (stage === "bar" && !inside(e.target)) hide();
   }
+
+  // The keys for the bar that shows over a selection (`selection.ask`, `selection.quote`), from the shell's key rules.
+  $effect(() => onCommands({
+    "selection.ask": () => {
+      if (stage !== "bar" || !selection) return false;
+      ask("answer");
+    },
+    "selection.quote": () => {
+      if (stage !== "bar" || !selection || !quoteTarget) return false;
+      quote();
+    },
+  }));
 
   onMount(() => {
     const opts = { capture: true } as const;
@@ -204,6 +270,7 @@
   /// Ask Nook, Explain or Translate in the bar: the bar becomes the card, with Nook's answer coming in.
   async function ask(mode: SelectionMode) {
     const text = selection;
+    const note = context();
     try {
       // A conversation of its own, in the background: the chat on screen stays as it is.
       const id = await api.newNookInBackground();
@@ -214,13 +281,51 @@
       width = 0;
       height = 0;
       stage = "card";
-      await api.askAboutSelection(id, message(text, instruction(mode)));
+      await api.askAboutSelection(id, message(text, instruction(mode)), note);
       await reload(id);
       field?.focus();
     } catch (e) {
       toast.error(String(e));
       dismiss();
     }
+  }
+
+  /// The messages around a selection in the conversation on screen (Nook Chat or Chats tab), as the hidden note's
+  /// context; null elsewhere.
+  function context(): string | null {
+    if (!within) return null;
+    const you = tr("Jij", "You");
+    if (within.chatRoot) {
+      const contact = within.chatRoot.querySelector(".head .name")?.textContent?.trim() ?? "";
+      const rows = Array.from(within.chatRoot.querySelectorAll<HTMLElement>(".line[data-chat-key][data-message-id]")).map((row) => ({
+        id: row.getAttribute("data-message-id") ?? "",
+        speaker: row.classList.contains("mine") ? you : (row.getAttribute("data-sender") || contact),
+        text: row.querySelector(".body .text")?.textContent ?? "",
+      }));
+      return chatContextFromRows(rows, within.first, within.last, contact, you);
+    }
+    const rows = (nook.active?.messages ?? []).map((m) => ({
+      id: m.id,
+      speaker: m.fromUser ? you : "Nook",
+      text: m.text,
+    }));
+    return chatContextFromRows(rows, within.first, within.last, "Nook", you);
+  }
+
+  /// Quotes the selection into the current agent session's reply box (`ComposerQuotes` on the Mac).
+  function quote() {
+    const text = selection;
+    const target = quoteTarget;
+    hide();
+    if (!target) return;
+    document.getSelection()?.removeAllRanges();
+    const next = appendQuote(target.value, text);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    if (setter) setter.call(target, next);
+    else target.value = next;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.focus();
+    target.setSelectionRange(next.length, next.length);
   }
 
   async function copy() {
@@ -263,11 +368,15 @@
   }
 
   function hide() {
-    if (stage === "bar") stage = "hidden";
+    if (stage === "bar") {
+      stage = "hidden";
+      quoteTarget = null;
+    }
   }
 
   function dismiss() {
     closeCard();
+    quoteTarget = null;
     stage = "hidden";
   }
 </script>
@@ -285,39 +394,54 @@
     aria-label={tr("Vraag Nook over de selectie", "Ask Nook about the selection")}
   >
     {#if stage === "bar"}
-      {#each modes as m, i (m.mode)}
-        <button class="bar-button" class:accent={m.mode === "answer"} title={title(m.mode)} onmousedown={(e) => e.preventDefault()} onclick={() => ask(m.mode)}>
-          <Icon name={m.icon} size={13} /><span>{title(m.mode)}</span>
+      {#if enabled}
+        {#each modes as m, i (m.mode)}
+          <button class="bar-button" class:accent={m.mode === "answer"} title={title(m.mode)} onmousedown={(e) => e.preventDefault()} onclick={() => ask(m.mode)}>
+            <Ico name={m.icon} size={13} /><span>{title(m.mode)}</span>
+          </button>
+          {#if i === 0}<span class="divider"></span>{/if}
+        {/each}
+      {/if}
+      {#if quoteTarget}
+        {#if enabled}<span class="divider"></span>{/if}
+        <button class="bar-button" title={tr("Citeer", "Quote")} onmousedown={(e) => e.preventDefault()} onclick={quote}>
+          <Ico name="text-quote" size={13} /><span>{tr("Citeer", "Quote")}</span>
         </button>
-        {#if i === 0}<span class="divider"></span>{/if}
-      {/each}
-      <span class="divider"></span>
+      {/if}
+      {#if enabled || quoteTarget}<span class="divider"></span>{/if}
       <button class="bar-button" title={tr("Kopieer", "Copy")} onmousedown={(e) => e.preventDefault()} onclick={copy}>
-        <Icon name="copy" size={13} /><span>{tr("Kopieer", "Copy")}</span>
+        <Ico name="copy" size={13} /><span>{tr("Kopieer", "Copy")}</span>
       </button>
     {:else}
       <header>
-        <span class="mark"><Icon name="note" size={13} /></span>
+        <span class="mark" aria-hidden="true"><Ico name="text-quote" size={13} /></span>
         <p class="quote">{selection}</p>
-        <button class="ghost icon" title={tr("Verder in de chat", "Continue in chat")} onclick={continueInChat}><Icon name="chat" size={15} /></button>
-        <button class="ghost icon" title={tr("Sluiten", "Close")} onclick={dismiss}><Icon name="x" size={15} /></button>
+        <div class="tools">
+          <button class="tool" title={tr("Verder in de chat", "Continue in chat")} aria-label={tr("Verder in de chat", "Continue in chat")} onclick={continueInChat}><Ico name="square-arrow-out-up-right" size={14} /></button>
+          <button class="tool" title={tr("Sluiten", "Close")} aria-label={tr("Sluiten", "Close")} onclick={dismiss}><Ico name="x" size={14} /></button>
+        </div>
       </header>
-      <div class="answer">
-        {#if conversation}
+      <div class="answer" bind:this={answerEl}>
+        {#if conversation && messages.length > 0}
           {#each messages as m (m.id)}
             <MessageView message={m} nookId={conversation.id} last={m.id === lastId} />
           {/each}
         {:else}
-          <p class="faint small">{tr("Even nadenken…", "Thinking…")}</p>
+          <div class="thinking">
+            <span class="spin" aria-hidden="true"></span>
+            <span>{tr("Even nadenken…", "Thinking…")}</span>
+          </div>
         {/if}
       </div>
       <form class="follow-up" onsubmit={(e) => (e.preventDefault(), sendFollowUp())}>
-        <input bind:this={field} bind:value={draft} placeholder={tr("Stel een vervolgvraag…", "Ask a follow-up…")} />
-        {#if busy}
-          <button type="button" class="ghost icon" title={tr("Stop", "Stop")} onclick={stop}><Icon name="stop" size={14} /></button>
-        {:else}
-          <button type="submit" class="ghost icon" title={tr("Verstuur", "Send")} disabled={!draft.trim()}><Icon name="arrow" size={15} /></button>
-        {/if}
+        <div class="follow-box">
+          <input bind:this={field} bind:value={draft} placeholder={tr("Stel een vervolgvraag…", "Ask a follow-up…")} />
+          {#if busy}
+            <button type="button" class="send stop" title={tr("Stop", "Stop")} aria-label={tr("Stop", "Stop")} onclick={stop}><Ico name="square" size={9} fill="currentColor" stroke={0} /></button>
+          {:else}
+            <button type="submit" class="send" title={tr("Verstuur", "Send")} aria-label={tr("Verstuur", "Send")} disabled={!draft.trim()}><Ico name="arrow-up" size={14} stroke={2.2} /></button>
+          {/if}
+        </div>
       </form>
     {/if}
   </div>
@@ -336,13 +460,22 @@
     border-radius: var(--radius-panel);
     box-shadow: var(--shadow-popover);
     user-select: none;
+    animation: sel-pop var(--motion-quick) var(--ease-out);
+  }
+  @keyframes sel-pop {
+    from { opacity: 0; transform: translateY(3px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .selection-ask { animation: none; }
   }
   .bar-button {
     display: inline-flex;
     align-items: center;
     gap: var(--space-6);
     height: 26px;
-    padding: 0 var(--space-12);
+    margin: 0;
+    padding: 0 calc(var(--space-8) + var(--space-2));
     border: none;
     border-radius: var(--radius-control);
     background: transparent;
@@ -354,14 +487,17 @@
   .bar-button :global(svg) {
     color: var(--text2);
   }
-  .bar-button.accent :global(svg) {
-    color: var(--iris);
-  }
   .bar-button.accent {
     color: var(--paper);
   }
+  .bar-button.accent :global(svg) {
+    color: var(--iris);
+  }
   .bar-button:hover {
     background: var(--smoke);
+    color: var(--paper);
+  }
+  .bar-button:hover:not(.accent) :global(svg) {
     color: var(--paper);
   }
   .divider {
@@ -376,6 +512,7 @@
     gap: 0;
     padding: 0;
     width: 400px;
+    max-width: calc(100vw - 16px);
     overflow: hidden;
     user-select: text;
   }
@@ -383,15 +520,18 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-8);
-    padding: var(--space-12) var(--space-16);
-    border-bottom: 1px solid var(--line2);
+    padding: calc(var(--space-8) + var(--space-2)) var(--space-12);
+    border-bottom: 1px solid var(--border);
   }
   .mark {
+    display: inline-flex;
+    flex: none;
     color: var(--iris);
     padding-top: var(--space-2);
   }
   .quote {
     flex: 1;
+    min-width: 0;
     margin: 0;
     font: var(--text-detail);
     color: var(--text2);
@@ -402,24 +542,109 @@
     overflow: hidden;
     white-space: pre-wrap;
   }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+  }
+  .tool {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+  }
+  .tool:hover {
+    background: var(--smoke);
+    color: var(--paper);
+  }
   .answer {
     max-height: 380px;
     min-height: 64px;
     overflow-y: auto;
-    padding: var(--space-16);
+    padding: var(--space-12);
     display: flex;
     flex-direction: column;
-    gap: var(--space-16);
+    gap: var(--space-12);
   }
-  .follow-up {
+  .thinking {
     display: flex;
     align-items: center;
     gap: var(--space-8);
-    padding: var(--space-12);
-    border-top: 1px solid var(--line2);
+    font: var(--text-detail);
+    color: var(--text3);
   }
-  .follow-up input {
+  .spin {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border: 1.5px solid var(--line2);
+    border-top-color: var(--text2);
+    border-radius: var(--radius-pill);
+    animation: sel-spin 0.8s linear infinite;
+  }
+  @keyframes sel-spin {
+    to { transform: rotate(360deg); }
+  }
+  .follow-up {
+    padding: var(--space-8);
+    border-top: 1px solid var(--border);
+  }
+  .follow-box {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+    background: var(--composer);
+    border: 1px solid var(--field-stroke);
+    border-radius: var(--radius-card);
+  }
+  .follow-box:focus-within {
+    border-color: var(--iris);
+  }
+  .follow-box input {
     flex: 1;
     min-width: 0;
+    height: 26px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: var(--paper);
+    font: var(--text-body);
+    outline: none;
+  }
+  .follow-box input::placeholder {
+    color: var(--text3);
+  }
+  .send {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--iris);
+    color: var(--on-iris);
+    cursor: pointer;
+  }
+  .send:disabled {
+    background: var(--smoke);
+    color: var(--text3);
+    cursor: default;
+  }
+  .send.stop {
+    background: var(--paper);
+    color: var(--canvas);
   }
 </style>

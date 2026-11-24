@@ -135,3 +135,91 @@ async fn a_session_is_handed_to_another_agent_and_back() {
     assert!(run.pending_handoff.as_deref().is_none_or(|t| !t.contains("- User: Fix the login")));
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_forks_natively_or_from_a_summary() {
+    let root = std::env::temp_dir().join(format!("nook-fork-{}", Uuid::new_v4()));
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let manager = manager(&root);
+    let config = NewRunConfig { task: "Fix the login".into(), project_path: project.to_string_lossy().into(), ..Default::default() };
+    let id = manager.start(config, false).unwrap();
+    assert!(manager.fork(id, None).is_err(), "not while it works");
+    assert!(manager.wait_idle(id, Duration::from_secs(10)).await);
+
+    // The whole conversation: Claude Code copies its own (`--fork-session` on the first turn).
+    let whole = manager.fork(id, None).unwrap();
+    let run = manager.run(whole).unwrap();
+    assert_eq!(run.provider_session_id.as_deref(), Some("fake-1"));
+    assert!(run.pending_handoff.is_none());
+    assert!(run.title.starts_with("Fork of"));
+    assert!(run.worktree_path.is_none() && run.checkpoints.is_empty());
+
+    // Up to before the first message: nothing of the agent's own conversation, a summary of what stays.
+    let events = manager.timeline(id);
+    let answer = events.iter().position(|e| e.kind == EventKind::Assistant).unwrap();
+    let early = manager.fork(id, Some(answer)).unwrap();
+    let run = manager.run(early).unwrap();
+    assert_eq!(run.provider_session_id, None);
+    let summary = run.pending_handoff.unwrap();
+    assert!(summary.contains("- User: Fix the login"));
+    assert!(!summary.contains("Done here."));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A turn that fails because the conversation no longer fits starts a new conversation by itself, once.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_overfull_conversation_starts_fresh_and_sends_again() {
+    let root = std::env::temp_dir().join(format!("nook-fresh-{}", Uuid::new_v4()));
+    let project = root.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let exe = root.join("claude");
+    std::fs::write(
+        &exe,
+        r#"#!/bin/sh
+read first
+dir="$(dirname "$0")"
+echo '{"type":"system","subtype":"init","session_id":"fake-1","model":"fake-model"}'
+if [ ! -f "$dir/failed-once" ]; then
+  touch "$dir/failed-once"
+  echo '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: 400 Prompt is too long","session_id":"fake-1"}'
+else
+  echo "$first" > "$dir/retry-prompt.json"
+  echo '{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Fixed."}],"usage":{"input_tokens":1,"output_tokens":1}}}'
+  echo '{"type":"result","subtype":"success","is_error":false,"result":"Fixed.","session_id":"fake-2","usage":{"input_tokens":1,"output_tokens":1}}'
+fi
+read rest
+"#,
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = exe.to_string_lossy().into_owned();
+    let hooks = Hooks {
+        executable: Box::new(move |_| Some(path.clone())),
+        account_environment: Box::new(|_| BTreeMap::new()),
+        bridge: Box::new(|| None),
+        worktree_root: Box::new(|| "/tmp".into()),
+        auto_resume_limited: Box::new(|| false),
+    };
+    let manager = Manager::new(root.join("store"), hooks, tokio::runtime::Handle::current(), |_| {});
+    let config = NewRunConfig { task: "Fix the login".into(), project_path: project.to_string_lossy().into(), ..Default::default() };
+    let id = manager.start(config, false).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while !root.join("retry-prompt.json").exists() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(manager.wait_idle(id, Duration::from_secs(10)).await);
+    let run = manager.run(id).unwrap();
+    assert_eq!(
+        run.status,
+        RunStatus::Completed,
+        "{:?} {:#?}",
+        run.status_detail,
+        manager.timeline(id).iter().map(|e| (e.kind, e.text.clone())).collect::<Vec<_>>()
+    );
+    let retry = std::fs::read_to_string(root.join("retry-prompt.json")).unwrap();
+    assert!(retry.contains("Fix the login"));
+    assert!(manager.timeline(id).iter().any(|e| e.text.contains("no longer fits")));
+    let _ = std::fs::remove_dir_all(root);
+}

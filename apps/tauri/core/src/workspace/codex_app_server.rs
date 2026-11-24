@@ -49,6 +49,8 @@ pub fn policy(mode: ExecutionMode, permission: PermissionPolicy) -> (&'static st
 enum Call {
     Initialize,
     Thread { resuming: bool },
+    Rollback,
+    Revert,
     Turn,
     Other,
 }
@@ -79,9 +81,11 @@ pub struct CodexDriver {
     prompt: String,
     instructions: String,
     resume: Option<String>,
+    pending_rollback: Option<super::rollback::PendingRollback>,
     mcp_servers: Option<Value>,
     thread: Option<String>,
     turn: Option<String>,
+    turn_counted: bool,
     approvals: HashMap<String, (RpcId, ApprovalKind)>,
     questions: HashMap<String, Question>,
     /// Reasoning items that already streamed (the first delta starts a new block).
@@ -108,9 +112,11 @@ impl CodexDriver {
             prompt: input.prompt.clone(),
             instructions: driver::instructions(input),
             resume: input.resume_session_id.clone().filter(|s| !s.is_empty()),
+            pending_rollback: input.pending_rollback.clone().filter(|p| p.is_codex() && p.num_turns > 0),
             mcp_servers,
             thread: None,
             turn: None,
+            turn_counted: false,
             approvals: HashMap::new(),
             questions: HashMap::new(),
             reasoning: vec![],
@@ -208,6 +214,7 @@ impl CodexDriver {
                 step.replies.push(line);
             }
             (Call::Thread { resuming: true }, Some(e)) if driver::session_gone(&e) => {
+                self.pending_rollback = None;
                 step.events.push(DriverEvent::System(driver::no_load_note(super::models::RunProvider::Codex)));
                 let line = self.open_thread(None);
                 step.replies.push(line);
@@ -219,13 +226,63 @@ impl CodexDriver {
                 };
                 self.thread = Some(thread.clone());
                 let model = result.get("model").and_then(Value::as_str).map(str::to_string);
-                step.event(ClaudeEvent::Initialized { session_id: thread, model });
+                step.event(ClaudeEvent::Initialized { session_id: thread.clone(), model });
+                if let Some(pending) =
+                    self.pending_rollback.as_ref().filter(|p| p.thread_id.as_deref() == Some(thread.as_str()) && p.num_turns > 0)
+                {
+                    let num_turns = pending.num_turns;
+                    let line = self.request(Call::Rollback, "thread/rollback", json!({"threadId": thread, "numTurns": num_turns}));
+                    step.replies.push(line);
+                } else {
+                    let line = self.start_turn();
+                    step.replies.push(line);
+                }
+            }
+            (Call::Rollback, None) => {
+                self.pending_rollback = None;
+                step.events.push(DriverEvent::RollbackApplied);
+                let line = self.start_turn();
+                step.replies.push(line);
+            }
+            (Call::Rollback, Some(e)) => {
+                let unsupported = {
+                    let lower = e.to_lowercase();
+                    lower.contains("method not found")
+                        || lower.contains("unknown method")
+                        || lower.contains("unsupported")
+                        || lower.contains("-32601")
+                };
+                if unsupported {
+                    if let (Some(thread), Some(before)) =
+                        (self.thread.clone(), self.pending_rollback.as_ref().and_then(|p| p.before_turn_id.clone()))
+                    {
+                        let line = self.request(Call::Revert, "thread/revert", json!({"threadId": thread, "beforeTurnId": before}));
+                        step.replies.push(line);
+                        return;
+                    }
+                }
+                self.pending_rollback = None;
+                step.events.push(DriverEvent::RollbackFailed(e));
+                let line = self.start_turn();
+                step.replies.push(line);
+            }
+            (Call::Revert, None) => {
+                self.pending_rollback = None;
+                step.events.push(DriverEvent::RollbackApplied);
+                let line = self.start_turn();
+                step.replies.push(line);
+            }
+            (Call::Revert, Some(e)) => {
+                self.pending_rollback = None;
+                step.events.push(DriverEvent::RollbackFailed(e));
                 let line = self.start_turn();
                 step.replies.push(line);
             }
             (Call::Turn, None) => {
                 if let Some(turn) = result.pointer("/turn/id").and_then(Value::as_str) {
                     self.turn = Some(turn.into());
+                    self.turn_counted = true;
+                    step.events.push(DriverEvent::TurnStarted(Some(turn.into())));
                 }
             }
             (Call::Initialize | Call::Thread { .. } | Call::Turn, Some(e)) => self.finish(step, true, "error", e, None),
@@ -241,9 +298,19 @@ impl CodexDriver {
                     self.thread = Some(id.into());
                 }
             }
+            "turn/plan/updated" => {
+                if let Some(steps) = super::tasks::codex(p) {
+                    step.events.push(DriverEvent::Tasks(steps));
+                }
+            }
             "turn/started" => {
                 if let Some(id) = p.pointer("/turn/id").and_then(Value::as_str) {
                     self.turn = Some(id.into());
+                    self.turn_counted = true;
+                    step.events.push(DriverEvent::TurnStarted(Some(id.into())));
+                } else if !self.turn_counted {
+                    self.turn_counted = true;
+                    step.events.push(DriverEvent::TurnStarted(None));
                 }
             }
             "item/agentMessage/delta" => {
@@ -279,6 +346,10 @@ impl CodexDriver {
                 });
             }
             "turn/completed" => {
+                if !self.turn_counted {
+                    self.turn_counted = true;
+                    step.events.push(DriverEvent::TurnStarted(None));
+                }
                 let turn = p.get("turn").cloned().unwrap_or(Value::Null);
                 let status = turn.get("status").and_then(Value::as_str).unwrap_or("completed").to_string();
                 let error = turn.pointer("/error/message").and_then(Value::as_str).map(str::to_string);
@@ -305,6 +376,14 @@ impl CodexDriver {
         let status = item.get("status").and_then(Value::as_str).unwrap_or(if finished { "completed" } else { "inProgress" });
         let failed = matches!(status, "failed" | "declined");
         match kind {
+            "userMessage" if !finished => {
+                let text = item
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .map(|parts| parts.iter().filter_map(|p| p.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("\n"))
+                    .unwrap_or_default();
+                step.events.push(DriverEvent::UserMessageRead(text));
+            }
             "agentMessage" if finished => {
                 if let Some(t) = item.get("text").and_then(Value::as_str).filter(|t| !t.is_empty()) {
                     step.event(ClaudeEvent::Text(t.into()));
@@ -393,6 +472,8 @@ impl CodexDriver {
                     step.event(ClaudeEvent::ToolResult { id, output: String::new(), is_error: false });
                 }
             }
+            "contextCompaction" if !finished => step.event(ClaudeEvent::CompactionStarted),
+            "contextCompaction" if finished && failed => step.event(ClaudeEvent::CompactionFailed(None)),
             "contextCompaction" if finished => step.event(ClaudeEvent::Notice("compact".into())),
             _ => {}
         }
@@ -597,12 +678,42 @@ mod tests {
             working_directory: "/w".into(),
             resume_session_id: resume.map(str::to_string),
             fork_session: false,
+            resume_at: None,
+            pending_rollback: None,
             account_environment: BTreeMap::new(),
             run_id: "run-1".into(),
             profile_id: "default".into(),
             bridge: None,
             effort: Some("high".into()),
         }
+    }
+
+    #[test]
+    fn rollback_runs_before_turn_and_falls_back_to_revert() {
+        let mut i = input(Some("th-1"));
+        i.pending_rollback = Some(super::super::rollback::PendingRollback {
+            thread_id: Some("th-1".into()),
+            num_turns: 2,
+            before_turn_id: Some("t-2".into()),
+            ..Default::default()
+        });
+        let (_spec, mut d) = launch(&i);
+        let _ = d.receive(r#"{"id":1,"result":{}}"#);
+        let s = d.receive(r#"{"id":2,"result":{"thread":{"id":"th-1"}}}"#);
+        let rb = sent(&s.replies[0]);
+        assert_eq!(rb["method"], "thread/rollback");
+        assert_eq!(rb["params"]["threadId"], "th-1");
+        assert_eq!(rb["params"]["numTurns"], 2);
+        // Unsupported method falls back to thread/revert.
+        let s = d.receive(r#"{"id":3,"error":{"code":-32601,"message":"Method not found"}}"#);
+        let rev = sent(&s.replies[0]);
+        assert_eq!(rev["method"], "thread/revert");
+        assert_eq!(rev["params"]["threadId"], "th-1");
+        assert_eq!(rev["params"]["beforeTurnId"], "t-2");
+        // Succeeding revert emits RollbackApplied and starts the turn.
+        let s = d.receive(r#"{"id":4,"result":{}}"#);
+        assert!(s.events.iter().any(|e| matches!(e, DriverEvent::RollbackApplied)));
+        assert_eq!(sent(&s.replies[0])["method"], "turn/start");
     }
 
     fn sent(line: &str) -> Value {
@@ -679,5 +790,12 @@ mod tests {
         let (approval, sandbox) = policy(ExecutionMode::Plan, PermissionPolicy::Bypass);
         assert_eq!((approval, sandbox["type"].as_str()), ("untrusted", Some("readOnly")));
         assert_eq!(policy(ExecutionMode::Agent, PermissionPolicy::Bypass).0, "never");
+    }
+
+    #[test]
+    fn says_when_it_took_in_a_message() {
+        let mut d = CodexDriver::new(&input(None));
+        let s = d.receive(r#"{"method":"item/started","params":{"item":{"id":"u1","type":"userMessage","content":[{"type":"text","text":"also fix b"}]}}}"#);
+        assert_eq!(s.events, vec![DriverEvent::UserMessageRead("also fix b".into())]);
     }
 }

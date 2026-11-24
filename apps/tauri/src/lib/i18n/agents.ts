@@ -509,7 +509,7 @@ export const table: Table = {
     es: "Elige un worktree o confirma la carpeta compartida.",
   },
   "Which folder does the agent work in?": { de: "In welchem Ordner arbeitet der Agent?", fr: "Dans quel dossier l'agent travaille-t-il ?", es: "¿En qué carpeta trabaja el agente?" },
-  "What shall we build in": { de: "Was bauen wir in", fr: "Que construisons-nous dans", es: "¿Qué construimos en" },
+  "What should we build in": { de: "Was bauen wir in", fr: "Que construisons-nous dans", es: "¿Qué construimos en" },
   "which folder": { de: "welchem Ordner", fr: "quel dossier", es: "qué carpeta" },
   "Favorites": { de: "Favoriten", fr: "Favoris", es: "Favoritos" },
   "Remove from favorites": { de: "Aus Favoriten entfernen", fr: "Retirer des favoris", es: "Quitar de favoritos" },

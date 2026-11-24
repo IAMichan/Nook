@@ -44,7 +44,7 @@
 
 <style>
   .text {
-    color: rgba(128, 128, 128, 0.85);
+    color: color-mix(in srgb, var(--text3) 85%, transparent);
     white-space: pre;
     overflow: hidden;
     height: 100vh;
@@ -55,16 +55,16 @@
   .card {
     box-sizing: border-box;
     height: 100vh;
-    background: rgba(28, 28, 32, 0.94);
+    background: color-mix(in srgb, var(--graphite) 94%, transparent);
     border: 1px solid var(--line2);
-    border-radius: 12px;
+    border-radius: var(--radius-panel);
     display: flex;
     flex-direction: column;
   }
   .grid { display: grid; }
-  .cell { position: relative; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+  .cell { position: relative; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-control); }
   .cell.on { background: color-mix(in srgb, var(--iris) 28%, transparent); }
-  .emoji { font-size: 20px; line-height: 1; }
-  .number { position: absolute; right: 3px; bottom: 1px; font-size: 9px; color: var(--text2); }
-  .footer { display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; padding: 0 4px; }
+  .emoji { font: var(--text-display); line-height: 1; }
+  .number { position: absolute; right: 3px; bottom: 1px; font: var(--text-caption); color: var(--text2); }
+  .footer { display: flex; justify-content: space-between; align-items: flex-end; font: var(--text-label); padding: 0 4px; }
 </style>

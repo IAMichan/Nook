@@ -228,7 +228,7 @@ pub fn local_system_prompt(
         "read_note",
         "read_mail",
         "read_file",
-        "read_messages",
+        "chat_inbox",
         "read_whatsapp",
         "read_bear",
         "notion_read_page",
@@ -242,7 +242,7 @@ pub fn local_system_prompt(
         "search_notes",
         "search_mail",
         "search_files",
-        "search_messages",
+        "chat_inbox",
         "search_whatsapp",
         "search_bear",
         "search_things",
@@ -629,8 +629,10 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
     );
     // Een groet heeft geen agenda, mail of scherm nodig: een klein model praat daar anders over in plaats van te antwoorden.
     let lean = small && intent.is_small_talk && request.history.is_empty() && request.screen.is_none();
-    let used_context = if lean { request.context.lines().next().unwrap_or("").to_string() } else { request.context.clone() };
-    let screen_text = request.screen.as_ref().map(|s| s.1.clone()).unwrap_or_default();
+    // What Nook gathered goes to an external brain filtered by the privacy level (`settings.shielded` on the Mac).
+    let used_context =
+        settings.shielded(&if lean { request.context.lines().next().unwrap_or("").to_string() } else { request.context.clone() });
+    let screen_text = settings.shielded(&request.screen.as_ref().map(|s| s.1.clone()).unwrap_or_default());
     // Alles moet in het venster passen: schermtekst wijkt eerst, dan context, nooit de vraag zelf.
     let budget = profile.prompt_character_budget() as i64
         - system.chars().count() as i64
@@ -650,6 +652,9 @@ pub async fn run(settings: &Settings, env: &BrainEnv, request: BrainRequest, on_
 
     let mut tool_runner = runner(offered_with_discovery, profile.rounds, if small { 8 } else { 20 });
     tool_runner.unlocked = unlocked;
+    // What a tool read goes back to the brain through the same filter (`runner.shield` on the Mac).
+    let shield_settings = settings.clone();
+    tool_runner.shield = Some(Box::new(move |text: &str| shield_settings.shielded(text)));
     // Een lokaal model dat kan redeneren, doet dat alleen bij moeilijke vragen.
     let thinking = profile::wants_thinking(text) && !intent.is_small_talk && intent.primary_action().is_none();
     let plan = execute(
@@ -719,6 +724,22 @@ async fn fill_in(
     prompt += &format!("Request: {request}");
     let plan = execute(settings, env, profile, &system, &prompt, "", &[], &[], false, false, &mut tool_runner, on_text).await?;
     Ok(tool_runner.trace.contains(&spec.name).then_some(plan))
+}
+
+/// Proposes steps with these tools without running them (`writeInChat` on the Mac): read tools run in the loop, action
+/// tools become the plan's actions, which only run after the user's click. For the steps suggested from a conversation
+/// (`action_suggestion`).
+pub async fn propose(
+    settings: &Settings,
+    env: &BrainEnv,
+    system: &str,
+    prompt: &str,
+    tools: Vec<LoopTool>,
+    rounds: usize,
+) -> Result<BrainPlan> {
+    let profile = profile_for(settings, env.memory_gb);
+    let mut tool_runner = runner(tools, rounds, 3);
+    execute(settings, env, profile, system, prompt, "", &[], &[], false, false, &mut tool_runner, None).await
 }
 
 /// Eén antwoord zonder tools (plannen, bewijs, reflectie). Met Claude doet een snel model dit kleine werk.

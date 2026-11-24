@@ -65,7 +65,7 @@ fn run_hook(args: &[String]) -> i32 {
     };
     let env = |key: &str| std::env::var(key).ok();
     // Which processes this hook runs under, so Nook knows the agent's own process; not needed for the status line.
-    let lineage = if parsed.mode == Mode::Statusline { vec![] } else { nook_core::agents::scanner::lineage(std::process::id(), 6) };
+    let lineage = if parsed.mode == Mode::Statusline { vec![] } else { nook_core::agents::scanner::lineage(std::process::id(), 12) };
     let (lines, agent, mode) = hook::messages(&parsed, &payload, &env, &lineage);
     *current.lock().unwrap_or_else(|e| e.into_inner()) = (agent.clone(), mode);
     *deadline.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now() + mode.timeout();

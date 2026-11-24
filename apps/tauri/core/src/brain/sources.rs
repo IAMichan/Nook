@@ -737,7 +737,7 @@ pub mod prefetch {
     /// De vraag wil de nieuwste of ongelezen dingen van deze bron, dus zijn overzicht helpt ook naast een zoekopdracht.
     pub fn prefers_listing(source: &str, text: &str) -> bool {
         match source {
-            "mail" | "messages" | "whatsapp" => has(UNREAD, text) || has(REPLY, text) || has(PENDING, text),
+            "mail" | "messages" | "whatsapp" | "chats" => has(UNREAD, text) || has(REPLY, text) || has(PENDING, text),
             "notes" => has(r"recent\w*|laatst\w*|nieuwst\w*|latest|newest|neueste?n?|letzte?n?", text),
             _ => false,
         }
@@ -753,10 +753,8 @@ pub mod prefetch {
                     (2, json!({"days": 7}))
                 }
             }
-            "whatsapp_open_chats" | "messages_open_chats" => {
-                (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 2 }, json!({}))
-            }
-            "whatsapp_live" => (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 1 }, json!({})),
+            "whatsapp_open_chats" => (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 2 }, json!({})),
+            "whatsapp_live" | "chat_inbox" => (if has(UNREAD, text) || has(REPLY, text) || has(PENDING, text) { 0 } else { 1 }, json!({})),
             "list_notes" => (1, json!({"limit": 8})),
             "list_reminders" | "read_browser_tab" => (1, json!({})),
             _ => (5, json!({})),

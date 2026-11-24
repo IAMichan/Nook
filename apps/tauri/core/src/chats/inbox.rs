@@ -37,6 +37,208 @@ pub struct InboxMessage {
     /// Deleted for everyone: the row stays, without its words or file.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deleted: bool,
+    /// The message this one answers (Nook's id of it), shown quoted at the top of its bubble.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+    /// The reactions on it, when its app says them; `None` leaves what Nook knows as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reactions: Option<Vec<Reaction>>,
+    /// What it said before it was edited or deleted for everyone, oldest first (`ChatVersion`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<MessageVersion>,
+    /// A poll this message asks, with the votes Nook knows (`ChatPoll`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<super::poll::ChatPoll>,
+    /// Someone came into the group or went out of it: the chat shows a centred line, not a message (`text` stays empty).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membership: Option<super::membership::ChatMembership>,
+    /// The group itself changed (a new name, picture...): a centred line like `membership`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_change: Option<super::membership::ChatGroupChange>,
+}
+
+/// One person in a group and how far your message got with them (`ChatReader` on the Mac).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageReader {
+    pub name: String,
+    pub receipt: Receipt,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<DateTime<Utc>>,
+}
+
+/// Extra receipt details kept per message id on a thread (`read_at`, group `read_by`, per-person `readers`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MessageReadDetail {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readers: Vec<MessageReader>,
+}
+
+impl MessageReadDetail {
+    pub fn is_empty(&self) -> bool {
+        self.read_at.is_none() && self.read_by.is_empty() && self.readers.is_empty()
+    }
+
+    pub fn merge_from(&mut self, incoming: &MessageReadDetail) {
+        if incoming.read_at.is_some() && self.read_at.is_none() {
+            self.read_at = incoming.read_at;
+        }
+        for who in &incoming.read_by {
+            if !who.is_empty() && !self.read_by.iter().any(|existing| existing.eq_ignore_ascii_case(who)) {
+                self.read_by.push(who.clone());
+            }
+        }
+        for reader in &incoming.readers {
+            if let Some(existing) = self.readers.iter_mut().find(|r| r.name.eq_ignore_ascii_case(&reader.name)) {
+                let next = existing.receipt.advanced(reader.receipt);
+                if next != existing.receipt {
+                    existing.receipt = next;
+                    if reader.date.is_some() {
+                        existing.date = reader.date;
+                    }
+                } else if existing.date.is_none() && reader.date.is_some() {
+                    existing.date = reader.date;
+                }
+            } else if !reader.name.is_empty() {
+                self.readers.push(reader.clone());
+            }
+        }
+    }
+}
+
+/// A message serialized for the interface with filled ticks and optional `read_at` / `read_by` / `readers`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilledMessage {
+    #[serde(flatten)]
+    pub message: InboxMessage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readers: Vec<MessageReader>,
+}
+
+/// Detailed metadata for one message (`MessageInfoPopover` on macOS, CH-47): sent/delivered/read timestamps,
+/// sender handle, app/account, and version history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageInfo {
+    pub id: String,
+    pub chat_key: String,
+    pub app: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub sender: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
+    pub from_me: bool,
+    pub sent_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<Receipt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readers: Vec<MessageReader>,
+    pub edited: bool,
+    pub deleted: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<MessageVersion>,
+}
+
+/// Messages you deleted for yourself, per chat (`ChatHiddenMessages` on macOS, CH-47): the chat no longer shows them
+/// locally, even when the bridge brings them in again at its next read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ChatHiddenMessages {
+    pub hidden: HashMap<String, HashSet<String>>,
+}
+
+impl ChatHiddenMessages {
+    pub fn is_empty(&self) -> bool {
+        self.hidden.is_empty() || self.hidden.values().all(HashSet::is_empty)
+    }
+
+    pub fn ids(&self, chat: &str) -> HashSet<String> {
+        self.hidden.get(chat).cloned().unwrap_or_default()
+    }
+
+    pub fn is_hidden(&self, chat: &str, message_id: &str) -> bool {
+        self.hidden.get(chat).is_some_and(|set| set.contains(message_id))
+    }
+
+    /// Hides `message_id` in `chat` from now on. Returns `true` if newly hidden.
+    pub fn hide(&mut self, chat: &str, message_id: &str) -> bool {
+        if chat.is_empty() || message_id.is_empty() {
+            return false;
+        }
+        self.hidden.entry(chat.to_string()).or_default().insert(message_id.to_string())
+    }
+
+    /// Unhides `message_id` in `chat`.
+    pub fn unhide(&mut self, chat: &str, message_id: &str) -> bool {
+        let Some(set) = self.hidden.get_mut(chat) else {
+            return false;
+        };
+        let removed = set.remove(message_id);
+        if set.is_empty() {
+            self.hidden.remove(chat);
+        }
+        removed
+    }
+
+    /// Filters a slice of items down to those not hidden in `chat`.
+    pub fn visible<T>(&self, items: Vec<T>, chat: &str, id_of: impl Fn(&T) -> &str) -> Vec<T> {
+        let Some(gone) = self.hidden.get(chat).filter(|s| !s.is_empty()) else {
+            return items;
+        };
+        items.into_iter().filter(|item| !gone.contains(id_of(item))).collect()
+    }
+
+    /// Loads `chat-hidden.json` from `path` (or returns empty if missing/invalid).
+    pub fn load(path: &std::path::Path) -> Self {
+        std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    }
+
+    /// Saves `chat-hidden.json` to `path`.
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let json = serde_json::to_string(&self.hidden).map_err(|e| e.to_string())?;
+        std::fs::write(path, json).map_err(|e| e.to_string())
+    }
+}
+
+/// An earlier text of a message and until when it said that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageVersion {
+    pub text: String,
+    pub replaced: DateTime<Utc>,
+}
+
+/// One emoji on a message and who put it there (`ChatReactions` on the Mac).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reaction {
+    pub emoji: String,
+    /// Who reacted with it, by name; "" for you.
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// You are one of them.
+    #[serde(default)]
+    pub mine: bool,
 }
 
 impl InboxMessage {
@@ -53,17 +255,51 @@ impl InboxMessage {
             mentions_me: false,
             edited: false,
             deleted: false,
+            reply_to: None,
+            reactions: None,
+            versions: vec![],
+            poll: None,
+            membership: None,
+            group_change: None,
         }
     }
 
-    /// Someone else's message: what "unread" and "read" are about.
+    /// A line about who is in the group, as the apps show it (yours when you did it).
+    pub fn membership_notice(id: impl Into<String>, date: DateTime<Utc>, membership: super::membership::ChatMembership) -> Self {
+        let mut line = Self::new(id, String::new(), date, membership.by_me());
+        line.membership = Some(membership);
+        line
+    }
+
+    /// A line about the group itself changing (yours when you did it, unless the app says whose it is).
+    pub fn group_notice(
+        id: impl Into<String>,
+        date: DateTime<Utc>,
+        change: super::membership::ChatGroupChange,
+        from_me: Option<bool>,
+    ) -> Self {
+        let mut line = Self::new(id, String::new(), date, from_me.unwrap_or_else(|| change.by_me()));
+        line.group_change = Some(change);
+        line
+    }
+
+    /// A line about the group rather than a message.
+    pub fn is_notice(&self) -> bool {
+        self.membership.is_some() || self.group_change.is_some()
+    }
+
+    /// Someone else's message: what "unread" and "read" are about. A change in who is in a group does none of that.
     pub fn is_incoming(&self) -> bool {
-        !self.from_me
+        !self.from_me && !self.is_notice()
     }
 
     /// The message as it shows once deleted for everyone: no words, no file.
     pub fn withdrawn(&self) -> Self {
         let mut copy = self.clone();
+        // What it said stays readable under "Before it was deleted".
+        if !copy.text.is_empty() && !copy.deleted {
+            copy.versions.push(MessageVersion { text: copy.text.clone(), replaced: Utc::now() });
+        }
         copy.text = String::new();
         copy.media = ChatMedia::None;
         copy.deleted = true;
@@ -89,6 +325,8 @@ pub struct BridgedChat {
     /// The app's own id for the chat; chats with one are keyed by it, others by their name.
     pub chat_id: Option<String>,
     pub account: Option<String>,
+    /// What the app says of the chat itself (`ChatProfile`); `None` leaves what Nook knows as it is.
+    pub profile: Option<super::ChatProfile>,
     pub kind: Option<ChatKind>,
     /// The person's number or address, for a person's chat.
     pub handle: Option<String>,
@@ -100,10 +338,14 @@ pub struct BridgedChat {
     /// The app still holds the chat unread (its own read mark), when it says so.
     pub waits_in_app: Option<bool>,
     pub muted_in_app: Option<bool>,
+    pub pinned_in_app: Option<bool>,
+    pub archived_in_app: Option<bool>,
     /// The app keeps the messages, Nook only shows them: they never reach the disk (`forDisk`).
     pub ephemeral: bool,
     /// A group you left or a chat deleted in the app: it goes, as one removed in Nook.
     pub gone: bool,
+    /// Per-message read details (`read_at`, group `read_by`, per-person `readers`) keyed by message id.
+    pub read_details: HashMap<String, MessageReadDetail>,
 }
 
 /// One chat in the inbox (`InboxThread` on the Mac).
@@ -141,6 +383,9 @@ pub struct InboxThread {
     pub account: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ChatKind>,
+    /// What the app says of the chat itself: a group's description and admins, a person's number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<super::ChatProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -151,8 +396,22 @@ pub struct InboxThread {
     pub waits_in_app: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub muted_in_app: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_in_app: Option<bool>,
+    /// Pinned to the top of the Chats list in Nook (and synced in-app where supported).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
+    /// Archived in Nook (and in its app where supported).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub archived: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ephemeral: bool,
+    /// Per-message read details (`read_at`, group `read_by`, per-person `readers`) keyed by message id.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub read_details: HashMap<String, MessageReadDetail>,
+    /// People currently typing in this chat (live ephemeral state; cleared before writing to disk).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub typing: Vec<String>,
 }
 
 impl InboxThread {
@@ -174,12 +433,18 @@ impl InboxThread {
             chat_id: None,
             account: None,
             kind: None,
+            profile: None,
             handle: None,
             has_older: None,
             activity: None,
             waits_in_app: None,
             muted_in_app: None,
+            pinned_in_app: None,
+            pinned: false,
+            archived: false,
             ephemeral: false,
+            read_details: HashMap::new(),
+            typing: vec![],
         }
     }
 
@@ -216,6 +481,199 @@ impl InboxThread {
     pub fn read_state(&self) -> ChatReadState {
         ChatReadState::of(self.unread, self.app_unread, self.newest_incoming(), self.read_in_nook, self.read_in_app, self.waits_in_app)
     }
+
+    /// Whether what they wrote last looks like phishing or a scam (`InboxThread.trust` on the Mac): their newest up to
+    /// three non-deleted incoming messages, judged by who the chat says they are (name + email handle if present) and
+    /// whether you ever wrote in this chat.
+    pub fn trust(&self) -> crate::brain::message_trust::Verdict {
+        let incoming: Vec<&str> = self
+            .messages
+            .iter()
+            .filter(|m| m.is_incoming() && !m.deleted)
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|m| m.text.as_str())
+            .collect();
+        if incoming.is_empty() {
+            return crate::brain::message_trust::Verdict::default();
+        }
+        let sender = match self
+            .handle
+            .as_deref()
+            .map(str::trim)
+            .filter(|h| h.contains('@') && !h.ends_with("@s.whatsapp.net") && !h.ends_with("@g.us") && !h.ends_with("@lid"))
+        {
+            Some(email) => format!("{} <{email}>", self.name),
+            None => self.name.clone(),
+        };
+        let known = self.messages.iter().any(|m| m.from_me);
+        crate::brain::message_trust::assess(&sender, "", &incoming.join("\n"), known)
+    }
+
+    /// Whether Nook may automatically suggest a reply in the empty composer field: the newest non-deleted message must
+    /// be someone else's AND the thread must not look like phishing or a scam (CH-39).
+    pub fn should_suggest_reply(&self) -> bool {
+        let last_is_theirs = self.messages.iter().rev().find(|m| !m.deleted && !m.is_notice()).is_some_and(|m| !m.from_me);
+        last_is_theirs && !self.trust().is_suspicious()
+    }
+
+    /// This thread's messages with ticks and group read receipts propagated to older outgoing messages (`ChatReceipts`).
+    pub fn filled_messages(&self) -> Vec<FilledMessage> {
+        fill_messages(&self.messages, &self.read_details, !self.is_group())
+    }
+
+    /// Detailed metadata for one message in this thread (`MessageInfoPopover`, CH-47).
+    pub fn message_info(&self, id: &str) -> Option<MessageInfo> {
+        let filled = self.filled_messages().into_iter().find(|f| f.message.id == id)?;
+        let msg = filled.message;
+        let sender = if msg.from_me {
+            "You".to_string()
+        } else if !msg.sender.is_empty() {
+            msg.sender.clone()
+        } else {
+            self.name.clone()
+        };
+        let handle = msg.sender_id.clone().or_else(|| (!msg.from_me).then(|| self.handle.clone()).flatten());
+        Some(MessageInfo {
+            id: msg.id,
+            chat_key: self.id.clone(),
+            app: self.app.clone(),
+            account: self.account.clone(),
+            sender,
+            sender_id: msg.sender_id,
+            handle,
+            from_me: msg.from_me,
+            sent_at: msg.date,
+            receipt: msg.receipt,
+            read_at: filled.read_at,
+            read_by: filled.read_by,
+            readers: filled.readers,
+            edited: msg.edited,
+            deleted: msg.deleted,
+            versions: msg.versions,
+        })
+    }
+
+    /// The newest message with filled ticks and read details (for list summaries).
+    pub fn filled_last(&self) -> Option<FilledMessage> {
+        self.filled_messages().pop()
+    }
+}
+
+/// Your messages' ticks as a chat shows them, oldest first (`ChatReceipts.filled` on the Mac): older outgoing messages
+/// without an explicit receipt still get at least `Sent` and advance to match any later outgoing message; in a private
+/// chat, an incoming reply after yours implies delivery.
+pub fn filled_receipts(messages: &[InboxMessage], is_private: bool) -> Vec<Option<Receipt>> {
+    let mut later: Option<Receipt> = None;
+    let mut later_went_out = false;
+    let mut theirs_later = false;
+    let mut out = vec![None; messages.len()];
+    for index in (0..messages.len()).rev() {
+        let message = &messages[index];
+        if !message.from_me {
+            theirs_later = true;
+            continue;
+        }
+        let mut receipt = message.receipt.unwrap_or(Receipt::Sent);
+        if receipt == Receipt::Pending && later_went_out {
+            receipt = Receipt::Sent;
+        }
+        if receipt >= Receipt::Sent {
+            if let Some(l) = later {
+                if l > receipt {
+                    receipt = l;
+                }
+            }
+        }
+        if receipt == Receipt::Sent && is_private && theirs_later {
+            receipt = Receipt::Delivered;
+        }
+        if receipt >= Receipt::Sent {
+            later = Some(later.map_or(receipt, |l| l.max(receipt)));
+        }
+        if message.receipt.is_some_and(|said| said >= Receipt::Sent) {
+            later_went_out = true;
+        }
+        out[index] = Some(receipt);
+    }
+    out
+}
+
+/// Returns `FilledMessage`s with filled receipts and propagated group `read_by` / `readers` on older outgoing
+/// messages (`ChatReceipts.filled` + `ChatReceipts.filledReaders` on the Mac).
+pub fn fill_messages(messages: &[InboxMessage], details: &HashMap<String, MessageReadDetail>, is_private: bool) -> Vec<FilledMessage> {
+    let receipts = filled_receipts(messages, is_private);
+    let mut out: Vec<FilledMessage> = messages
+        .iter()
+        .zip(receipts)
+        .map(|(msg, receipt)| {
+            let mut copy = msg.clone();
+            if copy.from_me {
+                copy.receipt = receipt;
+            }
+            let detail = details.get(&msg.id).cloned().unwrap_or_default();
+            FilledMessage { message: copy, read_at: detail.read_at, read_by: detail.read_by, readers: detail.readers }
+        })
+        .collect();
+    if !is_private {
+        // Someone who read or spoke after an outgoing message has also read the earlier ones.
+        let mut later_readers: HashMap<String, (String, Receipt)> = HashMap::new();
+        let mut spoken: HashMap<String, (String, DateTime<Utc>)> = HashMap::new();
+        for msg in out.iter_mut().rev() {
+            if !msg.message.from_me {
+                let name = msg.message.sender.trim();
+                if !name.is_empty() {
+                    spoken.insert(name.to_lowercase(), (name.to_string(), msg.message.date));
+                }
+                continue;
+            }
+            for (lower, (name, when)) in &spoken {
+                if let Some(existing) = msg.readers.iter_mut().find(|r| r.name.to_lowercase() == *lower) {
+                    if existing.receipt < Receipt::Read {
+                        existing.receipt = Receipt::Read;
+                        if existing.date.is_none() {
+                            existing.date = Some(*when);
+                        }
+                    }
+                } else {
+                    msg.readers.push(MessageReader { name: name.clone(), receipt: Receipt::Read, date: Some(*when) });
+                }
+                if !msg.read_by.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                    msg.read_by.push(name.clone());
+                }
+            }
+            for (lower, (name, step)) in &later_readers {
+                if let Some(existing) = msg.readers.iter_mut().find(|r| r.name.to_lowercase() == *lower) {
+                    if *step > existing.receipt {
+                        existing.receipt = *step;
+                    }
+                } else {
+                    msg.readers.push(MessageReader { name: name.clone(), receipt: *step, date: None });
+                }
+                if *step == Receipt::Read && !msg.read_by.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                    msg.read_by.push(name.clone());
+                }
+            }
+            for name in &msg.read_by {
+                if !msg.readers.iter().any(|r| r.name.eq_ignore_ascii_case(name)) {
+                    msg.readers.push(MessageReader { name: name.clone(), receipt: Receipt::Read, date: msg.read_at });
+                }
+            }
+            for reader in &msg.readers {
+                if reader.receipt >= Receipt::Delivered && !reader.name.is_empty() {
+                    let key = reader.name.to_lowercase();
+                    later_readers
+                        .entry(key)
+                        .and_modify(|(_, r)| *r = (*r).max(reader.receipt))
+                        .or_insert_with(|| (reader.name.clone(), reader.receipt));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Where a chat stands, the same for every app (`ChatReadState` on the Mac).
@@ -275,6 +733,9 @@ pub struct ChatInbox {
     /// Chats you removed, and when: a bridge brings back only what is newer, not the history you threw away.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub removed: HashMap<String, DateTime<Utc>>,
+    /// Messages deleted for you alone (`ChatHiddenMessages` on the Mac, CH-47), per chat key.
+    #[serde(default, skip_serializing_if = "ChatHiddenMessages::is_empty")]
+    pub hidden: ChatHiddenMessages,
 }
 
 impl ChatInbox {
@@ -350,15 +811,14 @@ impl ChatInbox {
             return true;
         }
         let gone = self.removed.get(&key).copied();
-        let messages: Vec<InboxMessage> = match gone {
-            Some(gone) => chat.messages.iter().filter(|m| m.date > gone).cloned().collect(),
-            None => chat.messages.clone(),
-        };
+        let messages: Vec<InboxMessage> =
+            chat.messages.iter().filter(|m| gone.is_none_or(|g| m.date > g) && !self.hidden.is_hidden(&key, &m.id)).cloned().collect();
         let described = known.as_ref().is_some_and(|k| {
             chat.unread.is_some()
                 || chat.members.is_some()
                 || chat.listed
                 || !chat.deleted.is_empty()
+                || !chat.read_details.is_empty()
                 || chat.avatar.as_ref().is_some_and(|a| Some(a) != k.avatar.as_ref())
                 || chat.account.as_ref().is_some_and(|a| Some(a) != k.account.as_ref())
                 || chat.kind.is_some_and(|c| Some(c) != k.kind)
@@ -368,6 +828,8 @@ impl ChatInbox {
                 || chat.activity.is_some_and(|a| Some(a) != k.activity)
                 || chat.waits_in_app.is_some_and(|w| Some(w) != k.waits_in_app)
                 || chat.muted_in_app.is_some_and(|m| Some(m) != k.muted_in_app)
+                || chat.pinned_in_app.is_some_and(|p| Some(p) != k.pinned_in_app)
+                || chat.archived_in_app.is_some_and(|a| a != k.archived)
         });
         if messages.is_empty() && !described && !(known.is_none() && gone.is_none() && chat.listed) {
             return false;
@@ -393,6 +855,9 @@ impl ChatInbox {
                 kept.edited = true;
             }
             if !message.text.is_empty() && kept.text != message.text {
+                if !kept.text.is_empty() {
+                    kept.versions.push(MessageVersion { text: kept.text.clone(), replaced: now });
+                }
                 kept.text = message.text.clone();
             }
             // A better name for who wrote it (the app learned it since).
@@ -410,6 +875,22 @@ impl ChatInbox {
             }
             if message.mentions_me {
                 kept.mentions_me = true;
+            }
+            if message.reply_to.is_some() && kept.reply_to != message.reply_to {
+                kept.reply_to = message.reply_to.clone();
+            }
+            if message.reactions.is_some() && kept.reactions != message.reactions {
+                kept.reactions = message.reactions.clone();
+            }
+            // A poll read again: its app's own counts win; a WhatsApp poll keeps the ballots Nook gathered for it.
+            if let Some(poll) = &message.poll {
+                if kept.poll.is_none()
+                    || (poll.ballots.is_empty()
+                        && kept.poll.as_ref().is_none_or(|k| k.ballots.is_empty())
+                        && kept.poll.as_ref() != Some(poll))
+                {
+                    kept.poll = Some(poll.clone());
+                }
             }
         }
         if !chat.deleted.is_empty() {
@@ -466,6 +947,17 @@ impl ChatInbox {
             let extra = thread.messages.len() - keeps;
             thread.messages.drain(..extra);
         }
+        for (id, detail) in &chat.read_details {
+            if detail.is_empty() {
+                continue;
+            }
+            let entry = thread.read_details.entry(id.clone()).or_default();
+            entry.merge_from(detail);
+        }
+        if !thread.read_details.is_empty() {
+            let live_ids: HashSet<&str> = thread.messages.iter().map(|m| m.id.as_str()).collect();
+            thread.read_details.retain(|id, d| live_ids.contains(id.as_str()) && !d.is_empty());
+        }
         if let Some(activity) = chat.activity {
             if thread.activity.is_none_or(|a| activity > a) {
                 thread.activity = Some(activity);
@@ -500,6 +992,9 @@ impl ChatInbox {
         if chat.members.is_some() {
             thread.members = chat.members;
         }
+        if chat.profile.is_some() {
+            thread.profile = chat.profile;
+        }
         if chat.account.is_some() {
             thread.account = chat.account;
         }
@@ -517,6 +1012,13 @@ impl ChatInbox {
         }
         if chat.muted_in_app.is_some() {
             thread.muted_in_app = chat.muted_in_app;
+        }
+        if let Some(pinned) = chat.pinned_in_app {
+            thread.pinned_in_app = Some(pinned);
+            thread.pinned = pinned;
+        }
+        if let Some(archived) = chat.archived_in_app {
+            thread.archived = archived;
         }
         if chat.ephemeral {
             thread.ephemeral = true;
@@ -536,11 +1038,22 @@ impl ChatInbox {
         let Some(thread) = self.threads.get_mut(key) else { return false };
         let wanted: HashSet<&String> = ids.iter().collect();
         let mut changed = false;
+        let now = Utc::now();
+        let mut stamped: Vec<String> = Vec::new();
         for m in thread.messages.iter_mut().filter(|m| m.from_me && wanted.contains(&m.id)) {
             let next = Some(m.receipt.unwrap_or(Receipt::Sent).advanced(receipt));
             if next != m.receipt {
                 m.receipt = next;
                 changed = true;
+                if next == Some(Receipt::Read) {
+                    stamped.push(m.id.clone());
+                }
+            }
+        }
+        for id in stamped {
+            let entry = thread.read_details.entry(id).or_default();
+            if entry.read_at.is_none() {
+                entry.read_at = Some(now);
             }
         }
         changed
@@ -627,6 +1140,106 @@ impl ChatInbox {
         }
     }
 
+    /// Your own message got new words (after its app took them).
+    pub fn edit_message(&mut self, key: &str, id: &str, text: &str) {
+        if let Some(m) = self.message_mut(key, id) {
+            if m.text != text {
+                if !m.text.is_empty() {
+                    m.versions.push(MessageVersion { text: m.text.clone(), replaced: Utc::now() });
+                }
+                m.text = text.to_string();
+            }
+            m.edited = true;
+        }
+    }
+
+    /// Deleted for everyone: the row stays, without its words or file.
+    pub fn withdraw_message(&mut self, key: &str, id: &str) {
+        if let Some(m) = self.message_mut(key, id) {
+            *m = m.withdrawn();
+        }
+    }
+
+    /// Deleted for everyone (`delete_for_everyone`, CH-47): withdraws the message in place, preserving its earlier version.
+    pub fn delete_for_everyone(&mut self, key: &str, id: &str) {
+        self.withdraw_message(key, id);
+    }
+
+    /// Deleted for you: records `id` in `hidden` so future reads do not bring it back, and removes it from the chat in Nook.
+    pub fn forget_message(&mut self, key: &str, id: &str) {
+        self.hidden.hide(key, id);
+        if let Some(thread) = self.threads.get_mut(key) {
+            thread.messages.retain(|m| m.id != id);
+            thread.read_details.remove(id);
+        }
+    }
+
+    /// Deleted for you alone (`delete_for_me`, CH-47): hides the message locally and removes it from the thread.
+    pub fn delete_for_me(&mut self, key: &str, id: &str) {
+        self.forget_message(key, id);
+    }
+
+    /// Detailed metadata for one message in `key` (`message_info`, CH-47).
+    pub fn message_info(&self, key: &str, id: &str) -> Option<MessageInfo> {
+        self.threads.get(key)?.message_info(id)
+    }
+
+    /// Someone's vote on a poll in this chat, by the poll's message id (WhatsApp sends votes one by one). False when the
+    /// poll is not here.
+    pub fn ballot(&mut self, key: &str, poll: &str, voter: &str, ballot: super::poll::Ballot) -> bool {
+        let Some(m) = self.message_mut(key, poll) else { return false };
+        let Some(p) = m.poll.as_mut() else { return false };
+        p.apply_ballot(voter, ballot);
+        true
+    }
+
+    /// Your vote shown at once, before the app confirms it (`ChatPoll.voting`).
+    pub fn vote_mine(&mut self, key: &str, poll: &str, choice: &[String]) {
+        if let Some(p) = self.message_mut(key, poll).and_then(|m| m.poll.as_mut()) {
+            if p.ballots.is_empty() {
+                *p = p.voting(choice);
+            } else {
+                p.apply_ballot("\u{1}me", super::poll::Ballot { name: String::new(), mine: true, choice: choice.to_vec() });
+            }
+        }
+    }
+
+    /// Your reaction on a message: `emoji`, or none ("" takes yours off). One reaction of yours per message, as the apps
+    /// have it.
+    pub fn react_mine(&mut self, key: &str, id: &str, emoji: &str) {
+        self.react_as(key, id, emoji, "");
+    }
+
+    /// Someone's reaction on a message (`who` by name, "" for you), in place of the one they had: an empty `emoji` takes
+    /// theirs off. As the apps have it, everyone has one reaction per message.
+    pub fn react_as(&mut self, key: &str, id: &str, emoji: &str, who: &str) {
+        let Some(m) = self.message_mut(key, id) else { return };
+        let mut list = m.reactions.clone().unwrap_or_default();
+        for r in &mut list {
+            if let Some(at) = r.from.iter().position(|w| w == who) {
+                r.from.remove(at);
+                if who.is_empty() {
+                    r.mine = false;
+                }
+            }
+        }
+        list.retain(|r| !r.from.is_empty());
+        if !emoji.is_empty() {
+            match list.iter_mut().find(|r| r.emoji == emoji) {
+                Some(r) => {
+                    r.mine |= who.is_empty();
+                    r.from.push(who.to_string());
+                }
+                None => list.push(Reaction { emoji: emoji.to_string(), from: vec![who.to_string()], mine: who.is_empty() }),
+            }
+        }
+        m.reactions = Some(list);
+    }
+
+    fn message_mut(&mut self, key: &str, id: &str) -> Option<&mut InboxMessage> {
+        self.threads.get_mut(key)?.messages.iter_mut().find(|m| m.id == id)
+    }
+
     /// Every chat with something new read in Nook.
     pub fn mark_all_read(&mut self, date: DateTime<Utc>) {
         let keys: Vec<String> = self.threads.iter().filter(|(_, t)| t.unread > 0).map(|(k, _)| k.clone()).collect();
@@ -639,6 +1252,30 @@ impl ChatInbox {
         if let Some(thread) = self.threads.get_mut(key).filter(|_| !name.is_empty()) {
             thread.name = name.to_string();
         }
+    }
+
+    /// Pins or unpins a chat in Nook (and records the in-app state when synced with the app).
+    pub fn set_pinned(&mut self, key: &str, pinned: bool, in_app: bool) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        thread.pinned = pinned;
+        if in_app {
+            thread.pinned_in_app = Some(pinned);
+        }
+        true
+    }
+
+    /// Mutes or unmutes a chat.
+    pub fn set_muted(&mut self, key: &str, muted: bool) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        thread.muted_in_app = Some(muted);
+        true
+    }
+
+    /// Archives or unarchives a chat.
+    pub fn set_archived(&mut self, key: &str, archived: bool) -> bool {
+        let Some(thread) = self.threads.get_mut(key) else { return false };
+        thread.archived = archived;
+        true
     }
 
     /// Removes a chat; its app brings back only what is newer.
@@ -683,6 +1320,9 @@ impl ChatInbox {
         let mut copy = self.clone();
         let ids: HashSet<String> = copy.threads.values().filter(|t| t.ephemeral).map(|t| t.id.clone()).collect();
         copy.forget_messages(&ids);
+        for thread in copy.threads.values_mut() {
+            thread.typing.clear();
+        }
         copy
     }
 
@@ -695,6 +1335,7 @@ impl ChatInbox {
                 thread.activity = Some(last);
             }
             thread.messages.clear();
+            thread.read_details.clear();
         }
     }
 
@@ -764,6 +1405,59 @@ mod tests {
 
     fn at(min: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 11, 17, 12, 0, 0).unwrap() + Duration::minutes(min)
+    }
+
+    #[test]
+    fn edits_and_deletions_keep_what_it_said_before() {
+        let mut inbox = ChatInbox::default();
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, false)]), at(1));
+        let key = ChatInbox::key("telegram", "1");
+        let mut edited = msg("a", 0, false);
+        edited.text = "second".into();
+        edited.edited = true;
+        inbox.merge(chat("telegram", "1", vec![edited]), at(2));
+        inbox.edit_message(&key, "a", "third");
+        inbox.withdraw_message(&key, "a");
+        let m = &inbox.threads[&key].messages[0];
+        assert!(m.deleted && m.text.is_empty());
+        assert_eq!(m.versions.iter().map(|v| v.text.as_str()).collect::<Vec<_>>(), vec!["text a", "second", "third"]);
+    }
+
+    #[test]
+    fn message_steps_change_only_that_message() {
+        let mut inbox = ChatInbox::default();
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, true), msg("b", 1, false)]), at(2));
+        let key = ChatInbox::key("telegram", "1");
+        inbox.edit_message(&key, "a", "fixed");
+        inbox.react_mine(&key, "b", "👍");
+        inbox.react_mine(&key, "b", "❤️");
+        inbox.withdraw_message(&key, "zz");
+        let t = &inbox.threads[&key];
+        assert_eq!((t.messages[0].text.as_str(), t.messages[0].edited), ("fixed", true));
+        let r = t.messages[1].reactions.clone().unwrap();
+        assert_eq!(r, vec![Reaction { emoji: "❤️".into(), from: vec![String::new()], mine: true }]);
+        inbox.react_mine(&key, "b", "");
+        assert_eq!(inbox.threads[&key].messages[1].reactions, Some(vec![]));
+        inbox.withdraw_message(&key, "b");
+        assert!(inbox.threads[&key].messages[1].deleted);
+        inbox.forget_message(&key, "a");
+        assert_eq!(inbox.threads[&key].messages.len(), 1);
+    }
+
+    #[test]
+    fn a_read_brings_reactions_and_the_quoted_message() {
+        let mut inbox = ChatInbox::default();
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, false)]), at(1));
+        let mut again = msg("a", 0, false);
+        again.reply_to = Some("x".into());
+        again.reactions = Some(vec![Reaction { emoji: "😂".into(), from: vec!["Eva".into()], mine: false }]);
+        inbox.merge(chat("telegram", "1", vec![again]), at(2));
+        let m = &inbox.threads[&ChatInbox::key("telegram", "1")].messages[0];
+        assert_eq!(m.reply_to.as_deref(), Some("x"));
+        assert_eq!(m.reactions.as_ref().unwrap()[0].from, vec!["Eva".to_string()]);
+        // A read that does not say them (WhatsApp's webhook) leaves them.
+        inbox.merge(chat("telegram", "1", vec![msg("a", 0, false)]), at(3));
+        assert!(inbox.threads[&ChatInbox::key("telegram", "1")].messages[0].reactions.is_some());
     }
 
     fn msg(id: &str, min: i64, from_me: bool) -> InboxMessage {
@@ -981,5 +1675,132 @@ mod tests {
         let json = serde_json::to_string(&inbox).unwrap();
         let back: ChatInbox = serde_json::from_str(&json).unwrap();
         assert_eq!(back, inbox);
+    }
+
+    #[test]
+    fn older_messages_fill_ticks_and_group_readers() {
+        let mut m1 = msg("1", 0, true);
+        m1.receipt = None;
+        let mut m2 = msg("2", 1, true);
+        m2.receipt = Some(Receipt::Pending);
+        let mut m3 = msg("3", 2, true);
+        m3.receipt = Some(Receipt::Read);
+        let mut reply = msg("4", 4, false);
+        reply.sender = "Bo".into();
+
+        let mut details = HashMap::new();
+        details.insert("3".to_string(), MessageReadDetail { read_at: Some(at(3)), read_by: vec!["Anna".into()], readers: vec![] });
+
+        // Private chat: m1 and m2 advance to Read because m3 was read.
+        let filled_private = fill_messages(&[m1.clone(), m2.clone(), m3.clone()], &details, true);
+        assert_eq!(filled_private[0].message.receipt, Some(Receipt::Read));
+        assert_eq!(filled_private[1].message.receipt, Some(Receipt::Read));
+        assert_eq!(filled_private[2].message.receipt, Some(Receipt::Read));
+        assert_eq!(filled_private[2].read_at, Some(at(3)));
+
+        // Private chat: incoming reply after a sent message implies delivered.
+        let mut sent = msg("s", 0, true);
+        sent.receipt = Some(Receipt::Sent);
+        let filled_reply = fill_messages(&[sent, msg("r", 1, false)], &HashMap::new(), true);
+        assert_eq!(filled_reply[0].message.receipt, Some(Receipt::Delivered));
+        assert_eq!(filled_reply[1].message.receipt, None);
+
+        // Group chat: Anna reading m3 and Bo replying after m3 both propagate to older outgoing messages.
+        let filled_group = fill_messages(&[m1, m3, reply], &details, false);
+        assert!(filled_group[0].read_by.contains(&"Anna".to_string()));
+        assert!(filled_group[0].read_by.contains(&"Bo".to_string()));
+        assert!(filled_group[1].read_by.contains(&"Bo".to_string()));
+
+        // FilledMessage flattens InboxMessage fields cleanly at the JSON top level.
+        let json = serde_json::to_value(&filled_group[1]).unwrap();
+        assert_eq!(json["id"], "3");
+        assert_eq!(json["receipt"], "read");
+        assert!(json["readAt"].is_string());
+        assert!(json["readBy"].is_array());
+    }
+
+    #[test]
+    fn deserializes_legacy_json_without_read_or_typing_fields_and_clears_typing_for_disk() {
+        let legacy = r#"{"threads":{"telegram#1":{"id":"telegram#1","app":"telegram","name":"Anna","messages":[{"id":"m1","text":"hi","date":"2026-11-17T12:00:00Z","fromMe":true}]}}}"#;
+        let mut inbox: ChatInbox = serde_json::from_str(legacy).unwrap();
+        let thread = inbox.threads.get_mut("telegram#1").unwrap();
+        assert!(thread.typing.is_empty());
+        assert!(thread.read_details.is_empty());
+        let filled = thread.filled_messages();
+        assert_eq!(filled[0].message.receipt, Some(Receipt::Sent));
+        assert_eq!(filled[0].read_at, None);
+        assert!(filled[0].read_by.is_empty());
+        thread.typing = vec!["Anna".into()];
+        let disk = inbox.for_disk();
+        assert!(disk.threads["telegram#1"].typing.is_empty());
+    }
+
+    #[test]
+    fn pin_mute_and_archive_state_updates_and_merges() {
+        let mut inbox = ChatInbox::default();
+        let now = at(10);
+        let bridged = BridgedChat {
+            app: "telegram".into(),
+            name: "Design".into(),
+            chat_id: Some("42".into()),
+            listed: true,
+            pinned_in_app: Some(true),
+            muted_in_app: Some(false),
+            ..Default::default()
+        };
+        assert!(inbox.merge(bridged, now));
+        let key = ChatInbox::key("telegram", "42");
+        assert!(inbox.threads[&key].pinned);
+        assert_eq!(inbox.threads[&key].pinned_in_app, Some(true));
+
+        assert!(inbox.set_pinned(&key, false, true));
+        assert!(!inbox.threads[&key].pinned);
+        assert_eq!(inbox.threads[&key].pinned_in_app, Some(false));
+
+        assert!(inbox.set_muted(&key, true));
+        assert_eq!(inbox.threads[&key].muted_in_app, Some(true));
+
+        assert!(inbox.set_archived(&key, true));
+        assert!(inbox.threads[&key].archived);
+    }
+
+    #[test]
+    fn delete_for_me_hides_message_across_future_reads_and_message_info_inspects_details() {
+        let mut inbox = ChatInbox::default();
+        let key = ChatInbox::key("telegram", "1");
+        let mut m1 = msg("a", 0, true);
+        m1.receipt = Some(Receipt::Read);
+        let mut m2 = msg("b", 1, false);
+        m2.sender = "Anna".into();
+        m2.sender_id = Some("u_anna".into());
+        inbox.merge(chat("telegram", "1", vec![m1.clone(), m2.clone()]), at(2));
+
+        inbox.edit_message(&key, "a", "updated text");
+        let info_a = inbox.message_info(&key, "a").unwrap();
+        assert!(info_a.from_me);
+        assert!(info_a.edited);
+        assert_eq!(info_a.versions.len(), 1);
+        assert_eq!(info_a.versions[0].text, "text a");
+        assert_eq!(info_a.receipt, Some(Receipt::Read));
+
+        let info_b = inbox.message_info(&key, "b").unwrap();
+        assert!(!info_b.from_me);
+        assert_eq!(info_b.sender, "Anna");
+        assert_eq!(info_b.handle.as_deref(), Some("u_anna"));
+
+        // Delete for everyone keeps the row withdrawn with version history
+        inbox.delete_for_everyone(&key, "a");
+        let withdrawn = inbox.message_info(&key, "a").unwrap();
+        assert!(withdrawn.deleted);
+        assert_eq!(withdrawn.versions.len(), 2);
+
+        // Delete for me hides message locally and prevents future bridge merges from restoring it
+        inbox.delete_for_me(&key, "b");
+        assert!(inbox.hidden.is_hidden(&key, "b"));
+        assert!(inbox.message_info(&key, "b").is_none());
+
+        inbox.merge(chat("telegram", "1", vec![m1, m2]), at(3));
+        assert!(inbox.message_info(&key, "b").is_none());
+        assert_eq!(inbox.threads[&key].messages.len(), 1);
     }
 }

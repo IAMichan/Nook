@@ -36,6 +36,40 @@ export interface AgentSession {
   started: string | null;
   updated: string | null;
   pid: number | null;
+  /** The session whose shell started this one (`LaunchedSessions` on the Mac): an agent's test run or helper. */
+  launchedBy?: string | null;
+  /** True while the agent is compacting its conversation context (PreCompact → PostCompact / next event / 300s). */
+  compacting?: boolean;
+}
+
+export interface GrantedRuleEntry {
+  id: string;
+  project: string;
+  projectName: string;
+  rule: string;
+  reach: "project" | "sharedProject" | "user" | "session" | "agentDecides" | string;
+  reachLabel: string;
+  file: string;
+  agent: string;
+  grantedAt: string | null;
+}
+
+export type ApprovalSource = "app" | "notification" | "phone";
+
+export interface ApprovalAuditEntry {
+  id: string;
+  timestamp: string;
+  agent: string;
+  project: string;
+  projectPath: string;
+  tool: string;
+  summary: string;
+  decision: "allow" | "always" | "deny" | "terminal" | "expired" | string;
+  scope?: string | null;
+  source?: ApprovalSource | null;
+  danger: boolean;
+  args: string;
+  result: string;
 }
 
 export type ApprovalOrigin =
@@ -58,16 +92,61 @@ export interface AgentApproval {
   canTerminal: boolean;
   sessionKey: string;
   created: string;
+  /** What "Always" would allow and how far it reaches ("Always allows Bash(npm test:*) · this project"). */
+  alwaysScope?: string | null;
 }
 
 export type ApprovalDecision = "allow" | "always" | "deny" | "terminal";
 
-export interface QuestionOption { label: string; description: string }
+export interface QuestionOption { label: string; description: string; /** What the option would look like, in the code font. */ preview?: string }
 export interface QuestionItem { question: string; header: string; options: QuestionOption[]; multiSelect: boolean }
-export interface QuestionRequest { id: string; sessionKey: string; agentName: string; project: string; items: QuestionItem[] }
+export interface QuestionRequest { id: string; sessionKey: string; agentName: string; project: string; items: QuestionItem[]; restored?: boolean }
 
 export interface PlanWindow { usedPercent: number; resetsAt: string }
 export interface PlanUsage { fiveHour: PlanWindow | null; sevenDay: PlanWindow | null; updated: string }
+
+export interface CodexWindow {
+  usedPercent: number;
+  resetsAt: string | null;
+  windowMinutes: number | null;
+}
+
+export interface ResetCredits {
+  available: number;
+  nextExpiresAt: string | null;
+}
+
+export interface CodexUsage {
+  fiveHour: CodexWindow | null;
+  weekly: CodexWindow | null;
+  planType: string | null;
+  updated: string;
+  resetCredits: ResetCredits | null;
+}
+
+export type ResetOutcome = "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed" | "failed";
+
+export interface QuotaLimit {
+  label: string;
+  percent: number;
+  resetsAt: string | null;
+  note: string | null;
+  durationSecs: number | null;
+}
+
+export interface AccountLimits {
+  profileId: string;
+  kind: AgentKind;
+  name: string;
+  email: string | null;
+  plan: string;
+  apiKey: boolean;
+  usage: PlanUsage | null;
+  codex: CodexUsage | null;
+  antigravityLimits: QuotaLimit[];
+  antigravityNoLogin: boolean;
+  redeeming: boolean;
+}
 
 export interface Marks { finished: string[]; kept: Record<string, string>; visits: Record<string, string> }
 
@@ -153,6 +232,8 @@ export const agentApi = {
   overview: () => invoke<Overview>("agents_overview"),
   decide: (id: string, decision: ApprovalDecision) => invoke<void>("agents_decide", { id, decision }),
   decideInTerminal: (id: string) => invoke<void>("agents_decide_in_terminal", { id }),
+  /** "Deny with reason": the agent hears why it may not. */
+  deny: (id: string, reason: string) => invoke<void>("agents_deny", { id, reason }),
   answer: (id: string, selections: string[][]) => invoke<void>("agents_answer", { id, selections }),
   answerInTerminal: (id: string) => invoke<void>("agents_answer_in_terminal", { id }),
   end: (sessionId: string) => invoke<void>("agents_end", { sessionId }),
@@ -160,6 +241,10 @@ export const agentApi = {
   canEnd: (sessionId: string) => invoke<boolean>("agents_can_end", { sessionId }),
   transcript: (path: string) => invoke<ChatMessage[]>("agents_transcript", { path }),
   history: (force = false) => invoke<HistoryResult>("agents_history", { force }),
+  limits: () => invoke<AccountLimits[]>("agents_limits"),
+  usageRefresh: (manual = false) => invoke<void>("agents_usage_refresh", { manual }),
+  codexUsage: () => invoke<Record<string, CodexUsage>>("agents_codex_usage"),
+  useResetCredit: (profile: string, key: string) => invoke<ResetOutcome>("agents_use_reset_credit", { profile, key }),
   integrations: () => invoke<Integration[]>("agents_integrations"),
   prepareLink: (target: LinkTarget, install: boolean, profileId: string | null) =>
     invoke<LinkPreview>("agents_prepare_link", { target, install, profileId }),
@@ -177,7 +262,15 @@ export const agentApi = {
   activateTerminal: (host: string) => invoke<void>("agents_activate_terminal", { host }),
   runInTerminal: (command: string, folder?: string) => invoke<void>("agents_run_in_terminal", { command, folder }),
   terminalName: (host: string) => invoke<string>("agents_terminal_name", { host }),
-  sound: (kind: "attention" | "done" | "error") => invoke<string | null>("agents_sound", { kind }),
+  sound: (kind: "attention" | "permission" | "done" | "error") => invoke<string | null>("agents_sound", { kind }),
+  grantedRules: (project?: string | null, extraProjects?: string[]) =>
+    invoke<GrantedRuleEntry[]>("agents_granted_rules", { project: project || null, extraProjects: extraProjects ?? null }),
+  revokeRule: (project: string, rule: string, file?: string | null) =>
+    invoke<boolean>("agents_revoke_rule", { project, rule, file: file || null }),
+  revokeProjectRules: (project: string) => invoke<number>("agents_revoke_project_rules", { project }),
+  approvalAudit: (query?: string | null, limit?: number) =>
+    invoke<ApprovalAuditEntry[]>("agents_approval_audit", { query: query || null, limit: limit ?? null }),
+  clearApprovalAudit: () => invoke<void>("agents_clear_approval_audit"),
 };
 
 export interface Gone { id: string; message: string | null }
@@ -190,6 +283,8 @@ export const agentEvents = {
   onQuestionGone: (cb: (g: Gone) => void): Promise<UnlistenFn> => listen<Gone>("agent-question-gone", (e) => cb(e.payload)),
   onAttention: (cb: (s: AgentSession) => void): Promise<UnlistenFn> => listen<AgentSession>("agent-attention", (e) => cb(e.payload)),
   onUsage: (cb: () => void): Promise<UnlistenFn> => listen("agent-usage", () => cb()),
+  onCodexUsage: (cb: (map: Record<string, CodexUsage>) => void): Promise<UnlistenFn> =>
+    listen<Record<string, CodexUsage>>("codex-usage", (e) => cb(e.payload)),
   onHistory: (cb: (h: HistoryResult) => void): Promise<UnlistenFn> => listen<HistoryResult>("agents-history", (e) => cb(e.payload)),
 };
 
@@ -239,3 +334,50 @@ export function planLabel(u: PlanUsage | null | undefined): string {
   if (u.sevenDay) parts.push(tr("week {n}%", "week {n}%", { n: Math.round(eff(u.sevenDay)) }));
   return parts.join(" · ");
 }
+
+/// The agent's own usage page, where the plan's usage is managed and extra usage bought; null when it has none.
+export function usagePageUrl(kind: AgentKind): string | null {
+  if (kind === "claude") return "https://claude.ai/settings/usage";
+  if (kind === "codex") return "https://chatgpt.com/codex/settings/usage";
+  return null;
+}
+
+/// Compact countdown ("3d 4u", "2u 14m", "42m", "< 1m") matching `AgentFormat.compactDuration` on the Mac.
+export function formatCompactDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return "< 1m";
+  const mins = Math.floor(s / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 24) {
+    return remMins > 0
+      ? tr("{h}u {m}m", "{h}h {m}m", { h: hours, m: remMins })
+      : tr("{h}u", "{h}h", { h: hours });
+  }
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours > 0
+    ? tr("{d}d {h}u", "{d}d {h}h", { d: days, h: remHours })
+    : `${days}d`;
+}
+
+/// Upcoming reset clock time ("15:30", "tomorrow 15:30", "Thu 17:30") matching `AgentFormat.upcoming` on the Mac.
+export function formatUpcomingTime(date: Date, now: Date = new Date()): string {
+  const loc = locale();
+  const time = date.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(date, now)) return time;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (sameDay(date, tomorrow)) return `${tr("morgen", "tomorrow")} ${time}`;
+  const diffDays = (date.getTime() - now.getTime()) / 86_400_000;
+  if (diffDays > 0 && diffDays < 6) {
+    const weekday = date.toLocaleDateString(loc, { weekday: "short" });
+    return `${weekday} ${time}`;
+  }
+  const day = date.toLocaleDateString(loc, { day: "numeric", month: "short" });
+  return `${day} ${time}`;
+}
+

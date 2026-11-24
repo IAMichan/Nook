@@ -5,7 +5,13 @@ pub mod secrets;
 #[cfg(desktop)]
 pub mod desktop;
 #[cfg(desktop)]
+pub mod file_preview;
+#[cfg(desktop)]
 pub mod local_brain;
+#[cfg(desktop)]
+pub mod tab_windows;
+#[cfg(desktop)]
+pub mod tray_live;
 
 #[cfg(desktop)]
 pub mod audio;
@@ -90,7 +96,7 @@ pub fn services(app: &AppHandle) -> Platform {
 #[cfg(target_os = "windows")]
 pub fn services(app: &AppHandle) -> Platform {
     Platform {
-        screen: Arc::new(windows::WindowsScreen::new()),
+        screen: Arc::new(windows::WindowsUiScreen::new()),
         media: Arc::new(windows::WindowsMedia::new()),
         system: Arc::new(windows::WindowsSystem::new(app)),
         speech: Arc::new(windows::WindowsSpeech::new()),

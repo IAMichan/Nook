@@ -191,11 +191,19 @@ pub fn webhook_url(app: &AppHandle, task: Uuid) -> Option<String> {
     Some(format!("http://127.0.0.1:{port}/hooks/{task}"))
 }
 
+/// The title rules `project` sets for itself (Settings › Projects), empty when none.
+fn app_rules(app: &AppHandle, project: &str) -> String {
+    app.try_state::<WorkspaceState>()
+        .map(|w| crate::workspace::lock(&w.settings).defaults_for(project).title_instructions)
+        .unwrap_or_default()
+}
+
 /// A short title for a new session from its first message, written by the chosen brain (the same path as every other
 /// brain answer). The first line stays when automatic titles are off, the brain gives nothing usable, or you renamed
 /// the session meanwhile. `typed`: you gave the session a name yourself.
 pub fn title_new_session(app: &AppHandle, id: Uuid, typed: bool) {
     let Some(auto) = app.try_state::<AutomationState>() else { return };
+    let rules = auto.settings().title_instructions.clone();
     if typed || !auto.settings().auto_titles {
         return;
     }
@@ -209,9 +217,10 @@ pub fn title_new_session(app: &AppHandle, id: Uuid, typed: bool) {
         country: crate::brain::country(),
         timezone: crate::brain::timezone(),
     };
+    let own = app_rules(app, &run.project_path);
     tauri::async_runtime::spawn(async move {
-        // The Mac's per-project title rules have no settings page here yet.
-        let prompt = titles::prompt(&run.task, "");
+        // A project's own title rules win over the ones for all projects.
+        let prompt = titles::prompt(&run.task, if own.trim().is_empty() { &rules } else { &own });
         let answer =
             tokio::time::timeout(Duration::from_secs(90), nook_core::brain::service::complete(&settings, &env, titles::SYSTEM, &prompt))
                 .await

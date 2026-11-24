@@ -167,6 +167,11 @@ impl HandoffStore {
         self.states.lock().map(|s| s.get(&id).cloned().unwrap_or_default()).unwrap_or_default()
     }
 
+    /// `/clear`: no agent has followed any of the timeline yet, and no conversation of an earlier agent is resumed.
+    pub fn forget(&self, id: Uuid) {
+        self.set(id, HandoffState::default());
+    }
+
     fn set(&self, id: Uuid, state: HandoffState) {
         let Ok(mut states) = self.states.lock() else { return };
         states.insert(id, state);

@@ -1,0 +1,188 @@
+import type { Table } from "./catalog";
+
+export const table: Table = {
+  "{h}h {m}m": { de: "{h}h {m}m", fr: "{h}h {m}m", es: "{h}h {m}m" },
+  "{h}h": { de: "{h}h", fr: "{h}h", es: "{h}h" },
+  "{d}d {h}h": { de: "{d}T {h}h", fr: "{d}j {h}h", es: "{d}d {h}h" },
+  "tomorrow": { de: "morgen", fr: "demain", es: "mañana" },
+  "Using an API key — no subscription limits.": {
+    de: "Verwendet einen API-Schlüssel — keine Abo-Limits.",
+    fr: "Utilise une clé API — pas de limites d'abonnement.",
+    es: "Usa una clave API — sin límites de suscripción.",
+  },
+  "Not read — connect Claude Code in Settings › Agents or refresh.": {
+    de: "Nicht gelesen — verbinde Claude Code in Einstellungen › Agenten oder aktualisiere.",
+    fr: "Non lu — connectez Claude Code dans Réglages › Agents ou actualisez.",
+    es: "No leído — conecta Claude Code en Ajustes › Agentes o actualiza.",
+  },
+  "Not read — start Codex once or refresh.": {
+    de: "Nicht gelesen — starte Codex einmal oder aktualisiere.",
+    fr: "Non lu — lancez Codex une fois ou actualisez.",
+    es: "No leído — inicia Codex una vez o actualiza.",
+  },
+  "Gemini CLI doesn't report subscription limits.": {
+    de: "Gemini CLI meldet keine Abo-Limits.",
+    fr: "Gemini CLI ne signale pas de limites d'abonnement.",
+    es: "Gemini CLI no informa los límites de suscripción.",
+  },
+  "Not signed in to Antigravity.": {
+    de: "Nicht bei Antigravity angemeldet.",
+    fr: "Non connecté à Antigravity.",
+    es: "No has iniciado sesión en Antigravity.",
+  },
+  "Limits not available.": {
+    de: "Limits nicht verfügbar.",
+    fr: "Limites indisponibles.",
+    es: "Límites no disponibles.",
+  },
+  "This agent doesn't report subscription limits.": {
+    de: "Dieser Agent meldet keine Abo-Limits.",
+    fr: "Cet agent ne signale pas de limites d'abonnement.",
+    es: "Este agente no informa los límites de suscripción.",
+  },
+  "5 hours": { de: "5 Stunden", fr: "5 heures", es: "5 horas" },
+  "Week": { de: "Woche", fr: "Semaine", es: "Semana" },
+  "Starts with your first message": {
+    de: "Startet mit deiner ersten Nachricht",
+    fr: "Commence dès votre premier message",
+    es: "Empieza con tu primer mensaje",
+  },
+  "{account}: {reason}": {
+    de: "{account}: {reason}",
+    fr: "{account} : {reason}",
+    es: "{account}: {reason}",
+  },
+  "Spending faster than an even pace across this window": {
+    de: "Schneller als ein gleichmäßiges Tempo für dieses Zeitfenster",
+    fr: "Consommation plus rapide qu'un rythme régulier sur cette fenêtre",
+    es: "Consumo más rápido que un ritmo uniforme en esta ventana",
+  },
+  "Spending slower than an even pace across this window": {
+    de: "Langsamer als ein gleichmäßiges Tempo für dieses Zeitfenster",
+    fr: "Consommation plus lente qu'un rythme régulier sur cette fenêtre",
+    es: "Consumo más lento que un ritmo uniforme en esta ventana",
+  },
+  "On track for an even pace across this window": {
+    de: "Im Gleichschritt mit einem gleichmäßigen Tempo für dieses Zeitfenster",
+    fr: "Dans le rythme régulier de cette fenêtre",
+    es: "Al ritmo uniforme de esta ventana",
+  },
+  "now": { de: "jetzt", fr: "maintenant", es: "ahora" },
+  "1 reset credit available": {
+    de: "1 Reset-Guthaben verfügbar",
+    fr: "1 crédit de réinitialisation disponible",
+    es: "1 crédito de reinicio disponible",
+  },
+  "{n} reset credits available": {
+    de: "{n} Reset-Guthaben verfügbar",
+    fr: "{n} crédits de réinitialisation disponibles",
+    es: "{n} créditos de reinicio disponibles",
+  },
+  "Limits reset.": {
+    de: "Limits zurückgesetzt.",
+    fr: "Limites réinitialisées.",
+    es: "Límites reiniciados.",
+  },
+  "Nothing to reset — your limits are already clear.": {
+    de: "Nichts zurückzusetzen — deine Limits sind bereits leer.",
+    fr: "Rien à réinitialiser — vos limites sont déjà vides.",
+    es: "Nada que reiniciar — tus límites ya están libres.",
+  },
+  "No reset credit left.": {
+    de: "Kein Reset-Guthaben mehr übrig.",
+    fr: "Plus de crédit de réinitialisation.",
+    es: "No queda ningún crédito de reinicio.",
+  },
+  "This reset credit was already used.": {
+    de: "Dieses Reset-Guthaben wurde bereits verwendet.",
+    fr: "Ce crédit de réinitialisation a déjà été utilisé.",
+    es: "Este crédito de reinicio ya se ha usado.",
+  },
+  "Couldn't use the reset credit. Try again later.": {
+    de: "Das Reset-Guthaben konnte nicht eingelöst werden. Versuch es später erneut.",
+    fr: "Impossible d'utiliser le crédit de réinitialisation. Réessayez plus tard.",
+    es: "No se pudo usar el crédito de reinicio. Inténtalo más tarde.",
+  },
+  "Expires in {d}": { de: "Läuft ab in {d}", fr: "Expire dans {d}", es: "Caduca en {d}" },
+  "Use a reset credit for {name}?": {
+    de: "Reset-Guthaben für {name} verwenden?",
+    fr: "Utiliser un crédit de réinitialisation pour {name} ?",
+    es: "¿Usar un crédito de reinicio para {name}?",
+  },
+  "This clears your 5-hour and weekly limits right away and spends 1 of your {n} credits.": {
+    de: "Dadurch werden dein 5-Stunden- und Wochenlimit sofort geleert und 1 deiner {n} Guthaben verbraucht.",
+    fr: "Cela efface immédiatement vos limites de 5 heures et de la semaine et utilise 1 de vos {n} crédits.",
+    es: "Esto libera de inmediato tus límites de 5 horas y semanal y gasta 1 de tus {n} créditos.",
+  },
+  "Use a reset": { de: "Reset nutzen", fr: "Utiliser un reset", es: "Usar un reinicio" },
+  "Show all agents": {
+    de: "Alle Agenten anzeigen",
+    fr: "Afficher tous les agents",
+    es: "Mostrar todos los agentes",
+  },
+  "Refresh limits now": {
+    de: "Limits jetzt aktualisieren",
+    fr: "Actualiser les limites maintenant",
+    es: "Actualizar límites ahora",
+  },
+  "No limits yet — they appear once an agent reports them.": {
+    de: "Noch keine Limits — sie erscheinen, sobald ein Agent sie meldet.",
+    fr: "Pas encore de limites — elles apparaîtront dès qu'un agent les signalera.",
+    es: "Aún no hay límites — aparecerán cuando un agente los informe.",
+  },
+  "Manage usage": { de: "Nutzung verwalten", fr: "Gérer l'utilisation", es: "Gestionar uso" },
+  "used": { de: "genutzt", fr: "utilisé", es: "usado" },
+  "Click to hide": {
+    de: "Zum Ausblenden klicken",
+    fr: "Cliquer pour masquer",
+    es: "Haz clic para ocultar",
+  },
+  "Click to reveal": {
+    de: "Zum Anzeigen klicken",
+    fr: "Cliquer pour afficher",
+    es: "Haz clic para mostrar",
+  },
+  "Plan": { de: "Tarif", fr: "Forfait", es: "Plan" },
+  "Used": { de: "Genutzt", fr: "Utilisé", es: "Usado" },
+  "Resets": { de: "Reset", fr: "Réinitialisation", es: "Reinicio" },
+  "in {d}": { de: "in {d}", fr: "dans {d}", es: "en {d}" },
+  "Even pace": { de: "Gleichmäßiges Tempo", fr: "Rythme régulier", es: "Ritmo uniforme" },
+  "{n}% by now": { de: "{n}% bis jetzt", fr: "{n}% à ce stade", es: "{n}% hasta ahora" },
+  "Restores": { de: "Gibt frei", fr: "Libère", es: "Libera" },
+  "{n}% of the pool": { de: "{n}% des Pools", fr: "{n}% du pool", es: "{n}% del pool" },
+  "The line marks even spending across the window.": {
+    de: "Die Linie markiert einen gleichmäßigen Verbrauch über das Zeitfenster.",
+    fr: "La ligne indique une consommation régulière sur la fenêtre.",
+    es: "La línea marca un consumo uniforme a lo largo de la ventana.",
+  },
+  "All limits": { de: "Alle Limits", fr: "Toutes les limites", es: "Todos los límites" },
+  "This is your whole account, not just the workspace. Claude, Codex and Antigravity report their own subscription limits; other agents report none.": {
+    de: "Dies gilt für dein gesamtes Konto, nicht nur für den Arbeitsbereich. Claude, Codex und Antigravity melden ihre eigenen Abo-Limits; andere Agenten melden keine.",
+    fr: "Cela concerne tout votre compte, pas seulement l'espace de travail. Claude, Codex et Antigravity signalent leurs propres limites d'abonnement ; les autres agents n'en signalent aucune.",
+    es: "Esto corresponde a toda tu cuenta, no solo al espacio de trabajo. Claude, Codex y Antigravity informan sus propios límites de suscripción; otros agentes no informan ninguno.",
+  },
+  "Unavailable": { de: "Nicht verfügbar", fr: "Indisponible", es: "No disponible" },
+  "{label}: {used}% used": {
+    de: "{label}: {used}% genutzt",
+    fr: "{label} : {used}% utilisé",
+    es: "{label}: {used}% usado",
+  },
+  "Resets in {d} · {at}": {
+    de: "Reset in {d} · {at}",
+    fr: "Réinitialisation dans {d} · {at}",
+    es: "Se reinicia en {d} · {at}",
+  },
+  "Window {n}% elapsed": {
+    de: "Zeitfenster zu {n}% verstrichen",
+    fr: "Fenêtre écoulée à {n}%",
+    es: "Ventana transcurrida al {n}%",
+  },
+  "Ahead of pace": { de: "Über dem Tempo", fr: "En avance sur le rythme", es: "Por encima del ritmo" },
+  "On pace": { de: "Im Tempo", fr: "Dans le rythme", es: "Al ritmo" },
+  "Under pace": { de: "Unter dem Tempo", fr: "En dessous du rythme", es: "Por debajo del ritmo" },
+  "No accounts with limits found yet.": {
+    de: "Noch keine Konten mit Limits gefunden.",
+    fr: "Aucun compte avec limites trouvé pour le moment.",
+    es: "Aún no se han encontrado cuentas con límites.",
+  },
+};

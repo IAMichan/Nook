@@ -27,7 +27,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
+pub mod cards;
 mod nook;
+mod pulls;
+mod schedule;
+mod secrets;
 mod sessions;
 pub mod tasks;
 
@@ -52,10 +56,18 @@ pub struct BridgeRequest {
     pub connection: String,
 }
 
+/// Resolution of a pending bridge approval card: allowed/denied, plus an optional secret typed by the user
+/// (`(value, remember_in_nook)`) for `request_secret`.
+#[derive(Debug, Clone, Default)]
+pub(super) struct BridgeDecision {
+    pub allowed: bool,
+    pub secret: Option<(String, bool)>,
+}
+
 #[derive(Default)]
 pub struct Bridge {
     pending: Mutex<Vec<BridgeRequest>>,
-    waiters: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    waiters: Mutex<HashMap<String, tokio::sync::oneshot::Sender<BridgeDecision>>>,
 }
 
 /// Hoe lang een verzoek op jou wacht voordat de agent "niet toegestaan" hoort.
@@ -89,19 +101,27 @@ impl Bridge {
             can_terminal: false,
             session_key: r.caller.run.as_ref().map(|id| format!("run:{id}")).unwrap_or_else(|| "bridge".into()),
             created: r.created,
+            always_scope: None,
         }
     }
 
     pub fn decide(&self, app: &AppHandle, id: &str, allow: bool) -> bool {
-        self.finish(app, id, allow, if allow { "Toegestaan" } else { "Geweigerd" })
+        self.finish(app, id, BridgeDecision { allowed: allow, secret: None }, if allow { "Toegestaan" } else { "Geweigerd" })
     }
 
-    fn finish(&self, app: &AppHandle, id: &str, allowed: bool, message: &str) -> bool {
+    /// Resolves a pending `request_secret` approval card with the value the user typed in the masked input.
+    /// The secret value is passed directly to the waiting handler and never emitted or logged.
+    pub fn submit_secret(&self, app: &AppHandle, id: &str, value: String, remember: bool) -> bool {
+        let req_id = id.strip_prefix("bridge-").unwrap_or(id);
+        self.finish(app, req_id, BridgeDecision { allowed: true, secret: Some((value, remember)) }, "Toegestaan")
+    }
+
+    fn finish(&self, app: &AppHandle, id: &str, decision: BridgeDecision, message: &str) -> bool {
         let Some(waiter) = lock(&self.waiters).remove(id) else { return false };
         lock(&self.pending).retain(|r| r.id != id);
         crate::agents::approval_gone(app, &format!("bridge-{id}"));
         let _ = app.emit("agent-approval-gone", serde_json::json!({"id": format!("bridge-{id}"), "message": message}));
-        let _ = waiter.send(allowed);
+        let _ = waiter.send(decision);
         true
     }
 
@@ -115,6 +135,19 @@ impl Bridge {
         note: String,
         connection: &str,
     ) -> bool {
+        self.ask_secret(app, caller, tool, title, detail, note, connection).await.allowed
+    }
+
+    async fn ask_secret(
+        &self,
+        app: &AppHandle,
+        caller: &BridgeCaller,
+        tool: BridgeTool,
+        title: String,
+        detail: String,
+        note: String,
+        connection: &str,
+    ) -> BridgeDecision {
         let id = Uuid::new_v4().simple().to_string()[..8].to_string();
         let request = BridgeRequest {
             id: id.clone(),
@@ -133,10 +166,10 @@ impl Bridge {
         let _ = app.emit("agent-approval", &approval);
         crate::agents::present_approval(app, &approval);
         match tokio::time::timeout(APPROVAL_TIMEOUT, rx).await {
-            Ok(Ok(allowed)) => allowed,
+            Ok(Ok(decision)) => decision,
             _ => {
-                self.finish(app, &id, false, "Verlopen");
-                false
+                self.finish(app, &id, BridgeDecision::default(), "Verlopen");
+                BridgeDecision::default()
             }
         }
     }
@@ -145,8 +178,23 @@ impl Bridge {
     fn connection_closed(&self, app: &AppHandle, connection: &str) {
         let ids: Vec<String> = lock(&self.pending).iter().filter(|r| r.connection == connection).map(|r| r.id.clone()).collect();
         for id in ids {
-            self.finish(app, &id, false, "Ingetrokken: de agent stopte");
+            self.finish(app, &id, BridgeDecision::default(), "Ingetrokken: de agent stopte");
         }
+    }
+}
+
+/// Submits a masked secret entered by the user on a `request_secret` approval card (`ApprovalCard.svelte`).
+#[tauri::command]
+pub fn bridge_submit_secret(app: AppHandle, id: String, value: String, remember: bool) -> Result<(), String> {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(tr("Vul eerst een waarde in.", "Enter a secret value first.").into());
+    }
+    let ws = workspace(&app).ok_or_else(|| tr("Deze vraag bestaat niet meer.", "This request no longer exists.").to_string())?;
+    if ws.bridge.submit_secret(&app, &id, trimmed, remember) {
+        Ok(())
+    } else {
+        Err(tr("Deze vraag bestaat niet meer.", "This request no longer exists.").into())
     }
 }
 
@@ -277,7 +325,7 @@ fn refusal(reason: Reason) -> &'static str {
         Reason::Disabled => "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace).",
         Reason::PlanMode => "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead.",
         Reason::Dangerous => "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed.",
-        Reason::NeedsReview | Reason::Outward | Reason::Delegation => "The user did not approve this in Nook.",
+        Reason::NeedsReview | Reason::Outward | Reason::Delegation | Reason::Schedule | Reason::Secret => "The user did not approve this in Nook.",
     }
 }
 
@@ -317,11 +365,27 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
         | BridgeTool::TaskWait
         | BridgeTool::TaskCancel => tasks::call(app, tool, a, &caller, context).await,
         BridgeTool::PullRequestCreate => pull_request_create(app, a, &caller, context).await,
+        BridgeTool::WatchPullRequest => pulls::watch_pull_request(app, a, &caller, context).await,
+        BridgeTool::GetPullRequestStatus => pulls::get_pull_request_status(app, a, &caller).await,
         BridgeTool::SessionList => Ok(session_list(app, a)),
         BridgeTool::SessionRead => session_read(app, a),
         BridgeTool::SessionStart => sessions::session_start(app, a, &caller, context).await,
         BridgeTool::SessionSend => sessions::session_send(app, a, &caller, context).await,
         BridgeTool::SessionWait => sessions::session_wait(app, a).await,
+        BridgeTool::SessionSearch => sessions::session_search(app, a, &caller).await,
+        BridgeTool::SessionOrganize => sessions::session_organize(app, a, &caller, context).await,
+        BridgeTool::SessionQuestions => sessions::session_questions(app, a, &caller, context).await,
+        BridgeTool::SessionSuggest => cards::session_suggest(app, a, &caller),
+        BridgeTool::RenderPage => cards::render_page(app, a, &caller),
+        BridgeTool::ScheduleTask => schedule::schedule_task(app, a, &caller, context).await,
+        BridgeTool::ListScheduledTasks => schedule::list_scheduled_tasks(app, a, &caller),
+        BridgeTool::UpdateScheduledTask => schedule::update_scheduled_task(app, a, &caller, context).await,
+        BridgeTool::RunScheduledTaskNow => schedule::run_scheduled_task_now(app, a, &caller, context).await,
+        BridgeTool::RequestSecret => secrets::request_secret(app, a, &caller, context).await,
+        BridgeTool::DeviceList => device_list().await,
+        BridgeTool::DeviceOpen => device_open(app, a, &caller).await,
+        BridgeTool::DeviceScreenshot => device_screenshot(app, a, &caller).await,
+        BridgeTool::DeviceClose => device_close(app, a, &caller).await,
         t @ (BridgeTool::NookTools
         | BridgeTool::NookUse
         | BridgeTool::NookChatList
@@ -585,7 +649,7 @@ fn terminal_list(app: &AppHandle, caller: &BridgeCaller) -> ToolResult {
 fn terminal_stop(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
     let ws = workspace(app).ok_or("Nook is not ready.")?;
     let t = terminal_for(app, a, caller)?;
-    if !t.owner.as_ref().is_some_and(|o| o.key == caller.key()) {
+    if t.owner.as_ref().is_none_or(|o| o.key != caller.key()) {
         return Err(format!("You can only stop terminals you started with terminal_run; {} is not one of them.", t.short_id));
     }
     if let Verdict::Refuse(reason) = check(app, BridgeTool::TerminalStop, caller, None) {
@@ -988,4 +1052,268 @@ fn expand_tilde(path: &str) -> String {
         }
         _ => path.into(),
     }
+}
+
+// MARK: Apparaten & emulators (AG-12)
+
+static OPEN_DEVICES: std::sync::LazyLock<Mutex<HashMap<String, Vec<String>>>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn caller_device_key(caller: &BridgeCaller) -> String {
+    caller.run.clone().unwrap_or_else(|| caller.directory.clone())
+}
+
+fn find_android_binary(tool: &str) -> Option<std::path::PathBuf> {
+    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    let home = nook_core::agents::home_dir().to_string_lossy().to_string();
+    let sub = if tool == "emulator" { "emulator" } else { "platform-tools" };
+    let exts: &[&str] = if cfg!(windows) { &[".exe", ""] } else { &[""] };
+    for root in nook_core::workspace::bridge::android_sdk_folders(&env, &home) {
+        for ext in exts {
+            let candidate = std::path::Path::new(&root).join(sub).join(format!("{tool}{ext}"));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            for ext in exts {
+                let candidate = dir.join(format!("{tool}{ext}"));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn run_android_cmd(bin: &std::path::Path, args: &[&str], timeout_secs: u64) -> Result<std::process::Output, String> {
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.args(args);
+    #[cfg(windows)]
+    {
+        #[allow(unused_imports)]
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
+        .await
+        .map_err(|_| format!("Timed out running {}", bin.display()))?
+        .map_err(|e| format!("Could not run {}: {e}", bin.display()))
+}
+
+async fn discover_android_devices() -> Vec<nook_core::workspace::bridge::AndroidDevice> {
+    let mut devices = Vec::new();
+    let mut running_avds = std::collections::BTreeSet::new();
+    if let Some(adb) = find_android_binary("adb") {
+        if let Ok(out) = run_android_cmd(&adb, &["devices", "-l"], 8).await {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut running = nook_core::workspace::bridge::parse_adb_running_devices(&text);
+            for dev in &mut running {
+                if let Some(serial) = dev.serial.clone() {
+                    if serial.starts_with("emulator-") {
+                        if let Ok(avd_out) = run_android_cmd(&adb, &["-s", &serial, "emu", "avd", "name"], 3).await {
+                            let avd_text = String::from_utf8_lossy(&avd_out.stdout);
+                            if let Some(avd_name) = avd_text.lines().map(str::trim).find(|l| !l.is_empty() && *l != "OK") {
+                                running_avds.insert(avd_name.to_string());
+                                dev.name = avd_name.replace('_', " ");
+                            }
+                        }
+                    }
+                }
+            }
+            devices.extend(running);
+        }
+    }
+    if let Some(emu) = find_android_binary("emulator") {
+        if let Ok(out) = run_android_cmd(&emu, &["-list-avds"], 8).await {
+            let text = String::from_utf8_lossy(&out.stdout);
+            devices.extend(nook_core::workspace::bridge::parse_android_avds(&text, &running_avds));
+        }
+    }
+    devices
+}
+
+async fn device_list() -> Result<ToolResult, String> {
+    let devices = discover_android_devices().await;
+    if devices.is_empty() {
+        return Ok(ToolResult::text(
+            "No Android emulators or connected devices found. Ensure Android SDK (`adb` / `emulator`) is installed or `ANDROID_HOME` is set.",
+        ));
+    }
+    let mut lines = vec![format!("# Available Android devices ({})", devices.len())];
+    for d in devices {
+        let state = if d.running { "running" } else { "stopped" };
+        let serial = d.serial.as_deref().map(|s| format!(" · serial: {s}")).unwrap_or_default();
+        lines.push(format!("- `{}` · {} · {state}{serial}", d.id, d.name));
+    }
+    Ok(ToolResult::text(lines.join("\n")))
+}
+
+async fn device_open(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
+    match check(app, BridgeTool::DeviceOpen, caller, None) {
+        Verdict::Allow => {}
+        Verdict::Refuse(r) => return Err(refusal(r).into()),
+        Verdict::Ask(_) => {
+            if !workspace(app)
+                .ok_or("Nook is not ready.")?
+                .bridge
+                .ask(
+                    app,
+                    caller,
+                    BridgeTool::DeviceOpen,
+                    tr("Apparaat openen", "Open device").into(),
+                    arg(a, "device_id").to_string(),
+                    tr("Wil een Android-emulator of verbonden apparaat openen.", "Wants to open an Android emulator or connected device.")
+                        .into(),
+                    "",
+                )
+                .await
+            {
+                return Err(refusal(Reason::NeedsReview).into());
+            }
+        }
+    }
+    let devices = discover_android_devices().await;
+    if devices.is_empty() {
+        return Err("No Android devices or AVDs found. Make sure the Android SDK (`adb` / `emulator`) is installed.".into());
+    }
+    let raw_id = arg(a, "device_id");
+    let raw_name = arg(a, "name");
+    let target = if !raw_id.is_empty() {
+        devices.iter().find(|d| d.id.eq_ignore_ascii_case(raw_id) || d.serial.as_deref() == Some(raw_id)).cloned()
+    } else if !raw_name.is_empty() {
+        let q = raw_name.to_ascii_lowercase();
+        devices.iter().find(|d| d.name.to_ascii_lowercase().contains(&q) || d.id.to_ascii_lowercase().contains(&q)).cloned()
+    } else {
+        devices.iter().find(|d| d.running).cloned().or_else(|| devices.first().cloned())
+    }
+    .ok_or_else(|| "Matching Android device or AVD not found. Call `device_list` to see available devices.".to_string())?;
+
+    let (active_id, serial, display_name) = if let Some(avd) = target.id.strip_prefix("android-avd:") {
+        let emu = find_android_binary("emulator").ok_or("Could not find Android `emulator` binary.")?;
+        let adb = find_android_binary("adb").ok_or("Could not find Android `adb` binary.")?;
+        let before: std::collections::BTreeSet<String> = devices.iter().filter_map(|d| d.serial.clone()).collect();
+        let mut cmd = std::process::Command::new(&emu);
+        cmd.args(["-avd", avd, "-netdelay", "none", "-netspeed", "full"]);
+        cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        {
+            #[allow(unused_imports)]
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        cmd.spawn().map_err(|e| format!("Failed to start emulator `{avd}`: {e}"))?;
+
+        let mut booted_serial = None;
+        for _ in 0..45 {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            if let Ok(out) = run_android_cmd(&adb, &["devices", "-l"], 5).await {
+                let running = nook_core::workspace::bridge::parse_adb_running_devices(&String::from_utf8_lossy(&out.stdout));
+                if let Some(found) =
+                    running.iter().find(|d| d.serial.as_ref().is_some_and(|s| !before.contains(s))).or_else(|| running.first())
+                {
+                    if let Some(s) = &found.serial {
+                        if let Ok(boot) = run_android_cmd(&adb, &["-s", s, "shell", "getprop", "sys.boot_completed"], 4).await {
+                            if String::from_utf8_lossy(&boot.stdout).trim() == "1" {
+                                booted_serial = Some(s.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let s = booted_serial.ok_or_else(|| format!("Started emulator `{avd}`, but it did not finish booting within 90 seconds."))?;
+        (format!("android:{s}"), s, target.name)
+    } else {
+        let s =
+            target.serial.clone().or_else(|| target.id.strip_prefix("android:").map(str::to_string)).ok_or("Device has no adb serial.")?;
+        (format!("android:{s}"), s, target.name)
+    };
+
+    if let Some(url) = a.get("url").and_then(Value::as_str).map(str::trim).filter(|u| !u.is_empty()) {
+        if let Some(adb) = find_android_binary("adb") {
+            let _ = run_android_cmd(&adb, &["-s", &serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url], 8).await;
+        }
+    }
+
+    {
+        let key = caller_device_key(caller);
+        let mut map = lock(&OPEN_DEVICES);
+        let list = map.entry(key).or_default();
+        list.retain(|x| x != &active_id);
+        list.push(active_id.clone());
+    }
+    note_run(app, caller, &format!("Apparaat geopend: {display_name} ({active_id})"));
+    audit(app, BridgeTool::DeviceOpen, caller, &active_id, "ok");
+    Ok(ToolResult::text(format!(
+        "Opened {display_name} (`{active_id}`, serial `{serial}`).\n\n{}",
+        nook_core::workspace::bridge::android_quick_start(&serial)
+    )))
+}
+
+async fn resolve_active_serial(a: &Map<String, Value>, caller: &BridgeCaller) -> Result<(String, String), String> {
+    let raw = arg(a, "device_id");
+    let chosen_id = if !raw.is_empty() {
+        if raw.starts_with("android:") {
+            raw.to_string()
+        } else {
+            format!("android:{raw}")
+        }
+    } else {
+        let key = caller_device_key(caller);
+        let remembered = lock(&OPEN_DEVICES).get(&key).and_then(|v| v.last().cloned());
+        if let Some(id) = remembered {
+            id
+        } else {
+            let running = discover_android_devices().await;
+            running.into_iter().find(|d| d.running).map(|d| d.id).ok_or("No open or running Android device. Call `device_open` first.")?
+        }
+    };
+    let serial = chosen_id.strip_prefix("android:").unwrap_or(&chosen_id).to_string();
+    Ok((chosen_id, serial))
+}
+
+async fn device_screenshot(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
+    if let Verdict::Refuse(r) = check(app, BridgeTool::DeviceScreenshot, caller, None) {
+        return Err(refusal(r).into());
+    }
+    let (device_id, serial) = resolve_active_serial(a, caller).await?;
+    let adb = find_android_binary("adb").ok_or("Could not find Android `adb` binary.")?;
+    let out = run_android_cmd(&adb, &["-s", &serial, "exec-out", "screencap", "-p"], 12).await?;
+    if !out.status.success() || out.stdout.len() < 8 || &out.stdout[..8] != b"\x89PNG\r\n\x1a\n" {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("Failed to capture screenshot from `{device_id}`: {}", err.trim()));
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&out.stdout);
+    audit(app, BridgeTool::DeviceScreenshot, caller, &device_id, "ok");
+    Ok(ToolResult {
+        text: format!("Screenshot of `{device_id}`"),
+        image_base64: Some(encoded),
+        image_mime_type: Some("image/png".into()),
+        is_error: false,
+    })
+}
+
+async fn device_close(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
+    if let Verdict::Refuse(r) = check(app, BridgeTool::DeviceClose, caller, None) {
+        return Err(refusal(r).into());
+    }
+    let (device_id, serial) = resolve_active_serial(a, caller).await?;
+    if serial.starts_with("emulator-") {
+        if let Some(adb) = find_android_binary("adb") {
+            let _ = run_android_cmd(&adb, &["-s", &serial, "emu", "kill"], 8).await;
+        }
+    }
+    {
+        let key = caller_device_key(caller);
+        if let Some(list) = lock(&OPEN_DEVICES).get_mut(&key) {
+            list.retain(|x| x != &device_id);
+        }
+    }
+    note_run(app, caller, &format!("Apparaat gesloten: {device_id}"));
+    audit(app, BridgeTool::DeviceClose, caller, &device_id, "ok");
+    Ok(ToolResult::text(format!("Closed `{device_id}`.")))
 }

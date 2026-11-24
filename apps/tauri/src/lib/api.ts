@@ -24,9 +24,10 @@ export const api = {
   newNook: () => invoke<string>("nook_new"),
   /// A new Nook that does not become the active one (a question about a selection, `SelectionAsk`).
   newNookInBackground: () => invoke<string>("nook_new_background"),
-  askAboutSelection: (nookId: string, text: string) => invoke<string | null>("ask_about_selection", { nookId, text }),
+  /// `context`: the messages around a selection in a conversation, added to the hidden note (`SelectionAsk.chatNote`).
+  askAboutSelection: (nookId: string, text: string, context: string | null = null) => invoke<string | null>("ask_about_selection", { nookId, text, context }),
   deleteNook: (id: string) => invoke<void>("nook_delete", { id }),
-  setNookFlags: (id: string, flags: { pinned?: boolean; archived?: boolean; title?: string }) => invoke<void>("nook_set_flags", { id, ...flags }),
+  setNookFlags: (id: string, flags: { pinned?: boolean; archived?: boolean; title?: string; unread?: boolean }) => invoke<void>("nook_set_flags", { id, ...flags }),
 
   ask: (nookId: string, text: string, images?: { mediaType: string; base64: string }[], attachment?: { name: string; text: string }) =>
     invoke<string | null>("ask", { nookId, text, images, attachment }),
@@ -45,6 +46,10 @@ export const api = {
   clearAudit: () => invoke<void>("clear_audit"),
 
   barExpand: (expanded: boolean, notice = false, chip = false) => invoke<void>("bar_expand", { expanded, notice, chip }),
+  /** "Hide Nook when idle": hides the closed bar while it has nothing to show. */
+  barVisible: (visible: boolean) => invoke<void>("bar_visible", { visible }),
+  /** The connected screens by name. */
+  screenNames: () => invoke<string[]>("screen_names"),
   barMoved: () => invoke<void>("bar_moved"),
   showMain: (route: string) => invoke<void>("show_main", { route }),
   takeRoute: () => invoke<string | null>("take_route"),

@@ -4,6 +4,7 @@
   // stand" (agents, calendar, music) and starters. The first time, a welcome card leads to the three setup steps.
   import { brainApi } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
+  import { chatFocus } from "../lib/chat-focus.svelte";
   import { locale, tr } from "../lib/i18n.svelte";
   import { inbox } from "../lib/inbox.svelte";
   import { registerInboxSources } from "../lib/inbox-sources";
@@ -16,9 +17,13 @@
   import HomeGlance from "./HomeGlance.svelte";
   import StarterGrid from "./StarterGrid.svelte";
   import NookTaskBar from "./NookTaskBar.svelte";
+  import PromptRail from "./PromptRail.svelte";
+  import ActionSuggestionBar from "./ActionSuggestionBar.svelte";
+  import type { Line, Turn } from "../lib/action-suggestions.svelte";
   import { EndFollow } from "../lib/end-follow.svelte";
 
   let { compact = false, autofocus = false, onopen }: { compact?: boolean; autofocus?: boolean; onopen?: (target: Target) => void } = $props();
+  let scroller = $state<HTMLDivElement>();
   let starters = $state<string[]>([]);
   let onboarding = $state(false);
   /// A note a "For you" row opened, read right here.
@@ -56,6 +61,31 @@
     lastNook = shown;
   });
 
+  // Nook Chat for suggested steps: its newest message is the turn, your questions and Nook's answers the lines.
+  const busy = $derived(!!nook.active && (nook.nooks.find((n) => n.id === nook.active?.id)?.status === "working" || nook.active.messages.some((m) => m.streaming)));
+  const turn = $derived.by((): Turn | null => {
+    const messages = nook.active?.messages ?? [];
+    const last = messages[messages.length - 1];
+    return nook.active && last ? { conversation: `nook:${nook.active.id}`, message: last.id, date: last.date } : null;
+  });
+  const nookLines = (): Line[] =>
+    (nook.active?.messages ?? []).slice(-12).filter((m) => !m.isError).map((m) => ({ speaker: m.fromUser ? "You" : "Nook", text: m.text, id: m.id }));
+
+  // A message search everything opened: scroll to it once it is drawn, mark it for a moment.
+  $effect(() => {
+    const id = chatFocus.messageId;
+    if (!id || !nook.active?.messages.some((m) => m.id === id)) return;
+    queueMicrotask(() => {
+      const el = scroller?.querySelector(`[data-message-id="${CSS.escape(id)}"]`);
+      if (!el) return;
+      follow.release();
+      el.scrollIntoView({ block: "center" });
+      chatFocus.messageId = null;
+      chatFocus.marked = id;
+      setTimeout(() => { if (chatFocus.marked === id) chatFocus.marked = null; }, 2000);
+    });
+  });
+
   // "Monday 19 October", then a calm greeting with how many things wait for you.
   let now = $state(new Date());
   $effect(() => {
@@ -86,10 +116,42 @@
   }
 
   const lastId = $derived(nook.active?.messages[nook.active.messages.length - 1]?.id);
+
+  // The rail of your questions on the leading edge (`TranscriptPromptRail`), once the conversation scrolls.
+  let room = $state(0);
+  let overflows = $state(false);
+  // Measured a frame after a change, not bound: a bound height on the scrolling column feeds back into its own layout.
+  $effect(() => {
+    void nook.active?.messages.length;
+    const el = scroller;
+    if (!el) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        room = el.clientWidth;
+        overflows = el.scrollHeight > el.clientHeight + 1;
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    measure();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  });
+  const promptMarks = $derived((nook.active?.messages ?? []).filter((m) => m.fromUser && !m.scheduled).map((m) => ({ id: m.id, text: m.text })));
+  const readableChat = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--readable-chat")) || 820;
+  function jumpTo(id: string) {
+    follow.release();
+    scroller?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
 </script>
 
 <div class="chat" class:compact>
-  <div class="messages" {@attach follow.attach}><div class="reading-column">
+  <div class="messages" bind:this={scroller} {@attach follow.attach}><div class="reading-column" class:filled={!empty}>
     {#if empty}
       <div class="empty" class:home>
         {#if !compact}
@@ -141,16 +203,26 @@
     {/if}
     {#if nook.error}<div class="err">{nook.error}</div>{/if}
   </div></div>
+  {#if !compact && !empty && overflows && promptMarks.length}
+    <PromptRail marks={promptMarks} {room} column={readableChat()} onselect={jumpTo} />
+  {/if}
+  {#if !compact && nook.active?.messages.length}
+    <!-- What Nook could do for what was just said (`ActionSuggestionBar`), above the field. -->
+    <div class="suggestion"><ActionSuggestionBar turn={turn} busy={busy} place={{ kind: "nook" }} lines={nookLines} nookId={nook.active?.id ?? null} enabled={nook.settings?.suggestChatActions !== false} onadjust={() => onopen?.({ kind: "route", route: "agents" })} /></div>
+  {/if}
   <Composer {compact} {autofocus} />
   {#if onboarding}<Onboarding onclose={() => (onboarding = false)} />{/if}
 </div>
 
 <style>
   .chat { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .messages { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 28px 32px; min-height: 0; overflow-wrap: anywhere; }
-  .reading-column { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 760px; margin: 0 auto; }
+  /* The Mac's conversation (`NookTab`): one centered column of `readableChat` (820 pt), 8 pt under the header, and a
+     short conversation sits at the bottom, just above the composer (the scroll view's bottom anchor). */
+  .messages { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: var(--space-8) var(--space-24) calc(var(--space-32) + var(--space-12)); min-height: 0; overflow-wrap: anywhere; }
+  .reading-column { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: var(--readable-chat); margin: 0 auto; }
+  .reading-column.filled { justify-content: flex-end; }
   /* The empty chat reads from the top left, as on the Mac: date, greeting, then the sections 24 px apart. */
-  .empty { display: flex; flex-direction: column; align-items: stretch; padding: var(--space-24) 0 var(--space-8); }
+  .empty { display: flex; flex-direction: column; align-items: stretch; padding: var(--space-4) 0 var(--space-8); }
   .hello { display: flex; flex-direction: column; gap: var(--space-4); padding: 0 var(--space-2); }
   .date { font: var(--text-label); color: var(--text3); }
   h1 { margin: 0; font: var(--text-display); color: var(--paper); letter-spacing: -0.2px; }
@@ -166,6 +238,7 @@
   .reading-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-bottom: var(--space-8); }
   .reading-head .label { font: var(--text-title); }
   .err { color: var(--coral); padding: 6px 0; }
+  .suggestion { width: calc(100% - 2 * var(--space-24)); max-width: var(--chat-column); align-self: center; }
   .empty-note { font: var(--text-detail); color: var(--text2); margin: 0 0 var(--space-12); text-align: center; }
   .compact .messages { padding: 12px 16px; }
   .compact .empty { padding: 8px 0; justify-content: center; flex: 1; }

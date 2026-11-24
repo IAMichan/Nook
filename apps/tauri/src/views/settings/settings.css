@@ -1,11 +1,20 @@
-/* Shared settings layout and controls. The sidebar, the bar over the page and the page's width follow the Mac's
-   SettingsSidebar: a 240 px sidebar on the surface, quiet rows that fill when hovered or chosen, no borders. */
+/* Shared settings layout and controls, measured from the Mac's Settings window (SettingsLayout, SettingsSidebar,
+   SettingsPageIntro, SettingsFormStyle): a 240 px sidebar on the surface, quiet rows that fill when hovered or chosen,
+   a 48 px bar over the page, and a page of at most 860 px with 24 px around it, its sections 32 px apart. */
 .settings nav { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--hairline); }
-.settings .settings-search { position: relative; display: flex; align-items: center; gap: var(--space-6); margin: var(--space-16) var(--space-8) var(--space-8); padding: 0 var(--space-8); height: 30px; background: var(--field); border: 1px solid var(--field-stroke); border-radius: var(--radius-control); color: var(--text3); }
-.settings .settings-search:focus-within { border-color: var(--text3); }
-.settings .settings-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: transparent; border: 0; box-shadow: none; font: var(--text-control); font-weight: 400; }
-.settings .settings-search kbd { font: var(--text-caption); color: var(--text3); border: 1px solid var(--line2); border-radius: var(--radius-chip); padding: 0 5px; line-height: 16px; }
-.settings .pages { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-8) var(--space-12); display: flex; flex-direction: column; gap: var(--space-12); scrollbar-width: none; }
+/* The sidebar's top row (the Mac's room for the traffic lights, `SettingsLayout.trafficLightInset`): back to the app. */
+.settings .settings-head { display: flex; align-items: center; height: 40px; padding: 0 var(--space-8); flex: none; }
+.settings .settings-back { display: inline-flex; align-items: center; gap: var(--space-4); height: 26px; padding: 0 var(--space-8) 0 var(--space-4); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text2); font: var(--text-control); }
+.settings .settings-back:hover { background: var(--row-hover); color: var(--paper); }
+/* The search (`NookSearchField`, panel): the field fill without a line, 30 px high, a quiet magnifier and the "/" key. */
+.settings .settings-search { position: relative; display: flex; align-items: center; gap: var(--space-6); margin: 0 var(--space-8) var(--space-8); padding: 0 var(--space-8); height: 30px; flex: none; background: var(--field); border-radius: var(--radius-control); color: var(--text3); }
+.settings .settings-search:focus-within { box-shadow: inset 0 0 0 1px var(--line2); }
+.settings .settings-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: transparent; border: 0; box-shadow: none; outline: none; color: var(--paper); font: var(--text-body); }
+.settings .settings-search input::placeholder { color: var(--text3); }
+.settings .settings-search kbd { display: grid; place-items: center; min-width: 16px; height: 18px; padding: 0 var(--space-4); font: var(--text-caption); color: var(--text2); background: var(--smoke); border: none; border-radius: var(--radius-chip); }
+.settings .settings-search .clear { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--text3); }
+.settings .settings-search .clear:hover { color: var(--paper); background: none; }
+.settings .pages { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-8) var(--space-12); display: flex; flex-direction: column; gap: var(--space-12); scrollbar-width: none; }
 .settings .group-rows { display: flex; flex-direction: column; gap: var(--space-2); }
 .settings .heading { font: var(--text-label); color: var(--text3); padding: 0 var(--space-6) var(--space-2); }
 .settings nav .navrow { display: flex; align-items: center; gap: var(--space-8); min-height: 30px; padding: 0 var(--space-6); text-align: left; background: transparent; border: 0; border-radius: var(--radius-control); color: var(--text-strong); font: var(--text-body); }
@@ -13,58 +22,111 @@
 .settings nav .navrow.on { background: var(--row-selected); color: var(--paper); }
 .settings nav .navrow .mark { display: grid; place-items: center; width: 18px; flex: none; color: var(--text2); }
 .settings nav .navrow.on .mark { color: var(--paper); }
-.settings nav .navrow .label { display: flex; flex-direction: column; min-width: 0; }
+.settings nav .navrow .label { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .settings nav .navrow .label > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.settings nav .navrow .detail { font: var(--text-caption); color: var(--text3); }
+.settings nav .navrow .detail { font: var(--text-caption); font-weight: 400; color: var(--text3); }
 .settings nav .navrow:has(.detail) { min-height: 40px; }
 .settings nav .none { font: var(--text-detail); color: var(--text2); text-align: center; padding: var(--space-16) var(--space-8); margin: 0; }
-.settings .crumbs { display: flex; align-items: center; gap: var(--space-6); height: 48px; flex: none; padding: 0 var(--space-16); font: var(--text-body); font-weight: 500; white-space: nowrap; overflow: hidden; }
+/* The bar over the page (`SettingsPageBar`): Settings › page in 14 px medium, a line under it. */
+.settings .crumbs { display: flex; align-items: center; gap: var(--space-6); height: 48px; flex: none; padding: 0 calc(var(--caption-button) * 3 + var(--space-8)) 0 var(--space-16); border-bottom: 1px solid var(--hairline); font: var(--text-emphasis); white-space: nowrap; overflow: hidden; }
+.settings .crumbs .faint { color: var(--text3); }
 .settings .crumbs .chev { display: grid; place-items: center; color: var(--text-muted); }
 .settings .crumbs .here { color: var(--paper); overflow: hidden; text-overflow: ellipsis; }
-.settings .pane { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-16) clamp(20px, 4vw, 48px) var(--space-48); scrollbar-gutter: stable; }
-.settings .pane > .page { max-width: 860px; margin: 0 auto; }
-.settings h2 { margin: 0 0 20px; font: var(--text-display); letter-spacing: -0.3px; }
-.settings h3 { margin: 22px 0 8px; font-size: 13px; color: var(--text2); }
-/* A card of rows as the Mac's SettingsFormStyle draws it: the surface with a separator line around it, rows 12 px high
-   padding and 16 px in from the sides, a line between two rows. */
-.settings .group { background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); padding: 0 var(--space-16); margin-top: var(--space-8); }
-.settings .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); }
+.settings .crumbs .spacer { flex: 1; min-width: var(--space-12); }
+/* Restore defaults on the right of the bar: a small quiet button, dim while nothing differs from the defaults. */
+.settings .crumbs .restore { display: inline-flex; align-items: center; gap: var(--space-6); height: 24px; padding: 0 var(--space-12); border: none; border-radius: var(--radius-chip); background: var(--row-hover); color: var(--text-strong); font: var(--text-detail); font-weight: 500; }
+.settings .crumbs .restore:disabled { color: var(--text3); opacity: 0.6; }
+.settings .crumbs .restore:hover:not(:disabled) { background: var(--row-selected); }
+.settings .pane { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.settings .pane > .page { max-width: 860px; margin: 0 auto; padding: var(--space-24); }
+/* The top of a page (`SettingsPageIntro`): the name in display type, one line on what it holds, the tabs, a line on the
+   subject shown, and how it treats your data. */
+.settings .intro { display: flex; flex-direction: column; gap: var(--space-6); }
+.settings h2 { margin: 0; font: var(--text-display); line-height: 1.2; color: var(--paper); }
+.settings .intro .lead { margin: 0; font: var(--text-body); line-height: 1.3; color: var(--text2); }
+.settings .intro .part-lead { margin: 0; font: var(--text-detail); line-height: 1.3; color: var(--text2); }
+.settings .intro .info { margin: 0; font: var(--text-detail); line-height: 1.3; color: var(--text3); }
+/* A section (`SettingsFormSection`): its title 15 px semibold, 32 px under what came before, 8 px over its card; the
+   card is the surface with a separator line around it, rows 12 px high padding and 16 px in from the sides. */
+.settings h3 { margin: var(--space-32) 0 0; padding-left: var(--space-2); font: var(--text-title); color: var(--paper); }
+.settings h3 + .group, .settings h3 + p, .settings h3 + .faint, .settings .section-head + .group { margin-top: var(--space-8); }
+/* A section heading with an action on the right (`ConnectionListHeader` on the Mac: title left, + action right). */
+.settings .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin: var(--space-32) 0 0; }
+.settings .section-head h3 { margin: 0; }
+/* The add action beside a list's title (`ConnectionListHeader`): a plus and the words, no fill, as the Mac draws it. */
+.settings .section-head .head-action { display: inline-flex; align-items: center; gap: var(--space-6); height: auto; padding: 0; border: none; background: none; color: var(--text-strong); font: var(--text-control); white-space: nowrap; }
+.settings .section-head .head-action:hover:not(:disabled) { background: none; color: var(--paper); }
+/* Inline search card (`NookSearchField`, inline style on Archive and Connections): full-width surface card with magnifier. */
+.settings .search-card { display: flex; align-items: center; gap: var(--space-8); height: 40px; padding: 0 var(--space-12); background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); color: var(--text3); }
+.settings .search-card:focus-within { border-color: var(--line2); }
+.settings .search-card input { flex: 1; min-width: 0; height: 100%; padding: 0; border: none; background: none; box-shadow: none; outline: none; color: var(--paper); font: var(--text-body); }
+.settings .search-card input::placeholder { color: var(--text3); }
+.settings .search-card .clear { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--text3); }
+.settings .search-card .clear:hover { color: var(--paper); background: none; }
+/* A section's own line of explanation under its title (`SettingsSectionTitle` with `info`): 12 px secondary text,
+   2 px under the title; the card follows 8 px under it. */
+.settings h3 + .section-info, .settings .section-head + .section-info { margin: var(--space-2) 0 0; padding: 0 var(--space-2); font: var(--text-detail); line-height: 1.3; color: var(--text2); }
+.settings .section-info + .group { margin-top: var(--space-8); }
+/* An empty list's line inside a card (`ListEmptyNote`). */
+.settings .group > .empty-note { margin: 0; padding: var(--space-12) 0; font: var(--text-detail); color: var(--text2); }
+.settings .group { background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); padding: 0 var(--row-pad-x); margin-top: var(--space-32); }
+.settings .group + .group { margin-top: var(--space-32); }
+.settings .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--row-pad-y) 0; border-bottom: 1px solid var(--separator); font: var(--text-body); line-height: 1.3; color: var(--paper); }
 /* The name and explanation take the room; the control wraps under them only when the row is too narrow. */
 .settings .row > span:first-child { flex: 1 1 240px; min-width: 0; }
+/* Stacked rows (label over a full-width input or textarea): flex-basis must not become 240 px of vertical height. */
+.settings .row.stacked { flex-direction: column; align-items: stretch; gap: var(--space-6); }
+.settings .row.stacked > span:first-child { flex: none; }
+/* An explanation under a row's name (`SettingRowLabel`): 12 px in the secondary text. */
+.settings .row small, .settings .row .faint.small { font: var(--text-detail); line-height: 1.3; color: var(--text2); }
 /* A row with a switch keeps the switch beside its text, however long the explanation. */
 .settings .row:has(> input[type="checkbox"]) { flex-wrap: nowrap; }
 .settings .row:has(> input[type="checkbox"]) > span:first-child { flex: 1; min-width: 0; }
+/* A line of explanation inside a card is a row of its own, as the Mac's footnote rows are; under a card, a footer. */
+.settings .group > p.note { margin: 0; padding: var(--row-pad-y) 0; border-bottom: 1px solid var(--separator); font: var(--text-detail); color: var(--text2); }
+.settings .group > p.note:last-child { border-bottom: none; }
+.settings .group + p.note, .settings .group + .faint.note { margin: var(--space-8) 0 0; padding: 0 var(--space-2); font: var(--text-detail); color: var(--text2); }
+/* A page's first section sits 32 px under the intro, wherever it starts. */
+.settings .intro + * { margin-top: var(--space-32); }
 
 /* The controls on a row, as on the Mac (SettingsFormStyle, SettingsControl): the system's fill for a control on a card,
    and the raised fill of a chosen segment. */
-.settings { --settings-control: color-mix(in srgb, var(--paper) 15%, var(--surface)); --settings-control-on: color-mix(in srgb, var(--paper) 28%, var(--surface)); }
+/* Measured on the Mac's render over the card's surface: a menu's capsule paper at 15 %, a button and a segmented
+   track at 8 %, a chosen segment at 20 %, a switch's track at 10 %. */
+.settings { --settings-control: color-mix(in srgb, var(--paper) 15%, var(--surface)); --settings-control-on: color-mix(in srgb, var(--paper) 28%, var(--surface)); --settings-fill: color-mix(in srgb, var(--paper) 8%, var(--surface)); --settings-fill-on: color-mix(in srgb, var(--paper) 20%, var(--surface)); --settings-switch: color-mix(in srgb, var(--paper) 10%, var(--surface)); }
 
-/* On/off is a switch, never a checkbox (`SettingsRowToggleStyle`): the track in the control fill, Nook's colour when
-   on, a white knob. Weekdays and other picks from a set stay boxes. */
-.settings input[type="checkbox"]:not(.box) { appearance: none; position: relative; flex: none; width: 34px; height: 20px; margin: 0; padding: 0; border: none; border-radius: var(--radius-pill); background: var(--settings-control); cursor: pointer; transition: background var(--motion-quick, 150ms ease-out); }
-.settings input[type="checkbox"]:not(.box)::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--canvas) 30%, transparent), 0 1px 2px color-mix(in srgb, var(--canvas) 40%, transparent); transition: transform var(--motion-quick, 150ms ease-out); }
-.settings input[type="checkbox"]:not(.box):checked { background: var(--iris); }
-.settings input[type="checkbox"]:not(.box):checked::before { transform: translateX(14px); }
+/* On/off is a switch, never a checkbox (`SettingsRowToggleStyle`, `compactSwitch`), drawn as macOS 26 draws it: a
+   44 by 20 px track in the control fill and a white knob shaped as a pill (24 by 16) that slides to the right when on;
+   on, the track lifts to the raised control fill. Weekdays and other picks from a set stay boxes. */
+.settings input[type="checkbox"]:not(.box) { appearance: none; position: relative; flex: none; width: 44px; height: 20px; margin: 0; padding: 0; border: none; border-radius: var(--radius-pill); background: var(--settings-switch); cursor: pointer; transition: background var(--motion-quick, 150ms ease-out); }
+.settings input[type="checkbox"]:not(.box)::before { content: ""; position: absolute; top: 2px; left: 2px; width: 24px; height: 16px; border-radius: var(--radius-pill); background: var(--paper); box-shadow: 0 1px 2px color-mix(in srgb, var(--canvas) 40%, transparent); transition: transform var(--motion-quick, 150ms ease-out); }
+.settings input[type="checkbox"]:not(.box):checked { background: var(--settings-switch); }
+.settings input[type="checkbox"]:not(.box):checked::before { transform: translateX(16px); }
 .settings input[type="checkbox"]:not(.box):disabled { opacity: 0.45; cursor: default; }
 .settings input[type="checkbox"]:not(.box):focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 /* A switch with its text after it (the older "check" rows) stands on the right of its row, as every switch does. */
-.settings label.check { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); font: var(--text-body); }
+.settings label.check { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: var(--space-16); padding: var(--row-pad-y) 0; border-bottom: 1px solid var(--separator); font: var(--text-body); }
 .settings label.check:last-child { border-bottom: none; }
 
 /* A choice from a list is the Mac's capsule menu: the control fill, secondary text, up/down chevrons on the right,
    28 px high (`SettingsControl.height`). */
-.settings select { appearance: none; height: 28px; padding: 0 30px 0 var(--space-12); border: none; border-radius: var(--radius-pill); background-color: var(--settings-control); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='gray' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; color: var(--text2); font: var(--text-control); cursor: pointer; max-width: 100%; }
+.settings select { appearance: none; height: 28px; padding: 0 30px 0 var(--space-12); border: none; border-radius: var(--radius-pill); background-color: var(--settings-control); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='gray' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; color: var(--text2); font: var(--text-body); cursor: pointer; max-width: 100%; }
 .settings select:hover:not(:disabled) { color: var(--paper); }
 .settings select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 .settings select option { background: var(--menu); color: var(--paper); }
 
 /* A button on a row is the Mac's small bordered button: the control fill, secondary text, no line. Buttons that bring
    their own look (primary, danger, ghost, swatches, tabs) keep it. */
-.settings .row button:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]), .settings .inline button:not(.primary):not(.danger):not(.ghost):not(.swatch) { height: 24px; padding: 0 var(--space-12); border: none; border-radius: var(--radius-chip); background: var(--settings-control); color: var(--text-strong); font: var(--text-control); }
-.settings .row button:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]):hover:not(:disabled), .settings .inline button:not(.primary):not(.danger):not(.ghost):not(.swatch):hover:not(:disabled) { background: var(--settings-control-on); }
+.settings .row button:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]), .settings .inline button:not(.primary):not(.danger):not(.ghost):not(.swatch) { height: 24px; padding: 0 var(--space-12); border: none; border-radius: var(--radius-chip); background: var(--settings-fill); color: var(--text-strong); font: var(--text-control); }
+.settings .row button:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]):hover:not(:disabled), .settings .inline button:not(.primary):not(.danger):not(.ghost):not(.swatch):hover:not(:disabled) { background: var(--settings-control); }
+/* The Mac's small control size (`.controlSize(.small)`): 20 px high, 11.5 px medium, for the quieter actions of a row
+   ("Add project", "Copy diagnostics", "Test connection", "Manage", "Check now"). */
+.settings .row button.small:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]), .settings .inline button.small:not(.primary):not(.danger):not(.ghost):not(.swatch) { height: 20px; padding: 0 var(--space-8); font: var(--text-label); }
+/* The Mac's regular bordered button on macOS 26 ("Open folder", "Export look…"): a 28 px capsule in the body type. */
+.settings .row button.capsule:not(.primary):not(.danger):not(.ghost):not(.swatch):not([role="radio"]):not([role="tab"]) { height: 28px; padding: 0 var(--space-12); border-radius: var(--radius-pill); font: var(--text-body); }
 .settings .row:last-child { border-bottom: none; }
 .settings .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.settings .note { font-size: 12px; margin: 6px 0 10px; }
+.settings .note { font: var(--text-detail); margin: var(--space-6) 0 10px; }
 .settings .providers { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-top: 12px; }
 .settings .provider { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; }
 .settings .provider.on { border-color: var(--iris); }
@@ -87,7 +149,7 @@
   .settings .group-rows { flex-direction: row; gap: var(--space-4); }
   .settings .entry { grid-template-columns: 1fr; }
   /* Eén kolom op de telefoon, met knoppen en velden die je met een vinger raakt. */
-  .settings .pane { padding: 16px 16px 32px; }
+  .settings .pane > .page { padding: var(--space-16) var(--space-16) var(--space-32); }
   .settings nav .navrow { flex: none; min-height: 40px; }
   .settings .row { flex-wrap: wrap; min-height: 48px; }
   .settings .row > span:first-child { flex: 1 1 160px; }
@@ -97,3 +159,7 @@
   .settings button:not(.swatch) { min-height: 40px; }
   .settings .swatch { flex: none; width: 28px; height: 28px; }
 }
+/* A setting a search led to lights up for a moment (`SettingsHighlight`): a wash of the accent behind the row, so
+   lighting it never moves anything. */
+.settings .setting-lit { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--iris) 22%, transparent); border-radius: var(--radius-chip); }
+.settings .row, .settings h3, .settings .fold { transition: box-shadow var(--motion-standard); }

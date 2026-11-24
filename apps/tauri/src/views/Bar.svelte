@@ -1,6 +1,6 @@
 <script lang="ts">
   // De balk bovenaan het scherm: in rust een pil met Nook, open een paneel met de tabs Home, Nook, Agents en Werkruimte.
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
   import { api, events } from "../lib/api";
@@ -8,6 +8,8 @@
   import Chat from "../components/Chat.svelte";
   import Orb from "../components/Orb.svelte";
   import Icon from "../components/Icon.svelte";
+  import Ico from "../components/ui/Ico.svelte";
+  import AgentMark from "./companion/ui/AgentMark.svelte";
   import Today from "./Today.svelte";
   import Agents from "./Agents.svelte";
   import Workspace from "./Workspace.svelte";
@@ -28,9 +30,16 @@
   import NoticeMark from "../components/NoticeMark.svelte";
   import NoticeOk from "../components/NoticeOk.svelte";
   import { compactNotice, Countdown, noticeTone } from "../lib/notice";
+  import { TRACK_STRIP_MS, isNewTrack, orbMood, trackLine } from "../lib/bar-music";
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
+  import ChatArrivedCard from "../components/ChatArrivedCard.svelte";
+  import BarCard from "../components/shell/BarCard.svelte";
+  import BarAgentCard from "../components/shell/BarAgentCard.svelte";
+  import { arrivedChat, showChat } from "../lib/chat-arrived.svelte";
+  import { recordAttention } from "../lib/attention-rank";
   import Home from "./home/Home.svelte";
+  import { buddy } from "../lib/buddy.svelte"; // Nook as a buddy (SV-19): his moments as a strip in the bar.
   import type { Target } from "../lib/inbox";
 
   type Tab = "home" | "nook" | "chats" | "agents" | "workspace" | "music" | "commands";
@@ -54,24 +63,104 @@
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let inside = $state(false);
   let openedAt = 0;
-  // Agent notices: a compact one widens the closed bar (`strip`); a detailed one opens the panel. `noticeLeft` is what
-  // is left of its countdown, for the ring on OK.
+  // Agent notices and clicked chat chips: a compact notice widens the closed bar (`strip`), while a detailed notice or
+  // chat card turns the closed bar into a compact notch card (`BarAgentCard` / `BarCard`) sized to `cardHeight` instead
+  // of opening the whole tabbed panel. `noticeLeft` is what is left of the notice countdown, for the ring on OK.
+  type CardKind = "agent" | "chat";
   let strip = $state(false);
-  let openedForNotice = false;
+  let cardKind = $state<CardKind | null>(null);
+  let cardHeight = $state(0);
+  let savedPanelSize: { w: number; h: number } | null = null;
+  let cardAnchor: { centerX: number; topY: number } | null = null;
+  const cardOpen = $derived(!expanded && cardKind !== null);
   let noticeLeft = $state<number | null>(null);
   const noticeCompact = $derived(nook.settings?.agentNotice === "compact");
 
-  const mood = $derived(nook.waiting ? "waiting" : nook.working ? "working" : "idle");
   const floating = $derived(nook.settings?.placement === "floating");
+
+  async function sizeCardWindow() {
+    if (!cardOpen) return;
+    const cardW = nook.settings?.panelLarge ? 680 : 600;
+    const cardH = Math.max(MIN.h, Math.ceil(cardHeight || 220));
+    try {
+      const win = getCurrentWindow();
+      await win.setSize(new LogicalSize(cardW, cardH));
+      if (cardAnchor) {
+        await win.setPosition(new LogicalPosition(Math.round(cardAnchor.centerX - cardW / 2), Math.round(cardAnchor.topY)));
+      }
+    } catch {
+      // Window sizing is best-effort outside desktop webviews.
+    }
+  }
+
+  $effect(() => {
+    const h = cardHeight;
+    if (!cardOpen || h <= 0) return;
+    untrack(() => {
+      void sizeCardWindow();
+    });
+  });
+
+  async function restorePanelSize() {
+    if (!savedPanelSize) return;
+    const { w, h } = savedPanelSize;
+    savedPanelSize = null;
+    cardAnchor = null;
+    try {
+      await getCurrentWindow().setSize(new LogicalSize(w, h));
+    } catch {
+      // Best-effort restore so Rust keeps the user's real panel size rather than the card size.
+    }
+  }
+
+  async function enterCard(kind: CardKind) {
+    clearTimeout(closeTimer);
+    if (expanded) return;
+    const alreadyCard = cardKind !== null;
+    strip = false;
+    cardKind = kind;
+    openedAt = Date.now();
+    if (!alreadyCard) {
+      await api.barExpand(true);
+      services.asideHide();
+      try {
+        const win = getCurrentWindow();
+        const [inner, pos, scale] = await Promise.all([win.innerSize(), win.outerPosition(), win.scaleFactor()]);
+        const s = scale || 1;
+        savedPanelSize = { w: inner.width / s, h: inner.height / s };
+        cardAnchor = { centerX: pos.x / s + savedPanelSize.w / 2, topY: pos.y / s };
+      } catch {
+        savedPanelSize = null;
+        cardAnchor = null;
+      }
+    }
+    await tick();
+    await sizeCardWindow();
+  }
+
+  async function exitCard() {
+    if (cardKind === null) return;
+    cardKind = null;
+    cardHeight = 0;
+    await restorePanelSize();
+    if (!expanded && !strip) {
+      await api.barExpand(false, false, chipVisible);
+      services.asideShow();
+    }
+  }
 
   async function open(focus?: string) {
     clearTimeout(closeTimer);
     const wasExpanded = expanded;
     if (!expanded) {
+      const wasCard = cardKind !== null;
       strip = false;
+      cardKind = null;
+      cardHeight = 0;
       expanded = true;
       // Resizing and focusing the window can fire a blur of its own; that must not close the panel that is opening.
       openedAt = Date.now();
+      if (wasCard) await restorePanelSize();
       await api.barExpand(true);
       // Het aanbod naast de balk zou het paneel bedekken; het staat ook in Vandaag.
       services.asideHide();
@@ -82,6 +171,8 @@
     } else if (focus === "agents") {
       tab = "agents";
       pinnedOpen = true;
+    } else if (focus === "music") {
+      tab = "music";
     } else if (focus === "agents-request" && !wasExpanded) {
       // A permission request or question: a closed bar opens on the agents; an open panel stays as it was and asks in
       // its compact bar under the tabs.
@@ -104,6 +195,13 @@
   const shown = $derived<Tab>(
     (tab === "music" && !playing) || (tab === "workspace" && nook.info && !nook.info.capabilities.terminals) ? "nook" : tab,
   );
+  // Closed, Nook shows everything that waits or works; open, the mood of the tab on screen (UI-55, `orbMood`).
+  const moodInputs = $derived({
+    nookWaiting: nook.waiting, nookWorking: nook.working, agentsWaiting: agents.pending,
+    agentsRunning: agents.sessions.filter((s) => s.status === "running").length, playing: !!playing?.playing,
+  });
+  const mood = $derived(orbMood(null, moodInputs));
+  const tabMood = $derived(orbMood(shown, moodInputs));
   $effect(() => {
     services.nowPlaying().then((n) => ((playing = n), (since = Date.now()))).catch(() => {});
     const un = serviceEvents.onNowPlaying((n) => {
@@ -152,10 +250,64 @@
     services.asideShow();
   }
 
+  // Open on hover (`scheduleHoverOpen` on the Mac): the pointer has to rest on the closed bar a moment (shorter while an
+  // agent works), so sweeping across the top edge opens nothing; a move starts the wait again, leaving cancels it. The
+  // panel it opens closes again when the pointer leaves, as a hover-opened notch does.
+  // --- Nook as a buddy (SV-19, `momentStrip` on the Mac) ---
+  // A moment of his own (or breathing along) widens the closed bar into one line, as a compact agent notice does; an
+  // agent notice, a card or the open panel go first. Hovering holds it. Window size follows it in and out.
+  const momentStrip = $derived(!expanded && !strip && !cardOpen && !!buddy.moment);
+  $effect(() => {
+    buddy.start();
+  });
+  $effect(() => {
+    buddy.hovering = inside;
+  });
+  let momentSized = false;
+  $effect(() => {
+    const want = momentStrip;
+    untrack(() => {
+      if (want && !momentSized) {
+        momentSized = true;
+        api.barExpand(false, true);
+      } else if (!want && momentSized) {
+        momentSized = false;
+        if (!expanded && !strip && !cardOpen) api.barExpand(false, false, chipVisible);
+      }
+    });
+  });
+  function momentAction() {
+    const action = buddy.moment?.action;
+    if (action === "breathe") return buddy.requestBreathe();
+    buddy.dismiss();
+    if (action === "agents") void open("agents");
+    else if (action === "today") { pickSide("today"); void open(); }
+  }
+  // --- end buddy ---
+
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  function hoverWait() {
+    clearTimeout(hoverTimer);
+    if (nook.settings?.openOnHover === false || expanded || strip || momentStrip || cardKind !== null) return;
+    const working = nook.nooks.some((n) => n.status === "working") || agents.sessions.some((x) => x.status === "running");
+    hoverTimer = setTimeout(() => {
+      if (inside && !expanded && !strip && cardKind === null) open();
+    }, working ? 140 : 260);
+  }
+  function enter() {
+    inside = true;
+    hoverWait();
+  }
+  function moveInside() {
+    if (hoverTimer !== undefined && !expanded) hoverWait();
+  }
+
   function leave() {
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
     inside = false;
     // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
-    if (resizing || pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
+    if (resizing || pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat || arrivedChat.thread) return;
     // Both the pointer and a notice that ran out call this; a second timer must not orphan the first.
     clearTimeout(closeTimer);
     closeTimer = setTimeout(() => close(), 450);
@@ -216,10 +368,11 @@
   const nextLanguage = $derived(APP_LANGUAGES[(APP_LANGUAGES.findIndex((l) => l.code === appLanguage()) + 1) % APP_LANGUAGES.length].name);
 
   // "Laat Nook antwoorden" on a WhatsApp card: the new Nook opens in the Nook tab.
-  function openNookFromCard(id: string) {
+  async function openNookFromCard(id: string) {
     select("nook");
     pinnedOpen = true;
-    nook.select(id);
+    await open();
+    await nook.select(id);
   }
 
   // The right-hand column of the Nook tab: the chat history (as on the Mac) or Today.
@@ -260,6 +413,10 @@
         case "nook":
           select("nook");
           return await nook.select(target.id);
+        case "chat":
+          select("chats");
+          await tick();
+          return showChat(target.key);
         case "newNook":
           select("nook");
           await nook.newNook();
@@ -294,6 +451,12 @@
     const blurredAt = Date.now();
     setTimeout(() => {
       if (resizing || lastResize >= blurredAt - 100 || document.hasFocus()) return;
+      if (cardKind === "chat" && !whatsapp.enlarged) {
+        whatsapp.dismiss();
+        arrivedChat.dismiss();
+        void exitCard();
+        return;
+      }
       close();
     }, 250);
   }
@@ -353,19 +516,18 @@
     agents.start();
   });
   // A notice stays for its countdown with the pointer off the bar (hovering holds it), or until OK, View or Esc.
-  // Detailed opens the panel with a card; compact widens the closed bar into one line.
+  // Detailed turns the closed bar into a compact notch card (`BarAgentCard`); compact widens the closed bar into one line.
   $effect(() => {
     const card = agents.attention;
     // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, the bar does not pop open.
     if (!card || untrack(() => quiet.silent)) return;
     untrack(() => {
-      if (expanded) return;
+      if (expanded || cardKind === "chat") return;
       if (noticeCompact) {
         strip = true;
         api.barExpand(false, true);
       } else {
-        openedForNotice = true;
-        open();
+        void enterCard("agent");
       }
     });
     const clock = new Countdown();
@@ -376,36 +538,47 @@
       clock.advance((now - last) / 1000, inside);
       last = now;
       noticeLeft = clock.fraction;
-      if (clock.done && agents.attention === card) agents.attention = null;
+      if (clock.done && agents.attention === card) {
+        recordAttention("timedOut", { source: "agents", app: card.name, subject: card.id });
+        agents.attention = null;
+      }
     }, 100);
     return () => {
       clearInterval(timer);
       // A newer notice took its place: it carries on from here.
       if (agents.attention) return;
       noticeLeft = null;
-      openedForNotice = false;
       if (strip) {
         strip = false;
-        if (!expanded) api.barExpand(false);
+        if (!expanded && !cardOpen) api.barExpand(false);
       }
-      if (expanded && !inside) leave();
+      if (cardKind === "agent") {
+        void exitCard();
+      } else if (expanded && !inside) {
+        leave();
+      }
     };
   });
 
+  // What you do with a notice teaches the shared ranking (the Mac's `AttentionFeedback`): View opens, OK dismisses.
   function dismissNotice() {
+    const card = agents.attention;
+    if (card) recordAttention("dismissed", { source: "agents", app: card.name, subject: card.id });
     agents.attention = null;
   }
 
   function viewNotice(id: string) {
-    agents.attention = null;
+    const card = agents.attention;
+    if (card) recordAttention("opened", { source: "agents", app: card.name, subject: card.id });
     agents.select(id);
     select("agents");
     pinnedOpen = true;
-    open();
+    agents.attention = null;
+    void open();
   }
 
   // WhatsApp: a new message never opens the bar by itself. The closed bar shows a chip under the round Nook ("Bericht
-  // van Peter"); once the panel is open (by the chip or any other way) the card of that chat shows in it.
+  // van Peter"); clicking the chip shows the chat in a BarCard, and opening the panel shows it in the panel.
   $effect(() => {
     whatsapp.start();
   });
@@ -413,8 +586,70 @@
     const waiting = whatsapp.pending;
     if (waiting && expanded) untrack(() => whatsapp.show(waiting.chat));
   });
-  const chipName = $derived(whatsapp.pending?.name ?? whatsapp.card?.conversation.name ?? "");
-  const chipVisible = $derived(!expanded && !strip && !!chipName && !quiet.silent);
+  // Every other chat app does the same with its own card (`chat-arrived`, the Mac's notch chat card).
+  $effect(() => {
+    arrivedChat.start();
+  });
+  $effect(() => {
+    if (arrivedChat.pending && expanded) untrack(() => arrivedChat.show());
+  });
+  // When the user dismisses or replies in a standalone chat BarCard, collapse the bar back cleanly.
+  $effect(() => {
+    if (cardKind === "chat" && !whatsapp.chat && !arrivedChat.thread) {
+      untrack(() => void exitCard());
+    }
+  });
+  const chipName = $derived(
+    whatsapp.pending?.name ?? whatsapp.card?.conversation.name ?? arrivedChat.pending?.name ?? arrivedChat.thread?.name ?? "",
+  );
+  function dismissChip() {
+    whatsapp.dismiss();
+    arrivedChat.dismiss();
+  }
+  async function openChatCard() {
+    if (whatsapp.pending) {
+      await whatsapp.show(whatsapp.pending.chat);
+    } else if (arrivedChat.pending) {
+      await arrivedChat.show();
+    }
+    if (whatsapp.chat || arrivedChat.thread) {
+      await enterCard("chat");
+    } else {
+      await openByClick();
+    }
+  }
+  /// "Open in Nook" on a chat card: that chat in the bar's Chats tab.
+  async function openArrived(key: string) {
+    arrivedChat.dismiss();
+    select("chats");
+    pinnedOpen = true;
+    await open();
+    await tick();
+    showChat(key);
+  }
+  // A new track shows under the round Nook for a few seconds (the Mac's new-track strip); a message goes first.
+  let trackStrip = $state<string | null>(null);
+  let lastTrack: string | null | undefined = undefined;
+  $effect(() => {
+    const now = playing;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    untrack(() => {
+      if (isNewTrack(lastTrack, now)) {
+        trackStrip = trackLine(now);
+        timer = setTimeout(() => (trackStrip = null), TRACK_STRIP_MS);
+      }
+      if (trackLine(now) || lastTrack === undefined) lastTrack = trackLine(now);
+    });
+    return () => clearTimeout(timer);
+  });
+  const chipVisible = $derived(!expanded && !strip && !cardOpen && (!!chipName || !!trackStrip) && !quiet.silent);
+  // "Hide Nook when idle" (Settings › General › Bar & windows): closed, without a notice, card or chip and with nothing
+  // working or waiting, the bar hides; anything new shows it again, as do a shortcut and the tray.
+  // "Nook on the bar" off (`showBar`): closed, he is out of sight altogether until a shortcut or the tray opens him.
+  const idleHidden = $derived(!expanded && (nook.settings?.showBar === false || (!!nook.settings?.hideWhenIdle && !strip && !momentStrip && !cardOpen && !chipVisible && mood === "idle")));
+  $effect(() => {
+    api.barVisible(!idleHidden).catch(() => {});
+  });
   // The window makes room under the round Nook while the chip shows, and goes back to the round size when it leaves.
   let chipSized = false;
   $effect(() => {
@@ -425,15 +660,18 @@
         api.barExpand(false, false, true);
       } else if (!want && chipSized) {
         chipSized = false;
-        if (!expanded && !strip) api.barExpand(false);
+        if (!expanded && !strip && !cardOpen) api.barExpand(false);
       }
     });
   });
 
-  // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.
+  // Escape first shrinks an enlarged photo, then closes a chat card, then an agent notice card, then the bar.
   function escape() {
     if (whatsapp.enlarged) whatsapp.enlarged = null;
     else if (whatsapp.chat) whatsapp.dismiss();
+    else if (arrivedChat.thread) arrivedChat.dismiss();
+    else if (cardKind === "agent" && agents.attention) dismissNotice();
+    else if (cardOpen) void exitCard();
     else {
       if (agents.attention) dismissNotice();
       close(true);
@@ -451,17 +689,71 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={blurClose} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
-<div class="bar" class:expanded class:floating class:hasChip={chipVisible} role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating class:hasChip={chipVisible} role="region" onmouseenter={enter} onmousemove={moveInside} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
     {@const card = agents.attention}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill strip" onmousedown={drag}>
-      <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
+      <span class="strip-mark">
+        {#if card.name}
+          <AgentMark agent={card.name} size={16} />
+          <span class="strip-badge {noticeTone(card.status)}"></span>
+        {:else}
+          <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
+        {/if}
+      </span>
       <span class="message">{compactNotice(card.name, card.project, card.status)}</span>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
-        <button class="ghost" onclick={() => viewNotice(card.id)}>{tr("Bekijk", "View")}</button>
+        <span class="strip-action-bar">
+          <button class="strip-action" onclick={() => viewNotice(card.id)}>{tr("Bekijk", "View")}</button>
+        </span>
         <NoticeOk compact left={noticeLeft} onclick={dismissNotice} />
+      </span>
+    </div>
+  {:else if cardOpen && cardKind === "agent" && agents.attention}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="card-shell" onmousedown={drag}>
+      <BarAgentCard
+        card={agents.attention}
+        left={noticeLeft}
+        bind:height={cardHeight}
+        onview={viewNotice}
+        ondismiss={dismissNotice}
+      />
+    </div>
+  {:else if cardOpen && cardKind === "chat" && (whatsapp.chat || arrivedChat.thread)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="card-shell chat-card" onmousedown={drag}>
+      <BarCard
+        mood="waiting"
+        tint="var(--amber)"
+        label={whatsapp.card?.conversation.name ?? arrivedChat.thread?.name}
+        bind:height={cardHeight}
+      >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="card-inner" onmousedown={(e) => e.stopPropagation()}>
+          {#if whatsapp.chat}
+            <WhatsAppCard onnook={openNookFromCard} />
+          {:else if arrivedChat.thread}
+            <ChatArrivedCard onopen={openArrived} />
+          {/if}
+        </div>
+      </BarCard>
+    </div>
+  {:else if momentStrip && buddy.moment}
+    <!-- Nook as a buddy (SV-19): his moment in one line, the agent strip's look. -->
+    {@const moment = buddy.moment}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="pill strip" aria-live="polite" onmousedown={drag}>
+      <span class="strip-mark"><Orb size={18} mood={moment.mood} /></span>
+      <span class="message">{buddy.line}</span>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
+        {#if moment.action && moment.actionTitle}
+          <span class="strip-action-bar"><button class="strip-action" onclick={momentAction}>{moment.actionTitle}</button></span>
+        {/if}
+        <NoticeOk compact left={buddy.left} onclick={() => buddy.dismiss()} />
       </span>
     </div>
   {:else if !expanded}
@@ -485,38 +777,64 @@
       {#if barDraft.files}<span class="badge">{barDraft.files}</span>{/if}
       {#if nook.working}<span class="dot working corner"></span>{/if}
       {#if nook.waiting}<span class="dot waiting corner"></span>{/if}
+      {#if playing?.playing && !nook.working && !nook.waiting}<span class="eq corner-eq playing" aria-hidden="true"><i></i><i></i><i></i></span>{/if}
     </div>
-    {#if chipVisible}
-      <div class="chip">
-        <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openByClick}>
-          {tr("Bericht van {name}", "Message from {name}", { name: chipName })}
+    {#if chipVisible && !chipName && trackStrip}
+      <div class="chip track" role="status">
+        <button class="chiptext" title={trackStrip} onclick={() => { trackStrip = null; open("music"); }}>
+          <span class="eq" class:playing={playing?.playing} aria-hidden="true"><i></i><i></i><i></i></span><span class="chiplabel">{trackStrip}</span>
         </button>
-        <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={() => whatsapp.dismiss()}>×</button>
+        <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={() => (trackStrip = null)}><Ico name="x" size={12} stroke={2.4} /></button>
+      </div>
+    {:else if chipVisible}
+      <div class="chip">
+        <button class="chiptext" title={tr("Open Nook", "Open Nook")} onclick={openChatCard}>
+          <span class="chipico"><Ico name="message-circle" size={12} stroke={2.2} /></span><span class="chiplabel">{tr("Bericht van {name}", "Message from {name}", { name: chipName })}</span>
+        </button>
+        <button class="chipclose" title={tr("Sluiten", "Dismiss")} aria-label={tr("Sluiten", "Dismiss")} onclick={dismissChip}><Ico name="x" size={12} stroke={2.4} /></button>
       </div>
     {/if}
   {:else}
     <div class="panel">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <header onmousedown={drag}>
-        <Orb size={20} {mood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
-        <nav>
-          <button class:on={shown === "home"} onclick={() => select("home")}>Home</button>
-          <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
-          <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
-          <button class:on={shown === "agents"} onclick={() => select("agents")}>{tr("Agents", "Agents")} {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
-          {#if nook.info?.capabilities.terminals}
-            <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
-          {/if}
-          <button class:on={shown === "commands"} onclick={() => select("commands")}>{tr("Commando's", "Commands")}</button>
-          {#if playing}
-            <button class:on={shown === "music"} onclick={() => select("music")}>{tr("Muziek", "Music")} {#if playing.playing}<span class="dot unread"></span>{/if}</button>
-          {/if}
-        </nav>
-        <span class="spacer"></span>
-        <button class="ghost icon lang" title={tr("Taal: klik voor {next}", "Language: click for {next}", { next: nextLanguage })} onclick={toggleLanguage}>{appLanguage().toUpperCase()}</button>
-        <button class="ghost icon lock" class:on={locked} title={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} onclick={() => { locked = !locked; if (locked) pinnedOpen = true; }}><Icon name={locked ? "lock" : "unlock"} size={14} /></button>
-        <button class="ghost icon" title={tr("Verder in het venster (dit gesprek)", "Continue in the window (this conversation)")} onclick={() => api.showMain(nook.activeId ? `nook:${nook.activeId}` : "chat")}>⧉</button>
-        <button class="ghost icon" title={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}>⚙</button>
+        <div class="header-left">
+          <button class="orb-home" title={tr("Naar Nook", "Go to Nook")} aria-label={tr("Naar Nook", "Go to Nook")} onclick={() => select("nook")}>
+            <Orb size={30} mood={tabMood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
+          </button>
+        </div>
+        <div class="header-capsule" onmousedown={(e) => e.stopPropagation()}>
+          <nav aria-label={tr("Hoofdnavigatie", "Main navigation")}>
+            <button class:on={shown === "home"} onclick={() => select("home")}>Home</button>
+            <button class:on={shown === "nook"} onclick={() => select("nook")}>
+              <span>Nook</span>{#if nook.waiting}<span class="tab-dot waiting"></span>{/if}
+            </button>
+            <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
+            <button class:on={shown === "agents"} onclick={() => select("agents")}>
+              <span>{tr("Agents", "Agents")}</span>{#if agents.pending}<span class="tab-count">{agents.pending}</span>{/if}
+            </button>
+            {#if nook.info?.capabilities.terminals}
+              <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
+            {/if}
+            <button class:on={shown === "commands"} onclick={() => select("commands")}>{tr("Commando's", "Commands")}</button>
+            {#if playing}
+              <button class:on={shown === "music"} onclick={() => select("music")}>
+                <span>{tr("Muziek", "Music")}</span>{#if playing.playing}<span class="tab-dot music"></span>{/if}
+              </button>
+            {/if}
+          </nav>
+          <span class="capsule-divider" aria-hidden="true"></span>
+          <button class="cap-btn" title={tr("Praat met Nook", "Talk to Nook")} aria-label={tr("Praat met Nook", "Talk to Nook")} onclick={() => open("voice")}>
+            <Ico name="mic" size={14} stroke={2} />
+          </button>
+        </div>
+        <div class="header-right" onmousedown={(e) => e.stopPropagation()}>
+          <button class="bar-btn lang" title={tr("Taal: klik voor {next}", "Language: click for {next}", { next: nextLanguage })} onclick={toggleLanguage}>{appLanguage().toUpperCase()}</button>
+          <button class="bar-btn lock" class:on={locked} title={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} aria-label={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} onclick={() => { locked = !locked; if (locked) pinnedOpen = true; }}><Icon name={locked ? "lock" : "unlock"} size={14} /></button>
+          <button class="bar-btn" title={tr("Verder in het venster (dit gesprek)", "Continue in the window (this conversation)")} aria-label={tr("Verder in het venster (dit gesprek)", "Continue in the window (this conversation)")} onclick={() => api.showMain(nook.activeId ? `nook:${nook.activeId}` : "chat")}><Ico name="app-window-mac" size={14} stroke={1.9} /></button>
+          <button class="bar-btn" title={tr("Instellingen", "Settings")} aria-label={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}><Icon name="settings" size={14} /></button>
+          <button class="bar-btn" title={tr("Sluiten", "Close")} aria-label={tr("Sluiten", "Close")} onclick={() => close(true)}><Ico name="x" size={15} stroke={2} /></button>
+        </div>
       </header>
       <AgentAlerts
         requests={shown !== "agents"}
@@ -527,6 +845,7 @@
       />
       {#if shown !== "chats"}
         <WhatsAppCard onnook={openNookFromCard} />
+        <ChatArrivedCard onopen={openArrived} />
       {/if}
       <div class="body">
         {#if shown === "home"}
@@ -556,7 +875,17 @@
       </div>
       {#each grips as g (g)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="grip {g}" onpointerdown={(e) => resize(e, g)}></div>
+        <div class="grip {g}" onpointerdown={(e) => resize(e, g)}>
+          {#if g === "bottom-left"}
+            <svg class="corner-mark" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+              <path d="M1 1 L9 9 M1 5.5 L4.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
+            </svg>
+          {:else if g === "bottom-right"}
+            <svg class="corner-mark" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+              <path d="M9 1 L1 9 M9 5.5 L5.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
+            </svg>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}
@@ -564,9 +893,10 @@
 
 <style>
   .bar { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
-  .bar.hasChip { flex-direction: column; align-items: center; gap: 4px; }
+  .bar.hasChip { flex-direction: column; align-items: center; gap: var(--space-6); }
   .bar.hasChip .pill.round { width: 44px; height: 44px; flex: none; }
-  /* The chat chip under the closed round Nook: who wrote, one click opens Nook. */
+
+  /* The arrival chip under the closed round Nook: who wrote or what plays, one click opens Nook. */
   .chip {
     display: flex;
     align-items: center;
@@ -574,41 +904,58 @@
     box-sizing: border-box;
     height: 30px;
     background: var(--notch);
-    border: 2px solid #000;
+    border: 1px solid color-mix(in srgb, var(--paper) 14%, transparent);
     border-radius: 999px;
+    box-shadow: var(--shadow-popover);
     overflow: hidden;
-    animation: drop 0.25s ease-out;
+    animation: drop var(--motion-reveal);
   }
-  .chip button { background: transparent; border: 0; color: var(--paper); font-size: 12px; font-weight: 600; cursor: pointer; }
-  .chiptext { padding: 0 6px 0 12px; height: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .chipclose { padding: 0 10px 0 4px; height: 100%; color: var(--text3); font-size: 15px; }
+  .chip button { background: transparent; border: 0; color: var(--paper); font: var(--text-detail); font-weight: 500; cursor: pointer; }
+  .chiptext { display: inline-flex; align-items: center; gap: var(--space-6); padding: 0 var(--space-6) 0 var(--space-12); height: 100%; min-width: 0; }
+  .chipico { display: inline-flex; color: var(--text2); flex: none; }
+  .chiplabel { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chipclose { display: grid; place-items: center; padding: 0 var(--space-8) 0 var(--space-4); height: 100%; color: var(--text3); transition: color var(--motion-quick); }
   .chipclose:hover { color: var(--paper); }
+
+  /* The equalizer while music plays (the notch's level bars): three bars in the music tone, still when paused. */
+  .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; flex: none; }
+  .eq i { display: block; width: 2px; height: 100%; background: var(--music); border-radius: 999px; transform-origin: bottom; transform: scaleY(0.4); }
+  .eq.playing i { animation: level 0.9s ease-in-out infinite alternate; }
+  .eq.playing i:nth-child(2) { animation-delay: -0.3s; animation-duration: 0.7s; }
+  .eq.playing i:nth-child(3) { animation-delay: -0.6s; animation-duration: 1.1s; }
+  @keyframes level { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+  .corner-eq { position: absolute; right: 5px; bottom: 6px; margin: 0; height: 8px; }
+  @media (prefers-reduced-motion: reduce) { .eq.playing i { animation: none; transform: scaleY(0.7); } }
+
   .pill {
     height: 100%;
     width: 100%;
     background: var(--notch);
-    border-radius: 0 0 16px 16px;
+    border-radius: 0 0 var(--radius-composer) var(--radius-composer);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--space-8);
     cursor: default;
   }
-  .floating .pill { border-radius: 999px; cursor: grab; }
-  /* The closed bar is a small round Nook with a thick black rim, so it stays out of the way of the browser's tabs. */
+  .floating .pill { border-radius: 999px; border: 1px solid color-mix(in srgb, var(--paper) 12%, transparent); box-sizing: border-box; cursor: grab; }
+  /* The closed bar is a small round Nook with a hairline rim, so it reads cleanly against any desktop. */
   .pill.round {
     position: relative;
     box-sizing: border-box;
-    border: 3px solid #000;
+    border: 1px solid color-mix(in srgb, var(--paper) 12%, transparent);
     border-radius: 50%;
     gap: 0;
     overflow: hidden;
     cursor: pointer;
-    transition: box-shadow 0.25s ease;
+    transition: box-shadow var(--motion-hover), border-color var(--motion-hover);
   }
-  .pill.round:hover { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--paper) 35%, transparent); }
+  .pill.round:hover {
+    border-color: color-mix(in srgb, var(--paper) 28%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--paper) 18%, transparent);
+  }
   .pill.round:active .orbwrap { transform: scale(0.88); }
-  .orbwrap { display: flex; transition: transform 0.15s ease; }
+  .orbwrap { display: flex; transition: transform var(--motion-quick); }
   /* Hovering the closed bar: a small hop, as if Nook noticed you. */
   .pill.round:hover .orbwrap { animation: hop 0.7s cubic-bezier(0.3, 1.5, 0.5, 1); }
   @keyframes hop {
@@ -650,8 +997,8 @@
     box-sizing: border-box;
     border-radius: 999px;
     background: var(--iris);
-    color: #fff;
-    font-size: 9px;
+    color: var(--on-iris);
+    font: var(--text-caption);
     font-weight: 700;
     line-height: 14px;
     text-align: center;
@@ -661,48 +1008,199 @@
     .pill.round.dropping::after, .pill.round.swallowed .orbwrap { animation: none; }
   }
   .dot.corner { position: absolute; top: 3px; right: 3px; }
-  /* A compact notice in the bar's own row: mark and message on the left, View and the countdown OK on the right. */
-  .pill.strip { justify-content: flex-start; gap: 8px; padding: 0 4px 0 14px; }
-  .strip .message { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stripbuttons { display: flex; align-items: center; gap: 4px; flex: none; }
-  .stripbuttons .ghost { padding: 4px 10px; font-size: 12px; }
+
+  /* A compact agent notice in the bar's own row (`inlineDoneStrip` + `NookNoticeEnd`): agent logo and message on the
+     left, dark action pill and countdown OK on the right. */
+  .pill.strip { justify-content: flex-start; gap: var(--space-8); padding: 0 var(--space-8) 0 var(--space-12); }
+  .strip-mark { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+  .strip-badge { position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border-radius: 999px; border: 1.5px solid var(--notch); background: var(--mint); }
+  .strip-badge.waiting { background: var(--amber); }
+  .strip-badge.failed { background: var(--coral); }
+  .strip .message { flex: 1; min-width: 0; font: var(--text-emphasis); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stripbuttons { display: flex; align-items: center; gap: var(--space-6); flex: none; }
+  .strip-action-bar { display: inline-flex; align-items: center; height: 26px; padding: 0 var(--space-2); background: var(--graphite); border: 1px solid var(--line2); border-radius: 999px; }
+  .strip-action { height: 22px; padding: 0 var(--space-8); border: 0; border-radius: 999px; background: transparent; color: var(--paper); font: var(--text-detail); font-weight: 500; cursor: pointer; }
+  .strip-action:hover { background: var(--smoke); }
+
+  /* Standalone bar card (`NotchRootView` `.card` + `BarCard`): true-black notch shape sized to its card content. */
+  .card-shell {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--notch);
+    border-radius: 0 0 var(--radius-pill) var(--radius-pill);
+    overflow: hidden;
+    animation: drop var(--motion-panel);
+    transform-origin: top center;
+    cursor: default;
+  }
+  .floating .card-shell {
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, var(--paper) 10%, transparent);
+    box-shadow: var(--shadow-popover);
+    cursor: grab;
+  }
+  .card-inner { cursor: default; }
+  /* Inside a BarCard, a chat card drops its outer panel margin/box so it sits directly beside Nook's orb. */
+  .card-shell.chat-card :global(.arrived) { margin: 0; padding: 0; background: transparent; border: 0; border-radius: 0; }
+  .card-shell.chat-card :global(.alert) { padding: 0; }
+  .card-shell.chat-card :global(.alert .card) { padding: 0; background: transparent; border: 0; border-radius: 0; }
+
+  /* Open panel (`NotchRootView` + `PanelView`): true-black shape with notch corners, hairline edge when floating. */
   .panel {
     width: 100%;
     height: 100%;
+    box-sizing: border-box;
     background: var(--notch);
-    border-radius: 0 0 22px 22px;
+    border-radius: 0 0 var(--radius-pill) var(--radius-pill);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    animation: drop 0.32s cubic-bezier(0.2, 1.2, 0.4, 1);
+    animation: drop var(--motion-panel);
     transform-origin: top center;
     position: relative;
   }
-  .grip { position: absolute; z-index: 5; touch-action: none; }
-  .grip.left, .grip.right { top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
-  .grip.left { left: 0; }
-  .grip.right { right: 0; }
-  .grip.bottom { left: 12px; right: 12px; bottom: 0; height: 8px; cursor: ns-resize; }
-  .grip.bottom-left, .grip.bottom-right { bottom: 0; width: 16px; height: 16px; }
-  .grip.bottom-left { left: 0; cursor: nesw-resize; }
-  .grip.bottom-right { right: 0; cursor: nwse-resize; }
-  .floating .panel { border-radius: 22px; }
+  .floating .panel {
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, var(--paper) 10%, transparent);
+    box-shadow: var(--shadow-popover);
+  }
   @keyframes drop { from { transform: scaleY(0.7); opacity: 0; } }
-  header { display: flex; align-items: center; gap: 10px; padding: 10px 12px 6px; }
-  nav { display: flex; gap: 4px; }
-  nav button { background: transparent; border: none; color: var(--text2); border-radius: 999px; padding: 5px 12px; display: flex; gap: 6px; align-items: center; }
+
+  /* Header (`PanelView.header` + `headerCapsule`): Nook orb left, centered floating surface capsule, quiet controls right. */
+  header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: var(--space-8);
+    padding: var(--space-12) var(--space-16) var(--space-8);
+    flex: none;
+  }
+  .header-left { display: flex; align-items: center; justify-content: flex-start; min-width: 0; }
+  .orb-home {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 999px;
+  }
+  .header-capsule {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    min-width: 0;
+  }
+  nav { display: flex; align-items: center; gap: var(--space-2); }
+  nav button {
+    background: transparent;
+    border: 0;
+    color: var(--text3);
+    border-radius: var(--radius-control);
+    padding: 5px 10px;
+    font: var(--text-control);
+    display: inline-flex;
+    gap: var(--space-6);
+    align-items: center;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--motion-quick), color var(--motion-quick);
+  }
+  nav button:hover:not(.on) { color: var(--paper); }
   nav button.on { background: var(--smoke); color: var(--paper); }
-  .spacer { flex: 1; }
-  .icon { padding: 4px 8px; }
-  .icon.lang { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
-  .icon.lock.on { color: var(--iris); }
+  .tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 var(--space-4);
+    border-radius: var(--radius-chip);
+    background: color-mix(in srgb, var(--amber) 14%, transparent);
+    color: var(--amber);
+    font: var(--text-caption);
+    font-weight: 600;
+  }
+  .tab-dot { width: 5px; height: 5px; border-radius: 999px; flex: none; }
+  .tab-dot.waiting { background: var(--amber); }
+  .tab-dot.music { background: var(--music); }
+  .capsule-divider { width: 1px; height: 18px; background: var(--border); margin: 0 var(--space-4); flex: none; }
+  .cap-btn {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+    transition: background var(--motion-quick), color var(--motion-quick);
+  }
+  .cap-btn:hover { background: var(--smoke); color: var(--paper); }
+
+  .header-right { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+  .bar-btn {
+    display: grid;
+    place-items: center;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 var(--space-4);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+    transition: background var(--motion-quick), color var(--motion-quick);
+  }
+  .bar-btn:hover { background: var(--smoke); color: var(--paper); }
+  .bar-btn.lang { font: var(--text-caption); font-weight: 600; letter-spacing: 0.04em; padding: 0 var(--space-6); }
+  .bar-btn.lock.on { color: var(--iris); background: color-mix(in srgb, var(--iris) 12%, transparent); }
+
+  /* Harmonize AgentAlerts notice cards inside the bar panel with the Mac's notch card tone and spacing. */
+  .panel :global(.alert) { padding: var(--space-4) var(--space-16) var(--space-8); }
+  .panel :global(.alert .status) {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    padding: var(--space-12) var(--space-16);
+    gap: var(--space-8);
+  }
+  .panel :global(.alert .status .context) { font: var(--text-label); color: var(--text2); gap: var(--space-6); }
+  .panel :global(.alert .status .headline) { color: var(--text2); font-weight: 500; }
+  .panel :global(.alert .status .lines) { margin-left: auto; font: var(--text-caption); font-family: var(--mono); }
+  .panel :global(.alert .status .title) { font: var(--text-title); color: var(--paper); }
+  .panel :global(.alert .status .actions) { background: var(--graphite); border-color: var(--line2); }
+
   .body { flex: 1; min-height: 0; }
   .nooktab { display: grid; grid-template-columns: 1fr 220px; height: 100%; }
   .chatcol { min-height: 0; }
   .side { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-  .sidetabs { display: flex; gap: 2px; padding: 4px 8px 6px; }
-  .sidetabs button { flex: 1; background: transparent; border: 0; color: var(--text3); border-radius: 999px; padding: 3px 8px; font-size: 11px; }
+  .sidetabs { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-8) var(--space-6); }
+  .sidetabs button { flex: 1; background: transparent; border: 0; color: var(--text3); border-radius: var(--radius-control); padding: var(--space-4) var(--space-8); font: var(--text-label); cursor: pointer; }
   .sidetabs button.on { background: var(--smoke); color: var(--paper); }
   .sidebody { flex: 1; min-height: 0; overflow-y: auto; }
   .panel :global(.composer) { background: var(--notch); }
+
+  /* Resize handles (`NotchResizeHandles`): faint diagonal marks in bottom corners, subtle edge bar on hover. */
+  .grip { position: absolute; z-index: 5; touch-action: none; }
+  .grip.left, .grip.right { top: 16px; bottom: 24px; width: 10px; cursor: ew-resize; display: flex; align-items: center; justify-content: center; }
+  .grip.left { left: 0; }
+  .grip.right { right: 0; }
+  .grip.left::after, .grip.right::after { content: ""; width: 3px; height: 44px; border-radius: 999px; background: transparent; transition: background var(--motion-hover); }
+  .grip.left:hover::after, .grip.right:hover::after { background: color-mix(in srgb, var(--paper) 45%, transparent); }
+  .grip.bottom { left: 24px; right: 24px; bottom: 0; height: 10px; cursor: ns-resize; display: flex; align-items: center; justify-content: center; }
+  .grip.bottom::after { content: ""; width: 44px; height: 3px; border-radius: 999px; background: transparent; transition: background var(--motion-hover); }
+  .grip.bottom:hover::after { background: color-mix(in srgb, var(--paper) 45%, transparent); }
+  .grip.bottom-left, .grip.bottom-right { bottom: 0; width: 24px; height: 24px; display: flex; align-items: flex-end; color: color-mix(in srgb, var(--paper) 18%, transparent); transition: color var(--motion-hover); }
+  .grip.bottom-left { left: 0; justify-content: flex-start; padding: 0 0 8px 8px; box-sizing: border-box; cursor: nesw-resize; }
+  .grip.bottom-right { right: 0; justify-content: flex-end; padding: 0 8px 8px 0; box-sizing: border-box; cursor: nwse-resize; }
+  .grip.bottom-left:hover, .grip.bottom-right:hover { color: color-mix(in srgb, var(--paper) 70%, transparent); }
+  .corner-mark { pointer-events: none; display: block; }
 </style>

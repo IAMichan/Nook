@@ -15,10 +15,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::granted_rules::{ApprovalAuditEntry, ApprovalAuditLog, ApprovalSource, GrantedRuleEntry, GrantedRulesStore};
+use super::hook::{compaction_change, is_compaction_live, CompactionChange};
 use super::line_diff::{self, DiffLine};
 use super::liveness;
 use super::mcp_name::{self, McpToolName};
 use super::models::*;
+use super::permission_scope;
 use super::risk::{self, CommandAssessment, RiskLevel};
 use super::scanner::DetectedAgent;
 use super::text::{one_line, project_name, short_path, shorten};
@@ -102,6 +105,9 @@ struct Record {
     /// The agent process among them, once the process scan has seen it.
     #[serde(default)]
     pid: Option<u32>,
+    /// When the agent started compacting its conversation (`PreCompact` hook); `None` once finished.
+    #[serde(default)]
+    compacting_since: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -152,6 +158,8 @@ pub struct AgentHub {
     notify: Notify,
     records_file: Option<PathBuf>,
     usage_file: Option<PathBuf>,
+    granted_rules: Mutex<GrantedRulesStore>,
+    approval_audit: Mutex<ApprovalAuditLog>,
     launched_at: DateTime<Utc>,
     /// De standaardmappen van Claude Code en Codex, om een accountmap als "standaard" te herkennen.
     default_homes: (String, String),
@@ -174,6 +182,8 @@ impl AgentHub {
             notify: Box::new(notify),
             records_file: support.as_ref().map(|d| d.join("agent-sessions.json")),
             usage_file: support.as_ref().map(|d| d.join("plan-usage.json")),
+            granted_rules: Mutex::new(GrantedRulesStore::load(support.as_ref().map(|d| d.join("agent-granted-rules.json")))),
+            approval_audit: Mutex::new(ApprovalAuditLog::load(support.as_ref().map(|d| d.join("agent-approval-audit.json")))),
             launched_at: Utc::now(),
             default_homes: (normalize_home(&claude.to_string_lossy()), normalize_home(&codex.to_string_lossy())),
             recap: RecapSink::default(),
@@ -190,6 +200,44 @@ impl AgentHub {
 
     pub fn sessions(&self) -> Vec<AgentSession> {
         self.lock().sessions.clone()
+    }
+
+    pub fn is_compacting(&self, session_key: &str) -> bool {
+        let s = self.lock();
+        s.records.get(session_key).is_some_and(|r| is_compaction_live(r.compacting_since, Utc::now()))
+    }
+
+    /// Granted permission rules for `project` (or across all known projects when `None`), merging Claude settings files
+    /// and Nook's stored "Always" rules.
+    pub fn granted_rules(&self, project: Option<&str>, extra_projects: &[String]) -> Vec<GrantedRuleEntry> {
+        let mut projects: Vec<String> = self.lock().records.values().map(|r| r.cwd.clone()).filter(|c| !c.is_empty()).collect();
+        projects.extend(extra_projects.iter().cloned());
+        let home = dirs::home_dir();
+        let store = self.granted_rules.lock().unwrap_or_else(|e| e.into_inner());
+        store.list(project, &projects, home.as_deref())
+    }
+
+    /// Revokes one granted permission rule (from its Claude settings file and/or Nook's store).
+    pub fn revoke_rule(&self, project: &str, rule: &str, file: Option<&str>) -> Result<bool, String> {
+        let mut store = self.granted_rules.lock().unwrap_or_else(|e| e.into_inner());
+        store.revoke(project, rule, file)
+    }
+
+    /// Revokes all project-scoped granted permission rules for `project`.
+    pub fn revoke_project_rules(&self, project: &str) -> Result<usize, String> {
+        let mut store = self.granted_rules.lock().unwrap_or_else(|e| e.into_inner());
+        store.revoke_project(project)
+    }
+
+    /// Recent hook approval audit entries (newest first), optionally filtered by `query`.
+    pub fn approval_audit(&self, limit: Option<usize>, query: Option<&str>) -> Vec<ApprovalAuditEntry> {
+        let log = self.approval_audit.lock().unwrap_or_else(|e| e.into_inner());
+        log.list(limit.unwrap_or(200), query)
+    }
+
+    pub fn clear_approval_audit(&self) {
+        let mut log = self.approval_audit.lock().unwrap_or_else(|e| e.into_inner());
+        log.clear();
     }
 
     pub fn detected(&self) -> Vec<AgentSession> {
@@ -233,6 +281,11 @@ impl AgentHub {
             ("CODEX_HOME", &self.default_homes.1)
         } else if agent_id.starts_with("claude") {
             ("CLAUDE_CONFIG_DIR", &self.default_homes.0)
+        } else if agent_id == "gemini" {
+            // GEMINI_CLI_HOME stands in for the home folder: the account's data is in its `.gemini`.
+            let Some(raw) = text(env, "GEMINI_CLI_HOME").filter(|r| !r.is_empty()) else { return String::new() };
+            let home = normalize_home(&super::AgentKind::Gemini.home_from_variable(raw));
+            return if home == normalize_home(&super::AgentKind::Gemini.default_home().to_string_lossy()) { String::new() } else { home };
         } else {
             return String::new();
         };
@@ -346,6 +399,7 @@ impl AgentHub {
                 started: now,
                 lineage: vec![],
                 pid: None,
+                compacting_since: None,
             });
             // The agent `cd`'ing into a subfolder keeps the session in the folder it started in.
             if !cwd.is_empty() && !liveness::is_inside(&cwd, &record.cwd) {
@@ -396,6 +450,23 @@ impl AgentHub {
                 }
             }
 
+            // A compaction shows while it runs, and ends on PostCompact or the agent's next event (`HookCompaction`).
+            match compaction_change(&kind) {
+                CompactionChange::Start => {
+                    if !is_compaction_live(record.compacting_since, now) {
+                        complete(&mut record, StepMark::Done);
+                        record.compacting_since = Some(now);
+                        record.status = AgentStatus::Running;
+                        push(&mut record, StepMark::Running, compacting_step_text());
+                    }
+                }
+                CompactionChange::End => {
+                    if record.compacting_since.take().is_some() {
+                        complete(&mut record, StepMark::Done);
+                    }
+                }
+            }
+
             let tool = text(&event, "tool_name").or_else(|| text(&event, "toolName")).unwrap_or("").to_string();
             let input = event
                 .get("tool_input")
@@ -421,6 +492,7 @@ impl AgentHub {
                     agent_name: record.agent.clone(),
                     project: record.project.clone(),
                     items: items.clone(),
+                    restored: false,
                 };
                 record.status = AgentStatus::Waiting;
                 push(&mut record, StepMark::Blocked, format!("vraag: {}", shorten(&items[0].question, 60)));
@@ -635,6 +707,12 @@ impl AgentHub {
             assessment,
             can_always,
             created: Utc::now(),
+            always_scope: match &kind {
+                PendingKind::Permission { suggestions, can_always: true } => {
+                    super::permission_scope::preview(&super::permission_scope::rules(suggestions.as_ref()))
+                }
+                _ => None,
+            },
         };
         s.pending_approvals.insert(id.clone(), PendingApproval { request: request.clone(), responder, kind });
         s.approvals.push(request.clone());
@@ -672,11 +750,60 @@ impl AgentHub {
     }
 
     pub fn decide(&self, id: &str, decision: ApprovalDecision) {
-        let response = {
+        self.decide_with_reason(id, decision, None)
+    }
+
+    /// Decides, and with Deny tells the agent why (the companion's and the Mac's "Deny with reason").
+    pub fn decide_with_reason(&self, id: &str, decision: ApprovalDecision, reason: Option<&str>) {
+        let (response, request, cwd, suggestions) = {
             let s = self.lock();
             let Some(pending) = s.pending_approvals.get(id) else { return };
-            response_for(decision, &pending.kind)
+            let cwd = s.records.get(&pending.request.session_key).map(|r| r.cwd.clone()).unwrap_or_default();
+            let suggestions = match &pending.kind {
+                PendingKind::Permission { suggestions, .. } => suggestions.clone(),
+                PendingKind::LegacyPreToolUse => None,
+            };
+            (response_for(decision, &pending.kind, reason), pending.request.clone(), cwd, suggestions)
         };
+        let now = Utc::now();
+        let decision_word = match decision {
+            ApprovalDecision::Allow => "allow",
+            ApprovalDecision::Always => "always",
+            ApprovalDecision::Deny => "deny",
+            ApprovalDecision::Terminal => "terminal",
+        };
+        let scope = (decision == ApprovalDecision::Always).then(|| request.always_scope.clone()).flatten();
+        {
+            let mut log = self.approval_audit.lock().unwrap_or_else(|e| e.into_inner());
+            log.record(ApprovalAuditEntry::new(
+                &request.agent_name,
+                &request.project,
+                &cwd,
+                &request.tool,
+                &request.summary,
+                decision_word,
+                scope,
+                Some(ApprovalSource::App),
+                request.assessment.level == RiskLevel::Danger,
+                now,
+            ));
+        }
+        if decision == ApprovalDecision::Always {
+            let parsed = permission_scope::rules(suggestions.as_ref());
+            let mut store = self.granted_rules.lock().unwrap_or_else(|e| e.into_inner());
+            let mut added_any = false;
+            for r in &parsed {
+                if !r.text.is_empty() {
+                    store.add(&cwd, &r.text, r.reach, &request.agent_name, now);
+                    added_any = true;
+                }
+            }
+            if !added_any {
+                let reach = parsed.first().map(|r| r.reach).unwrap_or(permission_scope::Reach::Project);
+                let fallback = if !request.tool.is_empty() { request.tool.as_str() } else { request.summary.as_str() };
+                store.add(&cwd, fallback, reach, &request.agent_name, now);
+            }
+        }
         if decision != ApprovalDecision::Terminal {
             self.recap.note(|r, now| r.decision(decision != ApprovalDecision::Deny, now));
         }
@@ -802,6 +929,17 @@ impl AgentHub {
     pub fn expire(&self, wait: &Wait) {
         match wait {
             Wait::Approval(id, _) => {
+                let info = {
+                    let s = self.lock();
+                    s.pending_approvals.get(id).map(|p| {
+                        let cwd = s.records.get(&p.request.session_key).map(|r| r.cwd.clone()).unwrap_or_default();
+                        (p.request.clone(), cwd)
+                    })
+                };
+                if let Some((req, cwd)) = info {
+                    let mut log = self.approval_audit.lock().unwrap_or_else(|e| e.into_inner());
+                    log.record(ApprovalAuditEntry::expired(&req.agent_name, &req.project, &cwd, &req.tool, &req.summary, Utc::now()));
+                }
                 self.close_approval(id, None, Some(AgentStatus::Waiting), Some((StepMark::Blocked, "wacht op je in de terminal")), None)
             }
             Wait::Question(id, _) => {
@@ -914,6 +1052,7 @@ impl AgentHub {
                     started: None,
                     updated: None,
                     pid: Some(agent.pid),
+                    launched_by: None,
                 });
             }
             if s.detected != detected {
@@ -1034,6 +1173,7 @@ impl AgentHub {
         let mut s = self.lock();
         let waiting: HashSet<String> = s.pending_approvals.values().map(|p| p.request.session_key.clone()).collect();
         let before = s.records.len();
+        let mut changed = false;
         s.records.retain(|key, r| {
             if waiting.contains(key) {
                 return true;
@@ -1045,7 +1185,18 @@ impl AgentHub {
                 age < 12 * 3600
             }
         });
-        if s.records.len() != before {
+        for r in s.records.values_mut() {
+            if r.compacting_since.is_some() && !is_compaction_live(r.compacting_since, now) {
+                r.compacting_since = None;
+                if let Some(last) = r.steps.last_mut() {
+                    if last.mark == StepMark::Running && is_compacting_text(&last.text) {
+                        last.mark = StepMark::Done;
+                    }
+                }
+                changed = true;
+            }
+        }
+        if s.records.len() != before || changed {
             s.dirty = true;
             Self::rebuild(&mut s);
             drop(s);
@@ -1107,8 +1258,10 @@ impl AgentHub {
     }
 
     fn rebuild(s: &mut State) {
+        let now = Utc::now();
         let mut entries: Vec<(&String, &Record)> = s.records.iter().collect();
         entries.sort_by(|(_, a), (_, b)| a.status.order().cmp(&b.status.order()).then(b.updated.cmp(&a.updated)));
+        let by_pid: HashMap<u32, String> = s.records.iter().filter_map(|(k, r)| r.pid.map(|p| (p, k.clone()))).collect();
         let sessions: Vec<AgentSession> = entries
             .into_iter()
             .map(|(key, r)| {
@@ -1127,6 +1280,14 @@ impl AgentHub {
                 if r.lines_added + r.lines_removed > 0 {
                     file.push_str(&format!("  +{} −{}", r.lines_added, r.lines_removed));
                 }
+                let mut steps = r.steps.clone();
+                if !is_compaction_live(r.compacting_since, now) {
+                    if let Some(last) = steps.last_mut() {
+                        if last.mark == StepMark::Running && is_compacting_text(&last.text) {
+                            last.mark = StepMark::Done;
+                        }
+                    }
+                }
                 AgentSession {
                     id: key.clone(),
                     name: r.agent.clone(),
@@ -1134,7 +1295,7 @@ impl AgentHub {
                     status: r.status,
                     file,
                     placeholder: format!("Typ in de terminal van {} om verder te gaan", r.agent),
-                    steps: r.steps.clone(),
+                    steps,
                     diff,
                     cwd: r.cwd.clone(),
                     host: r.host.clone(),
@@ -1152,6 +1313,7 @@ impl AgentHub {
                     started: Some(r.started),
                     updated: Some(r.updated),
                     pid: None,
+                    launched_by: launcher_key(key, r, &by_pid),
                 }
             })
             .collect();
@@ -1160,6 +1322,14 @@ impl AgentHub {
 }
 
 // MARK: Hulpfuncties
+
+/// The session whose shell started this one: an agent process above this session's own in the chain of processes its
+/// hook came from (`lineage`, nearest first), that another session runs in. `None` for a session you started yourself.
+fn launcher_key(key: &str, record: &Record, by_pid: &HashMap<u32, String>) -> Option<String> {
+    let own = record.pid?;
+    let at = record.lineage.iter().position(|p| *p == own)?;
+    record.lineage[at + 1..].iter().filter(|p| **p != own).find_map(|p| by_pid.get(p).filter(|k| k.as_str() != key).cloned())
+}
 
 /// In welke app de agent draait, uit de omgeving van zijn hook: `x11:<venster>` (xterm, Konsole, Alacritty, …),
 /// `windows-terminal`, `vscode`, `kitty`, `wezterm`, `jetbrains`, `konsole` of de `TERM_PROGRAM`.
@@ -1225,7 +1395,8 @@ fn complete(record: &mut Record, mark: StepMark) {
     }
 }
 
-fn response_for(decision: ApprovalDecision, kind: &PendingKind) -> Option<String> {
+fn response_for(decision: ApprovalDecision, kind: &PendingKind, reason: Option<&str>) -> Option<String> {
+    let denied = reason.map(str::trim).filter(|r| !r.is_empty()).unwrap_or("Denied via Nook");
     let payload = match kind {
         PendingKind::LegacyPreToolUse => {
             let value = match decision {
@@ -1234,7 +1405,7 @@ fn response_for(decision: ApprovalDecision, kind: &PendingKind) -> Option<String
                 ApprovalDecision::Terminal => return None,
             };
             json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": value,
-                "permissionDecisionReason": if value == "allow" { "Approved via Nook" } else { "Denied via Nook" }}})
+                "permissionDecisionReason": if value == "allow" { "Approved via Nook" } else { denied }}})
         }
         PendingKind::Permission { suggestions, can_always } => {
             let result = match decision {
@@ -1249,7 +1420,7 @@ fn response_for(decision: ApprovalDecision, kind: &PendingKind) -> Option<String
                     }
                     r
                 }
-                ApprovalDecision::Deny => json!({"behavior": "deny", "message": "Denied via Nook"}),
+                ApprovalDecision::Deny => json!({"behavior": "deny", "message": denied}),
                 ApprovalDecision::Terminal => return None,
             };
             json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": result}})
@@ -1272,6 +1443,8 @@ pub fn normalize(name: &str) -> String {
         "session_end" | "sessionEnd" | "exit" => "SessionEnd",
         "notification" => "Notification",
         "permissionRequest" => "PermissionRequest",
+        "PreCompress" | "preCompact" => "PreCompact",
+        "postCompact" => "PostCompact",
         other => other,
     }
     .to_string()
@@ -1729,6 +1902,27 @@ mod tests {
     }
 
     #[test]
+    fn a_session_started_from_another_agents_shell_names_it() {
+        let (hub, _) = hub();
+        let event = |session: &str, cwd: &str, lineage: Vec<u32>| {
+            serde_json::to_vec(&json!({"agent": "claude-code", "mode": "event", "env": {}, "lineage": lineage,
+                "event": {"hook_event_name": "UserPromptSubmit", "session_id": session, "cwd": cwd, "prompt": "p"}}))
+            .unwrap()
+        };
+        let p = |pid, cwd: &str| DetectedAgent { pid, name: "Claude Code".into(), cwd: cwd.into(), home: String::new() };
+        // Parent: agent 50 in /w/a. Child: hook 91, shell 90, agent 70, then the parent's tool shell 60, the parent 50.
+        hub.apply_scan(vec![p(50, "/w/a"), p(70, "/w/b")], |_, _| true);
+        hub.handle(&event("parent", "/w/a", vec![51, 50, 40]), Responder::none());
+        hub.handle(&event("child", "/w/b", vec![91, 90, 70, 60, 50, 40]), Responder::none());
+        hub.handle(&event("alone", "/w/c", vec![81, 80, 30, 20]), Responder::none());
+        hub.apply_scan(vec![p(50, "/w/a"), p(70, "/w/b")], |_, _| true);
+        let by_id = |id: &str| hub.sessions().into_iter().find(|s| s.id == id).unwrap();
+        assert_eq!(by_id("claude-code:child").launched_by.as_deref(), Some("claude-code:parent"));
+        assert_eq!(by_id("claude-code:parent").launched_by, None, "you started this one");
+        assert_eq!(by_id("claude-code:alone").launched_by, None);
+    }
+
+    #[test]
     fn saves_and_restores() {
         let dir = std::env::temp_dir().join(format!("nook-hub-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1751,6 +1945,9 @@ mod tests {
     #[test]
     fn helpers() {
         assert_eq!(normalize("BeforeTool"), "PreToolUse");
+        assert_eq!(normalize("PreCompress"), "PreCompact");
+        assert_eq!(normalize("preCompact"), "PreCompact");
+        assert_eq!(normalize("postCompact"), "PostCompact");
         assert_eq!(clean_agent_id("Mijn Tool!"), "mijntool");
         assert_eq!(display_name("mijn-tool"), "Mijn-tool");
         assert_eq!(command_text(&json!({"command": ["bash", "-lc", "npm test"]})).as_deref(), Some("npm test"));
@@ -1762,5 +1959,110 @@ mod tests {
         assert_eq!(approval_summary("mcp__github__create_issue", &json!({})), "Github › Create issue");
         assert_eq!(approval_summary("mcp__files__move_file", &json!({"source": "a", "target": "b"})), "Source: a\nTarget: b");
         assert_eq!(describe("mcp__files__move_file", &json!({})), "Files › Move file");
+    }
+
+    #[test]
+    fn compaction_starts_on_precompact_and_ends_on_postcompact_next_event_or_timeout() {
+        let (hub, _) = hub();
+        // Start compaction via Claude PreCompact
+        hub.handle(
+            &msg("claude-code", "event", json!({"hook_event_name": "PreCompact", "session_id": "c1", "cwd": "/w/app"})),
+            Responder::none(),
+        );
+        let s = &hub.sessions()[0];
+        assert!(hub.is_compacting(&s.id));
+        assert!(s.is_compacting());
+        let serialized = serde_json::to_value(s).unwrap();
+        assert_eq!(serialized["compacting"], json!(true));
+        assert_eq!(s.steps.last().unwrap().mark, StepMark::Running);
+        assert!(is_compacting_text(&s.steps.last().unwrap().text));
+
+        // Explicit PostCompact clears compaction
+        hub.handle(&msg("claude-code", "event", json!({"hook_event_name": "PostCompact", "session_id": "c1"})), Responder::none());
+        let s = &hub.sessions()[0];
+        assert!(!hub.is_compacting(&s.id));
+        assert!(!s.is_compacting());
+        assert_eq!(serde_json::to_value(s).unwrap()["compacting"], json!(false));
+
+        // Gemini PreCompress starts compaction and next event (PreToolUse) ends it
+        hub.handle(
+            &msg("gemini", "event", json!({"hook_event_name": "PreCompress", "session_id": "g1", "cwd": "/w/app"})),
+            Responder::none(),
+        );
+        assert!(hub.is_compacting("gemini:g1"));
+        hub.handle(
+            &msg(
+                "gemini",
+                "event",
+                json!({"hook_event_name": "BeforeTool", "session_id": "g1", "tool_name": "Bash", "tool_input": {"command": "ls"}}),
+            ),
+            Responder::none(),
+        );
+        assert!(!hub.is_compacting("gemini:g1"));
+
+        // Timeout (300s) expires compaction on prune()
+        hub.handle(
+            &msg("cursor", "event", json!({"hook_event_name": "preCompact", "session_id": "k1", "cwd": "/w/app"})),
+            Responder::none(),
+        );
+        assert!(hub.is_compacting("cursor:k1"));
+        hub.lock().records.get_mut("cursor:k1").unwrap().compacting_since =
+            Some(Utc::now() - chrono::Duration::seconds(super::super::hook::COMPACTION_TIMEOUT.as_secs() as i64 + 5));
+        hub.prune();
+        assert!(!hub.is_compacting("cursor:k1"));
+        let cursor = hub.sessions().into_iter().find(|s| s.id == "cursor:k1").unwrap();
+        assert!(!cursor.is_compacting());
+    }
+
+    #[tokio::test]
+    async fn always_decision_records_audit_and_granted_rule_and_can_revoke() {
+        let dir = std::env::temp_dir().join(format!("nook-hub-audit-{}", uuid::Uuid::new_v4()));
+        let project = dir.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let project_str = project.to_string_lossy().into_owned();
+
+        let hub = AgentHub::new(Some(dir.clone()), |_| {});
+        let (responder, _rx) = Responder::new();
+        let wait = hub.handle(
+            &msg(
+                "claude-code",
+                "permission",
+                json!({
+                    "hook_event_name": "PermissionRequest",
+                    "session_id": "s1",
+                    "cwd": project_str,
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git status"},
+                    "permission_suggestions": [
+                        {"type": "addRules", "destination": "localSettings", "rules": [{"toolName": "Bash", "ruleContent": "git status:*"}]}
+                    ]
+                }),
+            ),
+            responder,
+        );
+        let Wait::Approval(id, _) = wait else { panic!("expected approval") };
+        hub.decide(&id, ApprovalDecision::Always);
+
+        // Audit log has one "always" entry
+        let audit = hub.approval_audit(None, None);
+        assert_eq!(audit.len(), 1);
+        assert_eq!(audit[0].decision, "always");
+        assert_eq!(audit[0].tool, "Bash");
+        assert_eq!(audit[0].summary, "git status");
+
+        // Granted rules store contains the rule for this project
+        let rules = hub.granted_rules(Some(&project_str), &[]);
+        assert!(rules.iter().any(|r| r.rule == "Bash(git status:*)" && r.project == project_str));
+
+        // Revoke individual rule
+        let revoked = hub.revoke_rule(&project_str, "Bash(git status:*)", None).unwrap();
+        assert!(revoked);
+        assert!(hub.granted_rules(Some(&project_str), &[]).iter().all(|r| r.rule != "Bash(git status:*)"));
+
+        // Clear audit
+        hub.clear_approval_audit();
+        assert!(hub.approval_audit(None, None).is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

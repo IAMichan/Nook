@@ -24,6 +24,64 @@ pub enum WaError {
 
 pub type WaResult<T> = Result<T, WaError>;
 
+/// What kind of file goes ([`Provider::send_file`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKind {
+    Photo,
+    Video,
+    Audio,
+    /// A recorded voice note: WhatsApp plays it as one.
+    Voice,
+    File,
+}
+
+impl FileKind {
+    /// By its MIME type; `voice` for a recorded note.
+    pub fn of(mime: &str, voice: bool) -> Self {
+        match mime.split('/').next().unwrap_or_default() {
+            _ if voice => Self::Voice,
+            "image" if mime != "image/svg+xml" => Self::Photo,
+            "video" => Self::Video,
+            "audio" => Self::Audio,
+            _ => Self::File,
+        }
+    }
+}
+
+/// A file to send, with its caption.
+pub struct OutgoingFile<'a> {
+    pub kind: FileKind,
+    pub name: &'a str,
+    pub mime: &'a str,
+    pub bytes: &'a [u8],
+    pub caption: &'a str,
+}
+
+/// A multipart/form-data body: the fields, then the file under `field`.
+fn form(boundary: &str, fields: &[(&str, String)], field: &str, name: &str, mime: &str, bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len() + 512);
+    for (k, v) in fields {
+        out.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").as_bytes());
+    }
+    let safe: String = name.chars().filter(|c| !matches!(c, '"' | '\r' | '\n' | '\\')).collect();
+    out.extend_from_slice(
+        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{safe}\"\r\nContent-Type: {mime}\r\n\r\n")
+            .as_bytes(),
+    );
+    out.extend_from_slice(bytes);
+    out.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    out
+}
+
+/// A step on one message ([`Provider::message_step`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageStep<'a> {
+    Edit(&'a str),
+    Revoke,
+    DeleteForMe,
+    React(&'a str),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkState {
     Connected,
@@ -82,6 +140,40 @@ impl WaHttp {
         timeout: u64,
     ) -> WaResult<(Vec<u8>, u16)> {
         let response = self.send(method, path, query, body, timeout, "application/json").await?;
+        let code = response.status().as_u16();
+        let bytes = response.bytes().await.map_err(|_| WaError::Unreachable)?;
+        Ok((bytes.to_vec(), code))
+    }
+
+    /// A body Nook built itself (a multipart form) with its content type.
+    async fn call_raw(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        content_type: &str,
+        body: Vec<u8>,
+        timeout: u64,
+    ) -> WaResult<(Vec<u8>, u16)> {
+        let mut url = self.base.clone();
+        let prefix = url.path().trim_matches('/').to_string();
+        url.set_path(&if prefix.is_empty() { path.to_string() } else { format!("/{prefix}{path}") });
+        if !query.is_empty() {
+            let mut pairs = url.query_pairs_mut();
+            for (k, v) in query {
+                pairs.append_pair(k, v);
+            }
+        }
+        let mut request = self
+            .client
+            .post(url)
+            .header("Accept", "application/json")
+            .header("Content-Type", content_type)
+            .timeout(Duration::from_secs(timeout))
+            .body(body);
+        for (k, v) in &self.headers {
+            request = request.header(k, v);
+        }
+        let response = request.send().await.map_err(|_| WaError::Unreachable)?;
         let code = response.status().as_u16();
         let bytes = response.bytes().await.map_err(|_| WaError::Unreachable)?;
         Ok((bytes.to_vec(), code))
@@ -153,6 +245,28 @@ fn parse(data: &[u8]) -> Value {
     serde_json::from_slice(data).unwrap_or(Value::Null)
 }
 
+/// A group's people from a gateway's list (`WAMembers.list`): whatsmeow's `JID`/`PhoneNumber`/`LID` with `DisplayName`,
+/// OpenWA's `id` (or `{_serialized}`) with `name`/`pushname`; yourself (`isSelf`) left out.
+pub fn members(list: &Value) -> Vec<(String, String)> {
+    let items = list.as_array().cloned().or_else(|| list["items"].as_array().cloned()).unwrap_or_default();
+    items
+        .iter()
+        .filter_map(|p| {
+            if let Some(id) = p.as_str().filter(|s| !s.is_empty()) {
+                return Some((id.to_string(), String::new()));
+            }
+            if p["isSelf"].as_bool() == Some(true) {
+                return None;
+            }
+            let field = |names: &[&str]| names.iter().find_map(|k| non_empty(&p[*k]));
+            let id =
+                field(&["PhoneNumber", "phoneNumber", "JID", "jid", "LID", "Id", "id"]).or_else(|| non_empty(&p["id"]["_serialized"]))?;
+            let name = field(&["DisplayName", "displayName", "FullName", "Name", "name", "PushName", "pushname"]).unwrap_or_default();
+            Some((id, name.trim().to_string()))
+        })
+        .collect()
+}
+
 /// A chat's picture (a person's profile photo, a group's) as the gateways name it: an address on WhatsApp's own
 /// picture server. Nook fetches it from there only, never with the gateway's credentials.
 pub mod avatar {
@@ -206,9 +320,20 @@ pub mod gowa {
 
     /// `GET /devices`: het apparaat waar Nook mee werkt, een ingelogd apparaat eerst.
     pub fn device(data: &[u8]) -> Option<(String, Status)> {
+        device_of(data, None, &std::collections::HashSet::new())
+    }
+
+    /// The device of one account (`WAGOWA.device` on the Mac): another account's own device by its id, the first
+    /// account's among the devices no other account owns, a logged-in one first.
+    pub fn device_of(data: &[u8], wanted: Option<&str>, excluding: &std::collections::HashSet<String>) -> Option<(String, Status)> {
         let r = results(data);
-        let list = r.as_array().filter(|l| !l.is_empty())?;
-        let pick = list.iter().find(|d| d["state"] == "logged_in").unwrap_or(&list[0]);
+        let all = r.as_array()?;
+        let list: Vec<&Value> = match wanted {
+            Some(id) => all.iter().filter(|d| d["id"].as_str() == Some(id)).collect(),
+            None => all.iter().filter(|d| !excluding.contains(d["id"].as_str().unwrap_or(""))).collect(),
+        };
+        let first = *list.first()?;
+        let pick = list.iter().copied().find(|d| d["state"] == "logged_in").unwrap_or(first);
         let id = non_empty(&pick["id"])?;
         let me = non_empty(&pick["jid"]);
         let link = match pick["state"].as_str() {
@@ -431,6 +556,11 @@ pub struct Provider {
     http: WaHttp,
     /// GOWA: het apparaat; OpenWA: de sessie.
     scope: tokio::sync::Mutex<Option<String>>,
+    /// The device (GOWA) or session name (OpenWA) of an account added after the first (`WAAccount`); `None` for the
+    /// first account.
+    account: Option<String>,
+    /// The other accounts' devices or sessions, which the first account leaves alone.
+    others: std::collections::HashSet<String>,
 }
 
 impl Provider {
@@ -445,7 +575,31 @@ impl Provider {
             (GatewayKind::Openwa, Some(key)) => headers.push(("X-API-Key".into(), key.to_string())),
             _ => {}
         }
-        Some(Self { kind, http: WaHttp::new(url, headers), scope: Default::default() })
+        Some(Self { kind, http: WaHttp::new(url, headers), scope: Default::default(), account: None, others: Default::default() })
+    }
+
+    /// The same gateway as one account sees it: `account` is an added account's id (its own device or session), `None`
+    /// the first account, which never takes one of `others`.
+    pub fn for_account(mut self, account: Option<&str>, others: impl IntoIterator<Item = String>) -> Self {
+        self.account = account.filter(|a| !a.is_empty()).map(str::to_string);
+        self.others = others.into_iter().collect();
+        self
+    }
+
+    /// An added account you removed: its device or session goes from the gateway, which unlinks it from the phone. The
+    /// first account is never removed this way.
+    pub async fn remove_account(&self) {
+        let Some(account) = self.account.clone() else { return };
+        match self.kind {
+            GatewayKind::Gowa => {
+                let _ = self.call("DELETE", &format!("/devices/{}", path_component(&account)), &[], None).await;
+            }
+            GatewayKind::Openwa => {
+                if let Ok((id, _, _)) = self.openwa_session().await {
+                    let _ = self.call("DELETE", &format!("/api/sessions/{id}"), &[], None).await;
+                }
+            }
+        }
     }
 
     fn check(&self, data: &[u8], code: u16) -> WaResult<()> {
@@ -483,13 +637,14 @@ impl Provider {
 
     async fn gowa_device(&self) -> WaResult<(String, Status)> {
         let data = self.call("GET", "/devices", &[], None).await?;
-        if let Some(found) = gowa::device(&data) {
+        if let Some(found) = gowa::device_of(&data, self.account.as_deref(), &self.others) {
             *self.scope.lock().await = Some(found.0.clone());
             return Ok(found);
         }
-        self.call("POST", "/devices", &[], Some(json!({"device_id": "nook"}))).await?;
-        *self.scope.lock().await = Some("nook".into());
-        Ok(("nook".into(), Status { link: LinkState::NeedsQr, me: None }))
+        let id = self.account.clone().unwrap_or_else(|| "nook".into());
+        self.call("POST", "/devices", &[], Some(json!({"device_id": id}))).await?;
+        *self.scope.lock().await = Some(id.clone());
+        Ok((id, Status { link: LinkState::NeedsQr, me: None }))
     }
 
     async fn scope_id(&self) -> WaResult<String> {
@@ -514,20 +669,28 @@ impl Provider {
     async fn openwa_session(&self) -> WaResult<(String, String, Option<String>)> {
         let data = self.call("GET", "/api/sessions", &[], None).await?;
         let list = parse(&data);
-        let all: Vec<_> = crate::connectors::list(&list).iter().filter_map(openwa::session).collect();
-        let current = self.scope.lock().await.clone();
-        let named = crate::connectors::list(&list).iter().find(|s| s["name"] == "nook").and_then(openwa::session);
-        let pick = all
-            .iter()
-            .find(|s| s.1 == "ready")
-            .cloned()
-            .or_else(|| all.iter().find(|s| Some(&s.0) == current.as_ref()).cloned())
-            .or(named)
-            .or_else(|| all.first().cloned());
+        let name = self.account.clone().unwrap_or_else(|| "nook".into());
+        let sessions = crate::connectors::list(&list);
+        let pick = if self.account.is_some() {
+            // An added account works on the session named after it, and on no other.
+            sessions.iter().find(|s| s["name"].as_str() == Some(name.as_str())).and_then(openwa::session)
+        } else {
+            // Another account's session is never the first account's.
+            let mine: Vec<&Value> = sessions.iter().filter(|s| !self.others.contains(s["name"].as_str().unwrap_or(""))).collect();
+            let all: Vec<_> = mine.iter().filter_map(|s| openwa::session(s)).collect();
+            let current = self.scope.lock().await.clone();
+            let named = mine.iter().find(|s| s["name"] == "nook").and_then(|s| openwa::session(s));
+            all.iter()
+                .find(|s| s.1 == "ready")
+                .cloned()
+                .or_else(|| all.iter().find(|s| Some(&s.0) == current.as_ref()).cloned())
+                .or(named)
+                .or_else(|| all.first().cloned())
+        };
         let session = match pick {
             Some(s) => s,
             None => {
-                let made = self.call("POST", "/api/sessions", &[], Some(json!({"name": "nook"}))).await?;
+                let made = self.call("POST", "/api/sessions", &[], Some(json!({"name": name}))).await?;
                 openwa::session(&parse(&made)).ok_or_else(|| WaError::Refused("session".into()))?
             }
         };
@@ -675,17 +838,153 @@ impl Provider {
 
     /// Stuurt tekst naar een bestaande chat; geeft het id van het nieuwe bericht als de koppeling het noemt.
     pub async fn send(&self, text: &str, chat: &str) -> WaResult<Option<String>> {
+        self.send_reply(text, chat, None).await
+    }
+
+    /// Sends text to an existing chat as an answer to one of its messages (`reply_to`, the message's id), which then
+    /// shows quoted above it, as WhatsApp's own Reply does. GOWA takes `reply_message_id`, OpenWA `quotedMessageId`.
+    pub async fn send_reply(&self, text: &str, chat: &str, reply_to: Option<&str>) -> WaResult<Option<String>> {
+        self.send_message(text, chat, reply_to, &[]).await
+    }
+
+    /// Sends text that may tag group members (`mentions`, their JIDs; the text names each as "@<number>").
+    pub async fn send_message(&self, text: &str, chat: &str, reply_to: Option<&str>, mentions: &[String]) -> WaResult<Option<String>> {
         Ok(match self.kind {
             GatewayKind::Gowa => {
-                let data = self.gowa_scoped("POST", "/send/message", &[], Some(json!({"phone": chat, "message": text}))).await?;
+                let mut body = json!({"phone": chat, "message": text});
+                if let Some(id) = reply_to {
+                    body["reply_message_id"] = json!(id);
+                }
+                if !mentions.is_empty() {
+                    body["mentions"] = json!(mentions);
+                }
+                let data = self.gowa_scoped("POST", "/send/message", &[], Some(body)).await?;
                 non_empty(&gowa::results(&data)["message_id"])
             }
             GatewayKind::Openwa => {
-                let data =
-                    self.openwa_scoped("POST", "/messages/send-text", &[], Some(json!({"chatId": openwa::id(chat), "text": text}))).await?;
+                let mut body = json!({"chatId": openwa::id(chat), "text": text});
+                if let Some(id) = reply_to {
+                    body["quotedMessageId"] = json!(id);
+                }
+                if !mentions.is_empty() {
+                    body["mentions"] = json!(mentions.iter().map(|m| openwa::id(m)).collect::<Vec<_>>());
+                }
+                let data = self.openwa_scoped("POST", "/messages/send-text", &[], Some(body)).await?;
                 non_empty(&parse(&data)["messageId"])
             }
         })
+    }
+
+    /// Sends a poll (`WASend`): GOWA's `/send/poll`, OpenWA's `/messages/send-poll`.
+    pub async fn send_poll(&self, chat: &str, question: &str, options: &[String], multiple: bool) -> WaResult<Option<String>> {
+        Ok(match self.kind {
+            GatewayKind::Gowa => {
+                let body = json!({"phone": chat, "question": question, "options": options, "max_answer": if multiple { options.len() } else { 1 }});
+                let data = self.gowa_scoped("POST", "/send/poll", &[], Some(body)).await?;
+                non_empty(&gowa::results(&data)["message_id"])
+            }
+            GatewayKind::Openwa => {
+                let body = json!({"chatId": openwa::id(chat), "name": question, "options": options, "allowMultipleAnswers": multiple});
+                let data = self.openwa_scoped("POST", "/messages/send-poll", &[], Some(body)).await?;
+                non_empty(&parse(&data)["messageId"])
+            }
+        })
+    }
+
+    /// Whether this gateway votes on a poll for you: OpenWA does (its whatsapp-web.js engine), GOWA has no such call.
+    pub fn can_vote(&self) -> bool {
+        self.kind == GatewayKind::Openwa
+    }
+
+    /// Votes on a poll with `choice` (the options' texts; empty takes your vote back).
+    pub async fn vote(&self, chat: &str, poll: &str, choice: &[String]) -> WaResult<()> {
+        match self.kind {
+            GatewayKind::Gowa => Err(WaError::Refused("vote".into())),
+            GatewayKind::Openwa => {
+                let body = json!({"chatId": openwa::id(chat), "pollMessageId": poll, "options": choice});
+                self.openwa_scoped("POST", "/messages/vote-poll", &[], Some(body)).await.map(|_| ())
+            }
+        }
+    }
+
+    /// Sends a file (`WASend` on the Mac): GOWA as a multipart form to `/send/image|video|audio|file`, OpenWA as JSON
+    /// with the file in base64. The caption goes with a photo, a video or a file; a voice note is sent as one (`ptt`).
+    pub async fn send_file(&self, chat: &str, file: &OutgoingFile<'_>, reply_to: Option<&str>) -> WaResult<Option<String>> {
+        let caption = file.caption.trim();
+        match self.kind {
+            GatewayKind::Gowa => {
+                let (path, field, captioned) = match file.kind {
+                    FileKind::Photo => ("/send/image", "image", true),
+                    FileKind::Video => ("/send/video", "video", true),
+                    FileKind::Audio | FileKind::Voice => ("/send/audio", "audio", false),
+                    FileKind::File => ("/send/file", "file", true),
+                };
+                let mut fields: Vec<(&str, String)> = vec![("phone", chat.to_string())];
+                if captioned && !caption.is_empty() {
+                    fields.push(("caption", caption.to_string()));
+                }
+                if let Some(id) = reply_to {
+                    fields.push(("reply_message_id", id.to_string()));
+                }
+                if file.kind == FileKind::Voice {
+                    fields.push(("ptt", "true".into()));
+                }
+                let boundary = format!("nook-{}", uuid::Uuid::new_v4().simple());
+                let body = form(&boundary, &fields, field, file.name, file.mime, file.bytes);
+                let scope = self.scope_id().await?;
+                let (data, code) = self
+                    .http
+                    .call_raw(path, &[("device_id", scope)], &format!("multipart/form-data; boundary={boundary}"), body, 120)
+                    .await?;
+                self.check(&data, code)?;
+                Ok(non_empty(&gowa::results(&data)["message_id"]))
+            }
+            GatewayKind::Openwa => {
+                use base64::Engine;
+                let path = match file.kind {
+                    FileKind::Photo => "/messages/send-image",
+                    FileKind::Video => "/messages/send-video",
+                    FileKind::Audio | FileKind::Voice => "/messages/send-audio",
+                    FileKind::File => "/messages/send-document",
+                };
+                let mut body = json!({
+                    "chatId": openwa::id(chat),
+                    "base64": base64::engine::general_purpose::STANDARD.encode(file.bytes),
+                    "mimetype": file.mime,
+                    "filename": file.name,
+                });
+                if !caption.is_empty() && !matches!(file.kind, FileKind::Audio | FileKind::Voice) {
+                    body["caption"] = json!(caption.chars().take(1024).collect::<String>());
+                }
+                if file.kind == FileKind::Voice {
+                    body["ptt"] = json!(true);
+                }
+                if let Some(id) = reply_to {
+                    body["quotedMessageId"] = json!(id);
+                }
+                let data = self.openwa_scoped("POST", path, &[], Some(body)).await?;
+                Ok(non_empty(&parse(&data)["messageId"]))
+            }
+        }
+    }
+
+    /// What happens to one message on WhatsApp (`MessageStep`): its words changed, deleted for everyone or for you, or an
+    /// emoji put on it ("" takes yours off). GOWA's `/message/{id}/…` calls; OpenWA's REST API has none of them, so there
+    /// it says so instead of pretending.
+    pub async fn message_step(&self, chat: &str, message: &str, step: MessageStep<'_>) -> WaResult<()> {
+        match self.kind {
+            GatewayKind::Gowa => {
+                let (verb, body) = match step {
+                    MessageStep::Edit(text) => ("update", json!({"phone": chat, "message": text})),
+                    MessageStep::Revoke => ("revoke", json!({"phone": chat})),
+                    MessageStep::DeleteForMe => ("delete", json!({"phone": chat})),
+                    MessageStep::React(emoji) => ("reaction", json!({"phone": chat, "emoji": emoji})),
+                };
+                self.gowa_scoped("POST", &format!("/message/{}/{verb}", path_component(message)), &[], Some(body)).await?;
+                Ok(())
+            }
+            GatewayKind::Openwa => Err(WaError::Refused("OpenWA cannot change, delete or react to a message from Nook.".into())),
+        }
     }
 
     /// Markeert de chat gelezen tot het nieuwste ontvangen bericht.
@@ -700,6 +999,32 @@ impl Provider {
             }
         }
         Ok(())
+    }
+
+    /// A group's members without you, as (JID, name): GOWA's `/group/info` (`Participants`), OpenWA's `/groups/{id}`.
+    pub async fn group_members(&self, chat: &str) -> Vec<(String, String)> {
+        if !jid::is_group(chat) {
+            return vec![];
+        }
+        let list = match self.kind {
+            GatewayKind::Gowa => {
+                let Ok(data) = self.gowa_scoped("GET", "/group/info", &[("group_id", chat.into())], None).await else { return vec![] };
+                let r = gowa::results(&data);
+                let r = if r["data"].is_object() { r["data"].clone() } else { r };
+                if r["Participants"].is_null() {
+                    r["participants"].clone()
+                } else {
+                    r["Participants"].clone()
+                }
+            }
+            GatewayKind::Openwa => {
+                let Ok(data) = self.openwa_scoped("GET", &format!("/groups/{}", path_component(chat)), &[], None).await else {
+                    return vec![];
+                };
+                parse(&data)["participants"].clone()
+            }
+        };
+        members(&list)
     }
 
     /// De naam van een groep, als de berichten hem niet meedragen.
@@ -831,6 +1156,18 @@ mod tests {
     }
 
     #[test]
+    fn each_account_has_its_own_gowa_device() {
+        let devices = br#"{"results":[{"id":"nook-biz001","state":"logged_in","jid":"31622222222@s.whatsapp.net"},{"id":"nook","state":"disconnected"}]}"#;
+        let others: std::collections::HashSet<String> = ["nook-biz001".to_string()].into();
+        // The first account never takes an added account's device, even a logged-in one.
+        assert_eq!(gowa::device_of(devices, None, &others).unwrap().0, "nook");
+        let (id, status) = gowa::device_of(devices, Some("nook-biz001"), &Default::default()).unwrap();
+        assert_eq!((id.as_str(), status.link), ("nook-biz001", LinkState::Connected));
+        // An added account without a device yet: one is made for it.
+        assert!(gowa::device_of(devices, Some("nook-new999"), &Default::default()).is_none());
+    }
+
+    #[test]
     fn gowa_answers() {
         let devices = br#"{"code":"SUCCESS","results":[{"id":"a","state":"disconnected"},{"id":"nook","state":"logged_in","jid":"31611111111@s.whatsapp.net"}]}"#;
         let (id, status) = gowa::device(devices).unwrap();
@@ -921,5 +1258,52 @@ mod tests {
         assert!(sent[1].body.contains("\"phone\":\"31622222222@s.whatsapp.net\""));
         let down = Provider::new(GatewayKind::Gowa, "http://127.0.0.1:9", None).unwrap();
         assert_eq!(down.status().await, Err(WaError::Unreachable));
+    }
+
+    #[tokio::test]
+    async fn a_file_goes_to_gowa_as_a_form() {
+        let server = TestServer::start(vec![
+            ("GET /devices", 200, r#"{"results":[{"id":"nook","state":"logged_in"}]}"#.into()),
+            ("POST /send/image", 200, r#"{"results":{"message_id":"F1"}}"#.into()),
+        ])
+        .await;
+        let provider = Provider::new(GatewayKind::Gowa, &server.url(""), None).unwrap();
+        let file =
+            OutgoingFile { kind: FileKind::of("image/png", false), name: "a.png", mime: "image/png", bytes: b"PNGDATA", caption: " Look " };
+        let id = provider.send_file("31622222222@s.whatsapp.net", &file, Some("M1")).await.unwrap();
+        assert_eq!(id.as_deref(), Some("F1"));
+        let sent = server.requests();
+        let form = sent.iter().find(|r| r.path.starts_with("/send/image")).unwrap();
+        assert!(form.path.contains("device_id=nook"));
+        assert!(form.body.contains("name=\"caption\"\r\n\r\nLook\r\n"), "{}", form.body);
+        assert!(form.body.contains("name=\"reply_message_id\"\r\n\r\nM1"));
+        assert!(form.body.contains("name=\"image\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\nPNGDATA"));
+        assert_eq!(FileKind::of("audio/ogg", true), FileKind::Voice);
+        assert_eq!(FileKind::of("application/pdf", false), FileKind::File);
+    }
+
+    #[tokio::test]
+    async fn a_reply_names_the_message_it_answers() {
+        let server = TestServer::start(vec![
+            ("GET /devices", 200, r#"{"results":[{"id":"nook","state":"logged_in"}]}"#.into()),
+            ("POST /send/message", 200, r#"{"results":{"message_id":"M10"}}"#.into()),
+        ])
+        .await;
+        let provider = Provider::new(GatewayKind::Gowa, &server.url(""), None).unwrap();
+        let id = provider.send_reply("Yes", "31622222222@s.whatsapp.net", Some("M3")).await.unwrap();
+        assert_eq!(id.as_deref(), Some("M10"));
+        let sent = server.requests();
+        let send = sent.iter().find(|r| r.path.starts_with("/send/message")).unwrap();
+        assert!(send.body.contains("\"reply_message_id\":\"M3\""), "{}", send.body);
+        provider.send("Plain", "31622222222@s.whatsapp.net").await.unwrap();
+        assert!(!server.requests().last().unwrap().body.contains("reply_message_id"));
+    }
+
+    #[test]
+    fn group_members_from_either_gateway() {
+        let gowa = serde_json::json!([{"JID": "1@lid", "PhoneNumber": "316111@s.whatsapp.net", "DisplayName": "Ann "}, {"JID": "2@lid"}]);
+        assert_eq!(members(&gowa), vec![("316111@s.whatsapp.net".to_string(), "Ann".to_string()), ("2@lid".to_string(), String::new())]);
+        let openwa = serde_json::json!([{"id": {"_serialized": "316222@c.us"}, "pushname": "Bo"}, {"id": "x", "isSelf": true}]);
+        assert_eq!(members(&openwa), vec![("316222@c.us".to_string(), "Bo".to_string())]);
     }
 }

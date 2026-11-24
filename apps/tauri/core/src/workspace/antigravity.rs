@@ -2,8 +2,8 @@
 //! `agy_acp_server` with its `localharness_external` beside it, a profile folder per Nook account (`GEMINI_HOME`) with
 //! file-based token storage, and Google sign-in through the server's own loopback port, opened in your browser.
 //!
-//! The Mac installs a pinned release of the server for macOS. There is no such release Nook can pin for Windows or
-//! Linux yet, so here Nook uses a server you put in `<Nook's folder>/tools/antigravity-acp` (or on your `PATH`).
+//! Nook installs the pinned release of the server for this computer (`antigravity_install.rs`, as the Mac does), into
+//! `<Nook's folder>/tools/antigravity-acp`; a server you put there yourself, or on your `PATH`, works too.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -172,7 +172,10 @@ pub fn prepare(profile_id: &str, server: &str, account: &BTreeMap<String, String
         env.insert("TEMP".into(), temp.clone());
         env.insert("TMP".into(), temp);
     }
-    let harness = Path::new(server).parent().map(|p| p.join(HARNESS)).filter(|h| h.exists());
+    // `localharness_external.exe` on Windows.
+    let harness = Path::new(server)
+        .parent()
+        .and_then(|p| [HARNESS.to_string(), format!("{HARNESS}.exe")].into_iter().map(|n| p.join(n)).find(|h| h.exists()));
     if let Some(h) = harness {
         env.insert("ANTIGRAVITY_HARNESS_PATH".into(), h.to_string_lossy().into_owned());
     }

@@ -14,6 +14,8 @@ export type Target =
   | { kind: "agents"; select: string }
   | { kind: "nook"; id: string }
   | { kind: "newNook"; ask?: string }
+  /// One chat in Chats (a reply you owe).
+  | { kind: "chat"; key: string }
   /// Text to read right on Home (a conversation note).
   | { kind: "markdown"; title: string; markdown: string };
 
@@ -30,6 +32,8 @@ export interface InboxItem {
   /// The provider's own key for the thing (a chat, an open item), for its actions.
   ref?: string;
   source: InboxSource;
+  /// The app it came from when the source covers several (a chat in Telegram), shown instead of the source's name.
+  sourceLabel?: string;
   type: InboxType;
   title: string;
   detail?: string;

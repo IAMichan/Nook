@@ -19,6 +19,7 @@ pub mod github_markdown;
 pub mod gitlab;
 pub mod hub;
 pub mod ics;
+pub mod mail;
 pub mod mcp;
 pub mod oauth;
 pub mod openrouter;

@@ -11,6 +11,9 @@
     type InlineOptions,
   } from "../lib/markdown-blocks";
   import { hasRich, renderKatex, renderMermaid, splitMath } from "../lib/rich";
+  import { nook } from "../lib/state.svelte";
+  import { openAgentLink } from "../lib/workspace/open-in";
+  import { OPEN_FILE_EVENT } from "../lib/workspace/file-links";
   import Icon from "./Icon.svelte";
   import Markdown from "./Markdown.svelte";
   import MarkdownCode from "./MarkdownCode.svelte";
@@ -30,12 +33,14 @@
   } = $props();
 
   const blocks = $derived(parseMarkdownBlocks(text));
-  const inlineOpts = $derived<InlineOptions>(citation ? { citation } : {});
+  const inlineOpts = $derived<InlineOptions>({ ...(citation ? { citation } : {}), ...(baseFolder ? { files: true } : {}) });
 
   // Keep `<details>` open state per block index while an answer streams.
   let openDetails = $state<Record<number, boolean>>({});
   let diagrams = $state<Record<number, string>>({});
   let mathHtml = $state<Record<number, string>>({});
+  // Settings › Appearance › Text and layout › Render math (`renderMath` on the Mac): off, math stays its source.
+  const mathOn = $derived(nook.settings?.renderMath !== false);
 
   function toggleDetails(index: number) {
     openDetails = { ...openDetails, [index]: !openDetails[index] };
@@ -50,7 +55,7 @@
         void renderMermaid(block.code).then((svg) => {
           if (!cancelled && svg) diagrams = { ...diagrams, [index]: svg };
         });
-      } else if (block.kind === "math") {
+      } else if (block.kind === "math" && mathOn) {
         void renderKatex(block.tex, true).then((html) => {
           if (!cancelled && html) mathHtml = { ...mathHtml, [index]: html };
         });
@@ -65,7 +70,7 @@
   let rootEl: HTMLDivElement;
   $effect(() => {
     const source = text;
-    if (!rootEl || !hasRich(source)) return;
+    if (!rootEl || !mathOn || !hasRich(source)) return;
     let cancelled = false;
     const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => (n.parentElement?.closest("code, pre, .katex, .diagram, .math-block") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
@@ -115,10 +120,19 @@
   }
 
   function handleClick(e: MouseEvent) {
+    // A file the agent named opens in the session's File tab (`FileLink`); RunPanel takes the event.
+    const file = (e.target as HTMLElement).closest("a[data-file]") as HTMLAnchorElement | null;
+    if (file && baseFolder) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent(OPEN_FILE_EVENT, { detail: { raw: file.dataset.file, base: baseFolder } }));
+      return;
+    }
     const a = (e.target as HTMLElement).closest("a[data-external]") as HTMLAnchorElement | null;
     if (a) {
       e.preventDefault();
-      openUrl(a.href);
+      // In an agent's conversation (it has a folder) a link opens where Settings › Sessions › Editor & browser says.
+      if (baseFolder) openAgentLink(a.href, e.ctrlKey || e.metaKey);
+      else openUrl(a.href);
     }
   }
 </script>
@@ -128,7 +142,7 @@
   {#each blocks as block, i (i)}
     {#if block.kind === "heading"}
       {@const tagLevel = Math.min(block.level + 2, 6)}
-      <svelte:element this={`h${tagLevel}`}>{@html renderInline(block.text)}</svelte:element>
+      <svelte:element this={`h${tagLevel}`} class="md-h{Math.min(block.level, 4)}">{@html renderInline(block.text)}</svelte:element>
     {:else if block.kind === "paragraph"}
       <p>{@html renderInline(block.text)}</p>
     {:else if block.kind === "list"}
@@ -157,7 +171,7 @@
         <MarkdownCode language="mermaid" code={block.code} />
       {/if}
     {:else if block.kind === "math"}
-      {#if mathHtml[i]}
+      {#if mathHtml[i] && mathOn}
         <div class="math-block">{@html mathHtml[i]}</div>
       {:else}
         <MarkdownCode language="math" code={block.tex} />
@@ -207,12 +221,15 @@
 </div>
 
 <style>
+  /* As the Mac sets an answer (`SelectableProse`): running text a step softer than headings, 10 px between blocks, a
+     heading 6, 4 or 2 px over the text size by its level, with more room above than below. */
   .markdown {
     user-select: text;
     line-height: 1.55;
+    color: var(--text-strong);
   }
   .markdown :global(p) {
-    margin: 0 0 8px;
+    margin: 0 0 10px;
   }
   .markdown :global(p:last-child) {
     margin-bottom: 0;
@@ -221,9 +238,16 @@
   .markdown :global(h4),
   .markdown :global(h5),
   .markdown :global(h6) {
-    margin: 12px 0 6px;
-    font-size: 13px;
+    margin: 20px 0 6px;
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--paper);
   }
+  .markdown > :global(:first-child) { margin-top: 0; }
+  .markdown :global(.md-h1) { font-size: 1.43em; }
+  .markdown :global(.md-h2) { font-size: 1.29em; }
+  .markdown :global(.md-h3) { font-size: 1.14em; }
   .markdown :global(a) {
     color: var(--iris);
   }
@@ -360,7 +384,7 @@
     min-width: 0;
   }
   .callout-title {
-    font-size: 13px;
+    font: var(--text-control);
     font-weight: 600;
   }
   .md-rule {
@@ -373,7 +397,7 @@
     padding: 3px 10px;
     border-radius: 999px;
     background: var(--smoke);
-    font-size: 12px;
+    font: var(--text-detail);
     text-decoration: none;
   }
   .diagram,

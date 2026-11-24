@@ -102,7 +102,7 @@ impl SessionMarks {
         if !idle || (now - last).num_seconds() < AUTO_FINISH_AFTER {
             return false;
         }
-        !self.stored.kept.get(key).is_some_and(|reopened| *reopened >= last)
+        self.stored.kept.get(key).is_none_or(|reopened| *reopened < last)
     }
 
     /// Een gesprek van een agent ("Claude Code|<gesprek-id>"); zonder gesprek-id alleen de rij-id.

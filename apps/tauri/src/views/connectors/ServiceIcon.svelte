@@ -1,8 +1,10 @@
 <script lang="ts">
-  // Het icoon van een dienst, van zijn eigen website (zoals op de Mac). Zonder icoon: de eerste letter in een tegel.
+  // Het icoon van een dienst, van zijn eigen website (zoals op de Mac). Zonder website: `glyph`, de lijn-icoon van een
+  // bron op dit apparaat (agenda, mail, bestanden; de Mac toont daar het icoon van zijn app); anders de eerste letter.
   import { serviceIconUrl } from "../../lib/service-icons";
+  import Ico from "../../components/ui/Ico.svelte";
 
-  let { domain, title, size = 30 }: { domain?: string | null; title: string; size?: number } = $props();
+  let { domain, title, size = 30, glyph }: { domain?: string | null; title: string; size?: number; glyph?: string } = $props();
   let src = $state<string | null>(null);
 
   $effect(() => {
@@ -21,7 +23,9 @@
 </script>
 
 <span class="tile" style="width:{size}px;height:{size}px;border-radius:{Math.round(size / 4)}px">
-  {#if src}
+  {#if !src && glyph && !domain}
+    <span class="glyph"><Ico name={glyph} size={Math.round(size * 0.72)} stroke={2.2} /></span>
+  {:else if src}
     <img {src} alt="" width={Math.round(size * 0.72)} height={Math.round(size * 0.72)} onerror={() => (src = null)} />
   {:else}
     <span class="letter" style="background:hsl({hue} 45% 30%);font-size:{Math.round(size * 0.45)}px">{letter}</span>
@@ -32,4 +36,5 @@
   .tile { display: inline-grid; place-items: center; background: var(--paper); flex: none; overflow: hidden; }
   .letter { width: 100%; height: 100%; display: grid; place-items: center; color: var(--paper); font-weight: 600; }
   img { object-fit: contain; }
+  .glyph { width: 100%; height: 100%; display: grid; place-items: center; background: var(--smoke); color: var(--text-strong); }
 </style>

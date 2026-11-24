@@ -20,6 +20,7 @@ fn approval(tool: &str, command: &str) -> AgentApproval {
         can_terminal: true,
         session_key: "s".into(),
         created: chrono::Utc::now(),
+        always_scope: None,
     }
 }
 
@@ -212,13 +213,14 @@ fn an_agent_notice_says_who_where_and_the_gist() {
         started: None,
         updated: None,
         pid: None,
+        launched_by: None,
     };
     let toast = Toast::agent_status(&session).unwrap();
     assert_eq!(toast.title, "Claude Code is done");
     assert_eq!(toast.subtitle, "nook · Push the branch");
     assert_eq!(toast.body, "Pushed. CI runs again and takes about ten minutes.");
     assert_eq!(toast.target, NoticeTarget::Run(Uuid::nil()));
-    assert_eq!(toast.kind, ToastKind::Notice);
+    assert_eq!(toast.kind, ToastKind::Reply, "a session Nook runs takes an answer from the toast");
 
     session.status = AgentStatus::Waiting;
     session.project = "nook".into();

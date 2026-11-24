@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod bridge_cli;
 #[cfg(desktop)]
 pub mod browser;
+pub mod clones;
 pub mod nook_runs;
 #[cfg(desktop)]
 pub mod snapshot;
@@ -232,6 +233,7 @@ pub fn attention_card(run: &WorkspaceRun, last: &str) -> AgentSession {
         started: Some(run.created_at),
         updated: Some(run.updated_at),
         pid: None,
+        launched_by: None,
     }
 }
 
@@ -269,7 +271,8 @@ pub fn pending_questions(app: &AppHandle) -> Vec<QuestionRequest> {
 }
 
 /// `run-<verzoek>`: een vraag van een sessie die Nook draait; `bridge-<verzoek>`: een verzoek via de werkruimte-brug.
-pub fn decide_approval(app: &AppHandle, id: &str, decision: ApprovalDecision) -> Result<(), String> {
+/// A Deny's reason reaches the agent (a bridge request has no agent to tell).
+pub fn decide_approval_with_reason(app: &AppHandle, id: &str, decision: ApprovalDecision, reason: Option<&str>) -> Result<(), String> {
     let gone = || "Deze vraag bestaat niet meer.".to_string();
     #[cfg(desktop)]
     if let Some(request) = id.strip_prefix("bridge-") {
@@ -285,7 +288,7 @@ pub fn decide_approval(app: &AppHandle, id: &str, decision: ApprovalDecision) ->
         .find(|a| a.id == id)
         .and_then(|a| a.session_key.strip_prefix("run:").and_then(|r| Uuid::parse_str(r).ok()))
         .ok_or_else(gone)?;
-    manager.decide(run, request, decision)
+    manager.decide_with_reason(run, request, decision, reason)
 }
 
 /// `runq:<run>:<verzoek>`: het antwoord op een vraag van een sessie die Nook draait.

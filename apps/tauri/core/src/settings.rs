@@ -7,6 +7,7 @@ use crate::provider::AIProvider;
 use crate::services::autocomplete::AutocompleteSettings;
 use crate::services::energy::EnergyMode;
 use crate::services::quiet::QuietBehavior;
+use crate::services::telemetry::TelemetrySettings;
 
 /// Waar het denken gebeurt. Op Windows, Linux en Android is er (nog) geen ingebouwd MLX-model:
 /// lokaal betekent Ollama of LM Studio.
@@ -48,6 +49,33 @@ impl BrainSelection {
     }
 }
 
+/// Nook's face (Settings › Appearance › Style and Face and finish, `NookLook` on the Mac): eyes "round", "bars" or
+/// "dots"; mouth "expressive", "line" or "none"; lit like a ball; a soft glow around him; blushing when petted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NookLook {
+    pub eyes: String,
+    pub mouth: String,
+    pub gloss: bool,
+    pub glow: bool,
+    pub cheeks: bool,
+}
+
+impl Default for NookLook {
+    /// The classic look Nook always had.
+    fn default() -> Self {
+        Self { eyes: "bars".into(), mouth: "none".into(), gloss: true, glow: true, cheeks: true }
+    }
+}
+
+/// Colors set by hand over a theme, per appearance: token name ("canvas", "accent", …) to "#rrggbb".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColorOverrides {
+    pub dark: BTreeMap<String, String>,
+    pub light: BTreeMap<String, String>,
+}
+
 /// Alle instellingen, als één JSON-bestand in de gegevensmap. Namen gelijk aan de `UserDefaults`-sleutels op de Mac,
 /// zodat een export van de ene naar de andere te lezen is. Onbekende of ontbrekende velden krijgen hun standaard.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,12 +100,37 @@ pub struct Settings {
     pub screen_choice: String,
     pub accent_hex: u32,
     pub hide_when_idle: bool,
+    /// Resting the pointer on the closed bar opens the panel (Settings › General › Bar & windows, `openOnHover` on the
+    /// Mac); off, only a click opens it. On by default, as on the Mac.
+    pub open_on_hover: bool,
     pub panel_large: bool,
+    /// Quitting from the tray asks first while a Workspace session is still at work (Settings › General ›
+    /// Confirmations; `nook.quit.confirmWorking` on the Mac). On by default.
+    pub confirm_quit: bool,
+    /// The bar at the top of the screen shows (`showNotch` on the Mac); off, Nook stays out of sight until a shortcut or
+    /// the tray opens him, and goes again when he closes. On by default.
+    pub show_bar: bool,
+    /// Every connected screen gets a bar; Nook opens on the screen the pointer is on (Settings › General › Bar &
+    /// windows, `notchOnAllScreens` on the Mac). Only for the bar at the top; off by default.
+    pub bar_on_all_screens: bool,
+    /// Apps Nook never reads, as exe names without ".exe" (Settings › Privacy › Apps Nook never reads,
+    /// `neverReadApps` on the Mac): not their screen text, and no suggestions while typing in them.
+    pub never_read_apps: Vec<String>,
+    /// The main window opens every time Nook starts, in front when you started Nook and behind your app at login
+    /// (Settings › General › Bar & windows, `openWindowAtLaunch` on the Mac). On by default.
+    pub open_window_at_launch: bool,
     /// How large the bar's notification is when an agent (terminal or Workspace) finishes, fails or waits on you:
     /// "detailed" (a card with the summary and what changed), "compact" (one slim line in the bar) or "system" (a system
     /// notification, with Allow and Deny on a permission request; `nook_core::services::toast`).
     pub agent_notice: String,
+    /// How the other sources show, which apps may notify, and quiet hours (Settings › Notifications,
+    /// `services::notice_rules`). The agents' style is `agent_notice` (detailed = card, compact = one line).
+    pub notice_rules: crate::services::notice_rules::NoticeRules,
     pub sounds: bool,
+    /// Which sound each moment plays (Settings › Notifications › Sound & voice, `soundChoices` on the Mac), by
+    /// `NookSound` name: missing or "" is Nook's own (your file in the Sounds folder first), "none" is silent, any
+    /// other value the name of a system sound (`services::sounds::system_sounds`).
+    pub sound_choices: BTreeMap<String, String>,
     pub speak_answers: bool,
     pub wake_word: bool,
     pub web_search: bool,
@@ -85,6 +138,10 @@ pub struct Settings {
     pub screen_with_every_question: bool,
     /// Bronnen die alleen een lokaal brein mag lezen.
     pub local_only_sources: BTreeSet<String>,
+    /// How tightly Nook guards what an external brain sees (Settings › Privacy › Privacy level, `privacyLevel` on the
+    /// Mac): open, balanced (secrets taken out; the default) or strict (also contact details, and the screen and the
+    /// clipboard stay here). See `brain::privacy_level`.
+    pub privacy_level: crate::brain::privacy_level::PrivacyLevel,
     /// Settings › Brain › Screen work: the model on this computer that reads the screen while an external brain answers
     /// ("ollama:<model>", "lmstudio:<model>"; "" for none). See `brain::screen_brain`.
     pub screen_brain: String,
@@ -140,10 +197,95 @@ pub struct Settings {
     pub theme: String,
     /// How much room text and rows get (`NookDensity` on the Mac): "compact", "comfortable" or "spacious".
     pub density: String,
+    /// The theme shown in dark and in light (Settings › Appearance › Theme, `darkThemeID`/`lightThemeID` on the Mac):
+    /// a built-in id ("nook", "warm", "mono", "midnight", "paper", "contrast") or an imported theme's id.
+    pub dark_theme: String,
+    pub light_theme: String,
+    /// VS Code themes you imported, as the window draws them (`lib/palette.ts`): id, name, and a palette for dark and/or
+    /// light. Kept as JSON; only the main window reads it.
+    pub custom_themes: Vec<serde_json::Value>,
+    /// Colors set one by one over the chosen themes (Settings › Appearance › Colors): per appearance, a token and its
+    /// color ("#rrggbb").
+    pub color_overrides: ColorOverrides,
+    /// The colors of added and removed lines: "redGreen" or "blueOrange" (for red-green color blindness).
+    pub diff_colors: String,
+    /// `$…$`, `$$…$$` and math blocks are typeset with KaTeX (bundled, offline); off shows their source.
+    pub render_math: bool,
+    /// Markdown shows its style in the composer as you type (bold, italic, code, headings, lists); what is sent stays
+    /// plain Markdown (`richComposer` on the Mac).
+    pub rich_composer: bool,
+    /// Nook reads the newest messages of an open conversation and offers above the field what it can do for them
+    /// (`suggestChatActions` on the Mac); nothing runs until you click Do it.
+    pub suggest_chat_actions: bool,
+    /// The model of the brain's service that looks for those suggestions; empty is the brain's own model.
+    pub action_suggestion_model: String,
+    /// Nook's face (`NookLook`).
+    pub nook_look: NookLook,
+    /// Nook as a buddy: the small moments (a hop hello, waking up, a giggle after three pokes, a blush when petted).
+    pub buddy_moments: bool,
+    /// How Nook words his moments: "calm", "warm" or "playful" (`BuddyTone` on the Mac; the moments are the same).
+    pub buddy_tone: String,
+    /// Your birthday as "MM-DD" (`NookMonthDay` on the Mac), or empty when not set. A half-filled date ("00-12",
+    /// "06-00") is kept so you can pick the day first, but only counts once both parts are set.
+    pub birthday: String,
     /// The default answer style (`ResponseStyle` on the Mac, Settings › Instructions); see `crate::instructions`.
     pub answer_style: String,
     /// The user's own standing instructions for Nook, sent with every question (Settings › Instructions).
     pub instructions: String,
+    /// Worktree creation and automatic cleanup rules (Settings › Worktrees, matching macOS `SourceControlGlobalRows`
+    /// and `WorktreeCleanup`).
+    #[serde(default)]
+    pub worktrees: WorktreeSettings,
+    /// OpenTelemetry OTLP/HTTP export configuration (Settings › Maintenance › OpenTelemetry export).
+    #[serde(default)]
+    pub telemetry: TelemetrySettings,
+    /// Skill file paths toggled off by the user in Settings › Coding agents › Skills (non-destructive).
+    #[serde(default)]
+    pub disabled_skills: BTreeSet<String>,
+}
+
+/// Worktree creation and automatic cleanup preferences (Settings › Worktrees, matching macOS).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorktreeSettings {
+    /// Use fast copy-on-write clones when supported by the filesystem.
+    pub fast_worktrees: bool,
+    /// Submodule checkout strategy for new worktrees: "recursive", "topLevel", or "skip".
+    pub submodules: String,
+    /// Fetch and fast-forward the default branch roughly every 15 minutes when clean and idle.
+    pub auto_pull_default_branch: bool,
+    /// Clone repositories into `host/owner/repo` under ~/Developer.
+    pub clone_host_layout: bool,
+    /// Remove a worktree once its session's pull request is merged.
+    pub cleanup_on_merge: bool,
+    /// Days after a settled session before removing its worktree (0 = never, 3, 7, 30).
+    pub cleanup_settled_days: u32,
+    /// Days of inactivity before removing a quiet session's worktree (0 = never, 3, 7, 30).
+    pub cleanup_inactive_days: u32,
+    /// Remove a worktree with no commits beyond its base branch.
+    pub cleanup_unchanged: bool,
+    /// Remove a worktree when its last session is deleted.
+    pub cleanup_on_delete: bool,
+    /// What local changes keep a worktree from being removed:
+    /// "uncommittedChanges", "anyLocalFiles", or "editedTrackedFiles".
+    pub keep_when: String,
+}
+
+impl Default for WorktreeSettings {
+    fn default() -> Self {
+        Self {
+            fast_worktrees: true,
+            submodules: "recursive".into(),
+            auto_pull_default_branch: false,
+            clone_host_layout: false,
+            cleanup_on_merge: true,
+            cleanup_settled_days: 7,
+            cleanup_inactive_days: 0,
+            cleanup_unchanged: false,
+            cleanup_on_delete: false,
+            keep_when: "uncommittedChanges".into(),
+        }
+    }
 }
 
 /// The main window's last place and size on the desktop.
@@ -192,15 +334,24 @@ impl Default for Settings {
             screen_choice: "auto".into(),
             accent_hex: 0xF4_F3_F7,
             hide_when_idle: false,
+            open_on_hover: true,
             panel_large: false,
+            confirm_quit: true,
+            show_bar: true,
+            bar_on_all_screens: false,
+            never_read_apps: Vec::new(),
+            open_window_at_launch: true,
             agent_notice: "detailed".into(),
+            notice_rules: Default::default(),
             sounds: true,
+            sound_choices: BTreeMap::new(),
             speak_answers: false,
             wake_word: false,
             web_search: true,
             live_screen: false,
             screen_with_every_question: false,
             local_only_sources: BTreeSet::new(),
+            privacy_level: Default::default(),
             screen_brain: String::new(),
             screen_brain_relays: false,
             evidence_first: false,
@@ -230,8 +381,24 @@ impl Default for Settings {
             main_window: None,
             theme: "dark".into(),
             density: "comfortable".into(),
+            dark_theme: "nook".into(),
+            light_theme: "nook".into(),
+            custom_themes: Vec::new(),
+            color_overrides: ColorOverrides::default(),
+            diff_colors: "redGreen".into(),
+            render_math: true,
+            rich_composer: true,
+            suggest_chat_actions: true,
+            action_suggestion_model: String::new(),
+            nook_look: NookLook::default(),
+            buddy_moments: true,
+            buddy_tone: "warm".into(),
+            birthday: String::new(),
             answer_style: "standard".into(),
             instructions: String::new(),
+            worktrees: WorktreeSettings::default(),
+            telemetry: TelemetrySettings::default(),
+            disabled_skills: BTreeSet::new(),
         }
     }
 }
@@ -257,6 +424,7 @@ impl Settings {
     pub fn load() -> Self {
         let settings = Self::load_from(&paths::settings_file());
         crate::i18n::set_language(&settings.app_language);
+        crate::services::screen::set_user_excluded(&settings.never_read_apps);
         settings
     }
 
@@ -266,6 +434,7 @@ impl Settings {
 
     pub fn save(&self) -> std::io::Result<()> {
         crate::i18n::set_language(&self.app_language);
+        crate::services::screen::set_user_excluded(&self.never_read_apps);
         self.save_to(&paths::settings_file())
     }
 
@@ -299,7 +468,7 @@ impl Settings {
     /// The model on this computer that does the screen work, while the chosen brain is external and the screen stays
     /// here (`brain::screen_brain::worker`).
     pub fn screen_worker(&self) -> Option<BrainSelection> {
-        crate::brain::screen_brain::worker(&self.selection(), self.local_only_sources.contains("screen"), &self.screen_brain)
+        crate::brain::screen_brain::worker(&self.selection(), self.kept_here().contains("screen"), &self.screen_brain)
     }
 
     /// The screen brain when it writes the chosen brain a note instead of answering itself.
@@ -312,7 +481,24 @@ impl Settings {
         if self.is_local_brain() {
             BTreeSet::new()
         } else {
-            self.local_only_sources.clone()
+            self.kept_here()
+        }
+    }
+
+    /// The sources kept on this computer whatever brain answers: chosen by hand and by the privacy level (`keptOnMac`).
+    pub fn kept_here(&self) -> BTreeSet<String> {
+        let mut kept = self.local_only_sources.clone();
+        kept.extend(self.privacy_level.local_only_sources());
+        kept
+    }
+
+    /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged for a brain on
+    /// this computer, filtered by the privacy level when it goes to an external brain (`shielded` on the Mac).
+    pub fn shielded(&self, text: &str) -> String {
+        if self.is_local_brain() {
+            text.to_string()
+        } else {
+            self.privacy_level.apply(text)
         }
     }
 
@@ -473,6 +659,30 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"theme":"light","instructions":"Call me Sam."}"#).unwrap();
         assert_eq!(s.theme, "light");
         assert_eq!(s.instructions, "Call me Sam.");
+    }
+
+    #[test]
+    fn old_settings_files_get_worktrees_and_telemetry_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert!(s.worktrees.fast_worktrees);
+        assert_eq!(s.worktrees.submodules, "recursive");
+        assert!(s.worktrees.cleanup_on_merge);
+        assert_eq!(s.worktrees.cleanup_settled_days, 7);
+        assert_eq!(s.worktrees.keep_when, "uncommittedChanges");
+        assert!(!s.telemetry.enabled);
+        assert!(s.telemetry.traces_endpoint.is_empty());
+        assert!(s.disabled_skills.is_empty());
+    }
+
+    #[test]
+    fn old_settings_files_get_the_buddy_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert!(s.buddy_moments);
+        assert_eq!(s.buddy_tone, "warm");
+        assert!(s.birthday.is_empty());
+        let s: Settings = serde_json::from_str(r#"{"buddyTone":"playful","birthday":"06-12"}"#).unwrap();
+        assert_eq!(s.buddy_tone, "playful");
+        assert_eq!(s.birthday, "06-12");
     }
 
     #[test]

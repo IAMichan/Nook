@@ -4,7 +4,7 @@
   import Ico from "./Ico.svelte";
   import PulseDot from "./PulseDot.svelte";
   let { attention, short = true }: { attention: string; short?: boolean } = $props();
-  const marks: Record<string, string> = { approval: "hand", input: "message-circle-question", failed: "triangle-alert", limited: "hourglass", ready: "circle-check", finished: "circle-check", idle: "moon" };
+  const marks: Record<string, string> = { approval: "shield-half", input: "message-circle-question", failed: "triangle-alert", limited: "hourglass", ready: "circle-check", finished: "circle-check", idle: "moon" };
   const filled = $derived(attention === "approval" || attention === "input" || attention === "ready" || attention === "failed");
 </script>
 

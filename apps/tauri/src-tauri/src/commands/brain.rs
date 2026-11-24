@@ -1,7 +1,11 @@
 //! Commando's rond het brein: geheugen beheren, lokale modellen kiezen en installeren, mailconcepten versturen,
 //! bijlagen lezen, startvragen, en het brein testen en meten.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+
 use base64::Engine;
+use nook_core::brain::local_eval::{self, EvalProgress, EvalQuestion, EvalRunReport};
 use nook_core::brain::memory::MemoryItem;
 use nook_core::brain::model_download::{self, PullProgress};
 use nook_core::brain::profile::{self, Recommendation, Server, ServerModel};
@@ -220,6 +224,59 @@ pub async fn brain_eval(app: AppHandle) -> Vec<EvalResult> {
         });
     }
     results
+}
+
+fn active_local_eval() -> &'static Mutex<Option<Arc<AtomicBool>>> {
+    static ACTIVE: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(None))
+}
+
+struct ActiveEvalGuard;
+
+impl Drop for ActiveEvalGuard {
+    fn drop(&mut self) {
+        *active_local_eval().lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+/// Returns the fixed 20-question evaluation set used to compare local models (`LocalEval.cases` on the Mac).
+#[tauri::command]
+pub fn brain_local_eval_questions() -> Vec<EvalQuestion> {
+    local_eval::questions()
+}
+
+/// Runs the local model evaluation runner (`LocalEvalRunner` on the Mac) with evidence extraction and
+/// grounding verification as configured in Settings, emitting `brain-local-eval` progress events.
+#[tauri::command]
+pub async fn brain_local_eval_run(app: AppHandle, case_ids: Option<Vec<String>>) -> Res<EvalRunReport> {
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut slot = active_local_eval().lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_some() {
+            return Err(nook_core::i18n::tr("Er loopt al een meting.", "A measurement is already running.").into());
+        }
+        *slot = Some(cancel.clone());
+    }
+    let _guard = ActiveEvalGuard;
+    let settings = app.state::<AppState>().settings();
+    let env = env(&app);
+    let emitter = app.clone();
+    let report = local_eval::run_brain(&settings, &env, case_ids.as_deref(), cancel, move |progress: EvalProgress| {
+        let _ = emitter.emit("brain-eval", (progress.done, progress.total));
+        let _ = emitter.emit("brain-local-eval", progress);
+    })
+    .await;
+    Ok(report)
+}
+
+/// Cancels an active local model evaluation run, returning true when a run was in progress.
+#[tauri::command]
+pub fn brain_local_eval_cancel() -> bool {
+    if let Some(flag) = active_local_eval().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        flag.store(true, Ordering::Relaxed);
+        return true;
+    }
+    false
 }
 
 // Mail

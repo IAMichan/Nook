@@ -2,13 +2,13 @@
   // The "OK" that closes an agent notice at once (NookAcknowledgeButton on the Mac): the white main button of a notice.
   // With `left` set, a ring in it shows what is left of the time before the notice closes by itself (1 full, 0 empty).
   import { tr } from "../lib/i18n.svelte";
-  let { left = null, compact = false, onclick }: { left?: number | null; compact?: boolean; onclick: () => void } = $props();
+  let { left = null, compact = false, square = false, onclick }: { left?: number | null; compact?: boolean; square?: boolean; onclick: () => void } = $props();
   const size = $derived(compact ? 16 : 18);
   const radius = $derived(size / 2 - 2.6);
   const circumference = $derived(2 * Math.PI * radius);
 </script>
 
-<button class="ok" class:compact class:ring={left !== null} {onclick}>
+<button class="ok" class:compact class:square class:ring={left !== null} {onclick}>
   {#if left !== null}
     <svg width={size} height={size} viewBox="0 0 {size} {size}" aria-hidden="true">
       <circle cx={size / 2} cy={size / 2} r={radius} class="track" />
@@ -44,6 +44,9 @@
   }
   .ok:hover { background: #fff; }
   .ok.ring { padding-left: 9px; }
+  /* On a card in the bar the buttons are rounded squares, as the Mac's card buttons. */
+  .ok.square { border-radius: var(--radius-card); padding: 0 var(--space-12); height: 36px; }
+  .ok.square.ring { padding-left: var(--space-8); }
   .ok.compact { height: 30px; padding: 0 14px; font-size: 13px; }
   .ok.compact.ring { padding-left: 7px; }
   circle { fill: none; stroke-width: 2.2; }

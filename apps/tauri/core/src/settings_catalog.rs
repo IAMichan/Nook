@@ -7,7 +7,7 @@
 //! computer (the brain, its provider, the sources kept on this computer). Those stay a click in Settings.
 //!
 //! Left out because the Tauri app has no such setting yet: the notch's own switches (`show_notch`,
-//! `notch_on_all_screens`, `open_on_hover`, `open_window_at_launch`, UI-16), Nook's face style (UI-56), dictation
+//! `notch_on_all_screens`, `open_window_at_launch`, UI-16), Nook's face style (UI-56), dictation
 //! (kept in the Flow store), per-kind notices for chats, Nook and suggestions (UI-17) and online lyrics.
 
 use crate::services::energy::EnergyMode;
@@ -47,6 +47,8 @@ pub const ENTRIES: &[Entry] = &[
         about: "Nook's bar at the top of the screen, or floating anywhere on screen.",
     },
     Entry { id: "hide_when_idle", kind: Kind::Toggle, section: "notch", about: "Hide Nook's bar when there is nothing to show." },
+    Entry { id: "bar_on_all_screens", kind: Kind::Toggle, section: "notch", about: "Show the bar on every connected screen." },
+    Entry { id: "open_on_hover", kind: Kind::Toggle, section: "notch", about: "Open the panel when the pointer rests on the bar." },
     Entry {
         id: "theme",
         kind: Kind::Choice(&["system", "light", "dark"]),
@@ -216,6 +218,8 @@ pub fn current(settings: &Settings, id: &str) -> String {
         "answer_language" => settings.language.clone(),
         "bar_placement" => if settings.placement == "floating" { "floating" } else { "top" }.into(),
         "hide_when_idle" => flag(settings.hide_when_idle),
+        "open_on_hover" => flag(settings.open_on_hover),
+        "bar_on_all_screens" => flag(settings.bar_on_all_screens),
         "theme" => settings.theme.clone(),
         "energy_mode" => energy_id(settings.energy_mode).into(),
         "web_search" => flag(settings.web_search),
@@ -240,6 +244,8 @@ pub fn apply(settings: &mut Settings, id: &str, value: &str) {
         "answer_language" => settings.language = value.into(),
         "bar_placement" => settings.placement = value.into(),
         "hide_when_idle" => settings.hide_when_idle = on,
+        "open_on_hover" => settings.open_on_hover = on,
+        "bar_on_all_screens" => settings.bar_on_all_screens = on,
         "theme" => settings.theme = value.into(),
         "energy_mode" => {
             settings.energy_mode = match value {

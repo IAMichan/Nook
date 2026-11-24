@@ -88,7 +88,7 @@ export function settingsChats(all: WhatsAppSettingsChat[], query: string): { sho
 
 /** Two letters for a chat's avatar. */
 export function initials(name: string): string {
-  const words = name.replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
+  const words = (name ?? "").replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
   const letters = words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0] ?? "?").slice(0, 2);
   return letters.toUpperCase();
 }

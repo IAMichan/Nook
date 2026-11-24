@@ -430,7 +430,7 @@ impl ConnectorHub {
 }
 
 fn is_agenda(c: &dyn Connector) -> bool {
-    matches!(c.id().as_str(), "icalfeeds" | "calcom")
+    matches!(c.id().as_str(), "icalfeeds" | "calcom" | "mail")
 }
 
 #[cfg(test)]

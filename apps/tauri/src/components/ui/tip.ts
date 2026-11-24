@@ -44,11 +44,19 @@ function hide(dismissed = false) {
   else clock.leave(performance.now());
 }
 
-export type TipOptions = string | null | undefined | { text: string | null | undefined; edge?: TipEdge };
+/// `whenCut`: only while the text of the element is cut off (a long title ending in "…"), as the Mac's `nookTip` on
+/// truncated labels: a name you can read whole needs no tooltip repeating it.
+export type TipOptions = string | null | undefined | { text: string | null | undefined; edge?: TipEdge; whenCut?: boolean };
+
+/// True when an element's text runs past its box (ellipsis or clipping).
+export function isCut(node: HTMLElement): boolean {
+  return node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1;
+}
 
 export function tip(node: HTMLElement, options: TipOptions) {
   let text = typeof options === "object" && options ? options.text : options;
   let edge: TipEdge = (typeof options === "object" && options?.edge) || "bottom";
+  let whenCut = typeof options === "object" && !!options?.whenCut;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const label = () => {
     if (text && !node.textContent?.trim() && !node.hasAttribute("aria-label")) node.setAttribute("aria-label", text);
@@ -56,7 +64,7 @@ export function tip(node: HTMLElement, options: TipOptions) {
   label();
 
   const enter = () => {
-    if (!text) return;
+    if (!text || (whenCut && !isCut(node))) return;
     clearTimeout(timer);
     const wait = clock.enter(performance.now());
     timer = setTimeout(() => text && show(node, text, edge), wait);
@@ -74,6 +82,7 @@ export function tip(node: HTMLElement, options: TipOptions) {
     update(next: TipOptions) {
       text = typeof next === "object" && next ? next.text : next;
       edge = (typeof next === "object" && next?.edge) || "bottom";
+      whenCut = typeof next === "object" && !!next?.whenCut;
       label();
       if (owner === node) {
         if (text && bubble) bubble.textContent = text;

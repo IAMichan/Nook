@@ -8,7 +8,17 @@
     type AutocompleteSettings, type AutocompleteStatus, type AutocompleteView, type AppRule, type TriState,
   } from "../../lib/autocomplete";
   import Playground from "./AutocompletePlayground.svelte";
+  import StatusRow from "./StatusRow.svelte";
   import { tr } from "../../lib/i18n.svelte";
+  import { api } from "../../lib/api";
+
+  // The models a suggestion can use, as the Mac's `TextGeneratorRow` offers them: the brain's own, then the models of
+  // the chosen brain's provider (and a model typed in before, so it stays chosen).
+  let suggestionModels = $state<string[]>([]);
+  $effect(() => {
+    const provider = nook.settings?.provider;
+    api.providers().then((list) => (suggestionModels = list.find((p) => p.id === provider)?.suggestedModels ?? [])).catch(() => {});
+  });
 
   type Tab = "general" | "apps" | "style" | "playground" | "stats";
   /// The subject of Settings › Typing this shows (`AutocompleteSettingsSection(page:)` on the Mac).
@@ -124,15 +134,19 @@
 
 {#if !caps?.autocomplete}
   <p class="muted">{caps?.notes?.autocomplete ?? tr("Aanvullen in elke app kan (nog) alleen op Windows.", "Autocomplete in every app only works on Windows (for now).")}</p>
-  <p class="faint note">{tr("De Testen-tab werkt wel: probeer daar hoe Nook je zinnen aanvult met je eigen model.", "The Try it tab does work: try there how Nook completes your sentences with your own model.")}</p>
+  <p class="faint note">{tr("Het Proefveld werkt wel: probeer daar hoe Nook je zinnen aanvult met je eigen model.", "The Playground does work: try there how Nook completes your sentences with your own model.")}</p>
 {/if}
 
 
 {#if tab === "general"}
+  <!-- The Mac's first tab (`enableSection`): "Type less, in any app" with its line, the switch, how it stands; the model,
+       suggestions and keys follow once it is on. -->
+  <h3>{tr("Typ minder, in elke app", "Type less, in any app")}</h3>
+  <p class="section-info">{tr("Een model op je computer stelt voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen abonnement, niets verlaat je computer.", "A model on your computer suggests how your sentence goes on, as gray text at your cursor. No subscription, nothing leaves your computer.")}</p>
   <div class="group">
     <label class="row">
       <span>
-        <strong>{tr("Zinnen aanvullen terwijl je typt", "Complete sentences as you type")}</strong><br />
+        {tr("Zinnen aanvullen terwijl je typt", "Complete sentences as you type")}<br />
         <small class="faint">
           {tr(
             "{word} neemt het volgende woord, {all} alles. Doortypen wat er staat houdt de rest; elke andere toets stuurt het weg.",
@@ -160,13 +174,25 @@
       </div>
     {/if}
   </div>
-  <p class="faint note">
-    {tr(
-      "Terwijl je typt stelt een model op deze computer voor hoe je zin verdergaat, als grijze tekst bij je cursor. Geen woordlimiet, geen abonnement, niets gaat je computer uit.",
-      "As you type, a model on this computer suggests how your sentence goes on, as gray text at your cursor. No word limit, no subscription, nothing leaves your computer.",
-    )}
-  </p>
-
+  <!-- Nook's composers (`ComposerAutocompleteSection` on the Mac): the steps Nook offers from what a conversation says.
+       The Mac's next-prompt, chat-reply and composer-autocomplete rows have no Windows feature behind them yet. -->
+  <h3>{tr("In de composers van Nook", "In Nook's composers")}</h3>
+  <div class="group">
+    <label class="row">
+      <span>{tr("Acties voorstellen uit gesprekken", "Suggest actions from conversations")}<br /><small class="faint">{tr("In een open chat, een agentsessie en Nook Chat leest Nook de nieuwste berichten en biedt boven het invoerveld aan wat het ervoor kan doen, zoals een agent starten op een taak die ter sprake kwam. Er gebeurt niets tot je op Uitvoeren klikt. Nook stelt alleen een stap voor die je echt werk bespaart en helemaal is ingevuld, zoals een programmeertaak met het project erbij; reacties en vage ideeën krijgen niets.", "In an open chat, an agent's session and Nook Chat, Nook reads the newest messages and offers what it can do for them above the field, such as starting an agent on a task that came up. Nothing runs until you click Do it. Nook only suggests a step that saves you real work and is filled in completely, such as a coding task with its project; reactions and vague ideas get nothing.")}</small></span>
+      <input type="checkbox" role="switch" checked={nook.settings?.suggestChatActions !== false} onchange={(e) => nook.saveSettings({ suggestChatActions: e.currentTarget.checked })} />
+    </label>
+    {#if nook.settings?.suggestChatActions !== false}
+      <label class="row">
+        <span>{tr("Model voor voorstellen", "Model for suggestions")}</span>
+        <select value={nook.settings?.actionSuggestionModel ?? ""} onchange={(e) => nook.saveSettings({ actionSuggestionModel: e.currentTarget.value })}>
+          <option value="">{tr("Zelfde model als het brein (standaard)", "Same model as the brain (default)")}</option>
+          {#each [...new Set([...suggestionModels, ...(nook.settings?.actionSuggestionModel ? [nook.settings.actionSuggestionModel] : [])])] as m (m)}<option value={m}>{m}</option>{/each}
+        </select>
+      </label>
+    {/if}
+  </div>
+  {#if ac.enabled}
   <h3>{tr("Model", "Model")}</h3>
   <div class="group">
     <label class="row">
@@ -263,6 +289,14 @@
     </label>
   </div>
   <p class="faint note">{tr("De toetsen worden alleen opgevangen terwijl er een voorstel staat; anders gaan ze gewoon naar de app.", "The keys are only caught while a suggestion is showing; otherwise they go to the app as usual.")}</p>
+  {/if}
+{:else if !ac.enabled}
+  <!-- The other parts only matter while completing is on: one line that says so and the way to turn it on. -->
+  <div class="group">
+    <StatusRow title={tr("Aanvullen staat uit", "Autocomplete is off")} detail={tr("Zet het aan om dit in te stellen.", "Turn it on to set this up.")}>
+      <button onclick={() => save({ enabled: true })}>{tr("Aanzetten", "Turn on")}</button>
+    </StatusRow>
+  </div>
 {:else if tab === "apps"}
   <div class="group">
     <label class="row">
@@ -449,5 +483,5 @@
   .appname { text-align: left; display: flex; flex-direction: column; align-items: flex-start; padding: 0; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
   .tile { display: flex; flex-direction: column; gap: 2px; background: var(--field); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
-  .tile strong { font-size: 20px; }
+  .tile strong { font: var(--text-heading); }
 </style>

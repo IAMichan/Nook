@@ -154,7 +154,7 @@
     height: 24px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-chip);
     background: transparent;
     color: var(--text3);
   }
@@ -184,10 +184,10 @@
     border: none;
     background: transparent;
     text-align: left;
-    font-size: 12px;
+    font: var(--text-detail);
     font-weight: 400;
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: var(--radius-chip);
     color: var(--paper);
     white-space: nowrap;
   }

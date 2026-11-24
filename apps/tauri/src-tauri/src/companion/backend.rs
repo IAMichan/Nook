@@ -69,13 +69,17 @@ impl CompanionBackend for AppBackend {
     }
 
     async fn decide(&self, session: &str, item: &str, allow: bool) -> Result<(), String> {
+        self.decide_with_reason(session, item, allow, None).await
+    }
+
+    async fn decide_with_reason(&self, session: &str, item: &str, allow: bool, reason: Option<&str>) -> Result<(), String> {
         let decision = if allow { ApprovalDecision::Allow } else { ApprovalDecision::Deny };
         if session.starts_with(HUB_PREFIX) {
-            self.hub()?.hub.decide(item, decision);
+            self.hub()?.hub.decide_with_reason(item, decision, reason);
             return Ok(());
         }
         Self::run_id(session)?;
-        crate::workspace::decide_approval(&self.app, &format!("run-{item}"), decision)
+        crate::workspace::decide_approval_with_reason(&self.app, &format!("run-{item}"), decision, reason)
     }
 
     async fn answer(&self, session: &str, item: &str, text: &str) -> Result<(), String> {

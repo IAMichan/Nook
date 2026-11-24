@@ -62,6 +62,15 @@ export interface NowPlaying {
   canSeek: boolean;
 }
 
+export interface LyricLine { at: number | null; text: string }
+export interface Lyrics { lines: LyricLine[]; synced: boolean; instrumental: boolean }
+
+/// The line being sung at `position` seconds: the last that started; -1 before the first (`lyrics::current_line`).
+export function currentLyric(lines: LyricLine[], position: number): number {
+  for (let i = lines.length - 1; i >= 0; i--) if (lines[i].at !== null && lines[i].at! <= position) return i;
+  return -1;
+}
+
 export type SpeechEngine = "local" | "windows" | "openai" | "groq";
 
 export interface ServicePrefs {
@@ -74,6 +83,8 @@ export interface ServicePrefs {
   files: boolean;
   callNotes: boolean;
   recapSeen: string;
+  /// Music: look up lyrics on lrclib.net (only the track's title, artist, album and length go along).
+  onlineLyrics: boolean;
 }
 
 export interface VoiceInfo {
@@ -204,6 +215,9 @@ export const services = {
   voiceInfo: () => invoke<VoiceInfo>("voice_info"),
 
   nowPlaying: () => invoke<NowPlaying | null>("now_playing"),
+  /// Lyrics for a track from lrclib.net; null when online lyrics are off or none were found.
+  lyrics: (info: NowPlaying) =>
+    invoke<Lyrics | null>("music_lyrics", { title: info.title, artist: info.artist, album: info.album, duration: info.duration }),
   media: (action: "playPause" | "next" | "previous") => invoke<void>("media_command", { action }),
   seek: (seconds: number) => invoke<void>("media_seek", { seconds }),
   shuffle: (on: boolean) => invoke<void>("media_shuffle", { on }),
@@ -237,6 +251,8 @@ export const services = {
   asideHide: () => invoke<void>("aside_hide"),
   asideShow: () => invoke<void>("aside_show"),
   screenStatus: () => invoke<ScreenStatus>("screen_status"),
+  /** Forgets every window's text Nook read (Settings › Privacy › Screen text). */
+  screenForget: () => invoke<void>("screen_forget"),
   energyStatus: () => invoke<EnergyView>("energy_status"),
   /// `watching`: Settings shows the line, so the situation is read even with "change nothing" for both.
   quietStatus: (watching: boolean) => invoke<QuietView>("quiet_status", { watching }),
@@ -248,7 +264,9 @@ export const services = {
 
   today: () => invoke<TodayItem[]>("today_items"),
   recap: () => invoke<RecapView>("recap_view"),
-  soundFile: (name: string) => invoke<string | null>("sound_file", { name }),
+  soundFile: (name: string, choice?: string) => invoke<string | null>("sound_file", { name, choice: choice ?? null }),
+  /** The system's sounds a moment can play, and the moments with a file of your own in the Sounds folder. */
+  systemSounds: () => invoke<{ system: string[]; custom: string[] }>("system_sounds"),
   openSoundsFolder: () => invoke<string>("open_sounds_folder"),
 };
 

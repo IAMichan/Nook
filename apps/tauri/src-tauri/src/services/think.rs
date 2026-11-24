@@ -185,12 +185,28 @@ async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &
     if super::quiet::silent(app) {
         return;
     }
+    // The full nudge filter (`NudgeFilter` on the Mac): an offer that asks without an action, is not about the screen,
+    // is about something weeks away or repeats an earlier one in other words stays unsaid.
+    if let Some(why) = nook_core::services::nudge_filter::reject(
+        &body,
+        !plan.actions.is_empty(),
+        &snapshot.text,
+        &earlier,
+        chrono::Local::now().date_naive(),
+    ) {
+        log::debug!("think along: no offer ({why})");
+        return;
+    }
     let fallback = plan.actions.first().map(|a| format!("Zal ik dit doen? {}", tools::summarize(&a.tool, &a.input)));
     let line = think_along::nudge_line(&body, fallback.as_deref());
     if line.is_empty() || services.think.lock().unwrap_or_else(|e| e.into_inner()).already_offered(&line, services.now()) {
         return;
     }
-    services.think.lock().unwrap_or_else(|e| e.into_inner()).did_offer(&line, services.now());
+    {
+        let mut think = services.think.lock().unwrap_or_else(|e| e.into_inner());
+        think.did_offer(&line, services.now());
+        think.backoff().save();
+    }
     let nudge = Nudge {
         id: uuid::Uuid::new_v4().to_string(),
         line,
@@ -203,9 +219,27 @@ async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &
         date: chrono::Utc::now().timestamp(),
     };
     *services.nudge.lock().unwrap_or_else(|e| e.into_inner()) = Some(nudge.clone());
-    super::emit(app, "nudge", Some(nudge));
-    #[cfg(desktop)]
-    super::windows::show_aside(app);
+    // As Settings › Notifications says for suggestions (`notices::decide`): the aside beside the bar (a card or a strip),
+    // a system notification, or only kept (quiet hours, quiet while sharing, the app switched off, Off).
+    use nook_core::services::notice_rules::{NoticeDecision, NoticeSource, NoticeStyle};
+    match crate::notices::decide(app, NoticeSource::Suggestions, app_name, false) {
+        NoticeDecision::HistoryOnly | NoticeDecision::Show(NoticeStyle::Off) => {}
+        NoticeDecision::Show(NoticeStyle::System) => {
+            crate::notices::notice(
+                app,
+                &format!("nudge-{}", nudge.id),
+                "Nook",
+                &nudge.line,
+                nook_core::services::toast::NoticeTarget::Nowhere,
+            );
+            super::emit(app, "nudge", Some(nudge));
+        }
+        NoticeDecision::Show(_) => {
+            super::emit(app, "nudge", Some(nudge));
+            #[cfg(desktop)]
+            super::windows::show_aside(app);
+        }
+    }
 }
 
 /// Het antwoord op een aanbod: "yes" (Doe maar), "no" (Nee), "mute" (Niet in deze app), "later" (weg, maar het blijft in
@@ -225,15 +259,27 @@ pub async fn answer(app: &AppHandle, id: &str, answer: &str) -> Result<(), Strin
     super::windows::hide_aside(app);
     match answer {
         "yes" => {
-            services.think.lock().unwrap_or_else(|e| e.into_inner()).accepted();
+            {
+                let mut think = services.think.lock().unwrap_or_else(|e| e.into_inner());
+                think.accepted();
+                think.backoff().save();
+            }
             let text = if nudge.body.is_empty() { "Zal ik dit voor je doen?".to_string() } else { nudge.body.clone() };
             continue_in_chat(app, &text, nudge.actions, vec![nudge.app], nudge.offers, true).await;
         }
         "open" => {
-            services.think.lock().unwrap_or_else(|e| e.into_inner()).accepted();
+            {
+                let mut think = services.think.lock().unwrap_or_else(|e| e.into_inner());
+                think.accepted();
+                think.backoff().save();
+            }
             continue_in_chat(app, &nudge.body, nudge.actions, vec![nudge.app], nudge.offers, false).await;
         }
-        "no" => services.think.lock().unwrap_or_else(|e| e.into_inner()).declined(),
+        "no" => {
+            let mut think = services.think.lock().unwrap_or_else(|e| e.into_inner());
+            think.declined();
+            think.backoff().save();
+        }
         "mute" => {
             services.update_prefs(|p| {
                 p.think_along_muted.insert(nudge.window.clone(), nudge.app.clone());

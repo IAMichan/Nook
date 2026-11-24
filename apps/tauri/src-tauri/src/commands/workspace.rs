@@ -58,10 +58,26 @@ pub struct Overview {
     settings: WorkspaceSettings,
 }
 
+/// Connects `Manager` to Nook's live OpenTelemetry settings and keychain headers (AG-33 / SV-05).
+fn ensure_telemetry_provider(app: &AppHandle, manager: &Arc<Manager>) {
+    if manager.has_telemetry_provider() {
+        return;
+    }
+    let handle = app.clone();
+    manager.set_telemetry_provider(move || {
+        use nook_core::services::telemetry::{OtlpConfig, HEADERS_SECRET_ACCOUNT};
+        let state = handle.state::<crate::state::AppState>();
+        let saved = state.settings().telemetry;
+        let saved_headers = state.secrets.read(HEADERS_SECRET_ACCOUNT).unwrap_or_default();
+        OtlpConfig::resolve_process(&saved, &saved_headers)
+    });
+}
+
 /// Sessies, welke er lopen, welke agents er zijn en de voorkeuren.
 #[tauri::command]
-pub fn workspace_overview(state: State<'_, WorkspaceState>) -> Overview {
+pub fn workspace_overview(app: AppHandle, state: State<'_, WorkspaceState>) -> Overview {
     let m = &state.manager;
+    ensure_telemetry_provider(&app, m);
     let runs = m.runs();
     let running = runs.iter().filter(|r| m.is_running(r.id)).map(|r| r.id).collect();
     let desktop = crate::platform::capabilities().local_agents;
@@ -96,10 +112,48 @@ pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, Workspace
     settings.favorite_projects = current.favorite_projects.clone();
     settings.recent_projects = current.recent_projects.clone();
     settings.last_project = current.last_project.clone();
+    // Per-project values have their own commands; a save from elsewhere never drops them.
+    settings.project_overrides = current.project_overrides.clone();
     settings.save_to(&WorkspaceSettings::file());
     *current = settings;
     drop(current);
+    // Raising or removing `max_working_sessions` lets waiting turns start immediately (AG-75).
+    state.manager.start_waiting_turns();
     let _ = app.emit("workspace-changed", ());
+}
+
+/// What one project sets for itself and the values a new session there starts with (Settings › Projects; the
+/// new-session screen reads `defaults` to fill in its choices).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSettingsView {
+    pub path: String,
+    #[serde(rename = "override")]
+    pub own: nook_core::workspace::settings::ProjectOverride,
+    pub defaults: nook_core::workspace::settings::ProjectDefaults,
+}
+
+#[tauri::command]
+pub fn workspace_project_settings(state: State<'_, WorkspaceState>, path: String) -> ProjectSettingsView {
+    let s = lock(&state.settings);
+    ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for(&path), path }
+}
+
+/// Saves what one project sets for itself; every field left empty follows the setting for all projects.
+#[tauri::command]
+pub fn workspace_set_project_settings(
+    app: tauri::AppHandle,
+    state: State<'_, WorkspaceState>,
+    path: String,
+    value: nook_core::workspace::settings::ProjectOverride,
+) -> ProjectSettingsView {
+    let mut s = lock(&state.settings);
+    s.set_project(&path, value);
+    s.save_to(&WorkspaceSettings::file());
+    let view = ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for(&path), path };
+    drop(s);
+    let _ = app.emit("workspace-changed", ());
+    view
 }
 
 #[tauri::command]
@@ -143,9 +197,26 @@ pub async fn workspace_start(
     mut config: NewRunConfig,
     allow_shared: bool,
 ) -> Res<String> {
+    // "Or start without a project": an empty folder of its own under ~/.nook/scratch, named after the task.
+    let scratch = config.project_path.trim().is_empty();
+    if scratch {
+        config.project_path = nook_core::workspace::scratch::create(&config.task).map_err(|e| {
+            trf("Nook kon er geen map voor maken: {error}", "Nook could not make a folder for it: {error}", &[("error", &e.to_string())])
+        })?;
+        config.isolation = IsolationMode::Folder;
+        config.base_branch.clear();
+    }
+    // What the project sets for itself (Settings › Projects): its branch prefix, and the instructions for every agent,
+    // which go before the session's own (`agentInstructions` on the Mac).
+    let project = lock(&state.settings).defaults_for(&config.project_path);
+    let every = project.agent_instructions.trim();
+    if !every.is_empty() {
+        let own = config.instructions.trim();
+        config.instructions = if own.is_empty() { every.to_string() } else { format!("{every}\n\n{own}") };
+    }
     // De branchnaam komt uit de opdracht, pas op het moment van starten.
     if config.isolation == IsolationMode::Worktree && config.branch_name.trim().is_empty() {
-        config.branch_name = nook_core::workspace::models::branch_name(&config.task, Uuid::new_v4());
+        config.branch_name = nook_core::workspace::models::branch_name_with(&project.branch_prefix, &config.task, Uuid::new_v4());
     }
     let picked_permission = config.permission;
     // In Plan-modus leest de agent alleen; de veiligste rechten gaan mee voor als je later verdergaat.
@@ -153,11 +224,15 @@ pub async fn workspace_start(
         config.permission = config.provider.capabilities().policies.first().copied().unwrap_or_default();
     }
     let m = state.manager.clone();
+    ensure_telemetry_provider(&app, &m);
     let chosen = config.clone();
     let id = blocking(move || m.start(config, allow_shared)).await??;
     crate::workspace::automation::title_new_session(&app, id, !chosen.title.trim().is_empty());
     let mut s = lock(&state.settings);
-    s.remember_project(&chosen.project_path);
+    // A folder without a project stays out of Recent until you turn it into a project.
+    if !scratch {
+        s.remember_project(&chosen.project_path);
+    }
     s.default_provider = chosen.provider;
     s.default_models.insert(chosen.provider.id().into(), chosen.model.clone());
     s.default_profiles.insert(chosen.provider.id().into(), chosen.profile_id.clone());
@@ -166,11 +241,292 @@ pub async fn workspace_start(
         None => s.default_efforts.remove(chosen.provider.id()),
     };
     s.default_mode = chosen.mode;
-    s.default_isolation = chosen.isolation;
+    if !scratch {
+        s.default_isolation = chosen.isolation;
+    }
     s.default_permission = chosen.permission;
-    s.remember_folder_choices(&chosen, picked_permission);
+    if !scratch {
+        s.remember_folder_choices(&chosen, picked_permission);
+    }
     s.save_to(&WorkspaceSettings::file());
     Ok(id.to_string())
+}
+
+/// Sessions whose title or conversation holds `query`, archived ones too (search across sessions, #1498).
+#[tauri::command]
+pub async fn workspace_search(state: State<'_, WorkspaceState>, query: String) -> Res<Vec<nook_core::workspace::manager::SearchHit>> {
+    let m = state.manager.clone();
+    blocking(move || m.search(&query, 60)).await
+}
+
+/// Your saved prompts (`PromptLibrary`), newest edit first.
+#[tauri::command]
+pub fn workspace_prompts() -> Vec<nook_core::workspace::prompts::SavedPrompt> {
+    nook_core::workspace::prompts::PromptLibrary::load(&nook_core::workspace::prompts::PromptLibrary::file()).prompts
+}
+
+/// Saves a prompt (new or edited); false when it has no title or words.
+#[tauri::command]
+pub fn workspace_save_prompt(prompt: nook_core::workspace::prompts::SavedPrompt) -> Res<bool> {
+    use nook_core::workspace::prompts::PromptLibrary;
+    let file = PromptLibrary::file();
+    let mut lib = PromptLibrary::load(&file);
+    let kept = lib.save(prompt);
+    if kept {
+        lib.save_to(&file).map_err(|e| e.to_string())?;
+    }
+    Ok(kept)
+}
+
+#[tauri::command]
+pub fn workspace_delete_prompt(id: Uuid) -> Res<()> {
+    use nook_core::workspace::prompts::PromptLibrary;
+    let file = PromptLibrary::file();
+    let mut lib = PromptLibrary::load(&file);
+    lib.remove(id);
+    lib.save_to(&file).map_err(|e| e.to_string())
+}
+
+/// When the model list in use was last edited (`ModelManifest.updatedAt`), as a date; Settings shows it.
+#[tauri::command]
+pub fn workspace_model_list_date() -> Option<String> {
+    nook_core::workspace::model_manifest::updated_at().map(|d| d.format("%Y-%m-%d").to_string())
+}
+
+/// The models Nook offers each agent (`ModelManifest`), by agent id.
+#[tauri::command]
+pub fn workspace_models() -> std::collections::BTreeMap<String, Vec<nook_core::workspace::model_manifest::CatalogModel>> {
+    nook_core::workspace::model_manifest::all(chrono::Utc::now())
+}
+
+/// The `@` list's files (`FileMentions`): the best matches of `query` in the project at `root`. The walk is kept a
+/// minute per folder, so typing does not walk again.
+#[tauri::command]
+pub async fn workspace_files(root: String, query: String) -> Res<Vec<String>> {
+    type Cache = std::collections::HashMap<String, (std::time::Instant, std::sync::Arc<Vec<String>>)>;
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> = std::sync::LazyLock::new(Default::default);
+    let cached = lock(&CACHE).get(&root).filter(|(at, _)| at.elapsed().as_secs() < 60).map(|(_, f)| f.clone());
+    let files = match cached {
+        Some(f) => f,
+        None => {
+            let dir = root.clone();
+            let f = std::sync::Arc::new(blocking(move || nook_core::workspace::project_files::list(std::path::Path::new(&dir))).await?);
+            lock(&CACHE).insert(root, (std::time::Instant::now(), f.clone()));
+            f
+        }
+    };
+    Ok(nook_core::workspace::project_files::search(&files, &query, 30))
+}
+
+/// A picture pasted or dropped into a composer, kept as a file the agent reads (`ImageAttachment` on the Mac).
+#[tauri::command]
+pub async fn workspace_save_picture(data: String, extension: String) -> Res<String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.split(',').next_back().unwrap_or("")).map_err(|e| e.to_string())?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err(tr("Deze afbeelding is te groot.", "This picture is too large.").into());
+    }
+    blocking(move || {
+        nook_core::workspace::project_files::save_picture(&bytes, &extension)
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())
+    })
+    .await?
+}
+
+/// A project's own icon (`ProjectFavicons`) as a picture the window can draw, or `None`; read once per folder.
+#[tauri::command]
+pub async fn workspace_favicon(path: String) -> Res<Option<String>> {
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Option<String>>>> =
+        std::sync::LazyLock::new(Default::default);
+    if let Some(hit) = lock(&CACHE).get(&path) {
+        return Ok(hit.clone());
+    }
+    let key = path.clone();
+    let found =
+        blocking(move || nook_core::workspace::favicon::find(&path).and_then(|p| nook_core::workspace::favicon::data_url(&p))).await?;
+    lock(&CACHE).insert(key, found.clone());
+    Ok(found)
+}
+
+/// The skills a session's agent reads (`SkillIndex`), for the composer's `$` list; for the new-session composer, the
+/// skills of `folder` for `provider`.
+#[tauri::command]
+pub async fn workspace_skills(
+    state: State<'_, WorkspaceState>,
+    run: Option<String>,
+    folder: Option<String>,
+    provider: Option<RunProvider>,
+) -> Res<Vec<nook_core::workspace::skills::Skill>> {
+    use nook_core::workspace::skills;
+    let (working, project, provider) = match run {
+        Some(run) => {
+            let r = state.manager.run(id(&run)?).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+            (r.working_directory, r.project_path, r.provider)
+        }
+        None => (folder.clone().unwrap_or_default(), folder.unwrap_or_default(), provider.unwrap_or(RunProvider::Claude)),
+    };
+    blocking(move || {
+        let home = dirs::home_dir().unwrap_or_default();
+        let project = skills::project_folder(&working, &project);
+        skills::scan(&skills::roots(provider, &home, project.as_deref()))
+    })
+    .await
+}
+
+/// A new session that starts from this one (`fork`); `keep`: how many timeline entries stay, for a fork from an earlier
+/// point. Returns the new session's id.
+#[tauri::command]
+pub fn workspace_fork(state: State<'_, WorkspaceState>, run: String, keep: Option<usize>) -> Res<String> {
+    Ok(state.manager.fork(id(&run)?, keep)?.to_string())
+}
+
+/// The `/` commands a session's agent announced itself, for the composer's `/` list.
+#[tauri::command]
+pub fn workspace_agent_commands(state: State<'_, WorkspaceState>, run: String) -> Res<Vec<nook_core::workspace::driver::SlashCommand>> {
+    Ok(state.manager.agent_commands(id(&run)?))
+}
+
+/// The CPU and memory of a working session's agent and everything it started (`ResourceUsageBadge`); `None` while
+/// it has no process, and on the first reading.
+#[tauri::command]
+pub async fn workspace_resources(
+    state: State<'_, WorkspaceState>,
+    run: String,
+) -> Res<Option<nook_core::workspace::resources::ResourceUsage>> {
+    static METERS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<Uuid, nook_core::workspace::resources::Meter>>> =
+        std::sync::LazyLock::new(Default::default);
+    let id = id(&run)?;
+    let Some(pid) = state.manager.agent_pid(id) else {
+        lock(&METERS).remove(&id);
+        return Ok(None);
+    };
+    blocking(move || lock(&METERS).entry(id).or_default().measure(&[pid])).await
+}
+
+/// Antigravity's ACP server (`AntigravitySetupRow`): whether this computer has a release, whether it is installed,
+/// its version and the download's size.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravitySetup {
+    supported: bool,
+    installed: bool,
+    busy: bool,
+    version: &'static str,
+    download_bytes: u64,
+}
+
+static ANTIGRAVITY_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+pub fn antigravity_setup() -> AntigravitySetup {
+    use nook_core::workspace::{antigravity::Paths, antigravity_install as install};
+    let asset = install::current();
+    AntigravitySetup {
+        supported: asset.is_some(),
+        installed: install::installed(&Paths::current()).is_some(),
+        busy: ANTIGRAVITY_BUSY.load(std::sync::atomic::Ordering::SeqCst),
+        version: install::VERSION,
+        download_bytes: asset.map_or(0, |a| a.archive_bytes),
+    }
+}
+
+/// Installs the pinned release in the background; `antigravity-install` events carry the phase (`downloading` with
+/// `fraction`, `verifying`, `unpacking`, `checking`, then `done` or `failed` with `error`).
+#[tauri::command]
+pub fn antigravity_install(app: AppHandle) {
+    use std::sync::atomic::Ordering;
+    if ANTIGRAVITY_BUSY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        use nook_core::workspace::{antigravity::Paths, antigravity_install as install};
+        let emit = |phase: &str, fraction: f64, error: Option<&str>| {
+            let _ = app.emit("antigravity-install", serde_json::json!({"phase": phase, "fraction": fraction, "error": error}));
+        };
+        let progress_app = app.clone();
+        let result = install::install(&Paths::current(), move |p| {
+            let (phase, fraction) = match p {
+                install::Phase::Downloading(f) => ("downloading", f),
+                install::Phase::Verifying => ("verifying", 1.0),
+                install::Phase::Unpacking => ("unpacking", 1.0),
+                install::Phase::Checking => ("checking", 1.0),
+            };
+            let _ = progress_app.emit("antigravity-install", serde_json::json!({"phase": phase, "fraction": fraction}));
+        })
+        .await;
+        ANTIGRAVITY_BUSY.store(false, Ordering::SeqCst);
+        match result {
+            Ok(()) => emit("done", 1.0, None),
+            Err(e) => emit("failed", 0.0, Some(&e)),
+        }
+        // The agent's executable is found again for the new-session screen.
+        let _ = app.emit("workspace-changed", ());
+    });
+}
+
+#[tauri::command]
+pub fn antigravity_uninstall(app: AppHandle) -> Res<()> {
+    if ANTIGRAVITY_BUSY.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(tr("Antigravity wordt nog geïnstalleerd.", "Antigravity is still being installed.").into());
+    }
+    nook_core::workspace::antigravity_install::uninstall(&nook_core::workspace::antigravity::Paths::current())?;
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
+/// "Export…" (`SessionExport`): writes a session's Markdown where you chose in the save dialog. Only `.md` files.
+#[tauri::command]
+pub async fn workspace_save_markdown(path: String, text: String) -> Res<()> {
+    let lower = path.to_lowercase();
+    if !lower.ends_with(".md") && !lower.ends_with(".markdown") {
+        return Err(tr("Alleen een Markdown-bestand (.md).", "Only a Markdown file (.md).").into());
+    }
+    blocking(move || std::fs::write(&path, text).map_err(|e| e.to_string())).await?
+}
+
+/// `/clear`: the session's next message starts a new conversation with the agent; the timeline keeps everything.
+#[tauri::command]
+pub fn workspace_clear(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<bool> {
+    let id = id(&run)?;
+    let cleared = state.manager.clear_conversation(id);
+    if cleared {
+        if let Some(auto) = app.try_state::<crate::workspace::automation::AutomationState>() {
+            auto.handoffs.forget(id);
+        }
+    }
+    Ok(cleared)
+}
+
+/// "Turn into project" for a session without a project (`ScratchProjects`): its folder becomes a favorite project.
+#[tauri::command]
+pub fn workspace_keep_scratch(app: AppHandle, state: State<'_, WorkspaceState>, path: String) -> Res<()> {
+    if !nook_core::workspace::scratch::is_scratch(&path) {
+        return Err(tr("Deze map is geen map zonder project.", "This folder isn't a folder without a project.").into());
+    }
+    {
+        let mut s = lock(&state.settings);
+        if !s.favorite_projects.iter().any(|p| p == &path) {
+            s.favorite_projects.push(path.clone());
+        }
+        s.remember_project(&path);
+        s.save_to(&WorkspaceSettings::file());
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
+/// "Make it a git repository": `git init` in a session's folder, then git is read again for the sessions there.
+#[tauri::command]
+pub async fn workspace_init_git(state: State<'_, WorkspaceState>, path: String) -> Res<()> {
+    let m = state.manager.clone();
+    blocking(move || -> Result<(), String> {
+        let git = m.git().ok_or_else(|| tr("Git is niet gevonden.", "Git was not found.").to_string())?;
+        git.init_repository(&path).map_err(|e| e.0)?;
+        m.adopt_repository(&path);
+        Ok(())
+    })
+    .await?
 }
 
 /// Neemt een gesprek over dat buiten Nook begon. `fork`: de eerste beurt wordt een kopie (Claude Code).
@@ -205,7 +561,8 @@ pub fn workspace_configure(
 
 /// Een bericht: start een nieuwe beurt, of komt in de wachtrij als de agent nog werkt.
 #[tauri::command]
-pub fn workspace_send(state: State<'_, WorkspaceState>, run: String, text: String) -> Res<()> {
+pub fn workspace_send(app: AppHandle, state: State<'_, WorkspaceState>, run: String, text: String) -> Res<()> {
+    ensure_telemetry_provider(&app, &state.manager);
     state.manager.send(id(&run)?, &text)
 }
 
@@ -266,6 +623,25 @@ pub fn workspace_stop(state: State<'_, WorkspaceState>, run: String) -> Res<()> 
 #[tauri::command]
 pub fn workspace_retry(state: State<'_, WorkspaceState>, run: String) -> Res<()> {
     state.manager.retry(id(&run)?)
+}
+
+/// After a launch: "Continue where you left off." for the sessions quitting cut off, when Settings asks for it. `skip`
+/// holds the sessions you settled or snoozed. Only the first call after a launch does anything.
+#[tauri::command]
+pub fn workspace_continue_interrupted(state: State<'_, WorkspaceState>, skip: Vec<String>) -> usize {
+    let enabled = state.settings.lock().map(|s| s.continue_after_relaunch).unwrap_or(false);
+    let skip = skip.iter().filter_map(|s| s.parse().ok()).collect();
+    state.manager.continue_interrupted(enabled, &skip)
+}
+
+/// Leaves a question asked before a restart unanswered (`runq:<run>:<request>`).
+#[tauri::command]
+pub fn workspace_dismiss_question(state: State<'_, WorkspaceState>, id: String) -> Res<()> {
+    let missing = || nook_core::i18n::tr("Deze vraag bestaat niet meer.", "This question no longer exists.");
+    let rest = id.strip_prefix("runq:").ok_or_else(missing)?;
+    let (run, request) = rest.split_once(':').ok_or_else(missing)?;
+    state.manager.dismiss_question(self::id(run)?, request);
+    Ok(())
 }
 
 /// "Hervat bij reset" aan of uit voor een sessie die op een gebruikslimiet stopte.
@@ -332,6 +708,30 @@ pub async fn workspace_diff(state: State<'_, WorkspaceState>, run: String, file:
     blocking(move || m.diff(run, &file)).await?
 }
 
+/// Stages or discards one hunk of a changed file (`HunkPatch`, `applyHunk`): the hunk is cut out of the file's diff
+/// as a patch of its own and applied to the index or, reversed, to the working tree.
+#[tauri::command]
+pub async fn workspace_apply_hunk(
+    state: State<'_, WorkspaceState>,
+    run: String,
+    file: FileChange,
+    index: usize,
+    action: nook_core::workspace::hunk::HunkAction,
+) -> Res<()> {
+    let id = id(&run)?;
+    let m = state.manager.clone();
+    let m2 = m.clone();
+    blocking(move || {
+        let r = m.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
+        let diff = m.diff(id, &file)?;
+        let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        nook_core::workspace::hunk::apply_hunk_to_repo(git, &r.working_directory, &diff, index, action)
+    })
+    .await??;
+    m2.refresh_git(id);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn workspace_commit(state: State<'_, WorkspaceState>, run: String, message: String, paths: Vec<String>) -> Res<String> {
     let run = id(&run)?;
@@ -347,16 +747,30 @@ pub async fn workspace_push(state: State<'_, WorkspaceState>, run: String) -> Re
 }
 
 #[tauri::command]
-pub fn workspace_can_revert(state: State<'_, WorkspaceState>, run: String, before: DateTime<Utc>) -> Res<bool> {
-    Ok(state.manager.can_revert(id(&run)?, before))
+pub fn workspace_can_revert(
+    state: State<'_, WorkspaceState>,
+    run: String,
+    before: DateTime<Utc>,
+    conversation_only: Option<bool>,
+) -> Res<bool> {
+    let run = id(&run)?;
+    if conversation_only.unwrap_or(false) {
+        Ok(state.manager.can_edit_from_here(run, before))
+    } else {
+        Ok(state.manager.can_revert(run, before))
+    }
 }
 
-/// Zet de bestanden terug naar hoe ze waren voor dit bericht (na jouw bevestiging in de interface).
+/// Zet de bestanden (en het gesprek) terug naar hoe ze waren voor dit bericht, of alleen het gesprek (`keep_files`).
 #[tauri::command]
-pub async fn workspace_revert(state: State<'_, WorkspaceState>, run: String, before: DateTime<Utc>) -> Res<()> {
+pub async fn workspace_revert(state: State<'_, WorkspaceState>, run: String, before: DateTime<Utc>, keep_files: Option<bool>) -> Res<()> {
     let run = id(&run)?;
     let m = state.manager.clone();
-    blocking(move || m.revert_files(run, before)).await?
+    if keep_files.unwrap_or(false) {
+        blocking(move || m.edit_from_here(run, before, false)).await?
+    } else {
+        blocking(move || m.revert_files(run, before)).await?
+    }
 }
 
 #[tauri::command]
@@ -378,7 +792,7 @@ pub async fn workspace_remove_worktree(state: State<'_, WorkspaceState>, repo: S
 
 /// Kloont een repository naast het gekozen project (of in `~/Developer`). Pas na jouw klik op Kloon.
 #[tauri::command]
-pub async fn workspace_clone(state: State<'_, WorkspaceState>, url: String, near: Option<String>) -> Res<String> {
+pub async fn workspace_clone(app: AppHandle, state: State<'_, WorkspaceState>, url: String, near: Option<String>) -> Res<String> {
     if !git::is_clone_url(&url) {
         return Err(tr("Dat is geen adres van een repository.", "That is not the address of a repository.").into());
     }
@@ -388,8 +802,8 @@ pub async fn workspace_clone(state: State<'_, WorkspaceState>, url: String, near
         let parent = near
             .and_then(|p| std::path::Path::new(&p).parent().map(|p| p.to_string_lossy().into_owned()))
             .unwrap_or_else(|| nook_core::agents::home_dir().join("Developer").to_string_lossy().into_owned());
-        std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
-        git.clone(&url, &parent).map_err(|e| e.0)
+        // With its progress in the main window's clone notices, Hide and Cancel (`CloneCenter` on the Mac).
+        crate::workspace::clones::clone(&app, git, &url, &parent)
     })
     .await?
 }
@@ -775,4 +1189,816 @@ pub async fn workspace_continue_past(app: AppHandle, key: String, message: Optio
         ws.manager.send(id, &text)?;
     }
     Ok(id.to_string())
+}
+
+/// Sets or clears a session's active goal (`/goal`, AG-67); empty text clears it.
+#[tauri::command]
+pub fn workspace_set_goal(state: State<'_, WorkspaceState>, run: String, goal: Option<String>) -> Res<Option<String>> {
+    state.manager.set_goal(id(&run)?, goal)
+}
+
+/// Computes the context window breakdown and compaction pressure for a session (AG-65 & AG-66).
+#[tauri::command]
+pub fn workspace_context_usage(
+    state: State<'_, WorkspaceState>,
+    run: String,
+) -> Res<Option<nook_core::workspace::context_usage::ContextUsage>> {
+    Ok(state.manager.context_usage(id(&run)?))
+}
+
+// MARK: Coding agent versions (`AgentUpdatesSection` on the Mac)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVersionInfo {
+    pub provider: RunProvider,
+    pub executable: Option<String>,
+    pub version: Option<String>,
+    pub install_command: &'static str,
+}
+
+fn read_cli_version(executable: &str) -> Option<String> {
+    let mut cmd = std::process::Command::new(executable);
+    cmd.arg("--version");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let output = cmd.output().ok()?;
+    let combined = if !output.stdout.is_empty() {
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    } else {
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    let line = combined.lines().map(str::trim).find(|l| !l.is_empty())?;
+    // Extract semver-like token (e.g., "1.0.32" or "v2.1.0") if present, otherwise first line truncated.
+    for token in line.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| matches!(c, '(' | ')' | ',' | ';' | ':')).trim_start_matches('v');
+        let parts: Vec<&str> = cleaned.split('.').collect();
+        if parts.len() >= 2 && parts[0].chars().all(|c| c.is_ascii_digit()) && !parts[0].is_empty() {
+            return Some(cleaned.to_string());
+        }
+    }
+    Some(line.chars().take(40).collect())
+}
+
+/// Inspects each runnable coding agent's CLI binary and version (Settings › Coding agents).
+#[tauri::command]
+pub async fn workspace_agent_versions() -> Res<std::collections::BTreeMap<String, AgentVersionInfo>> {
+    blocking(move || {
+        let mut out = std::collections::BTreeMap::new();
+        for provider in RunProvider::ALL {
+            let kind = provider.kind();
+            let exe = nook_core::workspace::driver::session_executable(
+                provider,
+                nook_core::agents::find_executable(kind).map(|e| e.to_string_lossy().into_owned()),
+            );
+            let version = exe.as_deref().and_then(read_cli_version);
+            out.insert(
+                provider.id().to_string(),
+                AgentVersionInfo { provider, executable: exe, version, install_command: kind.install_command() },
+            );
+        }
+        out
+    })
+    .await
+}
+
+// MARK: Skills catalog, preview, toggle & folder opening (Settings › Coding agents › Skills)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCatalogEntry {
+    pub name: String,
+    pub description: String,
+    pub path: String,
+    pub folder: String,
+    pub source: String,
+    pub scope: &'static str,
+    pub providers: Vec<RunProvider>,
+    pub enabled: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFolderInfo {
+    pub path: String,
+    pub label: String,
+    pub scope: &'static str,
+    pub exists: bool,
+    pub count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsCatalogView {
+    pub skills: Vec<SkillCatalogEntry>,
+    pub folders: Vec<SkillFolderInfo>,
+}
+
+/// Discovers skills across global and optional project skill folders for the chosen agents.
+#[tauri::command]
+pub async fn workspace_skills_catalog(
+    app: AppHandle,
+    project: Option<String>,
+    providers: Option<Vec<RunProvider>>,
+) -> Res<SkillsCatalogView> {
+    let disabled = app.state::<crate::state::AppState>().settings().disabled_skills;
+    let chosen: Vec<RunProvider> = match providers {
+        Some(list) if !list.is_empty() => list,
+        _ => RunProvider::ALL.to_vec(),
+    };
+    blocking(move || {
+        use nook_core::workspace::skills;
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::path::{Path, PathBuf};
+
+        let home = dirs::home_dir().unwrap_or_default();
+        let project_dir = project.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(PathBuf::from).filter(|p| p.is_dir());
+
+        // Collect unique roots and track which providers read each root.
+        let mut root_providers: BTreeMap<PathBuf, BTreeSet<RunProvider>> = BTreeMap::new();
+        let mut ordered_roots: Vec<PathBuf> = Vec::new();
+        for &p in &chosen {
+            for r in skills::roots(p, &home, project_dir.as_deref()) {
+                if !root_providers.contains_key(&r) {
+                    ordered_roots.push(r.clone());
+                }
+                root_providers.entry(r).or_default().insert(p);
+            }
+        }
+
+        let mut folders = Vec::new();
+        let mut by_path: BTreeMap<String, SkillCatalogEntry> = BTreeMap::new();
+
+        for root in &ordered_roots {
+            let scope = if project_dir.as_ref().is_some_and(|pd| root.starts_with(pd)) { "project" } else { "user" };
+            let label = format!(
+                "{}/{}",
+                root.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+            );
+            let exists = root.is_dir();
+            let found = if exists { skills::scan(std::slice::from_ref(root)) } else { Vec::new() };
+            let count = found.len();
+            folders.push(SkillFolderInfo { path: root.to_string_lossy().into_owned(), label: label.clone(), scope, exists, count });
+
+            let root_provs: Vec<RunProvider> = root_providers.get(root).map(|s| s.iter().copied().collect()).unwrap_or_default();
+            for s in found {
+                let folder = Path::new(&s.path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| root.to_string_lossy().into_owned());
+                let enabled = !disabled.contains(&s.path);
+                by_path
+                    .entry(s.path.clone())
+                    .and_modify(|e| {
+                        for &p in &root_provs {
+                            if !e.providers.contains(&p) {
+                                e.providers.push(p);
+                            }
+                        }
+                    })
+                    .or_insert(SkillCatalogEntry {
+                        name: s.name,
+                        description: s.description,
+                        path: s.path,
+                        folder,
+                        source: s.source,
+                        scope,
+                        providers: root_provs.clone(),
+                        enabled,
+                    });
+            }
+        }
+
+        let mut skills: Vec<SkillCatalogEntry> = by_path.into_values().collect();
+        skills.sort_by(|a, b| a.scope.cmp(b.scope).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        SkillsCatalogView { skills, folders }
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDocument {
+    pub path: String,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub scripts: Vec<String>,
+}
+
+/// Reads a discovered skill's Markdown document (bounded to 128 KB) and lists any script files beside it.
+#[tauri::command]
+pub async fn workspace_read_skill(path: String) -> Res<SkillDocument> {
+    blocking(move || {
+        use std::io::Read;
+        use std::path::Path;
+        let file = Path::new(&path);
+        let lower = path.to_lowercase();
+        if !lower.ends_with(".md") || !file.is_file() {
+            return Err(tr("Nook kon deze skill niet lezen.", "Nook could not read this skill.").to_string());
+        }
+        let f = std::fs::File::open(file).map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        f.take(128 * 1024).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        let content = String::from_utf8_lossy(&bytes).into_owned();
+        let meta = nook_core::workspace::skills::front_matter(&content);
+        let fallback = file.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone());
+        let name =
+            meta.get("name").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).filter(|s| !s.is_empty()).unwrap_or(fallback);
+        let description = meta.get("description").map(|s| s.trim_matches('"').trim_matches('\'').to_string()).unwrap_or_default();
+
+        // List scripts inside the skill directory (for folder skills with SKILL.md).
+        let mut scripts = Vec::new();
+        if file.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("SKILL.md")) {
+            if let Some(dir) = file.parent() {
+                collect_scripts(dir, dir, &mut scripts);
+            }
+        }
+        scripts.sort();
+        Ok(SkillDocument { path, name, description, content, scripts })
+    })
+    .await?
+}
+
+fn collect_scripts(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<String>) {
+    const EXTS: [&str; 9] = ["sh", "bash", "zsh", "ps1", "bat", "cmd", "py", "js", "ts"];
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        if out.len() >= 32 {
+            return;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            if !entry.file_name().to_string_lossy().starts_with('.') {
+                collect_scripts(base, &path, out);
+            }
+        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            if EXTS.iter().any(|&e| e.eq_ignore_ascii_case(ext)) {
+                if let Ok(rel) = path.strip_prefix(base) {
+                    out.push(rel.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+}
+
+/// Toggles a skill on or off in Settings (non-destructive; stored in `Settings.disabled_skills`).
+#[tauri::command]
+pub fn workspace_toggle_skill(app: AppHandle, path: String, enabled: bool) -> bool {
+    let state = app.state::<crate::state::AppState>();
+    let saved = state.update_settings(|s| {
+        if enabled {
+            s.disabled_skills.remove(&path);
+        } else {
+            s.disabled_skills.insert(path.clone());
+        }
+    });
+    let _ = app.emit("settings-changed", saved);
+    enabled
+}
+
+/// Opens a skills folder in the system file manager (creating standard skills folders if missing).
+#[tauri::command]
+pub fn workspace_open_skills_folder(app: AppHandle, path: String) -> Res<String> {
+    use tauri_plugin_opener::OpenerExt;
+    let folder = std::path::PathBuf::from(&path);
+    if !folder.exists() {
+        std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    }
+    app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(folder.display().to_string())
+}
+
+// MARK: Worktree cleanup (`WorktreeCleanupReportView` on the Mac)
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupEntry {
+    pub path: String,
+    pub title: Option<String>,
+    /// "removed" | "kept" | "failed"
+    pub outcome: &'static str,
+    pub reason: String,
+    pub bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeOrphan {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupReport {
+    pub finished_at: DateTime<Utc>,
+    pub entries: Vec<WorktreeCleanupEntry>,
+    pub orphans: Vec<WorktreeOrphan>,
+    pub bytes_freed: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCleanupStatus {
+    pub total_worktrees: usize,
+    pub stale_count: usize,
+    pub orphans: Vec<WorktreeOrphan>,
+    pub latest_report: Option<WorktreeCleanupReport>,
+}
+
+static LAST_CLEANUP_REPORT: std::sync::LazyLock<std::sync::Mutex<Option<WorktreeCleanupReport>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+fn dir_size_bounded(path: &std::path::Path, budget: &mut usize) -> u64 {
+    if *budget == 0 {
+        return 0;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        if *budget == 0 {
+            break;
+        }
+        *budget -= 1;
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            total = total.saturating_add(dir_size_bounded(&entry.path(), budget));
+        } else {
+            total = total.saturating_add(meta.len());
+        }
+    }
+    total
+}
+
+fn find_orphan_folders(root: &str, known_paths: &[String]) -> Vec<WorktreeOrphan> {
+    let root_path = std::path::Path::new(root);
+    let Ok(repos) = std::fs::read_dir(root_path) else { return Vec::new() };
+    let known: std::collections::HashSet<String> = known_paths.iter().map(|p| nook_core::workspace::paths::normalize(p)).collect();
+    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    let mut orphans = Vec::new();
+    for repo_entry in repos.flatten() {
+        let repo_dir = repo_entry.path();
+        if !repo_dir.is_dir() {
+            continue;
+        }
+        let Ok(children) = std::fs::read_dir(&repo_dir) else { continue };
+        for child in children.flatten() {
+            let child_path = child.path();
+            if !child_path.is_dir() {
+                continue;
+            }
+            let norm = nook_core::workspace::paths::normalize(&child_path.to_string_lossy());
+            if known.contains(&norm) {
+                continue;
+            }
+            let modified = child.metadata().and_then(|m| m.modified()).ok();
+            if modified.is_some_and(|m| m > cutoff) {
+                continue;
+            }
+            let mut budget = 4000;
+            let bytes = dir_size_bounded(&child_path, &mut budget);
+            orphans.push(WorktreeOrphan { path: child_path.to_string_lossy().into_owned(), bytes });
+        }
+    }
+    orphans.sort_by(|a, b| a.path.cmp(&b.path));
+    orphans
+}
+
+enum CleanupVerdict {
+    Skip,
+    Remove { reason: &'static str, title: Option<String> },
+    Keep { reason: &'static str, title: Option<String> },
+}
+
+fn evaluate_worktree(
+    row: &WorktreeRow,
+    runs: &[WorkspaceRun],
+    running: &std::collections::HashSet<Uuid>,
+    rules: &nook_core::settings::WorktreeSettings,
+    now: DateTime<Utc>,
+) -> CleanupVerdict {
+    if row.worktree.is_main {
+        return CleanupVerdict::Skip;
+    }
+    let linked: Vec<&WorkspaceRun> = runs.iter().filter(|r| row.run_ids.contains(&r.id)).collect();
+    let title = linked.first().map(|r| r.title.clone()).filter(|t| !t.is_empty());
+
+    // Determine whether any cleanup rule applies to this worktree.
+    let mut matched_reason: Option<&'static str> = None;
+    if linked.is_empty() && rules.cleanup_on_delete {
+        matched_reason = Some("deletedSession");
+    } else if !linked.is_empty() {
+        let all_archived = linked.iter().all(|r| r.archived);
+        let newest_update = linked.iter().map(|r| r.updated_at).max().unwrap_or(now);
+        let age_days = (now - newest_update).num_days().max(0) as u32;
+        if rules.cleanup_settled_days > 0 && all_archived && age_days >= rules.cleanup_settled_days {
+            matched_reason = Some("settled");
+        } else if rules.cleanup_inactive_days > 0 && age_days >= rules.cleanup_inactive_days {
+            matched_reason = Some("inactive");
+        } else if rules.cleanup_unchanged && row.ahead == Some(0) && row.changed_files == Some(0) {
+            matched_reason = Some("unchanged");
+        }
+    }
+    let Some(reason) = matched_reason else {
+        return CleanupVerdict::Skip;
+    };
+
+    // Safety guards: never remove active, shared, symlinked, or dirty worktrees.
+    if row.run_ids.iter().any(|id| running.contains(id)) || linked.iter().any(|r| r.status.is_active()) {
+        return CleanupVerdict::Keep { reason: "active", title };
+    }
+    if linked.len() > 1 {
+        return CleanupVerdict::Keep { reason: "shared", title };
+    }
+    if std::fs::symlink_metadata(&row.worktree.path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return CleanupVerdict::Keep { reason: "symlink", title };
+    }
+    if row.changed_files.unwrap_or(0) > 0 {
+        return CleanupVerdict::Keep { reason: "uncommittedChanges", title };
+    }
+    if rules.keep_when == "anyLocalFiles" && row.ahead.unwrap_or(0) > 0 {
+        return CleanupVerdict::Keep { reason: "unpushedCommits", title };
+    }
+
+    CleanupVerdict::Remove { reason, title }
+}
+
+/// Counts total & stale worktrees, orphan folders under the worktree root, and returns the latest cleanup report.
+#[tauri::command]
+pub async fn workspace_worktree_cleanup_status(app: AppHandle, state: State<'_, WorkspaceState>) -> Res<WorktreeCleanupStatus> {
+    let m = state.manager.clone();
+    let rules = app.state::<crate::state::AppState>().settings().worktrees;
+    let root = lock(&state.settings).worktree_root();
+    blocking(move || {
+        m.refresh_worktrees();
+        let rows = m.worktree_rows();
+        let runs = m.runs();
+        let running: std::collections::HashSet<Uuid> = runs.iter().filter(|r| m.is_running(r.id)).map(|r| r.id).collect();
+        let now = Utc::now();
+        let mut stale_count = 0usize;
+        let mut total_worktrees = 0usize;
+        let mut known_paths = Vec::new();
+        for row in &rows {
+            known_paths.push(row.worktree.path.clone());
+            if !row.worktree.is_main {
+                total_worktrees += 1;
+            }
+            if matches!(evaluate_worktree(row, &runs, &running, &rules, now), CleanupVerdict::Remove { .. }) {
+                stale_count += 1;
+            }
+        }
+        for r in &runs {
+            if let Some(ref p) = r.worktree_path {
+                known_paths.push(p.clone());
+            }
+        }
+        let orphans = find_orphan_folders(&root, &known_paths);
+        let latest_report = lock(&LAST_CLEANUP_REPORT).clone();
+        WorktreeCleanupStatus { total_worktrees, stale_count, orphans, latest_report }
+    })
+    .await
+}
+
+/// Runs worktree cleanup immediately using the saved `Settings.worktrees` rules and returns a full report.
+#[tauri::command]
+pub async fn workspace_worktree_cleanup_now(app: AppHandle, state: State<'_, WorkspaceState>) -> Res<WorktreeCleanupReport> {
+    let m = state.manager.clone();
+    let rules = app.state::<crate::state::AppState>().settings().worktrees;
+    let root = lock(&state.settings).worktree_root();
+    let report = blocking(move || {
+        m.refresh_worktrees();
+        let rows = m.worktree_rows();
+        let runs = m.runs();
+        let running: std::collections::HashSet<Uuid> = runs.iter().filter(|r| m.is_running(r.id)).map(|r| r.id).collect();
+        let now = Utc::now();
+        let mut entries = Vec::new();
+        let mut bytes_freed = 0u64;
+
+        for row in &rows {
+            match evaluate_worktree(row, &runs, &running, &rules, now) {
+                CleanupVerdict::Skip => {}
+                CleanupVerdict::Keep { reason, title } => {
+                    entries.push(WorktreeCleanupEntry {
+                        path: row.worktree.path.clone(),
+                        title,
+                        outcome: "kept",
+                        reason: reason.into(),
+                        bytes: None,
+                    });
+                }
+                CleanupVerdict::Remove { reason, title } => {
+                    let mut budget = 6000;
+                    let size = dir_size_bounded(std::path::Path::new(&row.worktree.path), &mut budget);
+                    match m.remove_worktree_at(&row.repo_root, &row.worktree.path, false) {
+                        Ok(()) => {
+                            bytes_freed = bytes_freed.saturating_add(size);
+                            entries.push(WorktreeCleanupEntry {
+                                path: row.worktree.path.clone(),
+                                title,
+                                outcome: "removed",
+                                reason: reason.into(),
+                                bytes: Some(size),
+                            });
+                        }
+                        Err(err) => {
+                            entries.push(WorktreeCleanupEntry {
+                                path: row.worktree.path.clone(),
+                                title,
+                                outcome: "failed",
+                                reason: err,
+                                bytes: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let after_rows = m.worktree_rows();
+        let mut known_paths: Vec<String> = after_rows.iter().map(|r| r.worktree.path.clone()).collect();
+        for r in &runs {
+            if let Some(ref p) = r.worktree_path {
+                known_paths.push(p.clone());
+            }
+        }
+        let orphans = find_orphan_folders(&root, &known_paths);
+        let report = WorktreeCleanupReport { finished_at: Utc::now(), entries, orphans, bytes_freed };
+        *lock(&LAST_CLEANUP_REPORT) = Some(report.clone());
+        report
+    })
+    .await?;
+    let _ = app.emit("workspace-changed", ());
+    Ok(report)
+}
+
+/// Opens an existing folder (or the parent folder of a file) in the system file manager.
+#[tauri::command]
+pub fn workspace_reveal_path(app: AppHandle, path: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = std::path::PathBuf::from(&path);
+    let target = if p.is_dir() {
+        p
+    } else if let Some(parent) = p.parent().filter(|d| d.is_dir()) {
+        parent.to_path_buf()
+    } else {
+        return Err(tr("Deze map bestaat niet meer.", "This folder no longer exists.").to_string());
+    };
+    app.opener().open_path(target.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// MARK: Side chat (`/btw`, `/side`, AG-61)
+
+const SIDE_CHAT_SYSTEM: &str = "You are answering a quick side question (/btw or /side) about a coding-agent session in Nook. \
+The main coding agent keeps running separately and uninterrupted. Answer directly, concisely, and accurately using the session context provided. \
+Do not claim you ran tools or edited files. Reply in the same language as the user's question.";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SideChatReply {
+    pub question: String,
+    pub answer: String,
+    pub model: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Answers a quick side question (`/btw <question>`, `/side <question>`) about a session using a bounded summary of
+/// its recent timeline as context, without interrupting the main agent turn (AG-61).
+#[tauri::command]
+pub async fn workspace_side_chat(app: AppHandle, state: State<'_, WorkspaceState>, run: String, question: String) -> Res<SideChatReply> {
+    let run_id = id(&run)?;
+    let clean = question.trim().to_string();
+    if clean.is_empty() {
+        return Err(tr("Stel een vraag na /btw of /side.", "Ask a question after /btw or /side.").to_string());
+    }
+    let session =
+        state.manager.run(run_id).ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
+    let events = state.manager.timeline(run_id);
+
+    // Match macOS `SideChat.cutoff`: exclude the currently in-flight user turn while the main agent works.
+    let cutoff = if session.status.is_active() {
+        events.iter().rposition(|e| e.kind == EventKind::User).unwrap_or(events.len())
+    } else {
+        events.len()
+    };
+    let slice = &events[..cutoff.min(events.len())];
+    let summary = nook_core::workspace::handoff::render(slice, 0, session.provider.display_name(), 6_000).map(|r| r.text);
+
+    let mut prompt = String::new();
+    prompt.push_str(&format!("Session title: {}\n", session.title));
+    prompt.push_str(&format!("Agent: {}\n", session.provider.display_name()));
+    if !session.project_path.is_empty() {
+        prompt.push_str(&format!("Project: {}\n", session.project_name()));
+    }
+    if let Some(ref goal) = session.goal {
+        if !goal.trim().is_empty() {
+            prompt.push_str(&format!("Goal: {}\n", goal.trim()));
+        }
+    }
+    if !session.task.trim().is_empty() {
+        prompt.push_str(&format!("Initial task: {}\n", session.task.trim()));
+    }
+    if let Some(ref ctx) = summary {
+        prompt.push_str("\nRecent session timeline:\n");
+        prompt.push_str(ctx);
+        prompt.push('\n');
+    }
+    prompt.push_str(&format!("\nSide question: {clean}\n"));
+
+    let app_state = app.state::<crate::state::AppState>();
+    let settings = app_state.settings();
+    let model = settings.active_model();
+    let env = nook_core::brain::service::BrainEnv {
+        key: app_state.key_for(settings.provider),
+        memory_gb: crate::brain::memory_gb(),
+        country: crate::brain::country(),
+        timezone: crate::brain::timezone(),
+    };
+
+    let answer = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        nook_core::brain::service::complete(&settings, &env, SIDE_CHAT_SYSTEM, &prompt),
+    )
+    .await
+    .map_err(|_| tr("Het zijgesprek duurde te lang.", "The side chat timed out.").to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(SideChatReply { question: clean, answer: answer.trim().to_string(), model, created_at: Utc::now() })
+}
+
+// MARK: Text generation — session title regeneration & next-prompt suggestions (AG-70)
+
+const TITLE_SYSTEM: &str = "You write short, specific titles for coding-agent sessions in Nook. \
+Return only the title itself on a single line (3 to 7 words, no quotes, no trailing period, no markdown). \
+Use the same language as the user's messages.";
+
+const NEXT_PROMPT_SYSTEM: &str = "You suggest the single most natural next message the user might send to their coding agent in Nook, \
+based on the conversation so far and the agent's latest reply. \
+Write from the user's perspective as a direct instruction or question to the agent (one short sentence, under 120 characters, no quotes, no 'Prompt:' prefix, no markdown). \
+Use the same language as the user's messages. If no follow-up makes sense, reply with NONE.";
+
+fn fallback_session_title(user_messages: &[String], goal: Option<&str>, task: &str) -> String {
+    let source = user_messages.last().map(String::as_str).or(goal).filter(|s| !s.trim().is_empty()).unwrap_or(task);
+    let first_line = source.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("Session");
+    let words: Vec<&str> = first_line.split_whitespace().take(7).collect();
+    let candidate = words.join(" ").trim_matches(|c: char| c == '"' || c == '\'' || c == '.' || c == ':').to_string();
+    if candidate.is_empty() {
+        "Session".into()
+    } else {
+        nook_core::agents::text::shorten(&candidate, 60)
+    }
+}
+
+/// Regenerates a session title from the user messages in its timeline (and active goal / project title instructions),
+/// updates the run in `WorkspaceManager`, emits `workspace-changed`, and returns the new title (AG-70).
+#[tauri::command]
+pub async fn workspace_regenerate_title(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<String> {
+    let run_id = id(&run)?;
+    let session =
+        state.manager.run(run_id).ok_or_else(|| tr("Deze sessie bestaat niet meer.", "This session no longer exists.").to_string())?;
+    let events = state.manager.timeline(run_id);
+    let mut user_messages: Vec<String> = events
+        .iter()
+        .filter(|e| !e.rolled_back.unwrap_or(false) && e.kind == EventKind::User && !e.text.trim().is_empty())
+        .map(|e| e.text.trim().to_string())
+        .collect();
+    if user_messages.is_empty() && !session.task.trim().is_empty() {
+        user_messages.push(session.task.trim().to_string());
+    }
+    if user_messages.is_empty() {
+        return Err(tr(
+            "Stuur eerst een bericht voordat je de titel opnieuw laat maken.",
+            "Send a message first before regenerating the title.",
+        )
+        .to_string());
+    }
+
+    let custom_instructions = {
+        let ws_settings = state.settings.lock().unwrap_or_else(|e| e.into_inner());
+        let defaults = ws_settings.defaults_for(&session.project_path);
+        let trimmed = defaults.title_instructions.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    };
+
+    let mut prompt = String::new();
+    if let Some(ref goal) = session.goal {
+        if !goal.trim().is_empty() {
+            prompt.push_str(&format!("Active goal: {}\n\n", goal.trim()));
+        }
+    }
+    prompt.push_str("User messages in this session:\n");
+    for (idx, msg) in user_messages.iter().rev().take(6).rev().enumerate() {
+        prompt.push_str(&format!("{}. {}\n", idx + 1, nook_core::agents::text::shorten(msg, 400)));
+    }
+    if let Some(ref extra) = custom_instructions {
+        prompt.push_str(&format!("\nAdditional project title instructions: {extra}\n"));
+    }
+
+    let app_state = app.state::<crate::state::AppState>();
+    let settings = app_state.settings();
+    let env = nook_core::brain::service::BrainEnv {
+        key: app_state.key_for(settings.provider),
+        memory_gb: crate::brain::memory_gb(),
+        country: crate::brain::country(),
+        timezone: crate::brain::timezone(),
+    };
+
+    let generated = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        nook_core::brain::service::complete(&settings, &env, TITLE_SYSTEM, &prompt),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .map(|raw| {
+        raw.lines().next().unwrap_or("").trim().trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == '.').trim().to_string()
+    })
+    .filter(|s| !s.is_empty());
+
+    let new_title = generated.unwrap_or_else(|| fallback_session_title(&user_messages, session.goal.as_deref(), &session.task));
+    state.manager.rename(run_id, &new_title);
+    let _ = app.emit("workspace-changed", ());
+    Ok(new_title)
+}
+
+/// Suggests the single next follow-up prompt after a completed turn (`None` while running or before the first assistant reply) (AG-70).
+#[tauri::command]
+pub async fn workspace_suggest_next_prompt(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<Option<String>> {
+    let run_id = id(&run)?;
+    let Some(session) = state.manager.run(run_id) else {
+        return Ok(None);
+    };
+    if session.status.is_active() {
+        return Ok(None);
+    }
+    let events = state.manager.timeline(run_id);
+    let visible: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            !e.rolled_back.unwrap_or(false) && matches!(e.kind, EventKind::User | EventKind::Assistant) && !e.text.trim().is_empty()
+        })
+        .collect();
+    let has_user = visible.iter().any(|e| e.kind == EventKind::User);
+    let ends_with_assistant = visible.last().is_some_and(|e| e.kind == EventKind::Assistant);
+    if !has_user || !ends_with_assistant {
+        return Ok(None);
+    }
+
+    let mut prompt = String::new();
+    prompt.push_str(&format!("Session title: {}\n", session.title));
+    if let Some(ref goal) = session.goal {
+        if !goal.trim().is_empty() {
+            prompt.push_str(&format!("Active goal: {}\n", goal.trim()));
+        }
+    }
+    prompt.push_str("\nRecent conversation:\n");
+    let start = visible.len().saturating_sub(6);
+    for ev in &visible[start..] {
+        let role = if ev.kind == EventKind::User { "User" } else { "Assistant" };
+        prompt.push_str(&format!("{role}: {}\n", nook_core::agents::text::shorten(ev.text.trim(), 600)));
+    }
+
+    let app_state = app.state::<crate::state::AppState>();
+    let settings = app_state.settings();
+    let env = nook_core::brain::service::BrainEnv {
+        key: app_state.key_for(settings.provider),
+        memory_gb: crate::brain::memory_gb(),
+        country: crate::brain::country(),
+        timezone: crate::brain::timezone(),
+    };
+
+    let raw = match tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        nook_core::brain::service::complete(&settings, &env, NEXT_PROMPT_SYSTEM, &prompt),
+    )
+    .await
+    {
+        Ok(Ok(reply)) => reply,
+        _ => return Ok(None),
+    };
+
+    let first_line = raw.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let stripped = first_line
+        .strip_prefix("Prompt:")
+        .or_else(|| first_line.strip_prefix("Suggestion:"))
+        .unwrap_or(first_line)
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`')
+        .trim();
+    if stripped.is_empty() || stripped.len() > 240 || matches!(stripped.to_ascii_lowercase().as_str(), "none" | "null" | "n/a" | "-") {
+        return Ok(None);
+    }
+    Ok(Some(stripped.to_string()))
 }

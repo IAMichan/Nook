@@ -185,7 +185,8 @@ impl Git {
         None
     }
 
-    fn environment(&self) -> BTreeMap<String, String> {
+    /// The environment git runs in: never stuck on a password prompt, English messages (also for `clones.rs`).
+    pub fn environment(&self) -> BTreeMap<String, String> {
         let mut env: BTreeMap<String, String> = std::env::vars().collect();
         // Nooit blijven hangen op een wachtwoordvraag.
         env.insert("GIT_TERMINAL_PROMPT".into(), "0".into());
@@ -295,6 +296,11 @@ impl Git {
         let text = self.run(&["remote", "get-url", remote], repo).ok()?;
         let t = text.trim();
         (!t.is_empty()).then(|| t.into())
+    }
+
+    /// `git init` in `dir`: a folder without a project (`scratch`) becomes a repository, so branches and diffs work there.
+    pub fn init_repository(&self, dir: &str) -> Result<()> {
+        self.run(&["init"], dir).map(|_| ())
     }
 
     // MARK: Status en wijzigingen
@@ -567,6 +573,14 @@ impl Git {
             for r in list.lines().filter(|l| !l.is_empty()) {
                 let _ = self.g(&["update-ref", "-d", r], dir, &none);
             }
+        }
+    }
+
+    /// Removes specific checkpoint refs (after rolling back to an earlier point).
+    pub fn remove_checkpoint_refs(&self, dir: &str, refs: &[String]) {
+        let none = Self::identity(&[]);
+        for r in refs.iter().filter(|r| !r.is_empty()) {
+            let _ = self.g(&["update-ref", "-d", r], dir, &none);
         }
     }
 }

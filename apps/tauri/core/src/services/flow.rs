@@ -478,9 +478,10 @@ impl FlowStyle {
         let matches = |names: &[&str]| {
             names.iter().any(|n| if n.contains('.') { id.starts_with(n) } else { id == *n || id.starts_with(&format!("{n}-")) })
         };
-        if matches(&VERBATIM) {
+        // The shared catalog's terminals and editors (`app_catalog`) also take what you say as said.
+        if matches(&VERBATIM) || super::app_catalog::is_terminal(&id) || super::app_catalog::is_editor(&id) {
             Self::Verbatim
-        } else if matches(&MAIL) {
+        } else if matches(&MAIL) || super::app_catalog::is_mail_app(&id) {
             Self::Polished
         } else {
             Self::Natural

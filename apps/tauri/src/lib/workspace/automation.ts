@@ -71,6 +71,8 @@ export interface AutomationSettings {
   scheduledTasks: boolean;
   webhookPort: number;
   autoTitles: boolean;
+  /** Your own rules for titles, given to the brain with every title it writes. */
+  titleInstructions?: string;
 }
 
 export interface AutomationOverview {

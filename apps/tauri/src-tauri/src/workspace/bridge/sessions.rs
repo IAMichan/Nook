@@ -2,38 +2,43 @@
 //! (1–20 top-level sessions), `session_send` (a message as an agent, never as the user) and `session_wait`. The
 //! argument rules are in `core/src/workspace/bridge_sessions.rs`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Local, Utc};
+use nook_core::agents::sessions::SessionMarks;
 use nook_core::i18n::{tr, trf};
-use nook_core::workspace::bridge::{BridgeCaller, BridgeTool, Reason, ToolResult, Verdict};
-use nook_core::workspace::bridge_sessions::{self as args, Place, SendMode, StartSession};
+use nook_core::workspace::bridge::{question_verdict, BridgeCaller, BridgeTool, Reason, ToolResult, Verdict};
+use nook_core::workspace::bridge_sessions::{
+    self as args, OrganizeAction, PendingApprovalNotice, PendingQuestionView, Place, QuestionAction, SendMode, StartSession,
+};
 use nook_core::workspace::delegation;
 use nook_core::workspace::models::{branch_name, ExecutionMode, IsolationMode, NewRunConfig, PermissionPolicy, RunProvider};
 use nook_core::workspace::paths;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
-use super::{audit, check, refusal, workspace, Context};
-use crate::agents::lock;
-use crate::workspace::automation;
+use super::{audit, check, enabled, refusal, serde_plain, workspace, Context};
+use crate::agents::{lock, AgentsState};
+use crate::workspace::automation::{self, AutomationState};
 
 /// What a call with a `client_request_id` answered, so a retry does nothing twice. Kept while Nook runs.
 static ANSWERED: Mutex<Option<HashMap<String, ToolResult>>> = Mutex::new(None);
 
-fn once_key(tool: BridgeTool, caller: &BridgeCaller, a: &Map<String, Value>) -> Option<String> {
+pub(super) fn once_key(tool: BridgeTool, caller: &BridgeCaller, a: &Map<String, Value>) -> Option<String> {
     let key = a.get("client_request_id").and_then(Value::as_str).map(str::trim).filter(|k| !k.is_empty())?;
     Some(format!("{}|{}|{key}", tool.name(), caller.key()))
 }
 
-fn answered(key: &Option<String>) -> Option<ToolResult> {
+pub(super) fn answered(key: &Option<String>) -> Option<ToolResult> {
     let key = key.as_ref()?;
     lock(&ANSWERED).as_ref()?.get(key).cloned()
 }
 
-fn remember(key: &Option<String>, result: &ToolResult) {
+pub(super) fn remember(key: &Option<String>, result: &ToolResult) {
     if let Some(key) = key {
         lock(&ANSWERED).get_or_insert_with(HashMap::new).insert(key.clone(), result.clone());
     }
@@ -116,6 +121,30 @@ pub(super) async fn session_start(
     if let Some(p) = providers.iter().find(|p| !super::tasks::installed(**p)) {
         return Err(format!("{} is not installed.", p.display_name()));
     }
+    // The account and rights of each session, checked before the approval card (`StartChoice` on the Mac).
+    let mut choices: Vec<StartChoice> = Vec::new();
+    for (index, (session, provider)) in plan.sessions.iter().zip(&providers).enumerate() {
+        let which = if plan.sessions.len() == 1 { String::new() } else { format!(" (session {})", index + 1) };
+        let mut profile_id = automation::default_profile(app, *provider);
+        let mut account_label = String::new();
+        if !session.account.is_empty() {
+            let accounts = account_choices(app, *provider);
+            let Some(id) = args::start_account(&session.account, &accounts) else {
+                let list: Vec<String> = accounts.iter().map(|(id, label)| format!("{id} ({label})")).collect();
+                return Err(format!(
+                    "Unknown {} account \"{}\"{which}; its accounts: {}.",
+                    provider.display_name(),
+                    session.account,
+                    list.join(", ")
+                ));
+            };
+            account_label = accounts.iter().find(|(i, _)| *i == id).map(|(_, l)| l.clone()).unwrap_or_default();
+            profile_id = id;
+        }
+        let permission =
+            args::start_rights(session.rights, caller.permission, &provider.capabilities().policies).map_err(|e| e + &which)?;
+        choices.push(StartChoice { profile_id, permission, account_label });
+    }
     if let Verdict::Refuse(reason) = check(app, BridgeTool::SessionStart, caller, None) {
         return Err(refusal(reason).into());
     }
@@ -140,7 +169,8 @@ pub(super) async fn session_start(
                 &[("agent", &caller.agent), ("n", &plan.sessions.len()), ("providers", &names.join(", "))],
             )
         };
-        let items: Vec<String> = plan.sessions.iter().map(|s| format!("- {}", s.task)).collect();
+        let items: Vec<String> =
+            plan.sessions.iter().zip(&choices).map(|(s, c)| format!("- {}{}", s.task, account_rights_note(s, c))).collect();
         let detail = format!("{}\n\n{}", place_line(&plan.place, &folder), items.join("\n"));
         let note = tr(
             "De agent krijgt alleen deze opdracht te zien, nooit je gesprek, en heeft nooit meer rechten dan de sessie die hem start.",
@@ -153,8 +183,8 @@ pub(super) async fn session_start(
         }
     }
     let mut started = Vec::new();
-    for (session, provider) in plan.sessions.iter().zip(&providers) {
-        started.push(start_one(app, session, *provider, &plan.place, &folder, caller));
+    for ((session, provider), choice) in plan.sessions.iter().zip(&providers).zip(&choices) {
+        started.push(start_one(app, session, *provider, choice, &plan.place, &folder, caller));
     }
     let ok = started.iter().any(|s| s.get("sessionId").is_some());
     let text = serde_json::to_string_pretty(&json!({"sessions": started})).unwrap_or_default();
@@ -163,8 +193,57 @@ pub(super) async fn session_start(
     Ok(result)
 }
 
+/// The account and rights one session of a `session_start` call runs with, checked before the approval card.
+struct StartChoice {
+    profile_id: String,
+    permission: PermissionPolicy,
+    /// The account's name when the caller chose one, for the approval card.
+    account_label: String,
+}
+
+/// The agent's accounts as (`id`, name) pairs: the main account by the agent's name, extra ones by their label.
+fn account_choices(app: &AppHandle, provider: RunProvider) -> Vec<(String, String)> {
+    let Some(agents) = app.try_state::<AgentsState>() else { return vec![(provider.id().into(), provider.display_name().into())] };
+    let profiles = lock(&agents.profiles).profiles(provider.kind());
+    profiles
+        .into_iter()
+        .map(|p| {
+            let label = if p.label.is_empty() { provider.display_name().to_string() } else { p.label.clone() };
+            (p.id, label)
+        })
+        .collect()
+}
+
+/// " · Account Work · Allow edits" on the approval card, for what the caller chose itself (`accountRightsNote`).
+fn account_rights_note(session: &StartSession, choice: &StartChoice) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if !session.account.is_empty() && !choice.account_label.is_empty() {
+        parts.push(trf("Account {name}", "Account {name}", &[("name", &choice.account_label)]));
+    }
+    if session.rights.is_some() {
+        parts.push(match choice.permission {
+            PermissionPolicy::Ask => tr("Alles vragen", "Ask for everything").to_string(),
+            PermissionPolicy::AcceptEdits => tr("Bewerkingen toestaan", "Allow edits").to_string(),
+            PermissionPolicy::Bypass => tr("Alles toestaan", "Allow everything").to_string(),
+        });
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", parts.join(" · "))
+    }
+}
+
 /// One session of a `session_start` call: its answer with the id, or why it did not start.
-fn start_one(app: &AppHandle, session: &StartSession, provider: RunProvider, place: &Place, folder: &str, caller: &BridgeCaller) -> Value {
+fn start_one(
+    app: &AppHandle,
+    session: &StartSession,
+    provider: RunProvider,
+    choice: &StartChoice,
+    place: &Place,
+    folder: &str,
+    caller: &BridgeCaller,
+) -> Value {
     let Some(ws) = workspace(app) else { return json!({"title": session.task, "error": "Nook is not ready."}) };
     let name = session.task.clone();
     let settings = lock(&ws.settings).clone();
@@ -191,18 +270,14 @@ fn start_one(app: &AppHandle, session: &StartSession, provider: RunProvider, pla
         title: session.title.clone(),
         task: session.task.clone(),
         provider,
-        profile_id: automation::default_profile(app, provider),
+        profile_id: choice.profile_id.clone(),
         model: if session.model.is_empty() {
             settings.default_models.get(provider.id()).cloned().unwrap_or_default()
         } else {
             session.model.clone()
         },
-        // They ask like any other session: the user raises their rights themselves.
-        permission: if caps.policies.contains(&PermissionPolicy::Ask) {
-            PermissionPolicy::Ask
-        } else {
-            caps.policies.first().copied().unwrap_or_default()
-        },
+        // Ask like any other session, unless the caller chose rights (never more than its own).
+        permission: choice.permission,
         mode: if session.plan && caps.plan_mode { ExecutionMode::Plan } else { ExecutionMode::Agent },
         isolation,
         branch_name: if isolation == IsolationMode::Worktree { branch_name(&name, Uuid::new_v4()) } else { String::new() },
@@ -213,7 +288,7 @@ fn start_one(app: &AppHandle, session: &StartSession, provider: RunProvider, pla
     // The caller asked for this place and the user approved it: a second agent in a folder is the point here.
     match ws.manager.start(config, true) {
         Ok(id) => {
-            ws.manager.note(id, &started_by(caller));
+            ws.manager.note_origin(id, &started_by(caller));
             automation::title_new_session(app, id, !session.title.is_empty());
             audit(app, BridgeTool::SessionStart, caller, &format!("{} · {name}", provider.display_name()), &id.to_string());
             let run = ws.manager.run(id);
@@ -337,5 +412,311 @@ pub(super) async fn session_wait(app: &AppHandle, a: &Map<String, Value>) -> Res
             return Ok(ToolResult::text(args::render_session_wait(&snapshots, !over)));
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+// MARK: session_search (AG-06)
+
+pub(super) async fn session_search(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {
+    if let Verdict::Refuse(reason) = check(app, BridgeTool::SessionSearch, caller, None) {
+        return Err(refusal(reason).into());
+    }
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let query = args::parse_search(a)?;
+    let manager = ws.manager.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut runs = if let Some(id) = query.session_id { manager.run(id).into_iter().collect::<Vec<_>>() } else { manager.runs() };
+        runs.sort_by_key(|r| std::cmp::Reverse(r.updated_at));
+        let project_filter = query.project.as_deref().map(str::to_lowercase);
+        let mut matches = Vec::new();
+        for run in runs {
+            if !query.include_archived && run.archived {
+                continue;
+            }
+            if let Some(filter) = &project_filter {
+                let p_name = run.project_name().to_lowercase();
+                let p_dir = run.working_directory.to_lowercase();
+                if !p_name.contains(filter) && !p_dir.contains(filter) {
+                    continue;
+                }
+            }
+            let events = manager.timeline(run.id);
+            let status = serde_plain(&run.status);
+            if let Some(hit) = args::search_run(&run, &events, &status, &query.query) {
+                matches.push(hit);
+                if matches.len() >= query.limit {
+                    break;
+                }
+            }
+        }
+        args::render_search_results(&matches, &query.query)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(ToolResult::text(result))
+}
+
+// MARK: session_organize (AG-06)
+
+/// Persisted pin / snooze metadata managed by the bridge when the user organizes sessions via an agent.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct OrganizeMeta {
+    pinned: BTreeSet<String>,
+    snoozed: BTreeMap<String, DateTime<Utc>>,
+}
+
+static ORGANIZE_META: Mutex<Option<OrganizeMeta>> = Mutex::new(None);
+
+fn organize_meta_file() -> std::path::PathBuf {
+    nook_core::paths::support_directory().join("session-organize.json")
+}
+
+fn with_organize_meta<R>(f: impl FnOnce(&mut OrganizeMeta) -> R) -> R {
+    let mut guard = lock(&ORGANIZE_META);
+    let meta = guard
+        .get_or_insert_with(|| std::fs::read(organize_meta_file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default());
+    let out = f(meta);
+    if let Ok(bytes) = serde_json::to_vec_pretty(meta) {
+        let _ = nook_core::paths::write_atomic(&organize_meta_file(), &bytes);
+    }
+    out
+}
+
+pub(super) async fn session_organize(
+    app: &AppHandle,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let req = args::parse_organize(a)?;
+    let mut targets = Vec::with_capacity(req.session_ids.len());
+    for id in &req.session_ids {
+        let run = ws.manager.run(*id).ok_or_else(|| format!("No such session: {id}. Use an id from session_list."))?;
+        targets.push(run);
+    }
+    match check(app, BridgeTool::SessionOrganize, caller, None) {
+        Verdict::Refuse(reason) => return Err(refusal(reason).into()),
+        Verdict::Ask(_) => {
+            let desc = args::describe_organize(&req.action);
+            let title = if targets.len() == 1 {
+                trf(
+                    "{agent} wil sessie “{title}” organiseren ({action})",
+                    "{agent} wants to organize session “{title}” ({action})",
+                    &[("agent", &caller.agent), ("title", &targets[0].title), ("action", &desc)],
+                )
+            } else {
+                trf(
+                    "{agent} wil {n} sessies organiseren ({action})",
+                    "{agent} wants to organize {n} sessions ({action})",
+                    &[("agent", &caller.agent), ("n", &targets.len()), ("action", &desc)],
+                )
+            };
+            let list: Vec<String> = targets.iter().map(|r| format!("- {} ({})", r.title, r.id)).collect();
+            let detail = format!("{desc}\n\n{}", list.join("\n"));
+            let note = tr(
+                "Dit wijzigt alleen hoe deze sessies in Nook geordend staan.",
+                "This only changes how these sessions are organized in Nook.",
+            );
+            if !ws.bridge.ask(app, caller, BridgeTool::SessionOrganize, title, detail, note.into(), &context.connection).await {
+                audit(app, BridgeTool::SessionOrganize, caller, &desc, "niet toegestaan");
+                return Err(refusal(Reason::NeedsReview).into());
+            }
+        }
+        Verdict::Allow => {}
+    }
+
+    let now = Utc::now();
+    let snooze_until = match &req.action {
+        OrganizeAction::Snooze(choice) => Some(choice.resolve(now, &Local)),
+        _ => None,
+    };
+
+    for run in &targets {
+        let list_id = format!("run:{}", run.id);
+        let mark_key = SessionMarks::key(run.provider.display_name(), run.provider_session_id.as_deref(), &list_id);
+        match &req.action {
+            OrganizeAction::Pin => {
+                with_organize_meta(|m| {
+                    m.pinned.insert(list_id.clone());
+                });
+            }
+            OrganizeAction::Unpin => {
+                with_organize_meta(|m| {
+                    m.pinned.remove(&list_id);
+                });
+            }
+            OrganizeAction::Settle => {
+                if let Some(agents) = app.try_state::<AgentsState>() {
+                    let mut marks = lock(&agents.marks);
+                    marks.mark(&mark_key);
+                    marks.mark(&list_id);
+                }
+            }
+            OrganizeAction::Reopen => {
+                if let Some(agents) = app.try_state::<AgentsState>() {
+                    let mut marks = lock(&agents.marks);
+                    marks.reopen_by_user(&mark_key, now);
+                    marks.reopen_by_user(&list_id, now);
+                }
+            }
+            OrganizeAction::Snooze(_) => {
+                if let Some(until) = snooze_until {
+                    with_organize_meta(|m| {
+                        m.snoozed.insert(list_id.clone(), until);
+                    });
+                }
+            }
+            OrganizeAction::Wake => {
+                with_organize_meta(|m| {
+                    m.snoozed.remove(&list_id);
+                });
+            }
+            OrganizeAction::Archive => ws.manager.set_archived(run.id, true),
+            OrganizeAction::Unarchive => ws.manager.set_archived(run.id, false),
+            OrganizeAction::MarkUnread => {
+                if let Some(agents) = app.try_state::<AgentsState>() {
+                    lock(&agents.marks).mark_unread(&list_id);
+                }
+            }
+            OrganizeAction::MarkRead => {
+                if let Some(agents) = app.try_state::<AgentsState>() {
+                    lock(&agents.marks).visit(&list_id, now);
+                }
+            }
+            OrganizeAction::Rename(title) => ws.manager.rename(run.id, title),
+        }
+    }
+
+    let desc = args::describe_organize(&req.action);
+    let ids: Vec<String> = targets.iter().map(|r| r.id.to_string()).collect();
+    let _ = app.emit(
+        "session-organize",
+        json!({
+            "sessionIds": ids,
+            "action": desc,
+            "snoozeUntil": snooze_until.map(|t| t.to_rfc3339()),
+        }),
+    );
+    let _ = app.emit("agents-changed", ());
+    let _ = app.emit("workspace-changed", ());
+    audit(app, BridgeTool::SessionOrganize, caller, &format!("{} ({})", desc, ids.len()), "gedaan");
+
+    let names: Vec<String> = targets.iter().map(|r| format!("\"{}\" ({})", r.title, r.id)).collect();
+    Ok(ToolResult::text(format!("Updated ({desc}): {}", names.join(", "))))
+}
+
+// MARK: session_questions (AG-06)
+
+pub(super) async fn session_questions(
+    app: &AppHandle,
+    a: &Map<String, Value>,
+    caller: &BridgeCaller,
+    context: &Context,
+) -> Result<ToolResult, String> {
+    let ws = workspace(app).ok_or("Nook is not ready.")?;
+    let action = args::parse_questions(a)?;
+
+    match action {
+        QuestionAction::List { session_id } => {
+            if let Verdict::Refuse(reason) = question_verdict(caller, false, false, enabled(app)) {
+                return Err(refusal(reason).into());
+            }
+            let runs = match session_id {
+                Some(id) => ws.manager.run(id).into_iter().collect::<Vec<_>>(),
+                None => ws.manager.runs(),
+            };
+            let mut questions = Vec::new();
+            let mut approvals = Vec::new();
+            for run in &runs {
+                for q in ws.manager.questions(run.id) {
+                    questions.push(PendingQuestionView {
+                        session_id: run.id,
+                        session_title: run.title.clone(),
+                        agent: run.provider.display_name().into(),
+                        request_id: q.id,
+                        items: q.items,
+                    });
+                }
+                for p in ws.manager.permissions(run.id) {
+                    approvals.push(PendingApprovalNotice {
+                        session_id: Some(run.id),
+                        agent: run.provider.display_name().into(),
+                        tool: p.tool,
+                        title: p.summary,
+                    });
+                }
+            }
+            Ok(ToolResult::text(args::render_questions_list(&questions, &approvals)))
+        }
+        QuestionAction::Read { session_id, request_id } => {
+            if let Verdict::Refuse(reason) = question_verdict(caller, false, false, enabled(app)) {
+                return Err(refusal(reason).into());
+            }
+            let run = ws.manager.run(session_id).ok_or("No such session. Use an id from session_list.")?;
+            let list = ws.manager.questions(run.id);
+            let q = match request_id {
+                Some(ref rid) => list.into_iter().find(|q| q.id == *rid),
+                None => list.into_iter().next(),
+            }
+            .ok_or("This session has no pending multiple-choice question.")?;
+            Ok(ToolResult::text(args::render_question_detail(&PendingQuestionView {
+                session_id: run.id,
+                session_title: run.title,
+                agent: run.provider.display_name().into(),
+                request_id: q.id,
+                items: q.items,
+            })))
+        }
+        QuestionAction::Answer { session_id, request_id, answers } => {
+            let run = ws.manager.run(session_id).ok_or("No such session. Use an id from session_list.")?;
+            let own_task = caller
+                .run
+                .as_deref()
+                .and_then(|r| Uuid::parse_str(r).ok())
+                .zip(app.try_state::<AutomationState>())
+                .is_some_and(|(parent_id, auto)| auto.links.link(session_id).is_some_and(|link| link.parent == parent_id));
+
+            let list = ws.manager.questions(run.id);
+            let q = match request_id {
+                Some(ref rid) => list.into_iter().find(|q| q.id == *rid),
+                None => list.into_iter().next(),
+            }
+            .ok_or("This session has no matching pending multiple-choice question. Note: permission approvals cannot be answered via session_questions.")?;
+
+            let selections = args::resolve_question_selections(&q.items, &answers)?;
+
+            match question_verdict(caller, true, own_task, enabled(app)) {
+                Verdict::Refuse(reason) => return Err(refusal(reason).into()),
+                Verdict::Ask(_) => {
+                    let title = trf(
+                        "{agent} wil een vraag beantwoorden voor sessie “{title}”",
+                        "{agent} wants to answer a question for session “{title}”",
+                        &[("agent", &caller.agent), ("title", &run.title)],
+                    );
+                    let summary: Vec<String> =
+                        q.items.iter().zip(&selections).map(|(item, sel)| format!("- {}: {}", item.question, sel.join(", "))).collect();
+                    let note = tr(
+                        "De andere agent krijgt deze keuzes als antwoord op zijn meerkeuzevraag.",
+                        "The other agent receives these choices as the answer to its multiple-choice question.",
+                    );
+                    if !ws
+                        .bridge
+                        .ask(app, caller, BridgeTool::SessionQuestions, title, summary.join("\n"), note.into(), &context.connection)
+                        .await
+                    {
+                        audit(app, BridgeTool::SessionQuestions, caller, &run.title, "niet toegestaan");
+                        return Err(refusal(Reason::Delegation).into());
+                    }
+                }
+                Verdict::Allow => {}
+            }
+
+            ws.manager.answer_question(run.id, &q.id, &selections)?;
+            let chosen = selections.iter().flatten().cloned().collect::<Vec<_>>().join(", ");
+            audit(app, BridgeTool::SessionQuestions, caller, &run.title, &chosen);
+            Ok(ToolResult::text(format!("Answered pending question {} in \"{}\" with: {chosen}", q.id, run.title)))
+        }
     }
 }

@@ -95,6 +95,35 @@ pub trait ScreenReader: Send + Sync {
         .into())
     }
     /// Of [`capture_screen`](Self::capture_screen) kan, zonder hem te maken.
+    /// The front window of an app by process id (`read_ui`): its title and every element a person uses, in screen
+    /// pixels. Password fields carry `secure` and never their value.
+    fn ui_elements(&self, _pid: u32) -> Result<(String, Vec<crate::brain::ui_control::Element>), String> {
+        Err(crate::i18n::tr("Apps besturen kan op dit platform niet.", "Controlling apps is not supported on this platform.").into())
+    }
+
+    /// Runs one `control_ui` step in the app (brought to the front first). `target` and `to` are the elements the step
+    /// names, looked up again right before it; without them the step's point (or the focused element) is used.
+    /// Returns a short line of what happened.
+    fn ui_perform(
+        &self,
+        _pid: u32,
+        _step: &crate::brain::ui_control::Step,
+        _target: Option<&crate::brain::ui_control::Element>,
+        _to: Option<&crate::brain::ui_control::Element>,
+    ) -> Result<String, String> {
+        Err(crate::i18n::tr("Apps besturen kan op dit platform niet.", "Controlling apps is not supported on this platform.").into())
+    }
+
+    /// The name of the element at a screen point, so a click on a point is judged by what is under it.
+    fn ui_label_at(&self, _x: f64, _y: f64) -> Option<String> {
+        None
+    }
+
+    /// The name of the element that has the keyboard in the app, so Space or Enter on it is judged like a click.
+    fn ui_focused_label(&self, _pid: u32) -> Option<String> {
+        None
+    }
+
     fn can_capture(&self) -> bool {
         false
     }
@@ -243,6 +272,11 @@ pub trait WakeWord: Send + Sync {
     fn available(&self) -> bool;
     fn start(&self, on_wake: Box<dyn Fn() + Send + Sync>) -> Result<(), String>;
     fn stop(&self);
+    /// Recognition on or off while the wake word stays set up, so it can follow the loudness of the room
+    /// (`services::wake_gate`). Where this does nothing, recognition runs the whole time.
+    fn listen(&self, _on: bool) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// A rectangle on screen in physical pixels (as UI Automation reports it).
@@ -432,5 +466,9 @@ pub trait PowerMonitor: Send + Sync {
     /// Battery charge (0–100) and whether the computer is on external power, if there is a battery.
     fn battery(&self) -> Option<(u8, bool)> {
         None
+    }
+    /// The screen is locked (the lock screen is all anyone can see).
+    fn screen_locked(&self) -> bool {
+        false
     }
 }

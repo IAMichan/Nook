@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 // De staat van de agents in de interface (Svelte 5 runes). De waarheid staat in Rust; dit volgt de events.
 import { agentApi, agentEvents, type AgentApproval, type AgentSession, type HistoryResult, type Overview, type QuestionRequest } from "./agents";
 import { playSound } from "./sound";
@@ -31,7 +32,11 @@ class AgentsStore {
     agentEvents.onApproval((a) => {
       this.selectedId = a.sessionKey;
       this.refresh();
-      this.play("attention");
+      // The approval sound unless Settings › Notifications keeps agents to the history; approvals still come through in quiet
+      // hours (`notice_decide` with urgent).
+      invoke<string>("notice_decide", { source: "agents", appName: a.agentName ?? "", urgent: true })
+        .catch(() => "card")
+        .then((d) => d !== "history" && this.play("permission"));
     });
     agentEvents.onApprovalGone((g) => {
       this.refresh();
@@ -48,14 +53,19 @@ class AgentsStore {
     });
     agentEvents.onAttention((s) => {
       this.play(s.status === "done" ? "done" : s.status === "failed" ? "error" : "attention");
-      // Shown as a system notification instead of the bar's card when you chose that (Settings › Voice & sound).
-      if (nook.settings?.agentNotice !== "system") this.attention = s;
+      // The bar's card or line only when Settings › Notifications says so (`notice_decide`: not as a system
+      // notification, not off, not in quiet hours or while Nook keeps quiet).
+      invoke<string>("notice_decide", { source: "agents", appName: s.name ?? "", urgent: false })
+        .catch(() => (nook.settings?.agentNotice === "system" ? "system" : "card"))
+        .then((d) => {
+          if (d === "card" || d === "strip") this.attention = s;
+        });
     });
     agentEvents.onUsage(() => this.refresh());
     agentEvents.onHistory((h) => (this.history = h));
   }
 
-  play(kind: "attention" | "done" | "error") {
+  play(kind: "attention" | "permission" | "done" | "error") {
     if (this.sounds && nook.settings?.sounds) playSound(kind);
   }
 
@@ -97,7 +107,30 @@ class AgentsStore {
     }
   }
 
-  select(id: string | null) {
+  /// What you opened, for back and forward in the sidebar's head (the Mac's `AgentsHistory`): the open item is
+  /// `trail[at]`; opening another drops what was ahead of it.
+  trail = $state<(string | null)[]>([localStorage.getItem("agents.selected")]);
+  at = $state(0);
+  get canBack() { return this.at > 0; }
+  get canForward() { return this.at < this.trail.length - 1; }
+
+  back() {
+    if (!this.canBack) return;
+    this.at -= 1;
+    this.select(this.trail[this.at], false);
+  }
+
+  forward() {
+    if (!this.canForward) return;
+    this.at += 1;
+    this.select(this.trail[this.at], false);
+  }
+
+  select(id: string | null, record = true) {
+    if (record && id !== this.trail[this.at]) {
+      this.trail = [...this.trail.slice(0, this.at + 1), id].slice(-50);
+      this.at = this.trail.length - 1;
+    }
     this.selectedId = id;
     if (id) {
       localStorage.setItem("agents.selected", id);
@@ -118,6 +151,34 @@ class AgentsStore {
 
   questionFor(sessionKey: string): QuestionRequest | undefined {
     return this.questions.find((q) => q.sessionKey === sessionKey);
+  }
+
+  /// Files dropped onto a session row in the list, waiting for the detail view's composer to pick them up.
+  droppedFiles = $state<Record<string, string[]>>({});
+
+  queueDroppedFiles(sessionId: string, paths: string[]) {
+    const clean = paths.map((p) => p.trim()).filter(Boolean);
+    if (!clean.length) return;
+    const prev = this.droppedFiles[sessionId] ?? [];
+    this.droppedFiles = { ...this.droppedFiles, [sessionId]: [...prev, ...clean] };
+  }
+
+  takeDroppedFiles(sessionId: string): string[] {
+    const list = this.droppedFiles[sessionId];
+    if (!list?.length) return [];
+    const { [sessionId]: _, ...rest } = this.droppedFiles;
+    this.droppedFiles = rest;
+    return list;
+  }
+
+  /// Deny and tell the agent why; a bridge request (no agent behind it) takes a plain Deny.
+  async denyWithReason(a: AgentApproval, reason: string) {
+    try {
+      await agentApi.deny(a.id, reason);
+    } catch (e) {
+      this.error = String(e);
+    }
+    await this.refresh();
   }
 
   async decide(a: AgentApproval, decision: "allow" | "always" | "deny" | "terminal") {

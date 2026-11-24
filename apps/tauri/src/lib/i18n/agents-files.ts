@@ -1,0 +1,63 @@
+// German, French, and Spanish for the file viewer in a session's File tab (`file.viewer.*` on the Mac): reading,
+// editing and saving a file, and a remark on one line.
+import type { Table } from "./catalog";
+
+export const table: Table = {
+  "This file can't be edited as text": {
+    de: "Diese Datei kann nicht als Text bearbeitet werden",
+    fr: "Ce fichier ne peut pas être modifié comme texte",
+    es: "Este archivo no se puede editar como texto",
+  },
+  "The file changed": { de: "Die Datei wurde geändert", fr: "Le fichier a changé", es: "El archivo ha cambiado" },
+  "{file} changed on disk since you opened it. Overwrite it with your version?": {
+    de: "{file} wurde auf der Festplatte geändert, seit du sie geöffnet hast. Mit deiner Version überschreiben?",
+    fr: "{file} a changé sur le disque depuis son ouverture. Le remplacer par votre version ?",
+    es: "{file} cambió en el disco desde que lo abriste. ¿Sobrescribirlo con tu versión?",
+  },
+  "Overwrite": { de: "Überschreiben", fr: "Remplacer", es: "Sobrescribir" },
+  "Couldn't save": { de: "Speichern fehlgeschlagen", fr: "Échec de l’enregistrement", es: "No se pudo guardar" },
+  "Discard changes?": { de: "Änderungen verwerfen?", fr: "Abandonner les modifications ?", es: "¿Descartar los cambios?" },
+  "Your changes to {file} are not saved.": {
+    de: "Deine Änderungen an {file} sind nicht gespeichert.",
+    fr: "Vos modifications de {file} ne sont pas enregistrées.",
+    es: "Tus cambios en {file} no están guardados.",
+  },
+  "line {line}": { de: "Zeile {line}", fr: "ligne {line}", es: "línea {line}" },
+  "Save (Ctrl+S)": { de: "Speichern (Strg+S)", fr: "Enregistrer (Ctrl+S)", es: "Guardar (Ctrl+S)" },
+  "Add to the composer": { de: "Zum Composer hinzufügen", fr: "Ajouter au champ de saisie", es: "Añadir al cuadro de texto" },
+  "Not saved": { de: "Nicht gespeichert", fr: "Non enregistré", es: "Sin guardar" },
+  "This file no longer exists.": { de: "Diese Datei gibt es nicht mehr.", fr: "Ce fichier n'existe plus.", es: "Este archivo ya no existe." },
+  "This is a folder.": { de: "Das ist ein Ordner.", fr: "C'est un dossier.", es: "Esto es una carpeta." },
+  "Nook can't show this file as text.": { de: "Nook kann diese Datei nicht als Text anzeigen.", fr: "Nook ne peut pas afficher ce fichier comme texte.", es: "Nook no puede mostrar este archivo como texto." },
+  "This diagram could not be drawn.": { de: "Dieses Diagramm konnte nicht gezeichnet werden.", fr: "Ce diagramme n'a pas pu être dessiné.", es: "No se pudo dibujar este diagrama." },
+  "Versions": { de: "Versionen", fr: "Versions", es: "Versiones" },
+  "Latest": { de: "Neueste", fr: "Dernière", es: "Última" },
+  "Version {n} of {total}": { de: "Version {n} von {total}", fr: "Version {n} sur {total}", es: "Versión {n} de {total}" },
+  "Compare with the previous version": { de: "Mit der vorherigen Version vergleichen", fr: "Comparer avec la version précédente", es: "Comparar con la versión anterior" },
+  "Restore this version": { de: "Diese Version wiederherstellen", fr: "Restaurer cette version", es: "Restaurar esta versión" },
+  "Back to the latest": { de: "Zurück zur neuesten", fr: "Retour à la dernière", es: "Volver a la última" },
+  "Version restored": { de: "Version wiederhergestellt", fr: "Version restaurée", es: "Versión restaurada" },
+  "No changes from the previous version": { de: "Keine Änderungen gegenüber der vorherigen Version", fr: "Aucun changement par rapport à la version précédente", es: "Sin cambios respecto a la versión anterior" },
+  "Nothing to show yet": { de: "Noch nichts zu sehen", fr: "Rien à afficher pour l'instant", es: "Aún no hay nada" },
+  "The agent's task list, the plans it proposes and the designs, documents and images it writes appear here.": {
+    de: "Die Aufgabenliste des Agenten, seine Pläne und die Entwürfe, Dokumente und Bilder, die er schreibt, erscheinen hier.",
+    fr: "La liste des tâches de l'agent, les plans qu'il propose et les maquettes, documents et images qu'il écrit apparaissent ici.",
+    es: "Aquí aparecen la lista de tareas del agente, los planes que propone y los diseños, documentos e imágenes que escribe.",
+  },
+  "Design": { de: "Entwurf", fr: "Maquette", es: "Diseño" },
+  "Document": { de: "Dokument", fr: "Document", es: "Documento" },
+  "Image": { de: "Bild", fr: "Image", es: "Imagen" },
+  "This file is no longer there.": { de: "Diese Datei gibt es nicht mehr.", fr: "Ce fichier n'existe plus.", es: "Este archivo ya no existe." },
+  "Open": { de: "Öffnen", fr: "Ouvrir", es: "Abrir" },
+  "Stop the server on port {port}": { de: "Server auf Port {port} stoppen", fr: "Arrêter le serveur sur le port {port}", es: "Detener el servidor del puerto {port}" },
+  "Nook did not start this server, so it can't stop it": {
+    de: "Nook hat diesen Server nicht gestartet und kann ihn daher nicht stoppen",
+    fr: "Nook n’a pas lancé ce serveur et ne peut donc pas l’arrêter",
+    es: "Nook no inició este servidor, así que no puede detenerlo",
+  },
+  "{command} on port {port} was not started by Nook or one of its sessions. Stop it where you started it, so nothing you run elsewhere disappears behind your back.": {
+    de: "{command} auf Port {port} wurde nicht von Nook oder einer seiner Sitzungen gestartet. Stoppe ihn dort, wo du ihn gestartet hast, damit nichts, was du anderswo laufen lässt, hinter deinem Rücken verschwindet.",
+    fr: "{command} sur le port {port} n’a pas été lancé par Nook ni par l’une de ses sessions. Arrête-le là où tu l’as lancé, pour que rien de ce que tu exécutes ailleurs ne disparaisse dans ton dos.",
+    es: "{command} en el puerto {port} no lo inició Nook ni una de sus sesiones. Detenlo donde lo iniciaste, para que nada de lo que ejecutas en otro lugar desaparezca a tus espaldas.",
+  },
+};
