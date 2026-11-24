@@ -58,9 +58,26 @@ extension WorkspaceManager {
         let sent = claudeControl(id, starts: false, ClaudeStreamParser.initializeRequest(id:)) { [weak self] response, _ in
             guard let self else { return }
             let commands = AgentSlashCommand.claude(response?.dictionary["commands"])
-            if self.acpCommands[id] != commands { self.acpCommands[id] = commands }
+            self.offerCommands(id, commands)
         }
         if !sent { acpCommands[id] = nil }
+    }
+
+    /// The commands a session's agent offers: shown in its `/` list, and remembered for its agent so a session that has
+    /// not started yet lists them too (`AgentCommandMemory`).
+    func offerCommands(_ id: UUID, _ commands: [AgentSlashCommand]) {
+        if acpCommands[id] != commands { acpCommands[id] = commands }
+        if let provider = run(id)?.provider { AgentCommandMemory.remember(commands, for: provider) }
+    }
+
+    /// The commands a new session with `provider` in `folder` will have: those of a session of that agent running in the
+    /// same folder (its project's commands too), else what the agent offered last.
+    func knownCommands(for provider: RunProvider, folder: String) -> [AgentSlashCommand] {
+        let live = runs.filter { $0.provider == provider && !(acpCommands[$0.id] ?? []).isEmpty }
+        if let same = live.first(where: { $0.workingDirectory == folder || $0.projectPath == folder }) {
+            return acpCommands[same.id] ?? []
+        }
+        return AgentCommandMemory.recalled(for: provider)
     }
 
     /// `/status`: the session's agent, model and settings as a line you open (`SessionCommands.statusRows`).

@@ -604,7 +604,7 @@ extension WorkspaceManager {
                 // Only a replay carries your own words back (see openAcpSession).
                 break
             case .commands(let commands):
-                if acpCommands[id] != commands { acpCommands[id] = commands }
+                offerCommands(id, commands)
             case .configOptions(let options):
                 updateAcpOptions(id, client, options.object as? [[String: Any]])
             case .currentMode(let mode):

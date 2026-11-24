@@ -69,6 +69,19 @@ struct ComposerTrigger: Equatable, Sendable {
         return ComposerTrigger(kind: kind, query: String(token.dropFirst()), token: token)
     }
 
+    /// A command typed with a space in it, such as `/brand-voice enforce`: the whole line is the query, so a skill and its
+    /// action can be joined by a space too. Only for one line that starts with `/`, with the caret at its end, a few words
+    /// long, and only while its first word is not already a whole command name: after `/goal ` you are typing its text.
+    static func spacedCommand(in text: String, caret: Int?, names: [String]) -> ComposerTrigger? {
+        guard text.hasPrefix("/"), caret.map({ $0 >= text.utf16.count }) ?? true,
+              !text.contains(where: { $0.isNewline }), text.contains(where: { $0.isWhitespace }) else { return nil }
+        let query = String(text.dropFirst())
+        let parts = query.split(whereSeparator: { $0.isWhitespace })
+        guard let first = parts.first, parts.count <= 4,
+              !names.contains(where: { $0.caseInsensitiveCompare(first) == .orderedSame }) else { return nil }
+        return ComposerTrigger(kind: .command, query: query, token: text)
+    }
+
     /// The text with the trigger replaced (a chosen link, or a command's text), followed by a space.
     func replacing(in text: String, with insertion: String) -> String {
         inserting(insertion, in: text).text
@@ -147,12 +160,34 @@ struct ComposerCommand: Equatable, Sendable, Identifiable {
         case session(NookCommand)
     }
 
+    /// The words of a query: split at every character that is not a letter or digit, so a skill and its action match the
+    /// same way however they are joined (`plugin:skill`, `plugin/skill`, `plugin.skill`, `plugin_skill`, `plugin skill`).
+    static func words(_ query: String) -> [String] {
+        query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+    }
+
+    /// Names that start with the query first, then names that hold it, then names that hold every word of it, then, for a
+    /// query of two words or more, commands whose name and description together hold every word. Agents name a plugin's
+    /// skill and its actions in their own way (`brand-voice:enforce-voice`, or `enforce-voice` with "(brand-voice)" in its
+    /// description), so `/brand-voice:enf`, `/brand-voice enf` and `/brand.enf` all find it.
     static func filter(_ commands: [ComposerCommand], query: String) -> [ComposerCommand] {
-        let q = query.lowercased()
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return commands }
-        let starts = commands.filter { $0.name.lowercased().hasPrefix(q) }
-        let contains = commands.filter { !$0.name.lowercased().hasPrefix(q) && $0.name.lowercased().contains(q) }
-        return starts + contains
+        let words = words(q)
+        var starts: [ComposerCommand] = [], contains: [ComposerCommand] = [], named: [ComposerCommand] = []
+        var described: [ComposerCommand] = []
+        for command in commands {
+            let name = command.name.lowercased()
+            if name.hasPrefix(q) { starts.append(command) }
+            else if name.contains(q) { contains.append(command) }
+            else if !words.isEmpty, words.allSatisfy({ name.contains($0) }) { named.append(command) }
+            // A single word only searches names: two letters would otherwise find half the list in its descriptions.
+            else if words.count > 1 {
+                let haystack = name + " " + (command.detail ?? "").lowercased()
+                if words.allSatisfy({ haystack.contains($0) }) { described.append(command) }
+            }
+        }
+        return starts + contains + named + described
     }
 }
 

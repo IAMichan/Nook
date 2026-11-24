@@ -219,7 +219,7 @@ extension WorkspaceManager {
         learnOpenCodeEfforts(id)
         let listed = OpenCodeServe.commands(commands.json?.object)
         openCodeLinks[id]?.commands = listed
-        if acpCommands[id] != listed { acpCommands[id] = listed }
+        offerCommands(id, listed)
         if let launch = bridge(for: id) {
             let name = OpenCodeServe.bridgeServer(runID: id)
             let config = OpenCodeServe.bridgeConfig(command: launch.script, arguments: ["--agent", run.provider.rawValue],
