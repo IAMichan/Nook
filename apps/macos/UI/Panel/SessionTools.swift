@@ -270,6 +270,8 @@ struct SessionWorkbench<Conversation: View>: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var fileViewer = FileViewerStore.shared
+    /// This session's tabs in windows of their own (`SessionTabWindows`).
+    @ObservedObject private var tabWindows = SessionTabWindows.shared
     @Environment(\.sessionHeaderInset) private var headerInset
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("nook.agents.bottomTool") var lastBottomTool = SessionTool.terminal.rawValue
@@ -368,8 +370,8 @@ struct SessionWorkbench<Conversation: View>: View {
     var body: some View {
         let side = shown(.side)
         let bottom = shown(.bottom)
-        let outputsShown = side == .outputs || bottom == .outputs
-        let subagentsShown = side == .subagents || bottom == .subagents
+        let outputsShown = side == .outputs || bottom == .outputs || inOwnWindow(.outputs)
+        let subagentsShown = side == .subagents || bottom == .subagents || inOwnWindow(.subagents)
         let toolsFresh = (outputs.fresh && !outputsShown) || (outputs.subagentsFresh && !subagentsShown)
         let sideOpen = side != .conversation
         // The room of the conversation's own panels, so a window that gets narrower gives up the docked column first;
@@ -398,7 +400,11 @@ struct SessionWorkbench<Conversation: View>: View {
                                                                      toggleConsole: toggleConsole,
                                                                      shownSubThread: side == .subThread ? shownSubThread : nil,
                                                                      subThreadRoom: !tooNarrow, showSubThread: showSubThread))
-                        .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
+                        .onPreferenceChange(SessionOutputsReport.self) { report in
+                            outputs = report
+                            // The session's tabs in windows of their own show it too.
+                            SessionTabReports.shared.report(report, session: tabSession)
+                        }
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         // Where the page this session's agent opened rests: the conversation above its composer. The card
                         // itself floats over the whole row (below), so it can be moved over the panels on the right too.
@@ -448,7 +454,7 @@ struct SessionWorkbench<Conversation: View>: View {
             .overlayPreferenceValue(SessionBrowserRest.self) { places in
                 GeometryReader { proxy in
                     let conversation = places.conversation.map { proxy[$0] } ?? CGRect(origin: .zero, size: proxy.size)
-                    SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser,
+                    SessionBrowserCorner(runID: runID, directory: directory, hidden: side == .browser || bottom == .browser || inOwnWindow(.browser),
                                         rest: SessionBrowserCorner.rest(conversation: conversation,
                                                                        dockColumn: docked ? places.dockColumn.map { proxy[$0] } : nil,
                                                                        dockCards: docked ? places.dockCards.map { proxy[$0] } : nil,
@@ -766,9 +772,60 @@ struct SessionWorkbench<Conversation: View>: View {
                                  viewModel[keyPath: slot.tabs] = next.tabs
                                  viewModel.pinnedTabs = next.pinned
                              }
-                         })
+                         },
+                         tearOff: { tab, point in tearOff(tab, in: slot, at: point) })
             .environment(\.sidePanelTakesFocus, panelTakesFocus)
             .focusArea(slot.tool == \PanelViewModel.bottomTool ? .bottomPanel : .sidePanel)
+    }
+
+    /// This session as its tabs in windows of their own name it (`DetachedSessionTab.session`).
+    var tabSession: String { DetachedSessionTab.session(run: runID, directory: directory) }
+
+    /// Whether `tool` of this session shows in a window of its own.
+    func inOwnWindow(_ tool: SessionTool) -> Bool {
+        tabWindows.holder(tool, run: runID, directory: directory) != nil
+    }
+
+    /// Opens a tab in a window of its own, at `point` on screen when it was dragged there, still with this session. It
+    /// leaves the panel (a tool that can be in one place only, and a pull request or file goes along with it).
+    private func tearOff(_ tab: SessionTab, in slot: SessionPanelSlot, at point: CGPoint?) {
+        let item: SessionTool
+        var pullRequest: PullRequestOpenRequest?
+        switch tab {
+        case .tool(let tool):
+            item = tool
+            if tool == .pullRequest { pullRequest = viewModel.sidePullRequest }
+        case .pullRequest(let id):
+            item = .pullRequest
+            pullRequest = viewModel.sidePullRequestTabs.first { $0.id == id }?.request
+        case .browser:
+            item = .browser
+        }
+        guard SessionTabWindows.detachable(item) else { return }
+        let detached = DetachedSessionTab(agentID: viewModel.selectedAgentID, runID: runID, directory: directory, tool: item,
+                                          pullRequest: pullRequest, file: item == .file ? fileViewer.target : nil,
+                                          subThread: item == .subThread ? shownSubThread : nil)
+        withAnimation(NookTheme.swap) {
+            if case .pullRequest(let id) = tab, viewModel.sidePullRequestTabs.count > 1 {
+                viewModel.closeSidePullRequest(id)
+            } else {
+                closeTab(item, in: slot, remember: false)
+            }
+            // The panel's last tab went: the panel goes with it, instead of showing the list of tools.
+            if tabs(slot).isEmpty, viewModel[keyPath: slot.tool] == .picker {
+                if slot.tool == \PanelViewModel.bottomTool { viewModel.bottomTool = .conversation } else { viewModel.toggleSidePanel() }
+            }
+        }
+        SessionTabWindows.shared.open(detached, at: point, report: outputs, app: app)
+    }
+
+    /// A tool that shows in a window of its own opened in a panel again (its tab, ⌘J, a link in the conversation): the
+    /// window comes forward instead, as the tool can be in one place only, and the panel shows what it showed before.
+    func keepInOwnWindow(_ tool: SessionTool, was previous: SessionTool, in slot: SessionPanelSlot) {
+        guard SessionTabWindows.single(tool), tabWindows.focus(tool, run: runID, directory: directory) else { return }
+        viewModel[keyPath: slot.tabs].removeAll { $0 == tool }
+        let back = previous == tool || inOwnWindow(previous) ? SessionTool.conversation : previous
+        viewModel[keyPath: slot.tool] = back == .picker && tabs(slot).isEmpty ? .conversation : back
     }
 
     /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
@@ -793,13 +850,16 @@ struct SessionWorkbench<Conversation: View>: View {
         }
     }
 
-    /// Closes a tab; when it was the one in view, the tab next to it takes its place, or the list of tools.
-    private func closeTab(_ item: SessionTool, in slot: SessionPanelSlot) {
+    /// Closes a tab; when it was the one in view, the tab next to it takes its place, or the list of tools. `remember`:
+    /// ⇧⌘T can bring it back (not for a tab that went to a window of its own).
+    private func closeTab(_ item: SessionTool, in slot: SessionPanelSlot, remember: Bool = true) {
         let visible = tabs(slot)
         guard let index = visible.firstIndex(of: item) else { return }
         let rest = visible.filter { $0 != item }
-        viewModel.closedSessionTabs.push(ClosedSessionTab(tool: item, bottom: slot.tool == \PanelViewModel.bottomTool,
-                                                          pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
+        if remember {
+            viewModel.closedSessionTabs.push(ClosedSessionTab(tool: item, bottom: slot.tool == \PanelViewModel.bottomTool,
+                                                              pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
+        }
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
             if item == .artifact { EmbeddedAppStore.shared.closeArtifact() }
