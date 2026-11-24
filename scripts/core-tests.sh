@@ -95,8 +95,8 @@ EXCLUDE_TESTS=(
   "ChatImageRenderTests" "DayBucketsTests"
 )
 if [ "$(uname)" != "Darwin" ]; then
-  # Parse mail blocks with MarkdownBlock, which Linux leaves out (above).
-  EXCLUDE_TESTS+=("MailTemplateTests")
+  # Parse mail blocks and Markdown files with MarkdownBlock, which Linux leaves out (above).
+  EXCLUDE_TESTS+=("MailTemplateTests" "MarkdownFileTests")
 fi
 
 
