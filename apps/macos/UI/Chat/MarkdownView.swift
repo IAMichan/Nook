@@ -375,6 +375,8 @@ struct MarkdownView: View, Equatable {
             MarkdownDetailsBlock(summary: summary, text: body, size: size)
         case .image(let alt, let source):
             MarkdownImageBlock(alt: alt, source: source)
+        case .images(let images):
+            MarkdownImageRow(images: images)
         case .chart(let chart):
             ChatChartView(chart: chart)
         case .question(let text, let options):
