@@ -53,8 +53,11 @@ struct MarkdownDetailsBlock: View {
 /// It shows whole, a click opens it big; one that cannot be read leaves a chip with its alt text.
 struct MarkdownImageBlock: View {
     @Environment(\.fileLinkBase) private var fileLinkBase
+    @Environment(\.openURL) private var openURL
     let alt: String
     let source: String
+    /// Where a click goes when the image is a link (a README's badge); without one a click opens the image big.
+    var link: URL?
     @State private var image: NSImage?
     @State private var file: URL?
     @State private var missing = false
@@ -77,6 +80,16 @@ struct MarkdownImageBlock: View {
                 .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, NookTheme.Spacing.sm)
                 .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.smoke))
+            } else if let link, let image {
+                Button { openURL(link) } label: {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .fittedMedia(ChatMessagePicture.size(for: image.size))
+                }
+                .buttonStyle(.nookPlain)
+                .nookTip(link.absoluteString)
             } else {
                 ChatMessagePicture(image: image, missing: false, name: name) { file }
             }
@@ -86,6 +99,19 @@ struct MarkdownImageBlock: View {
             file = loaded?.file
             image = loaded?.image
             missing = loaded == nil
+        }
+    }
+}
+
+/// Images on consecutive lines of their own (a README's badges), side by side and wrapping as GitHub draws them.
+struct MarkdownImageRow: View {
+    let images: [MarkdownImage]
+
+    var body: some View {
+        ChipFlow(spacing: NookTheme.Spacing.sm) {
+            ForEach(Array(images.enumerated()), id: \.offset) { _, image in
+                MarkdownImageBlock(alt: image.alt, source: image.source, link: image.link.flatMap(URL.init(string:)))
+            }
         }
     }
 }

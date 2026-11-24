@@ -102,16 +102,12 @@ struct MarkdownBlockView: View {
                     .foregroundStyle(Theme.blue)
             }
         case .image(let alt, let source):
-            if let url = URL(string: source), MarkdownBlock.isSafeLink(url) {
-                Link(destination: url) {
-                    Label(alt.isEmpty ? url.lastPathComponent : alt, systemImage: "photo")
-                        .font(Theme.TextStyle.body)
-                        .foregroundStyle(Theme.blue)
+            Self.image(alt: alt, source: source)
+        case .images(let images):
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                ForEach(Array(images.enumerated()), id: \.offset) { _, image in
+                    Self.image(alt: image.alt, source: image.link ?? image.source)
                 }
-            } else {
-                Label(alt.isEmpty ? source : alt, systemImage: "photo")
-                    .font(Theme.TextStyle.body)
-                    .foregroundStyle(Theme.textSecondary)
             }
         case .chart(let chart):
             Label(chart.title.isEmpty ? String(localized: "Chart") : chart.title, systemImage: "chart.bar")
@@ -125,6 +121,22 @@ struct MarkdownBlockView: View {
 
     private func prose(_ text: String) -> some View {
         RichMessageText(text: text, color: color)
+    }
+
+    /// An image as a link to it (the phone does not fetch pictures from an answer), or its name when it is a file.
+    @ViewBuilder
+    private static func image(alt: String, source: String) -> some View {
+        if let url = URL(string: source), MarkdownBlock.isSafeLink(url) {
+            Link(destination: url) {
+                Label(alt.isEmpty ? url.lastPathComponent : alt, systemImage: "photo")
+                    .font(Theme.TextStyle.body)
+                    .foregroundStyle(Theme.blue)
+            }
+        } else {
+            Label(alt.isEmpty ? source : alt, systemImage: "photo")
+                .font(Theme.TextStyle.body)
+                .foregroundStyle(Theme.textSecondary)
+        }
     }
 }
 

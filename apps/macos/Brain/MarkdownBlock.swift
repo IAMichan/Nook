@@ -25,6 +25,9 @@ enum MarkdownBlock: Equatable {
     case details(summary: String, body: String)
     /// An image on a line of its own (`![alt](https://…/a.png)` or a path on this Mac).
     case image(alt: String, source: String)
+    /// Pictures side by side, as GitHub draws a README's badges: images on consecutive lines of their own, each maybe a
+    /// link (`[![CI](https://…/badge.svg)](https://…)`).
+    case images([MarkdownImage])
 
     private static let brRegex = try? NSRegularExpression(pattern: #"<br\s*/?>"#, options: [.caseInsensitive])
     private static let headingRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s"#)
@@ -222,18 +225,53 @@ enum MarkdownBlock: Equatable {
         return (first.contains("=") ? "" : first.lowercased(), title)
     }
 
-    private static let imageLineRegex = try? NSRegularExpression(pattern: #"^!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)$"#)
+    private static let imageItemRegex = try? NSRegularExpression(pattern:
+        #"\[!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)|!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)"#)
+
+    /// Whether an image source can be shown: a web address or a path on this Mac (relative to the file's folder too).
+    private static func isImageSource(_ source: String) -> Bool {
+        let lower = source.lowercased()
+        return lower.hasPrefix("https://") || lower.hasPrefix("http://") || lower.hasPrefix("file://")
+            || source.hasPrefix("/") || source.hasPrefix("~/") || source.hasPrefix("./") || !source.contains(":")
+    }
 
     /// The alt text and source of a line that is only an image, when the source is a web address or a path on this Mac.
     static func imageLine(_ line: String) -> (alt: String, source: String)? {
-        guard line.hasPrefix("!["), let rx = imageLineRegex,
-              let match = rx.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-              let alt = Range(match.range(at: 1), in: line), let source = Range(match.range(at: 2), in: line) else { return nil }
-        let src = String(line[source])
-        let lower = src.lowercased()
-        guard lower.hasPrefix("https://") || lower.hasPrefix("http://") || lower.hasPrefix("file://")
-                || src.hasPrefix("/") || src.hasPrefix("~/") || src.hasPrefix("./") || !src.contains(":") else { return nil }
-        return (String(line[alt]), src)
+        guard let row = imageRow(line), row.count == 1, row[0].link == nil else { return nil }
+        return (row[0].alt, row[0].source)
+    }
+
+    /// The images of a line that holds nothing else: one or more, each maybe inside a link, apart by spaces. Nil when
+    /// anything else is on the line or a source cannot be shown.
+    static func imageRow(_ line: String) -> [MarkdownImage]? {
+        guard line.hasPrefix("![") || line.hasPrefix("[!["), let rx = imageItemRegex else { return nil }
+        return imageRow(line, rx)
+    }
+
+    private static func imageRow(_ line: String, _ rx: NSRegularExpression) -> [MarkdownImage]? {
+        let text = line as NSString
+        var images: [MarkdownImage] = []
+        var location = 0
+        while location < text.length {
+            if let scalar = UnicodeScalar(text.character(at: location)), CharacterSet.whitespaces.contains(scalar) {
+                location += 1
+                continue
+            }
+            guard let match = rx.firstMatch(in: line, options: .anchored, range: NSRange(location: location, length: text.length - location))
+            else { return nil }
+            func group(_ index: Int) -> String? {
+                let range = match.range(at: index)
+                return range.location == NSNotFound ? nil : text.substring(with: range)
+            }
+            let linked = group(2) != nil
+            let alt = (linked ? group(1) : group(4)) ?? ""
+            guard let source = linked ? group(2) : group(5), isImageSource(source) else { return nil }
+            // Only a web or mail link opens; another one (`#section`, a script) leaves the picture as it is.
+            let link = group(3).flatMap { URL(string: $0) }.flatMap { isSafeLink($0) ? $0.absoluteString : nil }
+            images.append(MarkdownImage(alt: alt, source: source, link: link))
+            location = match.range.location + match.range.length
+        }
+        return images.isEmpty ? nil : images
     }
 
     /// A `<details>` passage from line `index` on: its summary, its body and the line after it. An unclosed one (still
@@ -338,10 +376,19 @@ enum MarkdownBlock: Equatable {
                 index = details.next
                 continue
             }
-            if let image = imageLine(trimmed) {
+            if var images = imageRow(trimmed) {
                 flush()
-                blocks.append(.image(alt: image.alt, source: image.source))
                 index += 1
+                // Pictures on the lines that follow join the row, as badges do on GitHub.
+                while index < lines.count, let more = imageRow(lines[index].trimmingCharacters(in: .whitespaces)) {
+                    images += more
+                    index += 1
+                }
+                if images.count == 1, images[0].link == nil {
+                    blocks.append(.image(alt: images[0].alt, source: images[0].source))
+                } else {
+                    blocks.append(.images(images))
+                }
                 continue
             }
             // Display math: `$$` or `\[` opening a line, up to the line that closes it.
@@ -475,6 +522,15 @@ enum MarkdownBlock: Equatable {
     }
 }
 
+// MARK: - Images
+
+/// A picture in a row of them: its alt text, its source, and the web address it opens when it is a link.
+struct MarkdownImage: Equatable {
+    let alt: String
+    let source: String
+    var link: String?
+}
+
 // MARK: - List
 
 /// One item of a list: how deep it is nested (0 is the outer list), its number when numbered ("1."), and its text.
@@ -526,5 +582,112 @@ struct Callout {
             }
         }
         return nil
+    }
+}
+
+// MARK: - Markdown files
+
+extension MarkdownBlock {
+    private static let htmlOnlyLineRegex = try? NSRegularExpression(pattern: #"^(?:\s*<[^>]*>\s*)+$"#)
+    private static let htmlImageRegex = try? NSRegularExpression(pattern: #"(?:<a\s[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>\s*)?<img\s([^>]*)>"#,
+                                                                 options: [.caseInsensitive])
+    private static let darkSourceRegex = try? NSRegularExpression(
+        pattern: #"<source\s[^>]*?prefers-color-scheme:\s*dark[^>]*?srcset\s*=\s*["']([^"'\s,]+)|<source\s[^>]*?srcset\s*=\s*["']([^"'\s,]+)[^>]*?prefers-color-scheme:\s*dark"#,
+        options: [.caseInsensitive])
+
+    /// A Markdown file (a README) as GitHub reads it, for the parser that was made for answers: lines that wrap inside a
+    /// paragraph run on as one (an answer keeps its line breaks), HTML that only lays out (`<div align="center">`,
+    /// `<p>`) goes, and an `<img>` or a `<picture>` becomes an image (the dark one, as Nook is dark).
+    static func fileDocument(_ source: String) -> String {
+        let lines = clean(source).components(separatedBy: "\n")
+        var output: [String] = []
+        var inCode = false
+        var index = 0
+        // Whether the last line written is running text another line can join.
+        var joinable = false
+        while index < lines.count {
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            index += 1
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                inCode.toggle()
+                output.append(line)
+                joinable = false
+                continue
+            }
+            if inCode {
+                output.append(line)
+                continue
+            }
+            if trimmed.lowercased().hasPrefix("<picture") {
+                var block = [trimmed]
+                while !block.joined().lowercased().contains("</picture>"), index < lines.count {
+                    block.append(lines[index].trimmingCharacters(in: .whitespaces))
+                    index += 1
+                }
+                output.append(contentsOf: ["", htmlImages(block.joined(separator: " ")), ""])
+                joinable = false
+                continue
+            }
+            if isLayoutHTML(trimmed) {
+                let images = htmlImages(trimmed)
+                output.append(contentsOf: images.isEmpty ? [""] : ["", images, ""])
+                joinable = false
+                continue
+            }
+            // A quote's lines run on too, inside the quote.
+            let quoted = trimmed.hasPrefix(">")
+            let content = quoted ? String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces) : trimmed
+            let prose = isRunningText(content)
+            if prose, joinable, let last = output.last, last.trimmingCharacters(in: .whitespaces).hasPrefix(">") == quoted,
+               !last.hasSuffix("  ") {
+                // The indent stays: a list item's next lines join it under the item.
+                output[output.count - 1] = String(last.reversed().drop { $0 == " " || $0 == "\t" }.reversed()) + " " + content
+            } else {
+                output.append(line)
+            }
+            joinable = prose
+        }
+        return output.joined(separator: "\n")
+    }
+
+    /// A line of HTML tags only, none of them a fold the parser reads itself (`<details>`, `<summary>`).
+    private static func isLayoutHTML(_ line: String) -> Bool {
+        guard line.hasPrefix("<"), line.hasSuffix(">"), matches(line, htmlOnlyLineRegex) else { return false }
+        let lower = line.lowercased()
+        return !lower.contains("<details") && !lower.contains("</details") && !lower.contains("<summary")
+            && !lower.contains("<br") && pullRequestLine(line) == nil
+    }
+
+    /// A line of a paragraph: not empty, and not the start of a heading, list, quote, table, picture, formula or fold.
+    private static func isRunningText(_ line: String) -> Bool {
+        guard !line.isEmpty, !line.contains("|"), listMarker(line) == nil, imageRow(line) == nil else { return false }
+        if matches(line, headingRegex) || matches(line, ruleRegex) { return false }
+        return !["#", ">", "<", "$$", "\\[", "```", "~~~", "[!"].contains { line.hasPrefix($0) }
+    }
+
+    /// The `<img>` tags in some HTML as Markdown images on one line (a `<picture>` gives its dark source), "" when none.
+    private static func htmlImages(_ html: String) -> String {
+        guard let rx = htmlImageRegex else { return "" }
+        let text = html as NSString
+        let dark = darkSourceRegex?.firstMatch(in: html, range: NSRange(location: 0, length: text.length)).flatMap { match in
+            [1, 2].lazy.map { match.range(at: $0) }.first { $0.location != NSNotFound }.map { text.substring(with: $0) }
+        }
+        return rx.matches(in: html, range: NSRange(location: 0, length: text.length)).compactMap { match -> String? in
+            let attributes = text.substring(with: match.range(at: 2))
+            guard let source = dark ?? attribute("src", in: attributes) else { return nil }
+            let alt = attribute("alt", in: attributes) ?? ""
+            let image = "![\(alt)](\(source))"
+            let link = match.range(at: 1).location == NSNotFound ? nil : text.substring(with: match.range(at: 1))
+            return link.map { "[\(image)](\($0))" } ?? image
+        }.joined(separator: " ")
+    }
+
+    /// The value of an HTML attribute (`src="a.png"`).
+    private static func attribute(_ name: String, in attributes: String) -> String? {
+        guard let rx = try? NSRegularExpression(pattern: #"(?:^|\s)"# + name + #"\s*=\s*["']([^"']*)["']"#, options: [.caseInsensitive]),
+              let match = rx.firstMatch(in: attributes, range: NSRange(attributes.startIndex..., in: attributes)),
+              let range = Range(match.range(at: 1), in: attributes) else { return nil }
+        return String(attributes[range])
     }
 }

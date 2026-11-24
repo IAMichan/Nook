@@ -628,16 +628,16 @@ struct QuickLookView: NSViewRepresentable {
     }
 }
 
-/// The Markdown a file's preview draws: the file itself, or a notebook's cells as one document. A notebook's JSON is read
-/// once per text, not on every redraw of the panel.
+/// The Markdown a file's preview draws: the file as GitHub reads it (`MarkdownBlock.fileDocument`), or a notebook's cells
+/// as one document. Each is worked out once per text, not on every redraw of the panel.
 enum MarkdownPreview {
-    private static let notebooks = BoundedCache<String, String>(limit: 4)
+    private static let documents = BoundedCache<String, String>(limit: 4)
 
     static func document(_ source: String, kind: ArtifactKind) -> String {
-        guard kind == .notebook else { return source }
-        if let hit = notebooks.value(for: source) { return hit }
-        let document = NotebookDocument.markdown(from: source) ?? source
-        notebooks.set(document, for: source)
+        guard kind.rendersAsMarkdown else { return source }
+        if let hit = documents.value(for: source) { return hit }
+        let document = kind == .notebook ? NotebookDocument.markdown(from: source) ?? source : MarkdownBlock.fileDocument(source)
+        documents.set(document, for: source)
         return document
     }
 }
