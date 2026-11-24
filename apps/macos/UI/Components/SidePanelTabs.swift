@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -39,6 +40,9 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
     var onMove: ((_ moved: Value, _ onto: Value) -> Void)? = nil
     /// Pins a tab to the front of the row, or lets it go again (its context menu). Nil offers no pin.
     var onTogglePin: ((Value) -> Void)? = nil
+    /// Opens a tab in a window of its own: dragged out of the window and let go there (at that point on screen), or
+    /// from its context menu (nil). Nil offers neither.
+    var onTearOff: ((_ tab: Value, _ at: CGPoint?) -> Void)? = nil
     @State private var dragging: Value?
     @ViewBuilder var add: () -> Add
     @ViewBuilder var trailing: () -> Trailing
@@ -51,8 +55,10 @@ struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
                         ForEach(items) { item in
                             SidePanelTab(item: item, active: item.value == selected,
                                          select: { onSelect(item.value) }, close: { onClose(item.value) },
-                                         togglePin: onTogglePin.map { toggle in { toggle(item.value) } })
-                                .modifier(SidePanelTabReorder(value: item.value, dragging: $dragging, move: onMove))
+                                         togglePin: onTogglePin.map { toggle in { toggle(item.value) } },
+                                         tearOff: onTearOff.map { tearOff in { tearOff(item.value, nil) } })
+                                .modifier(SidePanelTabReorder(value: item.value, dragging: $dragging, move: onMove,
+                                                              tearOff: onTearOff.map { tearOff in { tearOff(item.value, $0) } }))
                                 .id(item.value)
                             if let after = item.after { after }
                         }
@@ -80,6 +86,7 @@ private struct SidePanelTab<Value: Hashable>: View {
     let select: () -> Void
     let close: () -> Void
     var togglePin: (() -> Void)? = nil
+    var tearOff: (() -> Void)? = nil
     @State private var hovering = false
     @State private var cut = false
 
@@ -131,6 +138,9 @@ private struct SidePanelTab<Value: Hashable>: View {
             if let togglePin {
                 Button(item.pinned ? tr("tab.unpin") : tr("tab.pin"), action: togglePin)
             }
+            if let tearOff {
+                Button(tr("tab.detach"), action: tearOff)
+            }
             Button(tr("tab.close"), action: close)
         }
         .accessibilityElement(children: .contain)
@@ -139,23 +149,66 @@ private struct SidePanelTab<Value: Hashable>: View {
 }
 
 /// Makes a tab draggable and a place to drop one: the tab being dragged takes the place of the one it is over at once,
-/// so the row shows where it will land. Without `move` the tab is left as it is.
+/// so the row shows where it will land. Let go outside its window, it opens in a window of its own there (`tearOff`).
+/// Without `move` the tab is left as it is.
 private struct SidePanelTabReorder<Value: Hashable>: ViewModifier {
     let value: Value
     @Binding var dragging: Value?
     let move: ((Value, Value) -> Void)?
+    var tearOff: ((CGPoint) -> Void)? = nil
 
     func body(content: Content) -> some View {
         if let move {
             content
                 .onDrag {
                     dragging = value
+                    if let tearOff {
+                        SidePanelTearOff.watch { point in
+                            dragging = nil
+                            tearOff(point)
+                        }
+                    }
                     return NSItemProvider(object: "nook.sidepanel.tab" as NSString)
                 }
                 .onDrop(of: [.plainText], delegate: SidePanelTabDrop(target: value, dragging: $dragging, move: move))
         } else {
             content
         }
+    }
+}
+
+/// Notices where a dragged tab is let go. SwiftUI's drag says nothing when it ends outside a place to drop, so this
+/// watches the mouse button while the drag runs (the drag's own loop runs the main run loop in its tracking mode) and,
+/// once it is up outside the window the drag started in, hands over the point on screen.
+@MainActor
+enum SidePanelTearOff {
+    private static var timer: Timer?
+    private static weak var window: NSWindow?
+    private static var release: ((CGPoint) -> Void)?
+
+    static func watch(_ release: @escaping (CGPoint) -> Void) {
+        let start = NSEvent.mouseLocation
+        let number = NSWindow.windowNumber(at: start, belowWindowWithWindowNumber: 0)
+        guard let window = NSApp.window(withWindowNumber: number) ?? NSApp.keyWindow else { return }
+        timer?.invalidate()
+        self.window = window
+        self.release = release
+        let timer = Timer(timeInterval: 0.05, repeats: true) { _ in
+            MainActor.assumeIsolated { check() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private static func check() {
+        guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+        timer?.invalidate()
+        timer = nil
+        let end = NSEvent.mouseLocation
+        let handler = release
+        release = nil
+        guard let window, !window.frame.contains(end) else { return }
+        handler?(end)
     }
 }
 

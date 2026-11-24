@@ -42,6 +42,9 @@ extension SessionWorkbench {
                 if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
                 panelTakesFocus = true
             }
+            // A tool in a window of its own stays there: opening it here brings that window forward.
+            .onChange(of: viewModel.sessionTool) { previous, next in keepInOwnWindow(next, was: previous, in: .side) }
+            .onChange(of: viewModel.bottomTool) { previous, next in keepInOwnWindow(next, was: previous, in: .bottom) }
             .onChange(of: side) { _, next in
                 panelTakesFocus = true
                 if next == .conversation { panelMaximized = false }

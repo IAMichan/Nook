@@ -54,6 +54,15 @@ struct SessionToolPanel: View {
     var pinned: Set<SessionTool> = []
     var moveTab: (_ moved: SessionTool, _ onto: SessionTool) -> Void = { _, _ in }
     var togglePin: (SessionTool) -> Void = { _ in }
+    /// Opens a tab in a window of its own, still with this session (`SessionTabWindows`): dragged out of the window, or
+    /// from the tab's menu. Nil offers neither (the tab's own window).
+    var tearOff: ((SessionTab, CGPoint?) -> Void)? = nil
+    /// Whether + offers more tools; a tab's own window shows that one tab.
+    var canAdd = true
+    /// A tab's own window: the file it shows, its own, instead of the one file viewer the side panels share.
+    var file: Binding<FileTarget?>? = nil
+    /// Buttons before the one that closes the panel (a tab's own window: back into the side panel, the agent).
+    var headerAccessory: AnyView? = nil
     @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @ObservedObject private var files = FileViewerStore.shared
@@ -138,8 +147,17 @@ struct SessionToolPanel: View {
                     SessionArtifactPanel()
                 case .file:
                     // It follows the file store and its editor itself; the workbench redrawing around it changes nothing.
-                    SidePanelPane(key: directory) { SessionFilePanel(directory: directory) }
-                        .equatable()
+                    if let file {
+                        if let target = file.wrappedValue {
+                            FileViewer(target: target, beside: true, directory: directory) { file.wrappedValue = $0 }
+                                .id(target.path)
+                        } else {
+                            SessionFilePanel(directory: directory)
+                        }
+                    } else {
+                        SidePanelPane(key: directory) { SessionFilePanel(directory: directory) }
+                            .equatable()
+                    }
                 case .subThread:
                     if let subThread {
                         // The whole session: its transcript and its own composer, to answer its questions right here.
@@ -190,9 +208,10 @@ struct SessionToolPanel: View {
     private var header: some View {
         SidePanelTabBar(items: tabs.flatMap(tabItems).map(pinnedMark), selected: selectedTab, onSelect: selectTab, onClose: closeTab,
                         onMove: { moved, onto in moveTab(tool(of: moved), tool(of: onto)) },
-                        onTogglePin: { togglePin(tool(of: $0)) }) {
-            addMenu
+                        onTogglePin: { togglePin(tool(of: $0)) }, onTearOff: tearOff) {
+            if canAdd { addMenu }
         } trailing: {
+            if let headerAccessory { headerAccessory }
             if let maximized {
                 ToolbarIconButton(maximized.wrappedValue ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                                   tr(maximized.wrappedValue ? "agents.tool.restore" : "agents.tool.maximize")) {
@@ -278,7 +297,7 @@ struct SessionToolPanel: View {
             return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelPullRequestIcon(item: nil)),
                                     fresh: fresh, help: item.help)
         case .file:
-            let path = files.target?.path
+            let path = file.map { $0.wrappedValue?.path } ?? files.target?.path
             return SidePanelTabItem(value: .tool(item), title: path.map { ($0 as NSString).lastPathComponent } ?? item.title,
                                     icon: AnyView(SidePanelSymbol(symbol: item.symbol)), fresh: fresh,
                                     help: path.map(AgentPathFormat.tilde) ?? item.help)
