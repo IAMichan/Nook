@@ -52,6 +52,32 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertFalse(ScrollModel.movedBySelf(from: putBack, to: atEnd))
     }
 
+    func testTheEndIsKeptWhenTheScrollViewLeavesItByItself() {
+        // Rows moving into the lazy part: the content shrank (the view clamped to its new end), grew back, and the clip
+        // view kept the clamped offset, or the content grew under a view that stayed put. Both lose the end.
+        let atEnd = frame(5400, content: 6000)
+        XCTAssertTrue(ScrollModel.lostEnd(from: frame(7146, content: 7745), to: frame(5400, content: 7745)), "put back by itself")
+        XCTAssertTrue(ScrollModel.lostEnd(from: atEnd, to: frame(5400, content: 7600)), "grew under a view that stayed put")
+        XCTAssertFalse(ScrollModel.lostEnd(from: atEnd, to: frame(7000, content: 7600)), "grew and the view kept its end")
+        XCTAssertFalse(ScrollModel.lostEnd(from: atEnd, to: frame(4860, content: 6000)), "Page Up is you")
+        XCTAssertFalse(ScrollModel.lostEnd(from: frame(5000, content: 6000), to: frame(5040, content: 6000)), "a step down")
+    }
+
+    func testTheEndIsKeptOnlyWhileFollowingAlsoDuringAScrollOfYours() {
+        var model = ScrollModel()
+        let atEnd = frame(5400, content: 6000)
+        let grown = frame(5400, content: 7600)
+        // Whatever the scroll phase, except a scroll of the view's own: you only follow while you head for the end.
+        XCTAssertTrue(model.keepsEnd(movedFrom: atEnd, to: grown, animating: false))
+        XCTAssertFalse(model.keepsEnd(movedFrom: atEnd, to: grown, animating: true), "a jump to a mark or the pill runs")
+        XCTAssertFalse(model.keepsEnd(movedFrom: atEnd, to: frame(5400, content: 6000), animating: false), "nothing changed")
+        model.userScrolled()
+        XCTAssertFalse(model.keepsEnd(movedFrom: atEnd, to: grown, animating: false), "you scrolled away")
+        model.jumpedToEnd()
+        model.findStarted()
+        XCTAssertFalse(model.keepsEnd(movedFrom: atEnd, to: grown, animating: false), "a find owns the position")
+    }
+
     func testABounceBackToTheEndKeepsFollowing() {
         let model = ScrollModel()
         XCTAssertFalse(model.releases(movedFrom: frame(1420), to: frame(1400)))

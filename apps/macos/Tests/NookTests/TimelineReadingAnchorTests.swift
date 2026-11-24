@@ -205,4 +205,14 @@ final class TimelineReadingAnchorTests: XCTestCase {
         queued.dropFirst().forEach { $0() }
         XCTAssertEqual(scrolls.last, 420, "r5 at 520, 100 under the top of the view: 60 as before and your step of 40")
     }
+
+    func testAJumpScrollsAtOnceOnlyWithAScrollView() {
+        let anchor = TimelineReadingAnchor()
+        anchor.scroll = { [unowned self] in scrolls.append($0) }
+        XCTAssertFalse(anchor.jump(to: 900), "no scroll view connected yet")
+        XCTAssertEqual(scrolls, [])
+        anchor.currentOffset = { 400 }
+        XCTAssertTrue(anchor.jump(to: 900))
+        XCTAssertEqual(scrolls, [900])
+    }
 }

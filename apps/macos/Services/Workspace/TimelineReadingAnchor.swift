@@ -50,6 +50,15 @@ final class TimelineReadingAnchor {
     /// Runs the flush after this turn of the run loop; tests run it at once or never.
     var later: (@escaping @MainActor () -> Void) -> Void = { work in DispatchQueue.main.async { work() } }
 
+    /// Puts the view at content offset `offset` now, in this pass: the frame drawn next already shows it there. A
+    /// `ScrollViewProxy.scrollTo` lands a frame later, and the frame in between showed the conversation a chunk away from
+    /// where it should be. False when no scroll view is connected yet.
+    func jump(to offset: Double) -> Bool {
+        guard currentOffset() != nil else { return false }
+        scroll(offset)
+        return true
+    }
+
     /// Where a row starts in the stack, or nil once it is no longer drawn.
     func place(_ id: AnyHashable, top: Double?) {
         guard let top else {
