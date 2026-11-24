@@ -308,8 +308,13 @@ extension View {
     /// Lets `reading` scroll the conversation's scroll view; on a view inside its content. `wheel` gets each scroll-wheel
     /// or trackpad step of yours over the conversation (its vertical delta, above zero toward the start) before the view
     /// moves by it (`ScrollModel.releases(wheel:)`).
-    func readingScroller(_ reading: TimelineReadingAnchor?, wheel: @escaping (Double) -> Void = { _ in }) -> some View {
-        background(ReadingAnchorScroller(reading: reading, wheel: wheel).frame(width: 0, height: 0))
+    ///
+    /// `followsEnd` says whether the conversation follows its end now (not while finding or during a scroll of the
+    /// view's own): while it does, the AppKit scroll view is put back at its end the moment it leaves it without you
+    /// (`ScrollModel.lostEnd`), before that frame is drawn.
+    func readingScroller(_ reading: TimelineReadingAnchor?, followsEnd: @escaping () -> Bool = { false },
+                         wheel: @escaping (Double) -> Void = { _ in }) -> some View {
+        background(ReadingAnchorScroller(reading: reading, followsEnd: followsEnd, wheel: wheel).frame(width: 0, height: 0))
     }
 
     /// Brings a lazy conversation back when it stands still with none of its rows in view. A lazy stack places rows it
@@ -484,19 +489,30 @@ extension ScrollFrame {
 /// It also watches the wheel over the conversation (a local event monitor, which sees a step before any view handles
 /// it, also over a page or a command's output in a row): the step is what tells you scrolling apart from the rows
 /// changing size under you.
+///
+/// And it holds the end while the conversation follows it, on the clip view itself (`followsEnd`). When a working
+/// agent's rows move into the lazy part of the conversation (16 at a time), the content shrinks and grows back within
+/// one pass. The scroll view reported itself at the new end, then its clip view went back to the offset the shrink had
+/// clamped it to, thousands of points up; or the content grew under a clip view that stayed put. SwiftUI reported
+/// neither (measured offscreen on 2026-11-24, `LongSessionStaysAtEnd`), so `keepEnd` never heard of it, and the view
+/// stayed there until the next size change, for good once the agent paused: you scrolled down to the end and the
+/// conversation jumped back up by a chunk.
 private struct ReadingAnchorScroller: NSViewRepresentable {
     let reading: TimelineReadingAnchor?
+    let followsEnd: () -> Bool
     let wheel: (Double) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = ScrollerProbe()
         view.wheel = wheel
+        view.followsEnd = followsEnd
         view.reading = reading
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
         (view as? ScrollerProbe)?.wheel = wheel
+        (view as? ScrollerProbe)?.followsEnd = followsEnd
         (view as? ScrollerProbe)?.reading = reading
     }
 
@@ -507,17 +523,36 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
     private final class ScrollerProbe: NSView {
         weak var reading: TimelineReadingAnchor? { didSet { connect() } }
         var wheel: (Double) -> Void = { _ in }
+        var followsEnd: () -> Bool = { false }
         private var monitor: Any?
+        private var boundsObserver: NSObjectProtocol?
+        private var frameObserver: NSObjectProtocol?
+        private weak var watchedClip: NSClipView?
+        private weak var watchedDocument: NSView?
+        /// Where the clip view stood when it last moved.
+        private var lastFrame: ScrollFrame?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             connect()
-            if window == nil { stopWatching() } else { watchWheel() }
+            if window == nil {
+                stopWatching()
+            } else {
+                watchWheel()
+                watchEnd()
+            }
         }
 
         func stopWatching() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
+            if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
+            boundsObserver = nil
+            frameObserver = nil
+            watchedClip = nil
+            watchedDocument = nil
+            lastFrame = nil
         }
 
         private func watchWheel() {
@@ -526,6 +561,56 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
                 self?.saw(event)
                 return event
             }
+        }
+
+        /// Watches the clip view move and the content change size: while the conversation follows its end, the scroll
+        /// view leaving the end by itself goes back to it at once, in the same pass, so no frame shows it. Both, as the
+        /// content also grew under a clip view that stayed where it was, with no report from SwiftUI either.
+        private func watchEnd() {
+            guard let scrollView = enclosingScrollView else { return }
+            let center = NotificationCenter.default
+            let clip = scrollView.contentView
+            if clip !== watchedClip {
+                if let boundsObserver { center.removeObserver(boundsObserver) }
+                watchedClip = clip
+                lastFrame = nil
+                clip.postsBoundsChangedNotifications = true
+                boundsObserver = center.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.clipMoved() }
+                }
+            }
+            if let document = scrollView.documentView, document !== watchedDocument {
+                if let frameObserver { center.removeObserver(frameObserver) }
+                watchedDocument = document
+                document.postsFrameChangedNotifications = true
+                frameObserver = center.addObserver(forName: NSView.frameDidChangeNotification, object: document, queue: nil) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.clipMoved() }
+                }
+            }
+        }
+
+        /// The clip view moved or the content changed size.
+        private func clipMoved() {
+            guard let scrollView = enclosingScrollView else { return }
+            // SwiftUI may give the scroll view a new document view.
+            if scrollView.documentView !== watchedDocument { watchEnd() }
+            let frame = Self.frame(of: scrollView)
+            let old = lastFrame
+            lastFrame = frame
+            guard let old, followsEnd(), ScrollModel.lostEnd(from: old, to: frame) else { return }
+            // Moves the clip view again, which comes back here at the end.
+            let clip = scrollView.contentView
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: frame.maxOffset))
+            scrollView.reflectScrolledClipView(clip)
+        }
+
+        /// Where the scroll view stands, as SwiftUI's `ScrollGeometry` gives it (`ScrollFrame(_:)`).
+        private static func frame(of scrollView: NSScrollView) -> ScrollFrame {
+            let clip = scrollView.contentView
+            let insets = clip.contentInsets
+            return ScrollFrame(offset: Double(clip.bounds.origin.y), content: Double(scrollView.documentView?.frame.height ?? 0),
+                               container: Double(clip.bounds.height - insets.top - insets.bottom),
+                               insetTop: Double(insets.top), insetBottom: Double(insets.bottom))
         }
 
         /// A mostly vertical step over this conversation, not over a scroll view of its own inside a row (a long

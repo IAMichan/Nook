@@ -229,7 +229,7 @@ extension AgentRunPanel {
                 // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                 .coordinateSpace(name: TimelineSpace.name)
                 .readingStackTop(reading)
-                .readingScroller(reading) { deltaY in
+                .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating }) { deltaY in
                     if scroll.releases(wheel: deltaY) {
                         scroll.userScrolled()
                     } else if scroll.returns(wheel: deltaY) {
@@ -482,22 +482,11 @@ extension AgentRunPanel {
     /// Keeps the run at its end while it is there, as `TranscriptConversation.keepEnd` does: the lazy blocks below
     /// measure taller after the first scroll and the composer under it grows (a card, a draft), which let the run slip
     /// up from its end as it opens. A landing follows the end (`settleAtEnd`), so it ends there too. Only moving while the
-    /// sizes stay the same, or a wheel step up, is you scrolling away.
+    /// sizes stay the same, or a wheel step up, is you scrolling away. Also while a scroll of yours toward the end runs
+    /// out (`ScrollModel.keepsEnd`), and at once (`TimelineReadingAnchor.jump`), so no frame shows the view off its end.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
-        guard !finding else { return }
-        // The scroll view put back an old offset by itself, thousands of points up (`ScrollModel.movedBySelf`): back to
-        // the end while following, also while a scroll of yours toward it still runs out.
-        if ScrollModel.movedBySelf(from: old, to: new) {
-            guard scroll.shouldFollowEnd, scrollPhase.value != .animating else { return }
-            var still = Transaction()
-            still.disablesAnimations = true
-            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
-            return
-        }
-        guard new.resized(from: old) else { return }
-        // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a size
-        // change in the same frame as your step no longer pulls the view back to the end.
-        guard scroll.shouldFollowEnd, scrollPhase.value == .idle, new.maxOffset - new.offset > 0.5 else { return }
+        guard !finding, scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) else { return }
+        if reading.jump(to: new.maxOffset) { return }
         var still = Transaction()
         still.disablesAnimations = true
         withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }

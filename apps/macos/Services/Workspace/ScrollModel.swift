@@ -74,6 +74,29 @@ struct ScrollModel: Equatable, Sendable {
         !new.resized(from: old) && old.offset - new.offset > max(new.container, 1)
     }
 
+    /// Whether a view that follows the end must be put back at its end after the move from `old` to `new`: its sizes
+    /// changed and it is off its end, or the scroll view put back an old offset by itself (`movedBySelf`). Not during a
+    /// scroll of the view's own (`animating`: a jump to a mark, the pill), and not while finding (the find owns the
+    /// position).
+    ///
+    /// Also while a scroll of yours runs (a trackpad stroke, its momentum): you only follow while you head for the end
+    /// (a step up lets go before the view moves by it), and the end is where that scroll goes. Waiting for the scroll to
+    /// come to rest left the view a chunk above the end: a working agent's rows move into the lazy part of the
+    /// conversation 16 at a time (`HistoryWindow.lazyRows`), the lazy stack guesses their height again, and the content
+    /// above the view changed by thousands of points just as you arrived at the end (measured offscreen on 2026-11-24:
+    /// 1763 pt up, in `LongSessionStaysAtEnd`).
+    func keepsEnd(movedFrom old: ScrollFrame, to new: ScrollFrame, animating: Bool) -> Bool {
+        guard shouldFollowEnd, !isFinding, !animating else { return false }
+        return Self.lostEnd(from: old, to: new)
+    }
+
+    /// Whether the move from `old` to `new` took a view that follows the end away from it without you: its sizes
+    /// changed and it is off its end, or it went up by more than a page at once (`movedBySelf`).
+    static func lostEnd(from old: ScrollFrame, to new: ScrollFrame) -> Bool {
+        if movedBySelf(from: old, to: new) { return true }
+        return new.resized(from: old) && new.maxOffset - new.offset > 0.5
+    }
+
     /// Whether a scroll-wheel or trackpad step of yours over the conversation, before the view moves by it, lets go of
     /// the end: `deltaY` as AppKit gives it (above zero toward the start). Up does, at once, also within the margin of
     /// the end; down never does (`returns(wheel:)`). While an agent works the sizes change on nearly every frame, so

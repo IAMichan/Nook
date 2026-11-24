@@ -195,7 +195,7 @@ struct TranscriptConversation: View {
                     // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                     .coordinateSpace(name: TimelineSpace.name)
                     .readingStackTop(reading)
-                    .readingScroller(reading) { deltaY in
+                    .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating }) { deltaY in
                         if scroll.releases(wheel: deltaY) {
                             scroll.userScrolled()
                         } else if scroll.returns(wheel: deltaY) {
@@ -446,25 +446,19 @@ struct TranscriptConversation: View {
     /// which changes the inset rather than the content. Either happens at the end without you, so the conversation stays
     /// there; only moving while the sizes stay the same is you scrolling away (a mouse wheel too, which reports no phase).
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
-        if new.resized(from: old) {
-            // Only while following: once you scrolled (a wheel step stops following before the view moves by it), a
-            // size change in the same frame as your step no longer pulls the view back to the end.
-            guard scroll.shouldFollowEnd, scrollPhase.value == .idle,
-                  new.maxOffset - new.offset > 0.5 else { return }
+        // Back to the end while following: a size change off the end, or the scroll view putting back an old offset by
+        // itself, also while a scroll of yours toward the end runs out (`ScrollModel.keepsEnd`). At once
+        // (`TimelineReadingAnchor.jump`), so no frame shows the conversation off its end. Only while following: once
+        // you scrolled (a wheel step stops following before the view moves by it), nothing pulls the view back.
+        if scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) {
+            if reading.jump(to: new.maxOffset) { return }
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             return
         }
-        // The scroll view put back an old offset by itself, thousands of points up (`ScrollModel.movedBySelf`): back to
-        // the end while following, also while a scroll of yours toward it still runs out.
-        if ScrollModel.movedBySelf(from: old, to: new) {
-            guard scroll.shouldFollowEnd, scrollPhase.value != .animating else { return }
-            var still = Transaction()
-            still.disablesAnimations = true
-            withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
-            return
-        }
+        // A size change or a move of the view's own is never you scrolling.
+        if new.resized(from: old) || ScrollModel.movedBySelf(from: old, to: new) { return }
         if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: new) { scroll.userScrolled() }
     }
 
