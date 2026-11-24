@@ -821,8 +821,13 @@ struct AgentListRow: View, Equatable {
     }
 
     @State private var hovering = false
-    /// The hover buttons were built: on the row's first hover, and kept from then on (see `body`).
+    /// The hover buttons are built: from the row's first hover until a while after the pointer left it (see `body`).
     @State private var actionsBuilt = false
+    /// How long a row keeps its hover buttons after the pointer left it: long enough that going back to it, or over the
+    /// list again, does not build them anew on every hover, short enough that a list you moved over does not keep them all.
+    static let actionsKept: TimeInterval = 4
+    /// The pending let-go of the hover buttons; not state any view draws from.
+    @State private var release = Unobserved<Timer?>(nil)
     /// The pointer is on the hover buttons.
     @State private var onActions = false
     /// The pointer is on the changes or the pull request, which show their own card instead of the row's.
@@ -849,9 +854,11 @@ struct AgentListRow: View, Equatable {
         ZStack(alignment: .topTrailing) {
             Button(action: action) { content }
                 .buttonStyle(.nookPlain)
-            // Built on the row's first hover, then kept and only faded: a menu and two or three buttons in every row of a
-            // long list were AppKit views, hover regions and accessibility nodes for buttons nobody saw, so a row nobody
-            // pointed at still has none; but building them again on every hover cost each hover a frame.
+            // Built on the row's first hover, then kept for a while and only faded: a menu and two or three buttons in every
+            // row of a long list were AppKit views, hover regions and accessibility nodes for buttons nobody saw, so a row
+            // nobody points at has none; building them again on every hover cost each hover a frame. Kept for good, a
+            // sidebar you had moved over held them in every row: about half of each row's responders, which SwiftUI walks
+            // on every change of focus (with a long session open, an eighth of the window's responders).
             if let actions, actionsBuilt || sweepOrigin {
                 hoverActions(actions)
                     // Only the buttons themselves hold the card back: with the backdrop's fade and the padding counted, a
@@ -870,7 +877,11 @@ struct AgentListRow: View, Equatable {
         .onHover { inside in
             hovering = inside
             if inside, !actionsBuilt { actionsBuilt = true }
+            if inside { cancelRelease() } else { scheduleRelease() }
         }
+        // A sweep keeps the buttons of the row it started on; once it ends with the pointer elsewhere they go too.
+        .onChange(of: sweepOrigin) { _, now in if !now, !hovering { scheduleRelease() } }
+        .onDisappear { cancelRelease() }
         // The buttons go with the pointer, and may not get to say it left them.
         .onChange(of: hovering) { _, now in if !now { onActions = false } }
         // Closed over the buttons, so their first click is not spent closing the card. Warm: moving down the list with a
@@ -910,6 +921,26 @@ struct AgentListRow: View, Equatable {
         .onGeometryChange(for: Bool.self) { $0.size.width < Self.narrowWidth } action: { narrow = $0 }
         .contentShape(Rectangle())
         .animation(NookTheme.hover) { $0.opacity(restOpacity) }
+    }
+
+    /// Lets the hover buttons go `actionsKept` after the pointer left, the last time it left: a leave before it is
+    /// forgotten. In the default run loop mode only, so not while a menu of the buttons is open (the pointer is on the
+    /// menu, not the row), which would lose its buttons under it. A sweep that started here keeps them regardless.
+    private func scheduleRelease() {
+        cancelRelease()
+        let timer = Timer(timeInterval: Self.actionsKept, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                release.value = nil
+                if !hovering, !onActions { actionsBuilt = false }
+            }
+        }
+        release.value = timer
+        RunLoop.main.add(timer, forMode: .default)
+    }
+
+    private func cancelRelease() {
+        release.value?.invalidate()
+        release.value = nil
     }
 
     /// The right slot, faded out under the hover buttons that take its place.
