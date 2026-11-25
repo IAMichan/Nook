@@ -14,7 +14,7 @@ struct ChatOptionsSection: View {
     @State private var giphyKey = ""
     @State private var giphySet = Giphy.ownKey != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
-    @AppStorage(AppModel.readInAppOnOpenKey) private var readInAppOnOpen = true
+    @AppStorage(AppModel.readInAppOnOpenKey) private var readInAppOnOpen = AppModel.readsInAppOnOpenByDefault
 
     var body: some View {
         Group {

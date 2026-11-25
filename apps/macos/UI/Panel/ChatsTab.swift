@@ -476,7 +476,8 @@ struct ChatsTab: View {
     /// The sidebar's width while its line is dragged (`PanelDrag`).
     @State private var liveSidebar: Double?
     private var sidebarSize: Double { liveSidebar ?? sidebarChoice }
-    /// Settings › Chats: opening a chat reads it in Nook, and in its app too (`AppModel.readOpenedChat`). On by default.
+    /// Settings › Chats: opening a chat reads it in Nook (`AppModel.readOpenedChat`). On by default; its app hears it only
+    /// with "Also read in the app" on, which is off by default.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
@@ -675,8 +676,8 @@ struct ChatsTab: View {
             if let old { keptInView.insert(old) }
         }
         // With "Read in Nook when opened" on, a chat you open is read in Nook, and so is what comes in while it is open:
-        // its badge goes and stays gone after a restart. Its app hears it too where Nook can tell it and "Also read in
-        // the app" is on (`AppModel.readOpenedChat`). The same for every app.
+        // its badge goes and stays gone after a restart. Its app hears it only where Nook can tell it and "Also read in
+        // the app" (off by default) is on (`AppModel.readOpenedChat`). The same for every app.
         // Once the chat is on screen: reading it redraws the whole app (every badge), which in the frame it opens in made
         // the chat stall as it appeared.
         .task(id: current.map { "\($0.id) \($0.unread)" }) {
