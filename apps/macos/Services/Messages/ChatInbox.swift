@@ -473,7 +473,8 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
         if isDeleted { return "nosign" }
         if poll != nil { return "chart.bar.fill" }
         if let call { return call.symbol(mine: isMine) }
-        return media?.kind.symbol
+        // As the bubble shows it: a file that is a picture gets the photo's icon.
+        return media?.shownKind.symbol
     }
 
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").

@@ -349,10 +349,13 @@ struct InboxRow: View {
         return Calendar.current.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened) : ChatDayDivider.label(date)
     }
 
+    /// Muted as the Mac's row shows it; an older Mac only says whether the app muted it.
+    private var muted: Bool { chat.muted ?? (chat.mutedInApp == true) }
+
     var body: some View {
         ChatListRowContent(name: chat.name, when: when, preview: chat.preview.isEmpty ? chat.appName : chat.preview,
                            previewSymbol: chat.preview.isEmpty ? nil : chat.previewSymbol, previewSender: chat.previewSender,
-                           unread: chat.unread > 0, muted: chat.mutedInApp == true, ticks: MessageTicks(chat.ticks),
+                           unread: chat.unread > 0, muted: muted, ticks: MessageTicks(chat.ticks),
                            // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's list.
                            typing: InboxTyping.text(chat.typing ?? [])) {
             InboxAvatar(name: chat.name, app: chat.app, size: SharedMetrics.avatar, picture: pictures.image(for: chat))
@@ -363,7 +366,7 @@ struct InboxRow: View {
                     Image(icon: "pin.fill").font(Theme.font(11)).foregroundStyle(Theme.textTertiary)
                         .accessibilityLabel(Text("Pinned"))
                 }
-                NookCountBadge(count: chat.unread, prominent: true, quiet: chat.mutedInApp == true)
+                NookCountBadge(count: chat.unread, prominent: true, quiet: muted)
                     .accessibilityLabel(Text("\(chat.unread) unread"))
             }
         }

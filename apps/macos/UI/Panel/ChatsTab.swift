@@ -466,6 +466,8 @@ struct ChatsTab: View {
     @ObservedObject private var typing = ChatTypingCenter.shared
     /// The chats you pinned: a pin moves a chat to the top of the list at once.
     @ObservedObject private var pins = ChatPins.shared
+    /// Muting, hiding or waking a chat: its row's bell and grey count, and whether it shows, change at once.
+    @ObservedObject private var noticeRules = ChatNoticeRulesStore.shared
     /// The list scrolls to the open chat only when it was opened from elsewhere (the keyboard, a card, "@chat"): a click
     /// on a row that is in view already leaves the list where it is.
     @State private var revealSelection = false

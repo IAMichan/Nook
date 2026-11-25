@@ -101,7 +101,8 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
             let lead = previewSender.map { $0 + ": " }.flatMap { preview.hasPrefix($0) ? $0 : nil }
             HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
                 if let lead {
-                    Text(verbatim: String(lead.dropLast())).lineLimit(1).fixedSize()
+                    // Its whole name first, as long as it fits; a very long one truncates rather than push the row wide.
+                    Text(verbatim: String(lead.dropLast())).lineLimit(1).layoutPriority(1)
                 }
                 Image(icon: previewSymbol)
                     .imageScale(.small)

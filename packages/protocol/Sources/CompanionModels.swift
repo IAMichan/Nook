@@ -833,6 +833,9 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     /// Pinned or muted in its app itself, where Nook can tell.
     var pinnedInApp: Bool? = nil
     var mutedInApp: Bool? = nil
+    /// Muted as the row shows it: in Nook, or in its app while Nook follows the app. Nil from an older Mac: the phone
+    /// falls back to `mutedInApp`, which stays what the app's own mute action reads.
+    var muted: Bool? = nil
     /// A group (several people), so its messages say who wrote them.
     var group: Bool? = nil
     /// The account it is in, while its app has more than one linked.
