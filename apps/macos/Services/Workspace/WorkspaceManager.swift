@@ -352,6 +352,10 @@ final class WorkspaceManager: ObservableObject {
     var awaitingCheckpoint: [UUID: String] = [:]
     /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
     var pendingSendNow: [UUID: String] = [:]
+    /// The bubbles a held steer already shows (`holdSteer`): when it goes out as the next prompt, no second bubble.
+    var pendingSendNowShown: [UUID: [UUID]] = [:]
+    /// Steers sent while the agent was changing a file, in order: they go in as soon as the change is done (`holdSteer`).
+    var heldSteers: [UUID: [HeldSteer]] = [:]
     /// How the message in `pendingSendNow` came to interrupt the turn: it is marked so in the timeline once it goes out.
     var pendingSendNowSteer: [UUID: RunEvent.SteerKind] = [:]
     /// The message in `pendingSendNow` starts a new conversation (`/clear`).
@@ -674,14 +678,18 @@ final class WorkspaceManager: ObservableObject {
         let mark = pendingSendNowSteer.removeValue(forKey: id)
         let fresh = pendingSendNowFresh.remove(id) != nil
         let origin = pendingSendNowOrigin.removeValue(forKey: id)
+        let bubbles = pendingSendNowShown.removeValue(forKey: id) ?? []
         // A new conversation starts only between turns; while the snapshot is still being made it waits at the front.
         if fresh, !clearConversation(id, quietly: true) {
             queued[id, default: MessageQueue()].requeueFirst(next, fresh: true)
             return true
         }
         let before = timeline(id).last { $0.kind == .user }?.id
-        if !send(id, text: next, shown: false, origin: origin) {
+        if !send(id, text: next, shown: !bubbles.isEmpty, origin: origin) {
             queued[id, default: MessageQueue()].requeueFirst(next, fresh: fresh)
+        } else if !bubbles.isEmpty {
+            // A held steer: its bubble was there already, and now it went in.
+            for bubble in bubbles { mutateEvent(id, bubble) { $0.steerStatus = nil } }
         } else if let mark, let sent = timeline(id).last(where: { $0.kind == .user }), sent.id != before {
             // It cut the turn off to go out: it reads as a steer, as a message taken into the turn does.
             mutateEvent(id, sent.id) { $0.steer = mark }
@@ -886,6 +894,7 @@ final class WorkspaceManager: ObservableObject {
             }
         }
         settleOpenWork(id, reason: run.status == .completed ? .completed : (run.status == .stopped ? .stopped : .failed))
+        settleHeldSteers(id, completed: run.status == .completed)
         settleSteers(id, dropped: run.status != .completed)
         noteSubagentsWorking(id)
         if run.status == .failed || run.status == .stopped { holdQueue(id) }
@@ -1534,6 +1543,8 @@ final class WorkspaceManager: ObservableObject {
         warmPrompts[id] = nil
         awaitingCheckpoint[id] = nil
         pendingSendNow[id] = nil
+        pendingSendNowShown[id] = nil
+        heldSteers[id] = nil
         pendingSendNowSteer[id] = nil
         pendingSendNowFresh.remove(id)
         pendingSendNowOrigin[id] = nil

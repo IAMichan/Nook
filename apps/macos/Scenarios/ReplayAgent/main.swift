@@ -112,6 +112,13 @@ var interrupted = false
 func isInterrupted() -> Bool { interruptLock.lock(); defer { interruptLock.unlock() }; return interrupted }
 func setInterrupted(_ value: Bool) { interruptLock.lock(); interrupted = value; interruptLock.unlock() }
 
+/// The tool call whose result has not been written yet, by name: a message that comes in meanwhile says so in
+/// `received.log`, so a scenario can tell whether Nook cut a call off.
+let toolLock = NSLock()
+var openTool: String?
+func setOpenTool(_ name: String?) { toolLock.lock(); openTool = name; toolLock.unlock() }
+func currentTool() -> String? { toolLock.lock(); defer { toolLock.unlock() }; return openTool }
+
 func pause(_ milliseconds: Double) {
     let seconds = milliseconds * speed / 1000
     guard seconds > 0 else { return }
@@ -185,9 +192,12 @@ func play(_ entries: [[String: Any]], turn: Int) {
             reply = text
         case "tool":
             let id = (entry["id"] as? String) ?? "toolu_" + UUID().uuidString.lowercased()
-            emit(assistant([["type": "tool_use", "id": id, "name": (entry["name"] as? String) ?? "Read",
+            let name = (entry["name"] as? String) ?? "Read"
+            setOpenTool(name)
+            emit(assistant([["type": "tool_use", "id": id, "name": name,
                              "input": entry["input"] ?? [String: Any]()]]))
             pause((entry["ms"] as? Double) ?? 300)
+            setOpenTool(nil)
             emit(["type": "user", "parent_tool_use_id": NSNull(), "session_id": sessionID, "uuid": UUID().uuidString.lowercased(),
                   "message": ["role": "user", "content": [["type": "tool_result", "tool_use_id": id,
                                                             "content": (entry["result"] as? String) ?? "",
@@ -228,6 +238,16 @@ let reader = Thread {
         case "user":
             let message = object["message"] as? [String: Any]
             let text = (message?["content"] as? String) ?? ""
+            // Each message as it came: with its priority (a steer is "now") and the tool call still open, if any.
+            let received = "priority=\((object["priority"] as? String) ?? "none") during=\(currentTool() ?? "-") text=\(text)\n"
+            let receivedURL = stateDirectory.appendingPathComponent("received.log")
+            if let handle = try? FileHandle(forWritingTo: receivedURL) {
+                handle.seekToEndOfFile()
+                handle.write(Data(received.utf8))
+                try? handle.close()
+            } else {
+                try? Data(received.utf8).write(to: receivedURL)
+            }
             queueLock.lock(); queued.append(text); queueLock.unlock()
             pending.signal()
         case "control_request":
