@@ -183,6 +183,9 @@ final class WorkspaceManager: ObservableObject {
     /// Sessions whose next message of yours starts a new conversation (`/clear`, see `FreshConversation`). In memory only,
     /// as a draft is: "Keep this conversation" takes it back.
     @Published var freshArmed: Set<UUID> = []
+    /// What each session's model writes now that has no row yet (a hidden thought, a tool call whose input streams),
+    /// for the live line (`AgentActivity.current(_:composing:)`).
+    @Published var composing: [UUID: AgentComposing] = [:]
     /// Questions an agent asked in a session and that wait for your answer.
     @Published var questions: [UUID: [PendingQuestion]] = [:] {
         didSet { waitingChanged(questions.keys, oldValue.keys) }
@@ -1526,6 +1529,7 @@ final class WorkspaceManager: ObservableObject {
         gitRefresh.forget(id)
         sessionTimelines[id] = nil
         codexTotals[id] = nil
+        composing[id] = nil
         codexSubagents[id] = nil
         openPullRequests[id] = nil
         contextUsages[id] = nil

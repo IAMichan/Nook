@@ -112,6 +112,8 @@ extension WorkspaceManager {
             feed(id, .thinkingDelta(text))
         case .blockStopped:
             feed(id, .thinkingEnded)
+        case .callStarted(let name):
+            feed(id, .composing(.call(name)))
         case .requestStarted(let ttl):
             turns[id]?.lastRequestAt = Date()
             if let ttl { turns[id]?.cacheTTL = ttl }

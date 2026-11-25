@@ -9,6 +9,7 @@ extension WorkspaceManager {
         var timeline = turns[id]?.timeline ?? AgentTimeline()
         let effects = timeline.apply(signal, to: SessionTimelineSink(manager: self, id: id))
         turns[id]?.timeline = timeline
+        if composing[id] != timeline.composing { composing[id] = timeline.composing }
         for effect in effects {
             switch effect {
             case .toolStarted(let name):
