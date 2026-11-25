@@ -10,6 +10,8 @@ extension WorkspaceManager {
         let effects = timeline.apply(signal, to: SessionTimelineSink(manager: self, id: id))
         turns[id]?.timeline = timeline
         if composing[id] != timeline.composing { composing[id] = timeline.composing }
+        // A steer held while the agent changed a file goes in once the change is done.
+        if heldSteers[id] != nil, !timeline.isEditing { releaseHeldSteers(id) }
         for effect in effects {
             switch effect {
             case .toolStarted(let name):

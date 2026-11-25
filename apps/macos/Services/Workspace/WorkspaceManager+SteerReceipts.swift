@@ -26,3 +26,45 @@ extension WorkspaceManager {
         }
     }
 }
+
+/// A steer of yours that waits until the agent is done changing a file (`WorkspaceManager.holdSteer`).
+struct HeldSteer: Equatable, Sendable {
+    var text: String
+    var mark: RunEvent.SteerKind
+    /// Its bubble in the timeline; nil for a steer that goes in right away (its bubble comes with it).
+    var eventID: UUID? = nil
+}
+
+// A steer while the agent changes a file: Claude Code's steer stops what it does, and an agent steered by interrupting
+// it stops altogether, so a change could be cut off halfway. It waits instead, shown as sent but not taken in yet, and
+// goes in as soon as the change is done. The same for every agent (`AgentTimeline.isEditing`).
+extension WorkspaceManager {
+    /// Shows the steer as waiting to be read and keeps it for `releaseHeldSteers`.
+    func holdSteer(_ id: UUID, text: String, mark: RunEvent.SteerKind) {
+        var event = steerEvent(id, text: text, mark: mark)
+        event.steerStatus = .pending
+        append(id, event)
+        heldSteers[id, default: []].append(HeldSteer(text: text, mark: mark, eventID: event.id))
+    }
+
+    /// The change is done: what waited goes into the turn, in the order you sent it. When the turn cannot take it any
+    /// more (it is being stopped), it waits for the end of the turn (`settleHeldSteers`).
+    func releaseHeldSteers(_ id: UUID) {
+        guard let held = heldSteers[id], !held.isEmpty, turns[id]?.timeline.isEditing != true, canSteer(id) else { return }
+        heldSteers[id] = nil
+        if !deliverSteer(id, held, shown: true) { heldSteers[id] = held }
+    }
+
+    /// The turn ended with steers still waiting: after a finished turn they go out first, as the next message (their
+    /// bubbles say they were not taken into this one); after a stop or a failure they were dropped (`settleSteers`).
+    func settleHeldSteers(_ id: UUID, completed: Bool) {
+        guard let held = heldSteers.removeValue(forKey: id), !held.isEmpty else { return }
+        for steer in held {
+            if let bubble = steer.eventID { mutateEvent(id, bubble) { $0.steerStatus = .cancelled } }
+        }
+        guard completed else { return }
+        var queue = queued[id] ?? MessageQueue()
+        for steer in held.reversed() { queue.requeueFirst(steer.text) }
+        setQueue(queue, for: id)
+    }
+}

@@ -111,6 +111,13 @@ struct AgentTimeline: Equatable, Sendable {
     /// A thought or an answer is being written.
     var isStreaming: Bool { liveText != nil || liveThought != nil }
 
+    /// The agent changes a file right now: a call that edits, writes or patches still runs, or its input still streams.
+    /// A steer then waits until it is done, so it never cuts a change off halfway (`WorkspaceManager.holdSteer`).
+    var isEditing: Bool {
+        if case .call(let name) = composing, ToolCategory.of(tool: name) == .edit { return true }
+        return calls.values.contains { $0.state == .running && ToolCategory.of(tool: $0.name) == .edit }
+    }
+
     /// Claude Code's steering message cut the turn short: a block it cut off gets no complete copy.
     mutating func forgetPendingCopies() { awaitingCopies.removeAll() }
 

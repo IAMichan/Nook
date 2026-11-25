@@ -1,0 +1,6 @@
+// A turn that writes a file for a few seconds, so a steer can come in while the change is still being made.
+{"replay":"text","text":"Writing the new module now.","ms":30}
+{"replay":"tool","id":"toolu_write_{{turn}}","name":"Write","input":{"file_path":"{{cwd}}/Sources/Shapes.swift","content":"enum Shapes {}\n"},"result":"File created successfully","ms":4000}
+{"replay":"text","text":"The module is written.","ms":30}
+{"replay":"sleep","ms":3000}
+{"replay":"text","text":"All done with the module.","ms":30}

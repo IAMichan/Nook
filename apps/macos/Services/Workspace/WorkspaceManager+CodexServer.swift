@@ -180,7 +180,8 @@ extension WorkspaceManager {
 
     /// Steers the running turn with a new message: `turn/steer` for Codex, a `priority: "now"` message for Claude Code, and
     /// for an agent without native steering an interrupt followed by the message as the next prompt (see `SteerRoute`).
-    /// False when the session cannot be steered right now.
+    /// While the agent changes a file it waits, shown as not taken in yet, and goes in once the change is done
+    /// (`holdSteer`). False when the session cannot be steered right now.
     @discardableResult
     func steer(_ id: UUID, text: String, promoted: Bool = false) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,27 +192,57 @@ extension WorkspaceManager {
             return true
         }
         let mark: RunEvent.SteerKind = promoted ? .promoted : .steer
-        if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean, mark: mark) }
+        if turns[id]?.timeline.isEditing == true || heldSteers[id] != nil {
+            holdSteer(id, text: clean, mark: mark)
+            return true
+        }
+        return deliverSteer(id, [HeldSteer(text: clean, mark: mark)], shown: false)
+    }
+
+    /// Takes steers into the running turn. `shown`: their bubbles are in the timeline already (held steers), so none is
+    /// added; one the agent does not say it read is marked taken in now.
+    @discardableResult
+    func deliverSteer(_ id: UUID, _ steers: [HeldSteer], shown: Bool) -> Bool {
+        guard let first = steers.first else { return false }
+        func show(_ steer: HeldSteer) {
+            if !shown {
+                append(id, steerEvent(id, text: steer.text, mark: steer.mark))
+            } else if run(id)?.provider.capabilities.echoesSteers != true, let bubble = steer.eventID {
+                mutateEvent(id, bubble) { $0.steerStatus = nil }
+            }
+        }
+        if steerRoute(id) == .interruptRestart {
+            // One interrupt for all of them: they go out together as the next prompt, which shows its bubble then
+            // (or, for held steers, takes theirs).
+            if shown { pendingSendNowShown[id] = steers.compactMap(\.eventID) }
+            return steerByRestart(id, text: steers.map(\.text).joined(separator: "\n\n"), mark: first.mark)
+        }
         if let process = processes[id], let channel = run(id)?.provider.capabilities.processChannel {
             switch channel {
             case .claudeStreamJSON:
-                append(id, steerEvent(id, text: clean, mark: mark))
-                turns[id]?.steered = true
-                process.send(ClaudeStreamParser.userMessage(clean, steer: true))
+                for steer in steers {
+                    show(steer)
+                    turns[id]?.steered = true
+                    process.send(ClaudeStreamParser.userMessage(steer.text, steer: true))
+                }
                 return true
             case .piRPC:
-                append(id, steerEvent(id, text: clean, mark: mark))
-                process.send(PiRPC.prompt(clean, steer: true))
+                for steer in steers {
+                    show(steer)
+                    process.send(PiRPC.prompt(steer.text, steer: true))
+                }
                 return true
             case .none:
                 break
             }
         }
         guard let client = codexServers[id], let thread = client.threadID, let turn = client.turnID else { return false }
-        append(id, steerEvent(id, text: clean, mark: mark))
-        client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: clean)) { [weak self] result in
-            guard case .failure(let error) = result else { return }
-            Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }
+        for steer in steers {
+            show(steer)
+            client.request("turn/steer", CodexRPC.steerParams(threadID: thread, turnID: turn, text: steer.text)) { [weak self] result in
+                guard case .failure(let error) = result else { return }
+                Task { @MainActor in self?.append(id, RunEvent(kind: .error, text: tr("ws.steer.failed", error.localizedDescription))) }
+            }
         }
         return true
     }

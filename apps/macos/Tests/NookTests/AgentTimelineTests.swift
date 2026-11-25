@@ -34,6 +34,35 @@ final class AgentTimelineTests: XCTestCase {
         AgentToolCall(id: id, name: "shell", title: "shell · npm test", detail: "npm test", output: output, state: state)
     }
 
+    // MARK: Editing
+
+    /// A steer waits while a file is being changed (`WorkspaceManager.holdSteer`): every agent's edit, write and patch
+    /// counts from the moment its input streams until the call settles; other calls never do.
+    func testAFileChangeIsEditingFromItsInputUntilItSettles() {
+        for name in ["Edit", "MultiEdit", "Write", "write_file", "replace", "edit", "apply_patch"] {
+            setUp()
+            feed(.composing(.call(name)))
+            XCTAssertTrue(timeline.isEditing, "\(name) while its input streams")
+            feed(.toolStarted(AgentToolCall(id: "e", name: name, title: name)))
+            XCTAssertTrue(timeline.isEditing, "\(name) while it runs")
+            feed(.toolFinished(AgentToolCall(id: "e", name: name, title: name, state: .done)))
+            XCTAssertFalse(timeline.isEditing, "\(name) once done")
+        }
+        setUp()
+        feed(.toolStarted(AgentToolCall(id: "w", name: "Write", title: "Write")))
+        feed(.toolUpdated(id: "w", state: .failed))
+        XCTAssertFalse(timeline.isEditing, "a failed edit is over")
+    }
+
+    func testOtherWorkIsNotEditing() {
+        feed(.composing(.call("Bash")))
+        XCTAssertFalse(timeline.isEditing)
+        feed(.toolStarted(shell("s")), .toolStarted(AgentToolCall(id: "r", name: "Read", title: "Read · main.swift")))
+        XCTAssertFalse(timeline.isEditing)
+        feed(.textDelta("Done."))
+        XCTAssertFalse(timeline.isEditing)
+    }
+
     // MARK: Streams
 
     func testWhatTheModelWritesWithoutARowIsKnownUntilSomethingShows() {
