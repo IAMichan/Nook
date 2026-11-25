@@ -187,7 +187,14 @@ final class WindowPresence: ObservableObject {
 /// the window's top, whatever `.ignoresSafeArea` and `.clipped()` around it say, and lies over what sits above it: the
 /// panel toggles over the docked session panel and a side panel's tabs and cross stopped taking clicks. The content is
 /// measured from the window's top anyway (`PanelSidebarMetrics.titleBand`).
+///
+/// SwiftUI's own views inside this one (those of a scroll view, such as the one a side panel's tabs scroll in) still say
+/// they can move the window, and they cannot be told otherwise: dragging a tab to put it elsewhere or to open it in a
+/// window of its own dragged the whole window along. So while the mouse button is down on anything in that row but
+/// `WindowTitleBarArea`, the window does not move at all (`TitleBandMoveGuard`).
 final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
+    private let moveGuard = TitleBandMoveGuard()
+
     required init(rootView: Content) {
         super.init(rootView: rootView)
         safeAreaRegions = []
@@ -198,12 +205,76 @@ final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
 
     override var mouseDownCanMoveWindow: Bool { false }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        moveGuard.attach(to: window)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         guard let event else { return super.acceptsFirstMouse(for: event) }
         let point = convert(event.locationInWindow, from: nil)
         let fromTop = isFlipped ? point.y : bounds.height - point.y
         return fromTop <= PanelSidebarMetrics.titleBand || window?.keyIsOwnPopover == true
             || super.acceptsFirstMouse(for: event)
+    }
+}
+
+/// Keeps a window still while the mouse button is down on the title bar's row anywhere but the empty title bar
+/// (`WindowTitleBarArea`): a tab, a button or a header there is dragged, pressed or let go of, and the window stays put.
+/// The window can be moved again as soon as the button is up, also when a drag ate the mouse-up (it is watched, as
+/// `SidePanelTearOff` does).
+@MainActor
+final class TitleBandMoveGuard {
+    private var monitor: Any?
+    private var timer: Timer?
+    private weak var window: NSWindow?
+    private weak var held: NSWindow?
+
+    /// Whether a mouse-down `fromTop` points below the window's top, on `hit`, should keep the window still.
+    nonisolated static func holdsStill(fromTop: CGFloat, hit: NSView?) -> Bool {
+        fromTop <= PanelSidebarMetrics.titleBand && !(hit is WindowTitleBarArea.TitleBarView)
+    }
+
+    func attach(to window: NSWindow?) {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        release()
+        self.window = window
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.mouseDown(event) }
+            return event
+        }
+    }
+
+    private func mouseDown(_ event: NSEvent) {
+        guard let window, event.window === window, window.isMovable, let frame = window.contentView?.superview else { return }
+        let point = frame.convert(event.locationInWindow, from: nil)
+        let fromTop = frame.isFlipped ? point.y : frame.bounds.height - point.y
+        guard Self.holdsStill(fromTop: fromTop, hit: window.contentView?.hitTest(point)) else { return }
+        window.isMovable = false
+        held = window
+        timer?.invalidate()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+                self?.release()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func release() {
+        timer?.invalidate()
+        timer = nil
+        held?.isMovable = true
+        held = nil
+    }
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        timer?.invalidate()
     }
 }
 
