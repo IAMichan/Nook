@@ -197,6 +197,14 @@ enum ScreenAction: String, Equatable, Sendable, CaseIterable {
     var asksYou: Bool { self == .requestAccess || self == .requestFullControl }
 }
 
+/// What the model writes now that has no row in the timeline yet (`AgentSignal.composing`).
+enum AgentComposing: Equatable, Sendable {
+    /// A thought it keeps to itself, or one whose words have not come yet.
+    case thinking
+    /// A tool call, by the tool's name, whose input still streams.
+    case call(String)
+}
+
 enum AgentActivity: Equatable, Sendable {
     /// Only your message so far.
     case starting
@@ -299,6 +307,18 @@ enum AgentActivity: Equatable, Sendable {
         let tool = event.tool ?? ""
         let command = tool.hasPrefix(BridgeTool.toolPrefix) ? BridgeTool.detail(input) : ToolSummary.command(input)
         return command ?? subject(event.text)
+    }
+
+    /// The live line of a session's last turn, also when the model writes something that has no row yet: a thought it
+    /// keeps to itself or a tool call whose input still streams. Without that, a long hidden thought or a large file
+    /// being written would read "Reviewing the results" for minutes.
+    static func current(_ events: [RunEvent], composing: AgentComposing?) -> AgentActivity {
+        let shown = current(events)
+        guard let composing, !shown.isStep, shown != .compacting else { return shown }
+        switch composing {
+        case .thinking: return .thinking("")
+        case .call(let tool): return of(tool: tool, input: [:])
+        }
     }
 
     /// The live line of a session's last turn: the tool that runs, else what the agent did last.

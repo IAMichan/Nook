@@ -139,6 +139,17 @@ final class AgentProgressTests: XCTestCase {
         XCTAssertNil(ScreenAction(tool: "screenshot"))
     }
 
+    func testSaysWhatTheModelWritesBeforeItShows() {
+        let turn = [event(.user, "Fix it"), bash("ls", .done, at: 1)]
+        XCTAssertEqual(AgentActivity.current(turn, composing: nil), .reviewing)
+        XCTAssertEqual(AgentActivity.current(turn, composing: .thinking), .thinking(""), "a hidden thought is not reviewing")
+        XCTAssertEqual(AgentActivity.current(turn, composing: .call("Write")), .editing(""), "a file it still writes")
+        XCTAssertEqual(AgentActivity.current(turn, composing: .call("Bash")), .running(""))
+        XCTAssertEqual(AgentActivity.current([event(.user, "Fix it")], composing: .thinking), .thinking(""))
+        let running = [event(.user, "Fix it"), bash("npm test", .running, at: 1)]
+        XCTAssertEqual(AgentActivity.current(running, composing: .thinking), .verifying(.tests), "a step that runs stays the line")
+    }
+
     func testBetweenToolsSaysWhatCameLast() {
         let user = event(.user, "Fix it")
         XCTAssertEqual(AgentActivity.current([user, bash("ls", .done, at: 1)]), .reviewing)

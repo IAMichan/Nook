@@ -45,6 +45,9 @@ enum AgentSignal: Equatable, Sendable {
     /// Claude Code opens and closes its thinking blocks; the complete copy of a closed block (`thinking`) comes later.
     case thinkingStarted
     case thinkingEnded
+    /// The model writes something that has no row until it is complete: a thought it keeps to itself, or a tool call
+    /// whose input still streams. Any other signal ends it.
+    case composing(AgentComposing)
     /// A call starts (or is reported again: then it updates its row).
     case toolStarted(AgentToolCall)
     /// News about a call: a new title, output (added to what came, or in its place), a new state. Also finds a call of
@@ -96,6 +99,8 @@ struct AgentTimeline: Equatable, Sendable {
     private var calls: [String: Call] = [:]
     /// The last finished answer, which a failed turn's result may repeat word for word.
     private(set) var lastTextID: UUID?
+    /// What the model writes now that shows no row yet (see `AgentSignal.composing`).
+    private(set) var composing: AgentComposing?
 
     /// The event of a call of this turn.
     func eventID(forCall id: String) -> UUID? { calls[id]?.eventID }
@@ -112,6 +117,15 @@ struct AgentTimeline: Equatable, Sendable {
     @discardableResult
     mutating func apply(_ signal: AgentSignal, to sink: some RunTimelineSink) -> [AgentTimelineEffect] {
         switch signal {
+        case .composing(let next): composing = next
+        case .thinkingStarted: composing = .thinking
+        // A thought that streams no text (the model keeps it to itself) is still a thought.
+        case .thinkingDelta(let text, _) where text.isEmpty: break
+        default: composing = nil
+        }
+        switch signal {
+        case .composing:
+            return []
         case .textDelta(let text, let item):
             closeThought(sink)
             guard !text.isEmpty else { return [] }

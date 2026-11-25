@@ -89,6 +89,8 @@ final class CodexAppServerTests: XCTestCase {
                        [.reasoningDelta(id: "r1", text: "**Plan**")])
         XCTAssertEqual(events(#"{"method":"item/completed","params":{"item":{"id":"r1","type":"reasoning","summary":["A","B"]}}}"#),
                        [.reasoningCompleted(id: "r1", text: "A\n\nB")])
+        XCTAssertEqual(events(#"{"method":"item/started","params":{"item":{"id":"r1","type":"reasoning","summary":[],"content":[]}}}"#),
+                       [.reasoningStarted(id: "r1")], "reasoning shows before any summary of it streams")
         XCTAssertEqual(events(#"{"method":"item/started","params":{"item":{"id":"c1","type":"commandExecution","command":"npm test","status":"inProgress","commandActions":[],"cwd":"/w"}}}"#),
                        [.commandStarted(id: "c1", command: "npm test")])
         XCTAssertEqual(events(#"{"method":"item/commandExecution/outputDelta","params":{"itemId":"c1","delta":"ok\n"}}"#),

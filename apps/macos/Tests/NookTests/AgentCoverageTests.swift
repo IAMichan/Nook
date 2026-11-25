@@ -223,6 +223,8 @@ final class AgentCoverageTests: XCTestCase {
                        [.thinkingDelta("Eerst de test", starts: false)])
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null}"#),
                        [.blockStopped])
+        XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"t1","name":"Write","input":{}}},"parent_tool_use_id":null}"#),
+                       [.callStarted(name: "Write")], "a tool call says what it will be while its input still streams")
         XCTAssertEqual(ClaudeStreamParser.parse(#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"","signature":"x"}]},"parent_tool_use_id":null}"#),
                        [.thinking("")], "an empty complete copy still lines up with its streamed block")
         let input = AgentCommand.Input(provider: .claude, executable: "/bin/claude", prompt: "hoi", model: "", mode: .agent, permission: .ask,

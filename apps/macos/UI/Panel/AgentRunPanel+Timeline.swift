@@ -207,7 +207,8 @@ extension AgentRunPanel {
                         // The agent's task list, live, right above what it does now: the same live line as in an agent's
                         // own transcript.
                         let turn = TimelinePresentation.runningTurn(events)
-                        TranscriptLiveLine(activity: held != nil ? ended.map(AgentActivity.of) ?? .reviewing : AgentActivity.current(turn),
+                        TranscriptLiveLine(activity: held != nil ? ended.map(AgentActivity.of) ?? .reviewing
+                                               : AgentActivity.current(turn, composing: workspace.composing[runID]),
                                            tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
                                            waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
                                            asking: workspace.questions[runID] != nil,

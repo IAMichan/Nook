@@ -409,7 +409,7 @@ enum CodexAppServerMapper {
             return [.toolCall(id: id, name: "view_image", detail: (path as NSString).lastPathComponent, finished: finished,
                               failed: false, input: JSONBox(["path": path]))]
         case "reasoning":
-            guard finished else { return [] }
+            guard finished else { return [.reasoningStarted(id: id)] }
             let parts = ((item["summary"] as? [String]) ?? []).isEmpty ? ((item["content"] as? [String]) ?? []) : ((item["summary"] as? [String]) ?? [])
             let text = parts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? [] : [.reasoningCompleted(id: id, text: text)]

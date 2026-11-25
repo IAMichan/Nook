@@ -452,6 +452,8 @@ extension WorkspaceManager {
             feed(id, .textDelta(text, item: item))
         case .messageCompleted(let item, let text):
             feed(id, .text(text, item: item))
+        case .reasoningStarted:
+            feed(id, .composing(.thinking))
         case .reasoningDelta(let item, let text):
             feed(id, .thinkingDelta(text, item: item))
         case .reasoningCompleted(let item, let text):

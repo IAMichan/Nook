@@ -108,6 +108,9 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case thinkingDelta(String, starts: Bool)
     /// A streamed content block ended.
     case blockStopped
+    /// The model starts writing a tool call (`content_block_start` of a `tool_use` block): its input streams until the
+    /// whole call comes as `toolUse`, which for a long file or script can take minutes.
+    case callStarted(name: String)
     case toolUse(id: String, name: String, input: JSONBox, nested: Bool)
     /// A subagent's own thought, message or tool call, for the call that started it (`parent_tool_use_id`).
     case subagentStep(parent: String, SubagentStep)
@@ -153,7 +156,7 @@ extension ClaudeStreamEvent {
     /// The agent is working: it writes, thinks, uses a tool or asks permission (not a notice, usage or limits).
     static func isWork(_ event: ClaudeStreamEvent) -> Bool {
         switch event {
-        case .textDelta, .text, .thinking, .thinkingDelta, .toolUse, .subagentStep, .permissionRequest, .elicitation: return true
+        case .textDelta, .text, .thinking, .thinkingDelta, .callStarted, .toolUse, .subagentStep, .permissionRequest, .elicitation: return true
         default: return false
         }
     }
@@ -278,9 +281,13 @@ enum ClaudeStreamParser {
             guard !nested, let event = object["event"] as? [String: Any] else { return [] }
             switch event["type"] as? String {
             case "content_block_start":
-                // Thinking shows while it is written.
-                guard let block = event["content_block"] as? [String: Any], (block["type"] as? String) == "thinking" else { return [] }
-                return [.thinkingDelta((block["thinking"] as? String) ?? "", starts: true)]
+                // Thinking shows while it is written; a tool call says what it will be before its input is complete.
+                guard let block = event["content_block"] as? [String: Any] else { return [] }
+                switch block["type"] as? String {
+                case "thinking": return [.thinkingDelta((block["thinking"] as? String) ?? "", starts: true)]
+                case "tool_use": return (block["name"] as? String).map { [.callStarted(name: $0)] } ?? []
+                default: return []
+                }
             case "content_block_delta":
                 guard let delta = event["delta"] as? [String: Any] else { return [] }
                 switch delta["type"] as? String {
@@ -595,6 +602,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case turnStarted(String)
     case messageDelta(id: String, text: String)
     case messageCompleted(id: String, text: String)
+    /// Codex starts reasoning (`item/started` of a `reasoning` item), before any summary of it streams.
+    case reasoningStarted(id: String)
     case reasoningDelta(id: String, text: String)
     case reasoningCompleted(id: String, text: String)
     case commandOutput(id: String, delta: String)

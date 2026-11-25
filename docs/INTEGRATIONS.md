@@ -581,6 +581,7 @@ from `ToolInput`. A new agent's tool spelling is one line in that table.
 |---|---|---|---|---|---|---|
 | Answer streams live | ✓ | ✓ | – (only whole messages) | ✓ | ✓ | ✓ |
 | Thinking streams live | ✓ | ✓ | – (only whole reasoning) | ✓ | – (its stream has no thoughts) | ✓ (when the agent sends them) |
+| The live line says what the model writes before it has a row: "Thinking…" for a thought it keeps to itself, the tool's step ("Editing a file") while a call's input still streams, instead of "Reviewing the results" (`AgentSignal.composing`, `AgentActivity.current(_:composing:)`) | ✓ (`content_block_start` of a `thinking` or `tool_use` block) | ✓ thinking (`item/started` of a `reasoning` item; its calls come whole) | – (exec reports only whole items) | – (ACP sends a thought or call only with its content, which shows itself) | – (same) | – (same as Gemini CLI over ACP) |
 | Tool input in the row | ✓ | ✓ (also MCP and dynamic tools) | ✓ (also MCP) | ✓ | ✓ | ✓ |
 | Tool output in the row | ✓ | ✓ (commands live, MCP results) | ✓ (commands, MCP results) | ✓ | ✓ | ✓ |
 | Files a call changed | ✓ (Edit/Write) | ✓ (`fileChange`) | ✓ (`file_change`) | ✓ (call paths) | ✓ (replace/write_file) | ✓ (call paths) |

@@ -36,6 +36,20 @@ final class AgentTimelineTests: XCTestCase {
 
     // MARK: Streams
 
+    func testWhatTheModelWritesWithoutARowIsKnownUntilSomethingShows() {
+        feed(.thinkingStarted, .thinkingDelta(""))
+        XCTAssertEqual(timeline.composing, .thinking, "a thought it keeps to itself")
+        XCTAssertEqual(events.list, [], "and it adds no empty row")
+        feed(.thinkingEnded, .composing(.call("Write")))
+        XCTAssertEqual(timeline.composing, .call("Write"), "a tool call whose input still streams")
+        feed(.toolStarted(shell("c1")))
+        XCTAssertNil(timeline.composing, "the call has its own row now")
+        feed(.composing(.thinking), .thinkingDelta("Hm"))
+        XCTAssertNil(timeline.composing, "a thought with words shows itself")
+        feed(.composing(.thinking), .pause)
+        XCTAssertNil(timeline.composing)
+    }
+
     func testAnswerStreamsIntoOneBlockAndItsCopyReplacesIt() {
         feed(.textDelta("Hal"), .textDelta("lo"))
         XCTAssertEqual(events.list.map(\.text), ["Hallo"])
