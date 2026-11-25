@@ -285,7 +285,7 @@ actor GOWAProvider: WhatsAppProvider {
     }
 
     /// The device to work on; created ("nook", or the account's own) when the gateway has none.
-    private func device() async throws -> (id: String, status: WAStatus) {
+    private func device() async throws -> (id: String, status: WAStatus, asleep: Bool) {
         let (data, code) = try await http.call("GET", "/devices")
         try check(data, code)
         if let found = WAGOWA.device(data, id: account, excluding: others) {
@@ -296,7 +296,7 @@ actor GOWAProvider: WhatsAppProvider {
         let (made, madeCode) = try await http.call("POST", "/devices", json: ["device_id": id])
         try check(made, madeCode)
         deviceId = id
-        return (id, WAStatus(link: .needsQR, me: nil))
+        return (id, WAStatus(link: .needsQR, me: nil), false)
     }
 
     /// An account you removed: its device goes from the gateway, which unlinks it from the phone.
@@ -316,8 +316,34 @@ actor GOWAProvider: WhatsAppProvider {
         return data
     }
 
+    /// Since when the device has been asleep (see `WAGOWA.asleep`), and when Nook last woke it.
+    private var asleepSince: Date?
+    private var lastWake: Date = .distantPast
+
+    /// The link, as the gateway's device says it. A device whose session GOWA kept but that is not connected is woken
+    /// here, as OpenWA's stopped session is started: else it stayed that way after a restart of Nook (and GOWA with it)
+    /// until you pressed log in, which only connected the session GOWA already had. Not in the first seconds (GOWA dials
+    /// its devices itself then, and a reconnect would cut that short), and once every 30 seconds at most.
     func status() async throws -> WAStatus {
-        try await device().status
+        let found = try await device()
+        guard found.asleep else { asleepSince = nil; return found.status }
+        let now = Date()
+        let since = asleepSince ?? now
+        asleepSince = since
+        guard WAGOWA.wakesNow(asleepSince: since, lastWake: lastWake, now: now) else { return found.status }
+        lastWake = now
+        // `/app/reconnect` makes the device's client first when GOWA has none yet (`/devices/{id}/reconnect` refuses then).
+        let (data, code) = try await http.call("GET", "/app/reconnect",
+                                               query: [URLQueryItem(name: "device_id", value: found.id)], timeout: 30)
+        if code == 401 { try check(data, code) }
+        guard (200..<300).contains(code) else {
+            Log.connectors.info("WhatsApp: GOWA could not reconnect its device (HTTP \(code))")
+            // GOWA no longer has the session (unlinked on the phone): a QR code it is. Anything else (no network yet) is
+            // tried again in 30 seconds.
+            return WAGOWA.sessionGone(data) ? WAStatus(link: .needsQR, me: nil) : found.status
+        }
+        Log.connectors.info("WhatsApp: GOWA device reconnected")
+        return try await device().status
     }
 
     func qrCode() async throws -> (png: Data, seconds: Int)? {
