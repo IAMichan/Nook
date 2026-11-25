@@ -10,6 +10,10 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+## [0.1.3-beta.3] - 2026-11-25
+
+Only internal changes; the release page lists them.
+
 ## [0.1.3-beta.2] - 2026-11-24
 
 ### Changed
@@ -531,6 +535,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
+[0.1.3-beta.3]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3-beta.3
 [0.1.3-beta.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3-beta.2
 [0.1.3-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3-beta.1
 [0.1.2-beta.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.2
