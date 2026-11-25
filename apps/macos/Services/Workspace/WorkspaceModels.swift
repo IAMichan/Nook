@@ -1569,3 +1569,47 @@ extension RunEvent {
         return tool != "launch" && runActive
     }
 }
+
+/// Workspace representation of a project: a directory, with Git metadata if it is a repository.
+struct ProjectInfo: Equatable {
+    var path: String
+    var name: String
+    var verdict: WorkspacePathPolicy.Verdict
+    var repoRoot: String?
+    var currentBranch: String?
+    var branches: [String]
+    var defaultBase: String?
+    var hasCommits: Bool
+    var dirtyFiles: Int
+    var isWorktree: Bool
+}
+
+extension ProjectInfo {
+    /// The git to inspect a project with. Right after launch `WorkspaceManager.gitService` is still being located; an
+    /// inspection then waits for git instead of reporting the repository as a plain folder (no worktree, no branch).
+    static func inspectionGit(known: GitService?) -> GitService? {
+        known ?? GitService.shared
+    }
+
+    /// Inspects `path` with `git`: its repository, branches and default base. Blocking; call it off the main thread.
+    static func inspect(_ path: String, git: GitService?) -> ProjectInfo {
+        let normalized = WorkspacePathPolicy.normalize(path)
+        var info = ProjectInfo(path: normalized, name: (normalized as NSString).lastPathComponent,
+                               verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
+                               branches: [], defaultBase: nil, hasCommits: false, dirtyFiles: 0, isWorktree: false)
+        guard info.verdict == .ok, let git, let root = git.repositoryRoot(for: normalized) else { return info }
+        info.repoRoot = root
+        let current = git.currentBranch(root)
+        info.currentBranch = current
+        info.hasCommits = git.hasCommits(root)
+        let branchLists = try? git.branches(root)
+        if let branchLists { info.branches = branchLists.local + branchLists.remote }
+        info.defaultBase = git.worktreeBaseBranch(root, localBranches: branchLists?.local, fallbackBranch: current)
+        info.dirtyFiles = git.changedFileCount(root) ?? 0
+        if let common = git.commonDirectory(for: root) {
+            info.isWorktree = WorkspacePathPolicy.normalize(URL(fileURLWithPath: common).deletingLastPathComponent().path)
+                != WorkspacePathPolicy.normalize(root)
+        }
+        return info
+    }
+}

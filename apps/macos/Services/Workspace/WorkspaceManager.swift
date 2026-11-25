@@ -98,20 +98,6 @@ struct WorktreeRow: Identifiable, Equatable {
     var id: String { worktree.path }
 }
 
-/// Workspace representation of a project: a directory, with Git metadata if it is a repository.
-struct ProjectInfo: Equatable {
-    var path: String
-    var name: String
-    var verdict: WorkspacePathPolicy.Verdict
-    var repoRoot: String?
-    var currentBranch: String?
-    var branches: [String]
-    var defaultBase: String?
-    var hasCommits: Bool
-    var dirtyFiles: Int
-    var isWorktree: Bool
-}
-
 /// Launches and tracks coding agents in the workspace. The UI interacts solely with this object.
 /// One process per turn: a follow-up message resumes the agent with `--resume` (Claude) or `exec resume` (Codex).
 /// This ensures no orphaned processes linger, and resuming after relaunching Nook works identically.
