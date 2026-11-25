@@ -25,26 +25,9 @@ extension WorkspaceManager {
 
     /// Information required by "New Session" for a directory. Evaluated off the main thread.
     func inspectProject(_ path: String) async -> ProjectInfo {
-        let git = gitService
+        let known = gitService
         let info = await Task.detached(priority: .userInitiated) {
-            let normalized = WorkspacePathPolicy.normalize(path)
-            var info = ProjectInfo(path: normalized, name: (normalized as NSString).lastPathComponent,
-                                   verdict: WorkspacePathPolicy.verdict(for: normalized), repoRoot: nil, currentBranch: nil,
-                                   branches: [], defaultBase: nil, hasCommits: false, dirtyFiles: 0, isWorktree: false)
-            guard info.verdict == .ok, let git, let root = git.repositoryRoot(for: normalized) else { return info }
-            info.repoRoot = root
-            let current = git.currentBranch(root)
-            info.currentBranch = current
-            info.hasCommits = git.hasCommits(root)
-            let branchLists = try? git.branches(root)
-            if let branchLists { info.branches = branchLists.local + branchLists.remote }
-            info.defaultBase = git.worktreeBaseBranch(root, localBranches: branchLists?.local, fallbackBranch: current)
-            info.dirtyFiles = git.changedFileCount(root) ?? 0
-            if let common = git.commonDirectory(for: root) {
-                info.isWorktree = WorkspacePathPolicy.normalize(URL(fileURLWithPath: common).deletingLastPathComponent().path)
-                    != WorkspacePathPolicy.normalize(root)
-            }
-            return info
+            ProjectInfo.inspect(path, git: ProjectInfo.inspectionGit(known: known))
         }.value
         projectCache[info.path] = info
         if let root = info.repoRoot {

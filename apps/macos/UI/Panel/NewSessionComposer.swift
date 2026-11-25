@@ -254,7 +254,7 @@ struct NewSessionComposer: View {
 
     var worktreeAllowed: Bool {
         guard let project, project.verdict == .ok else { return false }
-        return project.repoRoot != nil && project.hasCommits && workspace.gitAvailable == true
+        return project.repoRoot != nil && project.hasCommits && workspace.gitAvailable != false
     }
 
     var worktreeBlockedReason: String {

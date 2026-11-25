@@ -136,8 +136,9 @@ extension NewSessionComposer {
         remoteFolder = draft.remoteFolder
         keepCheckout = draft.keepCheckout
         for (id, text) in draft.excerpts { composerModel.keep(id, text: text) }
-        // A project still being inspected when the notch closed is looked at again.
-        if project == nil, !config.projectPath.isEmpty, remoteMachine == nil,
+        // A project still being inspected when the notch closed is looked at again, and so is one that was no
+        // repository then: it may have become one (git init), or was inspected before git was found at launch.
+        if project?.repoRoot == nil, !config.projectPath.isEmpty, remoteMachine == nil,
            FileManager.default.fileExists(atPath: config.projectPath) {
             select(config.projectPath)
         }
@@ -381,7 +382,8 @@ extension NewSessionComposer {
 
     private func applyInspectedProject(_ info: ProjectInfo, for path: String) {
         project = info
-        let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
+        // A repository root means git ran, also while `gitAvailable` is still unknown right after launch.
+        let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable != false
         if !canWorktree {
             config.isolation = .folder
         } else if !keepCheckout, config.isolation == .folder && settings.composerDefaults(for: path).isolation == .worktree {
