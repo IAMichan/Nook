@@ -1263,6 +1263,36 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(WAGOWA.device(data, excluding: ["nook", "nook-biz123", "nook-new456"]))
     }
 
+    /// After a restart GOWA lists a device it kept the session of as disconnected with its JID: Nook wakes it instead of
+    /// waiting for you to log in again. A device without a JID has no session, and a QR code is the only way.
+    func testGOWADeviceWithAKeptSessionIsWokenAfterARestart() throws {
+        let data = Data("""
+        {"code":"SUCCESS","results":[
+          {"id":"nook","state":"disconnected","jid":"31600000001@s.whatsapp.net"},
+          {"id":"nook-biz123","state":"logged_in","jid":"31600000002@s.whatsapp.net"},
+          {"id":"nook-new456","state":"disconnected"},
+          {"id":"nook-dial78","state":"connected","jid":"31600000003@s.whatsapp.net"}
+        ]}
+        """.utf8)
+        let kept = try XCTUnwrap(WAGOWA.device(data, id: "nook"))
+        XCTAssertTrue(kept.asleep)
+        XCTAssertEqual(kept.status.link, .connecting, "a kept session shows as connecting, not as a QR code to scan")
+        XCTAssertFalse(try XCTUnwrap(WAGOWA.device(data, id: "nook-biz123")).asleep)
+        XCTAssertFalse(try XCTUnwrap(WAGOWA.device(data, id: "nook-new456")).asleep, "no session: nothing to wake")
+        XCTAssertFalse(try XCTUnwrap(WAGOWA.device(data, id: "nook-dial78")).asleep, "already dialing: left alone")
+
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertFalse(WAGOWA.wakesNow(asleepSince: start, lastWake: .distantPast, now: start),
+                       "GOWA's own dial at its start gets its chance first")
+        XCTAssertTrue(WAGOWA.wakesNow(asleepSince: start, lastWake: .distantPast, now: start + 10))
+        XCTAssertFalse(WAGOWA.wakesNow(asleepSince: start, lastWake: start + 10, now: start + 20), "once every 30 s at most")
+        XCTAssertTrue(WAGOWA.wakesNow(asleepSince: start, lastWake: start + 10, now: start + 41))
+
+        XCTAssertTrue(WAGOWA.sessionGone(Data(#"{"code":"INTERNAL_SERVER_ERROR","message":"device nook is not logged in (session deleted)"}"#.utf8)))
+        XCTAssertFalse(WAGOWA.sessionGone(Data(#"{"code":"INTERNAL_SERVER_ERROR","message":"dial tcp: lookup web.whatsapp.com: no such host"}"#.utf8)),
+                       "no network yet: tried again, no QR code")
+    }
+
     func testOldGOWAFilesGoAndRecentOnesStay() throws {
         let fm = FileManager.default
         let statics = fm.temporaryDirectory.appendingPathComponent("gowa-statics-\(UUID().uuidString)")

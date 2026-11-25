@@ -2061,8 +2061,10 @@ enum WAGOWA {
 
     /// `GET /devices` → `results: [{id, phone_number, display_name, state, jid, created_at}]`.
     /// The device Nook uses: `id` when an account names its own (nil when the gateway has none by that id yet); else a
-    /// logged-in one first, else the first one, of those no other account uses (`excluding`).
-    static func device(_ data: Data, id wanted: String? = nil, excluding: Set<String> = []) -> (id: String, status: WAStatus)? {
+    /// logged-in one first, else the first one, of those no other account uses (`excluding`). `asleep`: GOWA kept the
+    /// device's session (it has its JID) but is not connected with it, see `WAGOWA.asleep`.
+    static func device(_ data: Data, id wanted: String? = nil,
+                       excluding: Set<String> = []) -> (id: String, status: WAStatus, asleep: Bool)? {
         guard let all = results(data) as? [[String: Any]] else { return nil }
         let list = wanted.map { wanted in all.filter { $0["id"] as? String == wanted } }
             ?? all.filter { !excluding.contains($0["id"] as? String ?? "") }
@@ -2076,7 +2078,28 @@ enum WAGOWA {
         case "connecting", "connected": link = jid == nil ? .needsQR : .connecting
         default: link = jid == nil ? .needsQR : .connecting
         }
-        return (id, WAStatus(link: link, me: jid))
+        return (id, WAStatus(link: link, me: jid), asleep(state: pick["state"] as? String, jid: jid))
+    }
+
+    /// A device whose session GOWA kept but which is not connected: GOWA dials its devices once, two seconds after it
+    /// starts, and never again when that failed (no network yet after a restart, the Mac still waking). It stays like that
+    /// until something asks (`GET /app/reconnect`); without a JID there is no session and only a QR code helps.
+    static func asleep(state: String?, jid: String?) -> Bool {
+        jid != nil && (state ?? "disconnected") == "disconnected"
+    }
+
+    /// A refused reconnect because GOWA no longer has the device's session ("device … is not logged in (session
+    /// deleted)"): only a QR code links it again. Any other refusal (no network yet) is tried again.
+    static func sessionGone(_ data: Data) -> Bool {
+        let message = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["message"] as? String ?? ""
+        return message.lowercased().contains("session deleted")
+    }
+
+    /// Whether Nook wakes an asleep device now: once it has been asleep for `grace` (GOWA's own dial at its start gets
+    /// its chance), and `gap` after the last try.
+    static func wakesNow(asleepSince: Date, lastWake: Date, now: Date,
+                         grace: TimeInterval = 8, gap: TimeInterval = 30) -> Bool {
+        now.timeIntervalSince(asleepSince) >= grace && now.timeIntervalSince(lastWake) >= gap
     }
 
     /// `GET /devices/{id}/login` → `results: {device_id, qr_link, qr_duration}`. The PNG's path,

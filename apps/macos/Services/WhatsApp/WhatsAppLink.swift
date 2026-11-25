@@ -592,8 +592,12 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// Ticks (of 5 s) between two status checks of a gateway that is not linked while nothing shows its QR code or
-    /// status: once a minute at full speed, stretched by the energy plan (six minutes while nobody is at the Mac).
-    nonisolated static func unlinkedGap(slowdown: Double) -> Int { paced(12, slowdown: slowdown) }
+    /// status: once a minute at full speed, stretched by the energy plan (six minutes while nobody is at the Mac). A
+    /// gateway still connecting (after a restart, a session it kept that it is waking, see `GOWAProvider.status`) is
+    /// asked every ten seconds, so the chats come back within seconds instead of a minute.
+    nonisolated static func unlinkedGap(link: Link = .needsQR, slowdown: Double) -> Int {
+        paced(link == .connecting ? 2 : 12, slowdown: slowdown)
+    }
 
     /// A gap of `ticks` stretched by the energy plan's slowdown, one tick at least.
     nonisolated static func paced(_ ticks: Int, slowdown: Double) -> Int { max(1, Int((Double(ticks) * slowdown).rounded())) }
@@ -604,7 +608,7 @@ final class WhatsAppLink: ObservableObject {
             if linkViewers > 0 {
                 // Every 5 s while linking with the QR code on screen; every 30 s once the gateway has been down for a minute.
                 if failures > 12 && tick % 6 != 0 { return }
-            } else if tick % Self.unlinkedGap(slowdown: EnergyMonitor.shared.plan.slowdown) != 0 {
+            } else if tick % Self.unlinkedGap(link: link, slowdown: EnergyMonitor.shared.plan.slowdown) != 0 {
                 return
             }
             refresh()
