@@ -10,6 +10,10 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+### Changed
+
+- Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
+
 ## [0.1.3-beta.3] - 2026-11-25
 
 Only internal changes; the release page lists them.

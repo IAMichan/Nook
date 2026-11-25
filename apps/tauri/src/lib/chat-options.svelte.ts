@@ -4,19 +4,21 @@
 const READ_ON_OPEN = "chats.readOnOpen";
 const READ_IN_APP_ON_OPEN = "chats.readInAppOnOpen";
 
-function stored(key: string): boolean {
+function stored(key: string, fallback = true): boolean {
   try {
-    return localStorage.getItem(key) !== "false";
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value === "true";
   } catch {
-    return true;
+    return fallback;
   }
 }
 
 class ChatOptions {
   /** "Read in Nook when opened": a chat you open is read in Nook, also after a restart. */
   readOnOpen = $state(stored(READ_ON_OPEN));
-  /** "Also read in the app": the chat's app hears you opened it, where Nook can tell it. */
-  readInAppOnOpen = $state(stored(READ_IN_APP_ON_OPEN));
+  /** "Also read in the app": the chat's app hears you opened it, where Nook can tell it. Off by default: opening a
+   * chat reads it in Nook only. */
+  readInAppOnOpen = $state(stored(READ_IN_APP_ON_OPEN, false));
 
   setReadOnOpen(on: boolean) {
     this.readOnOpen = on;
