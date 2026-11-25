@@ -190,7 +190,7 @@ final class WindowPresence: ObservableObject {
 ///
 /// SwiftUI's own views inside this one (those of a scroll view, such as the one a side panel's tabs scroll in) still say
 /// they can move the window, and they cannot be told otherwise: dragging a tab to put it elsewhere or to open it in a
-/// window of its own dragged the whole window along. So while the mouse button is down on anything in that row but
+/// window of its own dragged the whole window along. So while the pointer is over anything in that row but
 /// `WindowTitleBarArea`, the window does not move at all (`TitleBandMoveGuard`).
 final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
     private let moveGuard = TitleBandMoveGuard()
@@ -207,7 +207,12 @@ final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        moveGuard.attach(to: window)
+        moveGuard.attach(to: self)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        moveGuard.track()
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -219,42 +224,84 @@ final class WorkspaceHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
-/// Keeps a window still while the mouse button is down on the title bar's row anywhere but the empty title bar
+/// Keeps a window still while the pointer is over the title bar's row anywhere but the empty title bar
 /// (`WindowTitleBarArea`): a tab, a button or a header there is dragged, pressed or let go of, and the window stays put.
-/// The window can be moved again as soon as the button is up, also when a drag ate the mouse-up (it is watched, as
-/// `SidePanelTearOff` does).
+///
+/// It has to be still before the mouse-down: the window server starts moving a window by its title bar on the
+/// mouse-down itself, before the app hears of it, so making it unmovable on the mouse-down (as this did at first) came
+/// too late and a dragged tab still took the whole window along. The pointer is followed with a tracking area over the
+/// row; the mouse-down is still looked at too, for a click without a move before it. The window can be moved again as
+/// soon as the pointer is over the empty title bar or out of the row with the button up, also when a drag ate the
+/// mouse-up (the button is watched, as `SidePanelTearOff` does).
 @MainActor
-final class TitleBandMoveGuard {
+final class TitleBandMoveGuard: NSResponder {
     private var monitor: Any?
     private var timer: Timer?
     private weak var window: NSWindow?
+    private weak var host: NSView?
+    private var area: NSTrackingArea?
+    /// The window this made unmovable (and not its owner).
     private weak var held: NSWindow?
 
-    /// Whether a mouse-down `fromTop` points below the window's top, on `hit`, should keep the window still.
+    /// Whether the pointer `fromTop` points below the window's top, on `hit`, should keep the window still.
     nonisolated static func holdsStill(fromTop: CGFloat, hit: NSView?) -> Bool {
         fromTop <= PanelSidebarMetrics.titleBand && !(hit is WindowTitleBarArea.TitleBarView)
     }
 
-    func attach(to window: NSWindow?) {
+    func attach(to host: NSView) {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         release()
-        self.window = window
+        self.host = host
+        window = host.window
+        track()
         guard window != nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            MainActor.assumeIsolated { self?.mouseDown(event) }
+            MainActor.assumeIsolated { self?.follow(event) }
             return event
         }
     }
 
-    private func mouseDown(_ event: NSEvent) {
-        guard let window, event.window === window, window.isMovable, let frame = window.contentView?.superview else { return }
+    /// Lays the tracking area over the row again; the host calls it from `updateTrackingAreas`.
+    func track() {
+        if let area { host?.removeTrackingArea(area) }
+        area = nil
+        guard let host, host.window != nil else { return }
+        let band = min(PanelSidebarMetrics.titleBand, host.bounds.height)
+        let rect = NSRect(x: 0, y: host.isFlipped ? 0 : host.bounds.height - band, width: host.bounds.width, height: band)
+        let area = NSTrackingArea(rect: rect, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways], owner: self)
+        host.addTrackingArea(area)
+        self.area = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { follow(event) }
+    override func mouseMoved(with event: NSEvent) { follow(event) }
+    override func mouseExited(with event: NSEvent) { letGo() }
+
+    private func follow(_ event: NSEvent) {
+        guard let window, event.window === window, let frame = window.contentView?.superview else { return }
         let point = frame.convert(event.locationInWindow, from: nil)
         let fromTop = frame.isFlipped ? point.y : frame.bounds.height - point.y
-        guard Self.holdsStill(fromTop: fromTop, hit: window.contentView?.hitTest(point)) else { return }
+        if Self.holdsStill(fromTop: fromTop, hit: window.contentView?.hitTest(point)) {
+            hold(window)
+        } else {
+            letGo()
+        }
+    }
+
+    private func hold(_ window: NSWindow) {
+        timer?.invalidate()
+        timer = nil
+        guard held == nil, window.isMovable else { return }
         window.isMovable = false
         held = window
-        timer?.invalidate()
+    }
+
+    /// Lets the window move again, once the button is up: a drag that is still going on keeps it still until then.
+    private func letGo() {
+        guard held != nil else { return }
+        guard NSEvent.pressedMouseButtons & 1 != 0 else { return release() }
+        guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
