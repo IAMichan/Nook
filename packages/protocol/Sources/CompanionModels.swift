@@ -841,6 +841,11 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     var hasInfo: Bool? = nil
     /// What Nook could do next for what was said in the chat (`CompanionFeature.actionSuggestions`).
     var suggestion: ActionSuggestionDigest? = nil
+    /// The icon of what came with the newest message (a photo, a voice message, a poll, a call), named the SF Symbol
+    /// way; nil for plain text and from a Mac that does not say.
+    var previewSymbol: String? = nil
+    /// Who `preview` starts with ("Jan"), so the icon goes after "Jan: "; nil when it names no one.
+    var previewSender: String? = nil
 }
 
 /// A chat's own picture (a contact's or a group's photo), as a small square JPEG.

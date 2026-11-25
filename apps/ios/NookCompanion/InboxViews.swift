@@ -351,22 +351,19 @@ struct InboxRow: View {
 
     var body: some View {
         ChatListRowContent(name: chat.name, when: when, preview: chat.preview.isEmpty ? chat.appName : chat.preview,
-                           unread: chat.unread > 0, ticks: MessageTicks(chat.ticks),
+                           previewSymbol: chat.preview.isEmpty ? nil : chat.previewSymbol, previewSender: chat.previewSender,
+                           unread: chat.unread > 0, muted: chat.mutedInApp == true, ticks: MessageTicks(chat.ticks),
                            // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's list.
                            typing: InboxTyping.text(chat.typing ?? [])) {
             InboxAvatar(name: chat.name, app: chat.app, size: SharedMetrics.avatar, picture: pictures.image(for: chat))
         } trailing: {
             HStack(spacing: Theme.Spacing.xs) {
-                // Muted and pinned, as the Mac's row marks them.
-                if chat.mutedInApp == true {
-                    Image(icon: "bell.slash.fill").font(Theme.font(11)).foregroundStyle(Theme.textTertiary)
-                        .accessibilityLabel(Text("Muted"))
-                }
+                // Pinned, as the Mac's row marks it; the shared row draws the muted bell.
                 if chat.pinned == true || chat.pinnedInApp == true {
                     Image(icon: "pin.fill").font(Theme.font(11)).foregroundStyle(Theme.textTertiary)
                         .accessibilityLabel(Text("Pinned"))
                 }
-                NookCountBadge(count: chat.unread)
+                NookCountBadge(count: chat.unread, prominent: true, quiet: chat.mutedInApp == true)
                     .accessibilityLabel(Text("\(chat.unread) unread"))
             }
         }

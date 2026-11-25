@@ -7,6 +7,20 @@ import Foundation
 struct ChatMedia: Codable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         case photo, video, gif, sticker, audio, voice, file
+
+        /// Its icon, named the SF Symbol way (`Image(icon:)`): in the composer's attachments and in front of a chat's
+        /// newest message in the list.
+        var symbol: String {
+            switch self {
+            case .photo: return "photo"
+            case .video: return "video"
+            case .gif: return "play.square.stack"
+            case .sticker: return "face.smiling"
+            case .audio: return "music.note"
+            case .voice: return "waveform"
+            case .file: return "doc"
+            }
+        }
     }
 
     var kind: Kind

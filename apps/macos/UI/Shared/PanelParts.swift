@@ -7,16 +7,25 @@ import SwiftUI
 /// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.
 struct NookCountBadge: View {
     let count: Int
+    /// A solid amber pill with dark numerals, for a list where unread has to stand out at a glance (a chat app's list,
+    /// as WhatsApp marks it). Elsewhere the faint wash: it tells without shouting.
+    var prominent = false
+    /// A muted chat's count: grey, so it is seen but does not call (`prominent` only).
+    var quiet = false
+
+    private var fill: Color { quiet ? NookTheme.textTertiary : NookTheme.amber }
 
     var body: some View {
         if count > 0 {
-            // Amber numerals on a faint wash, not a solid amber pill: it tells without shouting.
             Text("\(count)")
-                .font(NookTheme.textFont(10, .semibold, design: .rounded))
-                .foregroundStyle(NookTheme.amber)
-                .padding(.horizontal, NookTheme.Spacing.xs)
-                .frame(minWidth: 16, minHeight: 16)
-                .background(NookTheme.shape(NookTheme.Radius.chip).fill(NookTheme.amber.opacity(0.14)))
+                .font(NookTheme.textFont(prominent ? 11 : 10, prominent ? .bold : .semibold, design: .rounded))
+                .foregroundStyle(prominent ? NookTheme.ink : NookTheme.amber)
+                .padding(.horizontal, prominent ? NookTheme.Spacing.sm - 1 : NookTheme.Spacing.xs)
+                .frame(minWidth: prominent ? 20 : 16, minHeight: prominent ? 20 : 16)
+                .background(prominent
+                            ? AnyShapeStyle(fill)
+                            : AnyShapeStyle(NookTheme.amber.opacity(0.14)),
+                            in: Capsule())
         }
     }
 }

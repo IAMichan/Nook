@@ -1786,6 +1786,28 @@ final class ChatInboxTests: XCTestCase {
                        "with the newest message last, as its row shows it")
     }
 
+    // MARK: The list's icon
+
+    func testSummarySymbolMarksWhatCameWithTheMessage() {
+        let date = Date(timeIntervalSince1970: 1)
+        XCTAssertNil(InboxMessage(id: "1", text: "dinner?", date: date).summarySymbol, "plain text has no icon")
+        var photo = InboxMessage(id: "2", text: "on the beach", date: date)
+        photo.media = ChatMedia(kind: .photo)
+        XCTAssertEqual(photo.summarySymbol, "photo")
+        var voice = InboxMessage(id: "3", text: "", date: date)
+        voice.media = ChatMedia(kind: .voice)
+        XCTAssertEqual(voice.summarySymbol, "waveform")
+        var poll = InboxMessage(id: "4", text: "", date: date)
+        poll.poll = ChatPoll(question: "Lunch?", options: [.init(text: "Pizza", votes: 0)])
+        XCTAssertEqual(poll.summarySymbol, "chart.bar.fill")
+        XCTAssertEqual(InboxMessage(id: "5", text: "Missed voice call", date: date).summarySymbol, "phone.down.fill")
+        var gone = photo
+        gone.deleted = true
+        XCTAssertEqual(gone.summarySymbol, "nosign", "a deleted message says so, not what it held")
+        XCTAssertNil(InboxMessage.notice(id: "6", date: date, membership: ChatMembership(.joined, people: ["Jan"])).summarySymbol,
+                     "a line about the group has no icon")
+    }
+
     // MARK: Calls
 
     func testCallLinesReadAsCalls() {
