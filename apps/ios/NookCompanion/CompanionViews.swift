@@ -1227,8 +1227,12 @@ struct AgentRow: View, Equatable {
         if quietWorking, session.attention == "working" {
             HStack(spacing: Theme.Spacing.sm) {
                 PulseDot(color: Theme.color("working"), size: 6)
-                Text(Self.age(Date().timeIntervalSince1970 - session.updated))
-                    .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
+                // Its own minute clock: an `.equatable()` row is not drawn again while the list stays quiet, and work
+                // in progress should not read "now" for ten minutes.
+                TimelineView(.everyMinute) { context in
+                    Text(Self.age(context.date.timeIntervalSince1970 - session.updated))
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
+                }
             }
             .fixedSize()
             .accessibilityElement(children: .ignore)

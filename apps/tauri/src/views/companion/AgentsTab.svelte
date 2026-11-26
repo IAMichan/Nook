@@ -157,6 +157,9 @@
         <WaitingRow icon="square-pen" title={q.text} detail={tr("Nieuwe sessie · wacht op je Mac", "New session · waiting for your Mac")} ondiscard={async () => took(await companion.discard(q.id))} />
       {/each}
     </div>
+    {#if !working.length && !waiting.length && all.length && !query.trim()}
+      <p class="calm"><span class="tick" aria-hidden="true">✓</span>{tr("Alles rustig. Er hoeft nu niets van je.", "All calm. Nothing needs you right now.")}</p>
+    {/if}
     {#if working.length}
       <ShelfHeader title={tr("Aan het werk", "Working")} count={working.length} open={open.working ?? true} ontoggle={() => toggle("working")} />
       {#if open.working ?? true}
@@ -252,6 +255,8 @@
   .top { display: flex; flex-direction: column; gap: 12px; padding: 0 16px; }
   .searchrow { display: flex; align-items: center; gap: 6px; }
   .grow { flex: 1; min-width: 0; }
+  .calm { margin: 0; padding: 12px 20px 0; display: flex; align-items: center; gap: 8px; font: var(--pt-body); color: var(--text2); }
+  .tick { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--mint); color: var(--canvas); font: 700 10px var(--font); }
   .none { margin: 0; padding: 24px 0; text-align: center; font: var(--pt-body); color: var(--text2); }
   .on { display: flex; align-items: center; gap: 6px; }
   .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 6px; background: rgba(240, 182, 90, 0.14); color: var(--amber); font: 600 11.4px ui-rounded, var(--font); display: inline-flex; align-items: center; justify-content: center; }
