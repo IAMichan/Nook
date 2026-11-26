@@ -39,7 +39,7 @@ fn title(tab: &str, language: &str) -> String {
 
 /// Opens `tab` in a window of its own, or brings its window forward. `focus: false` (reopening after a restart) leaves
 /// the focus where it is.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_tab_window(app: AppHandle, tab: String, focus: Option<bool>) -> Result<(), String> {
     let Some(tab) = TABS.iter().copied().find(|t| *t == tab) else {
         return Err(format!("unknown tab {tab}"));

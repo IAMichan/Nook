@@ -26,6 +26,13 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
 - A session with several pull requests shows the one not merged yet in its badge, also when a newer one already merged, so you can see the session is not done.
 
+### Fixed
+
+- On Windows and Linux, Nook no longer freezes ("not responding") when the Chats tab loads while WhatsApp is
+  syncing.
+- On Windows, Nook no longer freezes ("not responding") when it opens a tab or the browser in its own window, or puts the bar on every screen.
+- On Windows, the app stays responsive while agents work: looking up installed agents, account limits and a few settings pages no longer holds up the interface.
+
 ## [0.1.3] - 2026-11-26
 
 Only internal changes; the release page lists them.

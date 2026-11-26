@@ -222,7 +222,7 @@ pub fn browser_state(state: State<'_, WorkspaceState>) -> serde_json::Value {
 }
 
 /// Wat je in de adresbalk typt: een adres of een zoekopdracht. Jij klikte, dus het gaat meteen.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn browser_go(app: AppHandle, input: String) -> Res<()> {
     #[cfg(desktop)]
     {
