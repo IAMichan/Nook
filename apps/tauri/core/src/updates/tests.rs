@@ -299,12 +299,14 @@ fn packages_take_their_own_signed_file() {
         ReleaseBuild { version: ReleaseVersion::parse("0.1.0").unwrap(), repository: DEFAULT_REPOSITORY.into(), public_key: Some(key()) };
     let mut next = release("v0.2.0", None, true, false);
     for check in [UpdatePlatform::WindowsMsi, UpdatePlatform::LinuxDeb] {
-        assert!(matches!(super::check(&[next.clone()], &build, check, None), ReleaseCheck::Unsigned { .. }), "no .sig yet");
+        assert!(matches!(super::check(std::slice::from_ref(&next), &build, check, None), ReleaseCheck::Unsigned { .. }), "no .sig yet");
     }
     next.assets.push(asset("Nook-0.2.0-Windows.msi.sig", 89));
     next.assets.push(asset("Nook-0.2.0-Linux.deb", 10));
     next.assets.push(asset("Nook-0.2.0-Linux.deb.sig", 89));
-    let ReleaseCheck::Available(msi) = super::check(&[next.clone()], &build, UpdatePlatform::WindowsMsi, None) else { panic!("msi") };
+    let ReleaseCheck::Available(msi) = super::check(std::slice::from_ref(&next), &build, UpdatePlatform::WindowsMsi, None) else {
+        panic!("msi")
+    };
     assert_eq!(msi.installer.name, "Nook-0.2.0-Windows.msi");
     let ReleaseCheck::Available(deb) = super::check(&[next], &build, UpdatePlatform::LinuxDeb, None) else { panic!("deb") };
     assert_eq!(deb.signature.name, "Nook-0.2.0-Linux.deb.sig");
