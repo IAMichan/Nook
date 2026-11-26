@@ -138,7 +138,7 @@
   const kinds = $derived<ChatListKind[]>((["chats", "status", "channels"] as ChatListKind[]).filter((k) => k === "chats" || all.some((e) => e.listKind === k)));
   const shownKind = $derived(kinds.includes(kind) ? kind : "chats");
   const list = $derived(shownEntries(all, { view, app: chatApp ? filter : null, account: shownAccount, kind: shownKind, query }));
-  const groups = $derived(sections(list, now, pins.keys));
+  const groups = $derived(sections(list, now, pins.keys, query));
   const searching = $derived(!!query.trim());
   const inScope = $derived(all.filter((e) => e.listKind === "chats" && (!filter || !chatApp || e.app === filter) && (!shownAccount || e.account === shownAccount)));
   const counts = $derived({ unread: inScope.filter((e) => e.read === "unread").length, readInNook: inScope.filter((e) => e.read === "readInNook").length });

@@ -77,6 +77,15 @@ describe("the Chats list", () => {
     expect(sections(list, now, ["whatsapp#a"]).map((s) => [s.group, s.entries.map((e) => e.id)])).toEqual([["pinned", ["a"]], ["today", ["b"]], ["yesterday", ["c"]]]);
   });
 
+  it("puts the chat named after the search above the chats that only mention it", () => {
+    const arjan = { ...entry("arjan", at(0, 14)), name: "Arjan", preview: "Dan controleren Noah en ik" };
+    const noah = { ...entry("noah", at(0, 10)), name: "Noah" };
+    const noahs = { ...entry("noahs", at(0, 9)), name: "Team Noahs" };
+    const list = shown([arjan, noahs, noah], { view: "all", app: null, kind: "chats", query: "noah" });
+    expect(list.map((e) => e.id)).toEqual(["noah", "noahs", "arjan"]);
+    expect(sections(list, now, [], "noah").map((s) => [s.group, s.entries.map((e) => e.id)])).toEqual([["named", ["noah", "noahs"]], ["today", ["arjan"]]]);
+  });
+
   it("tells read in Nook from read everywhere, and filters by account", () => {
     const all = [entry("a", at(0), 0, "chats", "readInNook", "Work"), entry("b", at(1), 0, "chats", "read", "Home")];
     expect(shown(all, { view: "readInNook", app: null, kind: "chats", query: "" }).map((e) => e.id)).toEqual(["a"]);

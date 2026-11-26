@@ -218,6 +218,32 @@ extension ChatsEntry {
         entry.previewSender = Self.sender(match)
         return entry
     }
+
+    /// How well the chat's own name, or one of its people, answers a search, best first: the name itself (0), a word of
+    /// it that starts with it (1), anywhere in the name (2), one of its people (3). Nil when only its messages hold it,
+    /// so a search for "Noah" shows the chat with Noah above the chats where someone wrote his name.
+    func nameRank(_ needle: String) -> Int? {
+        guard !needle.isEmpty else { return nil }
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        if name.compare(needle, options: options) == .orderedSame { return 0 }
+        let words = name.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        if words.contains(where: { $0.range(of: needle, options: options.union(.anchored)) != nil })
+            || name.range(of: needle, options: options.union(.anchored)) != nil { return 1 }
+        if name.range(of: needle, options: options) != nil { return 2 }
+        if (members ?? []).contains(where: { $0.range(of: needle, options: options) != nil }) { return 3 }
+        return nil
+    }
+
+    /// Search results in their order: the chats found by their name on top, best match first and then the newest,
+    /// the ones found by a message after them as they came. Shared by the Chats tab and the phone's search.
+    static func rankedForSearch(_ found: [ChatsEntry], needle: String) -> [ChatsEntry] {
+        let ranked = found.map { (entry: $0, rank: $0.nameRank(needle)) }
+        let named = ranked.filter { $0.rank != nil }.sorted { a, b in
+            if a.rank != b.rank { return a.rank! < b.rank! }
+            return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
+        }
+        return named.map(\.entry) + ranked.filter { $0.rank == nil }.map(\.entry)
+    }
 }
 
 /// `ChatsEntry.all`, made once and asked many times: the tab asks for it a dozen times while it draws (the list, the
@@ -379,7 +405,7 @@ final class ChatsShownMemo {
         let days = ChatsGroup.Days()
         sections = []
         for entry in value {
-            let group = days.group(of: entry)
+            let group = days.group(of: entry, searching: needle)
             if sections.last?.group == group { sections[sections.count - 1].entries.append(entry) }
             else { sections.append(ChatsSection(group: group, entries: [entry])) }
         }
@@ -971,13 +997,8 @@ struct ChatsTab: View {
     private func makeShown(_ needle: String) -> [ChatsEntry] {
         let days = ChatsGroup.Days()
         let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, capture: capture) }
-        return found.filter { view.shows($0.read) || $0.id == selection || keptInView.contains($0.id) }
-            .map { (entry: $0, group: days.group(of: $0)) }
-            .sorted { a, b in
-                if a.group != b.group { return a.group < b.group }
-                return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
-            }
-            .map(\.entry)
+        let kept = found.filter { view.shows($0.read) || $0.id == selection || keptInView.contains($0.id) }
+        return ChatsGroup.sorted(kept, needle: needle, days: days)
     }
 
     /// The shown chats per group, in order; empty groups left out.
@@ -1353,12 +1374,15 @@ struct ChatsTab: View {
 /// A group of the list: the chats you pinned on top, then by when a chat last moved, as every chat app has it. What is
 /// new stands out in its row and under "New" in the sidebar, so reading a chat never moves it.
 enum ChatsGroup: Int, Comparable, CaseIterable {
+    /// While you search: the chats whose own name (or one of whose people) holds the words, above every day.
+    case named
     case pinned, today, yesterday, week, month, earlier
 
     static func < (lhs: ChatsGroup, rhs: ChatsGroup) -> Bool { lhs.rawValue < rhs.rawValue }
 
     var title: String {
         switch self {
+        case .named: return tr("chats.group.named")
         case .pinned: return tr("chats.group.pinned")
         case .today: return tr("chats.group.today")
         case .yesterday: return tr("chats.group.yesterday")
@@ -1371,6 +1395,21 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
     /// Where a chat goes: on top when you pinned it, else by its newest message.
     static func of(_ entry: ChatsEntry, now: Date, calendar: Calendar = .current) -> ChatsGroup {
         Days(now: now, calendar: calendar).group(of: entry)
+    }
+
+    /// The list in its order: group by group, newest first in each; while searching the chats found by their name
+    /// come first, best match first (`ChatsEntry.rankedForSearch`).
+    static func sorted(_ entries: [ChatsEntry], needle: String, days: Days = Days()) -> [ChatsEntry] {
+        let named = needle.isEmpty ? [] : ChatsEntry.rankedForSearch(entries.filter { $0.nameRank(needle) != nil }, needle: needle)
+        let ids = Set(named.map(\.id))
+        let rest = entries.filter { !ids.contains($0.id) }
+            .map { (entry: $0, group: days.group(of: $0)) }
+            .sorted { a, b in
+                if a.group != b.group { return a.group < b.group }
+                return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
+            }
+            .map(\.entry)
+        return named + rest
     }
 
     /// Where each group starts, worked out once for a whole list: asking the calendar for every chat on every redraw
@@ -1395,6 +1434,11 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
             if entry.last >= week { return .week }
             if entry.last >= month { return .month }
             return .earlier
+        }
+
+        /// The group a chat shows in while `needle` is searched: on top when its name answers it, else by its day.
+        func group(of entry: ChatsEntry, searching needle: String) -> ChatsGroup {
+            entry.nameRank(needle) != nil ? .named : group(of: entry)
         }
     }
 }

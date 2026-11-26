@@ -202,13 +202,14 @@ extension CompanionServer {
     }
 
     /// The chats whose name, people or messages hold the words (`CompanionOp.inboxSearch`), as the Mac's search finds
-    /// them: a chat found by a message shows that message as its line.
+    /// them: the chats found by their name first, and a chat found by a message shows that message as its line.
     func inboxSearch(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
         let needle = (request.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty, needle.count <= 200 else { return .failure(request.id, .badRequest) }
         let capture = ChatCaptureService.shared
         _ = capture.loadedInbox
-        let found = ChatsEntry.all(capture: capture).lazy.compactMap { $0.found(needle, capture: capture) }.prefix(Self.inboxLimit)
+        let found = ChatsEntry.rankedForSearch(ChatsEntry.all(capture: capture).compactMap { $0.found(needle, capture: capture) },
+                                               needle: needle).prefix(Self.inboxLimit)
         var response = CompanionResponse(id: request.id, ok: true)
         response.inboxFound = found.map { digest($0, app: app) }
         return response
