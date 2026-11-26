@@ -91,11 +91,15 @@ enum FileLink {
 
     /// The file a code span names on its own (`banner.png`, `src/app.swift:12`, `~/notes.md`), so an answer that lists
     /// the files it made can open them. A name needs an extension Nook knows, or a folder before it; a type
-    /// (`AppModel.shared`), a domain (`example.com`) or a route (`/api/users`) is no file.
+    /// (`AppModel.shared`), a domain (`example.com`) or a route (`/api/users`) is no file. Only a path from the root or
+    /// your home folder may hold spaces (`/tmp/2026-11-26 - Plan.md`); a command with a flag (`/bin/ls -la x.md`) stays text.
     static func named(_ code: String) -> FileTarget? {
         let text = code.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty, text.count <= 300, !text.contains(where: \.isWhitespace), !text.contains("://"),
-              !text.hasSuffix("/"), let target = parse(text) else { return nil }
+        let rooted = text.hasPrefix("/") || text.hasPrefix("~/")
+        guard !text.isEmpty, text.count <= 300, !text.contains("://"), !text.hasSuffix("/"),
+              !text.contains(where: { $0.isWhitespace && (!rooted || $0 != " ") }),
+              !(text.contains(" ") && text.range(of: #" -{1,2}[A-Za-z]"#, options: .regularExpression) != nil),
+              let target = parse(text) else { return nil }
         let name = (target.path as NSString).lastPathComponent
         let ext = (name as NSString).pathExtension.lowercased()
         guard !ext.isEmpty, ext.first?.isLetter == true, ext.count <= 10, name.count > ext.count + 1 else { return nil }

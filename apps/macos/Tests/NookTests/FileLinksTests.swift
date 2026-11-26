@@ -70,6 +70,12 @@ final class FileLinksTests: XCTestCase {
         XCTAssertNil(FileLink.named("/api/users"))
         XCTAssertNil(FileLink.named("marketing/wereldfilosofie/"))
         XCTAssertNil(FileLink.named("git status"))
+        XCTAssertEqual(FileLink.named("/private/tmp/goa/2026-11-26 - GOA Ventures - plan.md")?.path,
+                       "/private/tmp/goa/2026-11-26 - GOA Ventures - plan.md", "a rooted path may hold spaces")
+        XCTAssertEqual(FileLink.named("~/Notes/My plan.md")?.path, "~/Notes/My plan.md")
+        XCTAssertNil(FileLink.named("docs/My plan.md"), "a relative path with a space reads as words")
+        XCTAssertNil(FileLink.named("/bin/ls -la notes.md"), "a command with a flag is no file")
+        XCTAssertNil(FileLink.named("/tmp/a\tb.md"))
         XCTAssertNil(FileLink.named(".md"))
         XCTAssertNil(FileLink.named("v1.2"))
         XCTAssertNil(FileLink.named("https://example.com/a.png"))
