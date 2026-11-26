@@ -78,3 +78,48 @@ export function cutMiddle(text: string, max: number): string {
   const head = Math.floor(keep / 2); // the end (a file name) gets the extra character
   return `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
 }
+
+/** Collapses internal whitespace and trims so visible text and tooltip text compare cleanly. */
+export function normalizeTipText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** True when a tooltip only repeats the element's own visible label (case-insensitive after whitespace collapse). */
+export function isRedundantTip(tipText: string, visibleText: string): boolean {
+  const tip = normalizeTipText(tipText);
+  const visible = normalizeTipText(visibleText);
+  return tip.length > 0 && visible.length > 0 && tip.toLowerCase() === visible.toLowerCase();
+}
+
+/**
+ * Decides whether a tooltip should open:
+ * - empty tooltips never show;
+ * - `whenCut` tooltips only show while the element's text is clipped/truncated;
+ * - tooltips that merely repeat the element's own visible text also only show while clipped/truncated (#1657).
+ */
+export function shouldShowTipText(tipText: string, visibleText: string, cut: boolean, whenCut = false): boolean {
+  if (!normalizeTipText(tipText)) return false;
+  if (whenCut || isRedundantTip(tipText, visibleText)) return cut;
+  return true;
+}
+
+/** Minimum visible spin duration on a refresh click so fast/cached refreshes still give feedback (#1630). */
+export const REFRESH_PULSE_MS = 450;
+
+/** Holds a refresh icon spinning for at least `REFRESH_PULSE_MS` after each click. */
+export class RefreshPulse {
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  constructor(private changed: (pulsing: boolean) => void, private duration = REFRESH_PULSE_MS) {}
+  trigger() {
+    if (this.timer) clearTimeout(this.timer);
+    this.changed(true);
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      this.changed(false);
+    }, this.duration);
+  }
+  stop() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+  }
+}

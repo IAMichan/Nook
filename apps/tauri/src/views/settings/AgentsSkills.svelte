@@ -3,8 +3,10 @@
   // for which agents), the skills those agents read, each with its SKILL.md and scripts to check and a switch that turns
   // it off without deleting it, and the folders they live in. The Mac's search on skills.sh and its collections are not
   // here: the Windows app does not install skills from the internet (docs/WINDOWS-PARITY.md).
+  import { onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { tr } from "../../lib/i18n.svelte";
+  import { RefreshPulse } from "../../lib/ui-parts";
   import { nook } from "../../lib/state.svelte";
   import { agentNames, type AgentKind } from "../../lib/agents";
   import type { RunProvider } from "../../lib/workspace/api";
@@ -15,6 +17,10 @@
   import SearchField from "../../components/ui/SearchField.svelte";
   import Tag from "../../components/ui/Tag.svelte";
   import ConnectionRow from "./ConnectionRow.svelte";
+
+  let refreshPulsing = $state(false);
+  const refreshPulse = new RefreshPulse((on) => (refreshPulsing = on));
+  onDestroy(() => refreshPulse.stop());
 
   interface SkillCatalogEntry {
     name: string;
@@ -170,8 +176,8 @@
 
   <div class="section-head">
     <h3>{tr("Skills van je agents", "Your agents' skills")}</h3>
-    <button type="button" class="head-action" disabled={loading} onclick={load}>
-      <Ico name="refresh-cw" size={14} />{tr("Vernieuwen", "Refresh")}
+    <button type="button" class="head-action" disabled={loading} onclick={() => { refreshPulse.trigger(); load(); }}>
+      <span class="nook-spin-glyph" class:nook-spin={loading || refreshPulsing}><Ico name="refresh-cw" size={14} /></span>{tr("Vernieuwen", "Refresh")}
     </button>
   </div>
   <p class="section-info">

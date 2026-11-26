@@ -3,8 +3,10 @@
   // for your review, and the others in the organizations and repositories you watch (Settings › Accounts &
   // koppelingen). Open ones by default; the Filters dropdown also shows closed and merged ones. A click opens the pull
   // request here, where it can be read in full and merged.
+  import { onDestroy } from "svelte";
   import { api } from "../../../lib/api";
   import Ico from "../../../components/ui/Ico.svelte";
+  import { RefreshPulse } from "../../../lib/ui-parts";
   import EmptyState from "../EmptyState.svelte";
   import PageHeader from "../PageHeader.svelte";
   import { connectorsApi, type AccountPullRequests, type PullRequestItem } from "../../../lib/connectors";
@@ -16,6 +18,14 @@
   import FilterMenu from "./FilterMenu.svelte";
   import PullGlyph from "./PullGlyph.svelte";
   import PullRequestView from "./PullRequestView.svelte";
+
+  let refreshPulsing = $state(false);
+  const refreshPulse = new RefreshPulse((on) => (refreshPulsing = on));
+  onDestroy(() => refreshPulse.stop());
+  function refreshList() {
+    refreshPulse.trigger();
+    pullRequests.refresh(true);
+  }
 
   /// The pull request shown in full, with the account it is listed under.
   /** Shown beside a session (its side panel): a pull request offers to explain or fix it there. */
@@ -88,7 +98,7 @@
     <PageHeader title="Pull requests">
       {#if pullRequests.loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
       <button class="page-icon" title={tr("Organisaties en repositories volgen", "Follow organizations and repositories")} aria-label={tr("Volgen", "Follow")} onclick={openSettings}><Ico name="binoculars" size={15} /></button>
-      <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={pullRequests.loading} onclick={() => pullRequests.refresh(true)}><Ico name="refresh-cw" size={15} /></button>
+      <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={pullRequests.loading} onclick={refreshList}><span class="nook-spin-glyph" class:nook-spin={pullRequests.loading || refreshPulsing}><Ico name="refresh-cw" size={15} /></span></button>
     </PageHeader>
     <div class="body">
     {#if pullRequests.error && !accounts.length}<p class="err">{pullRequests.error}</p>{/if}

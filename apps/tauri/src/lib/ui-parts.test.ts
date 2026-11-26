@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { COPIED_MS, CopiedMoment, TIP_REST_MS, TipClock, cutMiddle, placeTip } from "./ui-parts";
+import {
+  COPIED_MS,
+  CopiedMoment,
+  REFRESH_PULSE_MS,
+  RefreshPulse,
+  TIP_REST_MS,
+  TipClock,
+  cutMiddle,
+  isRedundantTip,
+  placeTip,
+  shouldShowTipText,
+} from "./ui-parts";
 
 describe("TipClock", () => {
   it("rests before the first tip and swaps at once to the next within 400 ms", () => {
@@ -72,5 +83,40 @@ describe("cutMiddle", () => {
     expect(cut).toHaveLength(24);
     expect(cut.startsWith("/Users/me/")).toBe(true);
     expect(cut.endsWith("File.svelte")).toBe(true);
+  });
+});
+
+describe("tooltip cut-off rules (UI-41)", () => {
+  it("suppresses tooltips that only repeat visible text unless cut off", () => {
+    expect(isRedundantTip("My Session", "  My   Session ")).toBe(true);
+    expect(shouldShowTipText("My Session", "My Session", false)).toBe(false);
+    expect(shouldShowTipText("My Session", "My Session", true)).toBe(true);
+  });
+
+  it("shows icon button and explanatory tooltips without requiring truncation", () => {
+    expect(shouldShowTipText("Refresh", "", false)).toBe(true);
+    expect(shouldShowTipText("Open this repository on GitHub", "GitHub", false)).toBe(true);
+    expect(shouldShowTipText("   ", "", true)).toBe(false);
+  });
+
+  it("respects explicit whenCut even when text differs", () => {
+    expect(shouldShowTipText("Full title", "Short", false, true)).toBe(false);
+    expect(shouldShowTipText("Full title", "Short", true, true)).toBe(true);
+  });
+});
+
+describe("RefreshPulse (UI-41)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  it("keeps the refresh icon turning for at least REFRESH_PULSE_MS and restarts on re-click", () => {
+    const states: boolean[] = [];
+    const pulse = new RefreshPulse((on) => states.push(on));
+    pulse.trigger();
+    vi.advanceTimersByTime(REFRESH_PULSE_MS - 50);
+    pulse.trigger();
+    vi.advanceTimersByTime(REFRESH_PULSE_MS - 50);
+    expect(states).toEqual([true, true]);
+    vi.advanceTimersByTime(50);
+    expect(states).toEqual([true, true, false]);
   });
 });

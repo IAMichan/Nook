@@ -180,7 +180,7 @@ are the visible differences that no item listed yet; the rest were already cover
 - [x] **UI-40** Cheat sheet as an overlay on its own key, not only in Settings · S
   - Done: Ctrl+/ (and ? outside a field) opens the Mac's `ShortcutCheatSheetView` over the window: the groups, a filter, "Change keys" to Settings › Shortcuts; Escape, the key again or a click beside it closes it (`components/CheatSheet.svelte`, names in `lib/shortcut-names.ts` for Settings › Shortcuts to share).
 
-- [ ] **UI-41** Tooltips in Nook's own look, only when text is cut off; feedback on every refresh click (#1656, #1657, #1630) · M
+- [x] **UI-41** Tooltips in Nook's own look, only when text is cut off; feedback on every refresh click (#1656, #1657, #1630) · M
   - Part done: the shell's controls (sidebar head, tabs, footer, split pane) use the fast tooltip (`use:tip`) instead of the system's, a tab's tooltip only when its name is hidden, and the conversation title's only while it is cut off (`tip`'s new `whenCut`); the footer's refresh turns while it runs and says when Nook is up to date. Open: the same in the pages the shell does not draw (Agents, Chats, Settings, the Nook chat), which still have `title=` in places. Update 2026-11-23: the Settings pages' own buttons and switches (Voice, Archive, Pull requests, About, Shortcuts, Assistant, Automation, connection rows, emoji picker, Accounts) use `use:tip` now; Settings rows that pass a `title` to a component and the Agents, Chats and Nook chat pages are still open.
 
 - [x] **UI-42** Starter grid two per row with an arrow on hover, checked against `NookStarters` · S
