@@ -58,6 +58,16 @@ final class BrowserExtensions: ObservableObject {
     @Published private(set) var installing: String?
     /// Bumped when an extension's button changes (its icon or badge), so toolbars draw again.
     @Published private(set) var actionsVersion = 0
+    /// Extensions that tried to talk to an app on the Mac (native messaging, which Nook's browser cannot pass on), by
+    /// id, with the app they asked for. Such an extension cannot work here: its popup stays empty, so Nook says why.
+    @Published private(set) var needsHelper: [String: String] = [:]
+    /// The extension button clicked last, so a refusal that follows the click (its popup asking for the app) is
+    /// explained right away.
+    private var lastClick: (id: String, at: Date)?
+
+    /// The app on the Mac that Apple's iCloud Passwords extension asks for; macOS only lets Chrome, Edge and Firefox
+    /// start it (a launch constraint on Apple's helper), so no setting in Nook can make it work.
+    static let applePasswordsHelper = "com.apple.passwordmanager"
 
     /// Whether this Mac's WebKit runs extensions (macOS 15.4 and later).
     static var isSupported: Bool {
@@ -173,6 +183,7 @@ final class BrowserExtensions: ObservableObject {
     func remove(_ id: String) {
         if #available(macOS 15.4, *), engineBox != nil { engine.unload(id: id, deleteData: true) }
         installed.removeAll { $0.id == id }
+        needsHelper[id] = nil
         saveList()
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(id + ".zip"))
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(id, isDirectory: true))
@@ -230,6 +241,12 @@ final class BrowserExtensions: ObservableObject {
     /// An extension's button was clicked in a tab: its popup opens beside `anchor`, or it does its own action.
     func click(_ id: String, page: BrowserPage, anchor: NSView?) {
         guard #available(macOS 15.4, *), engineBox != nil else { return }
+        if needsHelper[id] != nil {
+            warnNeedsHelper(id)
+            lastClick = nil
+        } else {
+            lastClick = (id, Date())
+        }
         engine.popupAnchor = anchor
         engine.perform(id: id, page: page)
     }
@@ -246,6 +263,30 @@ final class BrowserExtensions: ObservableObject {
     }
 
     fileprivate func actionsChanged() { actionsVersion += 1 }
+
+    // MARK: Apps on the Mac
+
+    /// Why an extension that asked for an app on the Mac cannot work here, or nil when it never asked.
+    func needsHelperNote(_ id: String) -> String? {
+        guard let app = needsHelper[id] else { return nil }
+        return tr(app == Self.applePasswordsHelper ? "browser.extensions.needsHelper.apple" : "browser.extensions.needsHelper.detail")
+    }
+
+    /// An extension asked for an app on the Mac and was told no. Explained at once when you just clicked its button
+    /// (its popup is what asked); otherwise in Settings › Browser and the next time you click it.
+    fileprivate func refusedHelper(_ id: String, app: String?) {
+        let app = app ?? ""
+        if needsHelper[id] != app { needsHelper[id] = app }
+        if let lastClick, lastClick.id == id, Date().timeIntervalSince(lastClick.at) < 10 {
+            self.lastClick = nil
+            warnNeedsHelper(id)
+        }
+    }
+
+    private func warnNeedsHelper(_ id: String) {
+        let name = installed.first { $0.id == id }?.name ?? id
+        ToastCenter.shared.warning(tr("browser.extensions.needsHelper", name), detail: needsHelperNote(id))
+    }
 
     // MARK: Tabs and windows
 
@@ -481,6 +522,24 @@ private final class Engine: NSObject, WKWebExtensionControllerDelegate {
     func webExtensionController(_ controller: WKWebExtensionController, didUpdate action: WKWebExtension.Action,
                                 forExtensionContext context: WKWebExtensionContext) {
         owner?.actionsChanged()
+    }
+
+    /// An extension sends one message to an app on the Mac (`runtime.sendNativeMessage`). Nook's browser cannot pass
+    /// messages to other apps (Chrome's native messaging hosts), so it says no and explains why.
+    func webExtensionController(_ controller: WKWebExtensionController, sendMessage message: Any,
+                                toApplicationWithIdentifier applicationIdentifier: String?,
+                                for extensionContext: WKWebExtensionContext,
+                                replyHandler: @escaping (Any?, (any Error)?) -> Void) {
+        owner?.refusedHelper(extensionContext.uniqueIdentifier, app: applicationIdentifier)
+        replyHandler(nil, NookError(tr("browser.extensions.needsHelper.detail")))
+    }
+
+    /// An extension opens a connection to an app on the Mac (`runtime.connectNative`): refused like a single message.
+    func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort,
+                                for extensionContext: WKWebExtensionContext,
+                                completionHandler: @escaping ((any Error)?) -> Void) {
+        owner?.refusedHelper(extensionContext.uniqueIdentifier, app: port.applicationIdentifier)
+        completionHandler(NookError(tr("browser.extensions.needsHelper.detail")))
     }
 
     /// The extension's popup, under the button you clicked (or in the middle of the window in front).

@@ -104,6 +104,40 @@ struct BrowserPasswordsRow: View {
     }
 }
 
+/// Settings › Browser › Passkeys: whether sites can use your passkeys (iCloud Keychain, a phone nearby, a security
+/// key) in Nook's browser, and the one step left when they cannot (`BrowserPasskeys`).
+struct BrowserPasskeysRow: View {
+    @ObservedObject private var passkeys = BrowserPasskeys.shared
+
+    var body: some View {
+        LabeledContent {
+            switch passkeys.state {
+            case .notAsked:
+                Button(tr("settings.browser.passkeys.allow")) { passkeys.askNow() }
+            case .denied:
+                Button(tr("settings.browser.passkeys.openSettings")) { passkeys.openSystemSettings() }
+            case .allowed, .needsEntitlement:
+                EmptyView()
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                SettingText("settings.browser.passkeys")
+                SettingNote(tr(Self.detailKey(passkeys.state)), tone: passkeys.state == .denied ? .warning : .info)
+            }
+        }
+        .onAppear { passkeys.refresh() }
+    }
+
+    static func detailKey(_ state: BrowserPasskeys.State) -> String {
+        switch state {
+        case .needsEntitlement: return "settings.browser.passkeys.needsEntitlement"
+        case .notAsked: return "settings.browser.passkeys.notAsked"
+        case .allowed: return "settings.browser.passkeys.allowed"
+        case .denied: return "settings.browser.passkeys.denied"
+        }
+    }
+}
+
 /// Settings › Browser › Extensions: the web extensions in Nook's browser, added from the Chrome Web Store (a link, or
 /// the "Add to Nook" bar on a store page) or from a file, to turn off or remove.
 struct BrowserExtensionsSettings: View {
@@ -130,6 +164,9 @@ struct BrowserExtensionsSettings: View {
                             .toggleStyle(.switch)
                             .controlSize(.small)
                         ConfirmedButton(tr("browser.extensions.remove"), question: tr("confirm.remove", item.name)) { extensions.remove(item.id) }
+                    }
+                    if let note = extensions.needsHelperNote(item.id) {
+                        SettingNote(note, tone: .warning)
                     }
                 }
                 HStack(spacing: NookTheme.Spacing.sm) {
