@@ -29,7 +29,7 @@ final class SidePanelDragStaysAtEnd: Scenario {
 
             var problems: [String] = []
             // Sweeps of a drag, one width per frame of the screen, as a hand drags the line: wider, narrower, and back.
-            for sweep in 0..<8 {
+            for sweep in 0..<20 {
                 let from = sweep % 2 == 0 ? 320.0 : 600.0
                 let to = sweep % 2 == 0 ? 600.0 : 320.0
                 var worst = 0.0
@@ -40,7 +40,7 @@ final class SidePanelDragStaysAtEnd: Scenario {
                     worst = max(worst, Self.fromEnd(scrollView))
                 }
                 // Hands off: the agent keeps working, and the view must follow it at the end.
-                screen.settle(2.5)
+                screen.settle(1.5)
                 let away = Self.fromEnd(scrollView)
                 log(String(format: "sweep %d: at most %.0f pt from the end while dragging, %.0f pt after", sweep, worst, away))
                 if away > Self.endMargin {
