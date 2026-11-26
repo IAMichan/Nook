@@ -256,7 +256,7 @@
   .searchrow { display: flex; align-items: center; gap: 6px; }
   .grow { flex: 1; min-width: 0; }
   .calm { margin: 0; padding: 12px 20px 0; display: flex; align-items: center; gap: 8px; font: var(--pt-body); color: var(--text2); }
-  .tick { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--mint); color: var(--canvas); font: 700 10px var(--font); }
+  .tick { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--mint); color: var(--canvas); font: var(--pt-caption); font-weight: 700; }
   .none { margin: 0; padding: 24px 0; text-align: center; font: var(--pt-body); color: var(--text2); }
   .on { display: flex; align-items: center; gap: 6px; }
   .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 6px; background: rgba(240, 182, 90, 0.14); color: var(--amber); font: 600 11.4px ui-rounded, var(--font); display: inline-flex; align-items: center; justify-content: center; }
