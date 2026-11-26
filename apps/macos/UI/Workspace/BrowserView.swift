@@ -1700,8 +1700,9 @@ extension BridgeCaller {
 
 /// The page an agent opened, small beside its own session's chat so you follow along without leaving the conversation:
 /// under the docked session panel's cards when that panel shows, otherwise in the chat's bottom right corner just above
-/// the composer. Only that session shows it; you can drag it anywhere over the row, expanding opens the browser tab in
-/// the side panel, and the cross puts it away until the agent opens a page again.
+/// the composer. Only that session shows it; you can drag it anywhere over the row, drag its edges to make it larger or
+/// smaller (also where it rests), expanding opens the browser tab in the side panel, and the cross puts it away until the
+/// agent opens a page again.
 struct SessionBrowserCorner: View {
     let runID: UUID?
     let directory: String
@@ -1716,6 +1717,13 @@ struct SessionBrowserCorner: View {
     /// Where you dragged the card to, from its resting place; it keeps that while the chat is open.
     @State private var moved: CGSize = .zero
     @State private var dragStart: CGSize?
+    /// How much larger (or smaller) you made the card than its resting size, by dragging an edge.
+    @State private var grown: CGSize = .zero
+    /// The card's place in the row when a resize began.
+    @State private var resizeStart: CGRect?
+
+    /// The smallest the card gets by dragging its edges.
+    static let minSize = CGSize(width: 240, height: 160)
 
     /// Where the page this session's agent opened rests in the row: right under the docked session panel's cards, its right
     /// edge on theirs, as long as it fits in that column; otherwise in the conversation's bottom right corner, above the
@@ -1735,18 +1743,52 @@ struct SessionBrowserCorner: View {
                       width: width, height: size.height)
     }
 
+    /// The card's size: its resting size with what you dragged its edges by, never larger than `area`.
+    private var cardSize: CGSize { Self.sized(rest.size, grown: grown, area: area.size) }
+
+    static func sized(_ rest: CGSize, grown: CGSize, area: CGSize) -> CGSize {
+        func side(_ base: CGFloat, _ extra: CGFloat, _ room: CGFloat, _ least: CGFloat) -> CGFloat {
+            max(min(base, least), min(max(base + extra, least), max(room, base)))
+        }
+        return CGSize(width: side(rest.width, grown.width, area.width, minSize.width),
+                      height: side(rest.height, grown.height, area.height, minSize.height))
+    }
+
     /// Kept inside `area`; when the card is larger than it, it keeps to the area's top left.
     private func clamped(_ size: CGSize) -> CGSize {
+        let card = cardSize
         let x = rest.minX + size.width, y = rest.minY + size.height
-        let clampedX = max(area.minX, min(area.maxX - rest.width, x))
-        let clampedY = max(area.minY, min(area.maxY - rest.height, y))
+        let clampedX = max(area.minX, min(area.maxX - card.width, x))
+        let clampedY = max(area.minY, min(area.maxY - card.height, y))
         return CGSize(width: clampedX - rest.minX, height: clampedY - rest.minY)
+    }
+
+    /// Where the card goes when `edge` is dragged by `translation` from `start`: the opposite edge stays put, and the card
+    /// stays at least `minSize` and inside `area`.
+    static func resized(_ start: CGRect, edge: SessionBrowserEdge, by translation: CGSize, area: CGRect) -> CGRect {
+        var minX = start.minX, maxX = start.maxX, minY = start.minY, maxY = start.maxY
+        if edge.left { minX = max(area.minX, min(maxX - minSize.width, minX + translation.width)) }
+        if edge.right { maxX = min(area.maxX, max(minX + minSize.width, maxX + translation.width)) }
+        if edge.top { minY = max(area.minY, min(maxY - minSize.height, minY + translation.height)) }
+        if edge.bottom { maxY = min(area.maxY, max(minY + minSize.height, maxY + translation.height)) }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private func resize(_ edge: SessionBrowserEdge, _ translation: CGSize) {
+        let offset = clamped(moved)
+        let start = resizeStart ?? CGRect(origin: CGPoint(x: rest.minX + offset.width, y: rest.minY + offset.height),
+                                          size: cardSize)
+        resizeStart = start
+        let frame = Self.resized(start, edge: edge, by: translation, area: area)
+        grown = CGSize(width: frame.width - rest.width, height: frame.height - rest.height)
+        moved = CGSize(width: frame.minX - rest.minX, height: frame.minY - rest.minY)
     }
 
     var body: some View {
         let store = hidden ? nil : browsers.corner(BrowserSession(run: runID, directory: directory))
         let shown = store != nil
         let offset = clamped(moved)
+        let size = cardSize
         ZStack(alignment: .topLeading) {
             if let store {
                 SessionBrowserCard(store: store, directory: directory, expand: expand, close: { browsers.putAway(store) },
@@ -1756,7 +1798,17 @@ struct SessionBrowserCorner: View {
                     moved = clamped(CGSize(width: start.width + translation.width, height: start.height + translation.height))
                 }, dragEnded: { dragStart = nil })
                     .id(ObjectIdentifier(store))
-                    .frame(width: rest.width)
+                    .frame(width: size.width, height: size.height)
+                    .overlay {
+                        SessionBrowserResizeEdges(resize: resize, ended: { resizeStart = nil }, reset: {
+                            // Back to its resting size, its bottom right corner where it was.
+                            let offset = clamped(moved)
+                            moved = CGSize(width: offset.width + size.width - rest.width,
+                                           height: offset.height + size.height - rest.height)
+                            grown = .zero
+                        })
+                        .padding(-4)
+                    }
                     // Clamped here too: a panel that closes takes the room the card was moved into with it.
                     .offset(x: rest.minX + offset.width, y: rest.minY + offset.height)
                     .transition(.scale(scale: 0.92, anchor: .topTrailing).combined(with: .opacity))
@@ -1815,9 +1867,7 @@ struct SessionBrowserCard: View {
             WebViewHost(webView: store.webView).id(store.page.id)
                 .overlay { BrowserTakeoverOverlay(store: store, compact: true) }
         }
-        // Its usual size, narrower when the conversation it floats over is narrow (see `SessionTools`).
-        .frame(maxWidth: Self.size.width)
-        .frame(height: Self.size.height)
+        // Its size comes from `SessionBrowserCorner`: narrower when the conversation is narrow, or what you dragged it to.
         .background(NookTheme.field)
         .roundedClip(NookTheme.Radius.panel)
         .roundedStroke(NookTheme.fieldStroke, radius: NookTheme.Radius.panel)
@@ -1833,6 +1883,61 @@ struct SessionBrowserCard: View {
             store.shownInChat = max(0, store.shownInChat - 1)
             store.leftView()
         }
+    }
+}
+
+/// An edge or corner of the browser card in a chat that resizes it.
+struct SessionBrowserEdge: Hashable {
+    var left = false, right = false, top = false, bottom = false
+
+    static let leading = Self(left: true), trailing = Self(right: true)
+    static let topEdge = Self(top: true), bottomEdge = Self(bottom: true)
+    static let topLeading = Self(left: true, top: true), topTrailing = Self(right: true, top: true)
+    static let bottomLeading = Self(left: true, bottom: true), bottomTrailing = Self(right: true, bottom: true)
+}
+
+/// Thin strips along the browser card's edges and its corners: drag one to make the card larger or smaller, double-click
+/// it to go back to its resting size. They straddle the card's border, clear of its header's buttons.
+private struct SessionBrowserResizeEdges: View {
+    let resize: (SessionBrowserEdge, CGSize) -> Void
+    let ended: () -> Void
+    let reset: () -> Void
+    /// Half of a strip lies outside the card, so the page under its edge keeps most of its pointer.
+    private let thickness: CGFloat = 8
+    private let corner: CGFloat = 16
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .overlay(alignment: .leading) {
+                handle(.leading, .leading).frame(width: thickness).padding(.vertical, corner)
+            }
+            .overlay(alignment: .trailing) {
+                handle(.trailing, .trailing).frame(width: thickness).padding(.vertical, corner)
+            }
+            .overlay(alignment: .top) { handle(.topEdge, .top).frame(height: thickness).padding(.horizontal, corner) }
+            .overlay(alignment: .bottom) {
+                handle(.bottomEdge, .bottom).frame(height: thickness).padding(.horizontal, corner)
+            }
+            .overlay(alignment: .topLeading) { handle(.topLeading, .topLeading).frame(width: corner, height: corner) }
+            .overlay(alignment: .topTrailing) { handle(.topTrailing, .topTrailing).frame(width: corner, height: thickness) }
+            .overlay(alignment: .bottomLeading) {
+                handle(.bottomLeading, .bottomLeading).frame(width: corner, height: corner)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                handle(.bottomTrailing, .bottomTrailing).frame(width: corner, height: corner)
+            }
+    }
+
+    private func handle(_ edge: SessionBrowserEdge, _ position: FrameResizePosition) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .pointerStyle(.frameResize(position: position))
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { resize(edge, $0.translation) }
+                .onEnded { _ in ended() })
+            .onTapGesture(count: 2, perform: reset)
+            .accessibilityLabel(tr("browser.popup.resize"))
     }
 }
 
