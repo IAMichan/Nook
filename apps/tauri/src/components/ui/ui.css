@@ -19,7 +19,13 @@
 .hover-reveal { opacity: 0; pointer-events: none; transition: opacity var(--motion-hover); }
 :is(.hover-row, .reveal-host):is(:hover, :focus-within) .hover-reveal, .hover-reveal:focus-visible { opacity: 1; pointer-events: auto; }
 
+/* Refresh icon turn animation shared across every refresh button (`RefreshIconButton`, UI-41). */
+.nook-spin-glyph { display: inline-flex; }
+.nook-spin { animation: nook-spin-turn 0.9s linear infinite; }
+@keyframes nook-spin-turn { to { transform: rotate(360deg); } }
+
 @media (prefers-reduced-motion: reduce) {
   .nook-tip.on { animation: none; opacity: 1; }
   .hover-row, .hover-reveal { transition: none; }
+  .nook-spin { animation-duration: 2.7s; }
 }

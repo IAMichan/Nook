@@ -7,8 +7,9 @@
   // The list is read again every ten seconds while something in it runs, and every minute otherwise. Switching a filter
   // or a tab shows what is already known at once (the matching runs of the list read before, a tab's last read) while
   // GitHub's answer is on its way.
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import Ico from "../../../components/ui/Ico.svelte";
+  import { RefreshPulse } from "../../../lib/ui-parts";
   import EmptyState from "../EmptyState.svelte";
   import PageHeader from "../PageHeader.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -313,6 +314,14 @@
     if (/^https:\/\//.test(url)) openUrl(url);
   }
 
+  let refreshPulsing = $state(false);
+  const refreshPulse = new RefreshPulse((on) => (refreshPulsing = on));
+  onDestroy(() => refreshPulse.stop());
+  function triggerRefresh() {
+    refreshPulse.trigger();
+    reload++;
+  }
+
   const notConnected = $derived(reposLoaded && !available && !pullRequests.accounts.length);
 </script>
 
@@ -329,7 +338,7 @@
       {#if loading && loaded}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
       {#if repo && !notConnected}<button class="page-icon" title={tr("Start een workflow die met de hand kan starten", "Start a workflow that can be run by hand")} aria-label={tr("Workflow starten", "Run workflow")} onclick={() => (dispatching = true)}><Ico name="play" size={15} /></button>{/if}
       {#if repo}<button class="page-icon" title={tr("Open de Actions van deze repository op GitHub", "Open this repository's Actions on GitHub")} aria-label={tr("Open op GitHub", "Open on GitHub")} onclick={() => open(`https://github.com/${repo}/actions`)}><Ico name="external-link" size={15} /></button>{/if}
-      <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={() => reload++}><Ico name="refresh-cw" size={15} /></button>
+      <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={!repo || loading} onclick={triggerRefresh}><span class="nook-spin-glyph" class:nook-spin={loading || refreshPulsing}><Ico name="refresh-cw" size={15} /></span></button>
     </PageHeader>
     {#if !tabs.length && !notConnected}<div class="head"><RepoPicker {repos} value={repo} onpick={pick} /></div>{/if}
 
