@@ -512,11 +512,15 @@ struct PullRequestBadge: Equatable, Sendable {
         return PullRequestBadge(glyph: glyph, label: links.count == 1 ? .number(primary.number) : .numberPlus(primary.number, extra: links.count - 1))
     }
 
-    /// The newest one the chat opened: its state is where the chat's work stands now, also when an older request is
-    /// still open (or in conflict) next to it. A forge numbers a repository's requests as they are opened, so the
-    /// highest number is the newest; the last updated one breaks a tie between repositories.
+    /// The one that still needs the user: a request not merged or closed yet (open or draft) comes before a settled one,
+    /// so a chat whose newest request merged while an older one is still open does not look done. Within each group the
+    /// newest wins: a forge numbers a repository's requests as they are opened, so the highest number is the newest; the
+    /// last updated one breaks a tie between repositories.
     private static func primaryLink(_ links: [PullRequestLink]) -> PullRequestLink {
-        links.max { ($0.number, $0.updatedAt ?? .distantPast) < ($1.number, $1.updatedAt ?? .distantPast) }!
+        links.max {
+            ($0.state.isOpen ? 1 : 0, $0.number, $0.updatedAt ?? .distantPast)
+                < ($1.state.isOpen ? 1 : 0, $1.number, $1.updatedAt ?? .distantPast)
+        }!
     }
 }
 

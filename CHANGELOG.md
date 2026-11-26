@@ -13,6 +13,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 ### Changed
 
 - Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
+- A session with several pull requests shows the one not merged yet in its badge, also when a newer one already merged, so you can see the session is not done.
 
 ## [0.1.3-beta.3] - 2026-11-25
 

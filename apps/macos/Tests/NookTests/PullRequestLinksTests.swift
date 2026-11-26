@@ -218,8 +218,8 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(one, PullRequestBadge(glyph: .draft, label: .number(12)))
         XCTAssertEqual(one?.text, "#12")
         let many = PullRequestBadge.text(links: [link(12, head: "a"), link(13, head: "b", state: .merged), link(14, head: "c", state: .closed)])
-        XCTAssertEqual(many, PullRequestBadge(glyph: .closed, label: .numberPlus(14, extra: 2)))
-        XCTAssertEqual(many?.text, "#14 +2")
+        XCTAssertEqual(many, PullRequestBadge(glyph: .open, label: .numberPlus(12, extra: 2)))
+        XCTAssertEqual(many?.text, "#12 +2")
         let stack = PullRequestBadge.text(links: [link(1, base: "main", head: "a"), link(2, base: "a", head: "b"), link(3, base: "b", head: "c")])
         XCTAssertEqual(stack, PullRequestBadge(glyph: .stack, label: .stack(3, merged: 0)))
         XCTAssertNil(stack?.text)
@@ -237,12 +237,18 @@ final class PullRequestLinksTests: XCTestCase {
 
     func testBadgeShowsTheNewestRequest() {
         XCTAssertEqual(PullRequestBadge.text(links: [link(2, state: .merged), link(1, state: .closed)])?.glyph, .merged)
-        // An older request still open in conflict does not hide that the newest one merged.
+        XCTAssertEqual(PullRequestBadge.text(links: [link(3, state: .merged), link(4, state: .draft)])?.glyph, .draft)
+        XCTAssertEqual(PullRequestBadge.text(links: [link(7), link(8)])?.label, .numberPlus(8, extra: 1))
+    }
+
+    /// A chat whose newest request merged while an older one is still open is not done: the badge shows the open one.
+    func testBadgeShowsARequestNotMergedYetBeforeANewerMergedOne() {
+        let badge = PullRequestBadge.text(links: [link(3685), link(3686, state: .merged)])
+        XCTAssertEqual(badge, PullRequestBadge(glyph: .open, label: .numberPlus(3685, extra: 1)))
         var older = link(1326)
         older.conflicted = true
-        let badge = PullRequestBadge.text(links: [older, link(1579, state: .merged)])
-        XCTAssertEqual(badge, PullRequestBadge(glyph: .merged, label: .numberPlus(1579, extra: 1)))
-        XCTAssertEqual(PullRequestBadge.text(links: [link(3, state: .merged), link(4, state: .draft)])?.glyph, .draft)
+        XCTAssertEqual(PullRequestBadge.text(links: [older, link(1579, state: .merged)])?.glyph, .conflict)
+        XCTAssertEqual(PullRequestBadge.text(links: [link(1, state: .draft), link(2, state: .closed)])?.glyph, .draft)
     }
 
     func testBadgeShowsAMergeConflictOnlyWhileOpen() {
