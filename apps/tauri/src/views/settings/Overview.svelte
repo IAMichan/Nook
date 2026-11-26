@@ -15,6 +15,7 @@
   import { connectorsApi, health } from "../../lib/connectors";
   import { companion, type PairedDeviceView } from "../../lib/companion";
   import { updater, startUpdates } from "../../lib/updates.svelte";
+  import SettingsLinkRow from "./SettingsLinkRow.svelte";
 
   let { onopen = () => {} }: { onopen?: (id: SettingsSectionId) => void } = $props();
 
@@ -29,7 +30,6 @@
   }
   interface Glance {
     id: SettingsSectionId;
-    icon: string;
     title: string;
     detail: string;
     state: RowState;
@@ -255,7 +255,6 @@
     const list: Glance[] = [
       {
         id: "brain",
-        icon: "brain",
         title: tr("Brein", "Brain"),
         state: brainReady ? "done" : "todo",
         detail: brainReady
@@ -274,7 +273,6 @@
             : tr("Aan", "On");
       list.push({
         id: "autocomplete",
-        icon: "keyboard",
         title: tr("Typen", "Typing"),
         detail,
         state: typingNeedsAttention ? "warning" : "done",
@@ -288,7 +286,6 @@
         : tr("{n} agents gekoppeld", "{n} agents linked", { n: installedAgents });
       list.push({
         id: "agents",
-        icon: "terminal",
         title: "Coding agents",
         detail,
         state: outdatedAgents.length > 0 ? "warning" : installedAgents > 0 ? "done" : "todo",
@@ -298,7 +295,6 @@
     if (automationGlance) {
       list.push({
         id: "automation",
-        icon: "history",
         title: tr("Automatisering", "Automation"),
         detail: automationGlance.detail,
         state: automationGlance.state,
@@ -308,7 +304,6 @@
     const brokenChats = chatBroken ? Math.max(1, attention.chatProblems) : attention.chatProblems;
     list.push({
       id: "chats",
-      icon: "messages-square",
       title: tr("Chat-apps", "Chat apps"),
       state: brokenChats > 0 ? "warning" : chatsLinked?.length ? "done" : "todo",
       detail: brokenChats > 0
@@ -322,7 +317,6 @@
     const serviceIssues = Math.max(attention.serviceProblems, brokenServices.length);
     list.push({
       id: "connections",
-      icon: "user-check",
       title: tr("Diensten", "Services"),
       state: serviceIssues > 0 ? "warning" : activeServices > 0 ? "done" : "todo",
       detail: serviceIssues > 0
@@ -333,7 +327,6 @@
     if (devicesGlance) {
       list.push({
         id: "iphone",
-        icon: "smartphone",
         title: tr("Apparaten", "Devices"),
         detail: devicesGlance.detail,
         state: devicesGlance.state,
@@ -343,8 +336,7 @@
     if (permissions.length) {
       const granted = permissions.filter((p) => p.granted).length;
       list.push({
-        id: "privacy",
-        icon: "shield-check",
+        id: "permissions",
         title: tr("Toegang", "Access"),
         state: granted < permissions.length ? "todo" : "done",
         detail: tr("{n} van {all} machtigingen gegeven", "{n} of {all} permissions granted", { n: granted, all: permissions.length }),
@@ -353,7 +345,6 @@
 
     list.push({
       id: "maintenance",
-      icon: "wrench",
       title: tr("Systeem", "System"),
       detail: updateGlance.detail,
       state: updateGlance.state,
@@ -408,15 +399,7 @@
 <h3>{tr("In één oogopslag", "At a glance")}</h3>
 <div class="group glance">
   {#each cards as card (card.id)}
-    <button class="row go-row" onclick={() => onopen(card.id)}>
-      <span class="tile"><Ico name={card.icon} size={14} /></span>
-      <span class="text">
-        <span class="title">{card.title}</span>
-        <span class="detail">{card.detail}</span>
-      </span>
-      {#if card.state !== "done"}{@render stateIcon(card.state)}{/if}
-      <span class="go"><Ico name="chevron-right" size={12} /></span>
-    </button>
+    <SettingsLinkRow title={card.title} detail={card.detail} section={card.id} state={card.state} flush onclick={() => onopen(card.id)} />
   {/each}
 </div>
 
@@ -438,15 +421,8 @@
   .state.warn { color: var(--amber); }
   .state.err { color: var(--coral); }
   .status .state { margin-right: var(--space-8); }
-  /* The circle and the tile keep their size; the text takes the room (the shared row gives it to the first span). */
-  .status > .state:first-child, .go-row > .tile:first-child { flex: none; }
-  /* The glance card: one row per page, wide as the card, the whole row a button. */
+  /* The circle keeps its size; the text takes the room (the shared row gives it to the first span). */
+  .status > .state:first-child { flex: none; }
+  /* The glance card: flush SettingsLinkRow buttons inside one rounded card. */
   .glance { padding: 0; overflow: hidden; }
-  .go-row { width: 100%; flex-wrap: nowrap; justify-content: flex-start; gap: var(--space-12); padding: var(--space-12) var(--space-16); border: none; border-bottom: 1px solid var(--separator); border-radius: 0; background: none; text-align: left; }
-  .go-row:last-child { border-bottom: none; }
-  .go-row:hover:not(:disabled) { background: var(--row-hover); }
-  .tile { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: var(--radius-chip); background: var(--smoke); color: var(--text-strong); }
-  .title { font: var(--text-body); line-height: 1.3; color: var(--paper); }
-  .detail { font: var(--text-detail); line-height: 1.3; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .go { display: grid; place-items: center; flex: none; color: var(--text3); }
 </style>

@@ -11,6 +11,7 @@
   import Sheet from "../../components/ui/Sheet.svelte";
   import Spinner from "../../components/ui/Spinner.svelte";
   import CompanionScopes from "./CompanionScopes.svelte";
+  import SettingsTile from "./SettingsTile.svelte";
 
   let { info, onchange, onclose }: {
     info: CompanionInfo;
@@ -127,7 +128,7 @@
 
 <Sheet onclose={close} label={tr("Nieuwe telefoon koppelen", "Pair a new phone")}>
   <div class="sheet-head">
-    <div class="tile" aria-hidden="true"><Ico name="smartphone" size={20} /></div>
+    <SettingsTile section="iphone" size={40} />
     <div class="head-text">
       <h4>{tr("Nieuwe telefoon koppelen", "Pair a new phone")}</h4>
       <p class="subtitle">
@@ -268,16 +269,6 @@
     padding: var(--space-24);
     border-bottom: 1px solid var(--separator);
     flex: none;
-  }
-  .tile {
-    width: 40px;
-    height: 40px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: var(--radius-card);
-    background: var(--smoke);
-    color: var(--paper);
   }
   .head-text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
   h4 { margin: 0; font: var(--text-heading); color: var(--paper); }

@@ -159,3 +159,39 @@ export function sectionTrail(section: SettingsSectionId): string {
   const host = settingsHost(section);
   return host === section ? pageTitle(host) : `${pageTitle(host)} › ${sectionTitle(section)}`;
 }
+
+/**
+ * The line icon in front of each page in the sidebar and on its tab, matching the Mac's
+ * `SettingsSection.sidebarSymbol` mapped to Lucide icons (`NookIcon`).
+ */
+export const sectionIcons: Record<SettingsSectionId, string> = {
+  start: "house", general: "settings", notch: "laptop", appearance: "palette", notifications: "bell", notificationApps: "bell-dot", sound: "volume-2",
+  shortcuts: "keyboard", games: "gamepad-2", brain: "brain", assistant: "sparkles", memory: "library", instructions: "list-checks",
+  autocomplete: "text-cursor", autocompleteApps: "layout-grid", autocompleteStyle: "type", autocompletePlayground: "text-cursor-input",
+  autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", skills: "book", usage: "chart-column", sessions: "messages-square",
+  worktrees: "folder", openIn: "external-link", archive: "archive", automation: "calendar-clock", projects: "folder-cog", pullRequests: "git-branch",
+  chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone",
+  privacy: "hand", permissions: "shield-check", activityLog: "list", maintenance: "wrench", about: "info",
+};
+
+/** Sidebar line icon for a Settings section. */
+export function sectionIcon(section: SettingsSectionId): string {
+  return sectionIcons[section];
+}
+
+/**
+ * Tile icons for `SettingsTile`, matching the Mac's `SettingsSection.tileSymbol`: mostly identical to
+ * `sectionIcons`, with the four section-specific tile glyphs where the Mac differs from its sidebar glyph.
+ */
+export const sectionTileIcons: Record<SettingsSectionId, string> = {
+  ...sectionIcons,
+  autocomplete: "keyboard",
+  dictation: "audio-waveform",
+  automation: "history",
+  iphone: "smartphone",
+};
+
+/** Tile icon for `SettingsTile` given a Settings section. */
+export function sectionTileIcon(section: SettingsSectionId): string {
+  return sectionTileIcons[section];
+}
