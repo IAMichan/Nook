@@ -19,7 +19,7 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 - An extension that needs an app on your Mac (native messaging), such as Apple's iCloud Passwords, now says why it
   cannot work in Nook's browser, when you click it and in Settings › Browser, instead of opening an empty popup.
-
+- The chat list shows what is unread at a glance: a solid count, a bold name and a bright line, while read chats step back to grey. Muted chats get a slashed bell and a grey count, a photo, voice message, poll or call gets its icon in the line, and the account name only shows when an app has more than one account in the list. On the Mac and the iPhone.
 - Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
 
 ## [0.1.3-beta.3] - 2026-11-25

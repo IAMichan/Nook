@@ -4,11 +4,12 @@ import WebKit
 /// The window of a link's "sign in on the website" step: the app's own login page (instagram.com, messenger.com…) in a
 /// fresh, private browser of its own. You sign in there as you always do; once the page says you are in and the cookies
 /// the step asks for are there, they go to the chat service on this Mac (and nowhere else) and the window closes.
-/// Closing it yourself stops the step.
+/// Closing it yourself stops the step, and `onClosed` says so to the sheet.
 @MainActor
 final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     private let step: ChatLinkData.Step
     private let onDone: ([String: String], String?) -> Void
+    private let onClosed: () -> Void
     private let window: NSWindow
     private let web: WKWebView
     private var checking: Timer?
@@ -20,9 +21,10 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     private(set) static var current: ChatSignInWindow?
 
     /// Opens the sign-in window of `step`, closing any other one first.
-    static func open(step: ChatLinkData.Step, title: String, onDone: @escaping ([String: String], String?) -> Void) {
+    static func open(step: ChatLinkData.Step, title: String, onClosed: @escaping () -> Void = {},
+                     onDone: @escaping ([String: String], String?) -> Void) {
         closeAll()
-        let window = ChatSignInWindow(step: step, title: title, onDone: onDone)
+        let window = ChatSignInWindow(step: step, title: title, onClosed: onClosed, onDone: onDone)
         current = window
         window.show()
     }
@@ -35,9 +37,11 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     /// The request headers the page sent that the step asks for (LinkedIn's), by lower-case name.
     private var headers: [String: String] = [:]
 
-    init(step: ChatLinkData.Step, title: String, onDone: @escaping ([String: String], String?) -> Void) {
+    init(step: ChatLinkData.Step, title: String, onClosed: @escaping () -> Void = {},
+         onDone: @escaping ([String: String], String?) -> Void) {
         self.step = step
         self.onDone = onDone
+        self.onClosed = onClosed
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.addGoogleSignInHelp()
         // Its own store, gone with the window: the sign-in lives in the chat service, not in Nook.
@@ -87,10 +91,12 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         if Self.current === self { Self.current = nil }
     }
 
+    /// Closed by you before the sign-in was handed over: the sheet says it did not finish.
     func windowWillClose(_ notification: Notification) {
         checking?.invalidate()
         checking = nil
         if Self.current === self { Self.current = nil }
+        if !finished { onClosed() }
     }
 
     /// Signing in with Google needs the window to call itself Firefox there; elsewhere it keeps the step's own agent.

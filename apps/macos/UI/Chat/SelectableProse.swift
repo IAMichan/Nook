@@ -623,7 +623,7 @@ final class ProseTextView: NSTextView {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         setHovered(nil)
-        hideCodeCopy()
+        hideCodeCopySoon()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -640,6 +640,13 @@ final class ProseTextView: NSTextView {
     private var codeCopy: NSHostingView<InlineCodeCopyButton>?
     private var codeCopyRange: NSRange?
     private var codeCopyZone: NSRect = .zero
+    /// Hides the copy button a moment after the pointer left its zone, so a pointer that slips just past the button
+    /// (or out of the text) and comes back still finds it.
+    private var codeCopyHide: DispatchWorkItem?
+    /// How far around the chip and its button the pointer may wander before the button starts to go.
+    private static let codeCopySlack: CGFloat = 8
+    /// How long the button stays after the pointer left its zone.
+    private static let codeCopyGrace: TimeInterval = 0.6
 
     /// Call after the text changed: notes whether it has inline code and lets go of a copy button on the old text.
     func textDidChange() {
@@ -659,8 +666,9 @@ final class ProseTextView: NSTextView {
     /// Shows a copy button beside the inline code under `point`, so a value the agent gives (an address, a password, a
     /// command) copies in one click instead of a careful selection.
     private func hoverCode(at point: NSPoint) {
-        if codeCopy != nil, codeCopyZone.contains(point) { return }
-        guard let (range, chip) = codeChip(at: point) else { hideCodeCopy(); return }
+        if codeCopy != nil, codeCopyZone.contains(point) { cancelCodeCopyHide(); return }
+        guard let (range, chip) = codeChip(at: point) else { hideCodeCopySoon(); return }
+        cancelCodeCopyHide()
         let side = max(16, round(chip.height))
         let gap: CGFloat = 2
         var x = chip.maxX + gap
@@ -679,10 +687,27 @@ final class ProseTextView: NSTextView {
             codeCopy = host
         }
         codeCopyRange = range
-        codeCopyZone = chip.union(frame).insetBy(dx: -gap, dy: -gap)
+        codeCopyZone = chip.union(frame).insetBy(dx: -Self.codeCopySlack, dy: -Self.codeCopySlack)
+    }
+
+    /// Lets the copy button go after the grace period, unless the pointer comes back first.
+    private func hideCodeCopySoon() {
+        guard codeCopy != nil, codeCopyHide == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.codeCopyHide = nil
+            self?.hideCodeCopy()
+        }
+        codeCopyHide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.codeCopyGrace, execute: work)
+    }
+
+    private func cancelCodeCopyHide() {
+        codeCopyHide?.cancel()
+        codeCopyHide = nil
     }
 
     private func hideCodeCopy() {
+        cancelCodeCopyHide()
         codeCopy?.removeFromSuperview()
         codeCopy = nil
         codeCopyRange = nil

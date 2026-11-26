@@ -964,11 +964,7 @@ struct ChatCallRow: View {
     /// A call you did not answer stands out; one nobody picked up at the other end does not.
     private var missedHere: Bool { call.missed && !mine }
 
-    private var symbol: String {
-        if missedHere { return call.video ? "video.slash.fill" : "phone.down.fill" }
-        if call.video { return "video.fill" }
-        return mine ? "phone.arrow.up.right.fill" : "phone.arrow.down.left.fill"
-    }
+    private var symbol: String { call.symbol(mine: fromMe) }
 
     private var tint: Color { missedHere ? NookTheme.coral : (call.missed ? NookTheme.textSecondary : NookTheme.mint) }
 

@@ -274,6 +274,23 @@ extension ChatLinkedAccountRow where Actions == EmptyView {
     }
 }
 
+/// Why signing in on a chat app's website did not link it (`WebSignInFeedback`), the same row for every chat app (Teams,
+/// Slack, Snapchat, the chat service's sign-in windows): under the button that signs in, with "Try again" where that
+/// can help. An account that was linked already is said calmly, not as an error.
+struct ChatSignInFeedbackRow: View {
+    let name: String
+    let feedback: WebSignInFeedback
+    var retry: (() -> Void)?
+
+    var body: some View {
+        StatusRow(title: feedback.title(name), detail: feedback.detail(name), state: feedback.isError ? .error : .done) {
+            if feedback.canRetry, let retry {
+                Button(tr("chats.signIn.retry"), action: retry)
+            }
+        }
+    }
+}
+
 /// A service connected through its official MCP server and OAuth: Connect opens the service's own sign-in page and
 /// brings you back here, with the state shown at once.
 struct MCPServiceRow: View {

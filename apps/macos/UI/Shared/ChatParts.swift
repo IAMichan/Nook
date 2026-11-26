@@ -8,15 +8,24 @@ import SwiftUI
 
 /// A chat in a list, the Mac's `ChatsRow` and the iPhone's `InboxRow`: its face, its name and when on the first line,
 /// the newest message on the second (after your ticks, or who is typing in its place), and where it stands at the end
-/// of that line (`trailing`: the count of what is new, a read mark). Something new sets the name in paper and the time
-/// in amber. The caller adds what the platform does with a row: a click and hover on the Mac, a tap and a long press
-/// on the phone.
+/// of that line (`trailing`: the count of what is new, a read mark). Something new sets the name in bold paper, the
+/// newest message bright and the time in amber; a chat you have read steps back to a quiet second line, so what waits on
+/// you stands out at a glance, as in WhatsApp's list. The caller adds what the platform does with a row: a click and
+/// hover on the Mac, a tap and a long press on the phone.
 struct ChatListRowContent<Avatar: View, Trailing: View>: View {
     let name: String
     /// "14:03" today, else the day ("Yesterday", "Monday", "12 Oct").
     let when: String
     let preview: String
+    /// The icon of what came with the newest message (a photo, a voice message, a poll, a call), drawn in the line as
+    /// chat apps do: after who wrote it ("Jan: [icon] Photo"), else in front.
+    var previewSymbol: String? = nil
+    /// Who `preview` starts with ("Jan"), so the icon goes after "Jan: ".
+    var previewSender: String? = nil
     var unread = false
+    /// Muted in Nook or its app: a bell with a slash before the count, and the time stays grey, so amber is left for
+    /// what waits on you.
+    var muted = false
     /// Your own newest message: how far it got, in front of it.
     var ticks: MessageTicks? = nil
     /// Who types in this chat ("Jan is typing…"), in place of its newest message.
@@ -25,6 +34,8 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
     var detail: String? = nil
     /// Hides the time and the detail, where a hover button takes their place (the Mac).
     var hidesTime = false
+    /// What VoiceOver calls the muted bell.
+    var mutedLabel = sharedText("chats.row.muted", "Muted")
     @ViewBuilder var avatar: () -> Avatar
     @ViewBuilder var trailing: () -> Trailing
 
@@ -35,6 +46,7 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                     Text(name)
                         .font(NookTheme.TextStyle.strong)
+                        .fontWeight(unread ? .bold : .medium)
                         .foregroundStyle(unread ? NookTheme.paper : NookTheme.textStrong)
                         .lineLimit(1)
                     Spacer(minLength: NookTheme.Spacing.xs)
@@ -49,7 +61,8 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
                     Text(when)
                         .font(NookTheme.TextStyle.caption)
                         .monospacedDigit()
-                        .foregroundStyle(unread ? NookTheme.amber : NookTheme.textTertiary)
+                        .foregroundStyle(unread && !muted ? NookTheme.amber : NookTheme.textTertiary)
+                        .fontWeight(unread ? .semibold : .medium)
                         .fixedSize()
                         .opacity(hidesTime ? 0 : 1)
                 }
@@ -61,12 +74,17 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
                             .lineLimit(1)
                     } else {
                         if let ticks { MessageTicksMark(ticks: ticks) }
-                        Text(preview)
+                        previewLine
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(unread ? NookTheme.textStrong : NookTheme.textSecondary)
-                            .lineLimit(SharedMetrics.isPhone ? 2 : 1)
+                            .foregroundStyle(unread ? NookTheme.paper : NookTheme.textTertiary)
                     }
                     Spacer(minLength: NookTheme.Spacing.xs)
+                    if muted {
+                        Image(icon: "bell.slash.fill")
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .accessibilityLabel(mutedLabel)
+                    }
                     trailing().fixedSize()
                 }
             }
@@ -74,6 +92,27 @@ struct ChatListRowContent<Avatar: View, Trailing: View>: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, SharedMetrics.rowVertical)
         .contentShape(Rectangle())
+    }
+
+    /// The newest message, with the icon of what came with it after who wrote it ("Jan: [icon] Photo").
+    @ViewBuilder private var previewLine: some View {
+        let lines = SharedMetrics.isPhone ? 2 : 1
+        if let previewSymbol {
+            let lead = previewSender.map { $0 + ": " }.flatMap { preview.hasPrefix($0) ? $0 : nil }
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
+                if let lead {
+                    // Its whole name first, as long as it fits; a very long one truncates rather than push the row wide.
+                    Text(verbatim: String(lead.dropLast())).lineLimit(1).layoutPriority(1)
+                }
+                Image(icon: previewSymbol)
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+                Text(verbatim: lead.map { String(preview.dropFirst($0.count)) } ?? preview)
+                    .lineLimit(lines)
+            }
+        } else {
+            Text(verbatim: preview).lineLimit(lines)
+        }
     }
 }
 

@@ -351,6 +351,15 @@ reads, is off in Nook, fails for a passing reason, or is signed out (`ChatCaptur
 for Teams), and only the last offers "Sign in again". WhatsApp's accounts keep their own list (`WhatsAppAccountList`):
 a linked phone's state is the gateway's, not a read's.
 
+Signing in on an app's website in a window of Nook's own never fails silently: when the window closes without linking
+the app, the sheet says why under the button that signs in (`WebSignInFeedback`, `ChatSignInFeedbackRow`): the window
+closed on a sign-in page, the app was open but Nook could not take over its sign-in, a personal Microsoft account
+(Teams free, which Nook does not read), or an account that was linked already. While the window is open a line says to
+leave it open. This holds for Teams, Slack and Snapchat (`TeamsWebSession`, `SlackWebSession`, `SnapchatWebSession`) and
+for the chat service's sign-in windows (`ChatSignInWindow`, closed early only). WhatsApp (QR code) and Telegram (code and
+password) show their own step's error instead; Messages and Mail have no sign-in. The chat service is offered as the
+other way to link an app only while it can link that app (`ChatLinkData.Network.canLink`).
+
 ### One way for every read
 
 Every bridge reads on its own turn, side by side (`ChatCaptureService.pollBridges`): a slow web service never holds up
