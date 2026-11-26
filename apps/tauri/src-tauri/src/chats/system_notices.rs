@@ -27,7 +27,9 @@ pub fn setup(app: &AppHandle, chats: Arc<InboxStore>) {
             match chats.read_bridge(&bridge).await {
                 Ok(true) => {
                     let _ = handle.emit("chats-changed", ());
-                    chats.read(|now| super::notify::arrived(&handle, &before, now));
+                    // On a copy: nothing may wait for the inbox while the notices go out.
+                    let now = chats.read(Clone::clone);
+                    super::notify::arrived(&handle, &before, &now);
                 }
                 Ok(false) => {}
                 Err(error) => log::info!("Chats: reading Windows notifications failed: {error}"),
