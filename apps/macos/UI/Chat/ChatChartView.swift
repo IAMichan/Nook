@@ -53,7 +53,11 @@ struct ChatChartView: View {
             if chart.kind == .pie {
                 pie
             } else {
-                xy.frame(height: 190)
+                // Category labels get their own column width, so long names wrap instead of running into each other.
+                GeometryReader { geo in
+                    xy(labelWidth: labelWidth(for: geo.size.width))
+                }
+                .frame(height: 200)
             }
         }
         .padding(NookTheme.Spacing.xl)
@@ -62,7 +66,18 @@ struct ChatChartView: View {
 
     // MARK: Bar, line, area, points
 
-    private var xy: some View {
+    private var categoryCount: Int {
+        var seen = Set<String>()
+        return rows.filter { seen.insert($0.label).inserted }.count
+    }
+
+    /// The width one category gets on the x axis: the chart width minus room for the y axis labels, split evenly.
+    private func labelWidth(for width: CGFloat) -> CGFloat {
+        let plot = max(width - 36, 1)
+        return max(plot / CGFloat(max(categoryCount, 1)) - 4, 16)
+    }
+
+    private func xy(labelWidth: CGFloat) -> some View {
         Chart(rows) { row in
             if chart.kind == .line {
                 LineMark(x: .value("Label", row.label), y: .value(valueLabel, row.value))
@@ -103,10 +118,19 @@ struct ChatChartView: View {
         .chartLegend(multi ? .visible : .hidden)
         .chartLegend(position: .bottom, alignment: .leading, spacing: 10)
         .chartXAxis {
-            AxisMarks { _ in
-                AxisValueLabel()
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textSecondary)
+            AxisMarks { value in
+                // Too narrow to read even when wrapped: let Charts drop the labels that would collide.
+                AxisValueLabel(centered: true, collisionResolution: labelWidth < 28 ? .greedy : .automatic) {
+                    if let label = value.as(String.self) {
+                        Text(label)
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                            .frame(width: labelWidth)
+                    }
+                }
             }
         }
         .chartYAxis {
