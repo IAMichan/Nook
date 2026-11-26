@@ -498,7 +498,7 @@ struct TimelineSystemDivider<Detail: View>: View {
     }
 }
 
-/// Where the session went on with another agent, account, model or effort: "⇄ Context handoff  [logo] Sonnet 5.5 →
+/// Where the session went on with another agent, account, model or effort: "[logo] Sonnet 5.5  Context handoff →
 /// [logo] GPT-5 High" between the turns when the agent changed, "[logo] Sonnet 5.5 → [logo] Opus 5.5" when only the
 /// model or effort did (just what changed, so an effort switch reads "[logo] High → [logo] Medium"). Each logo carries its account's badge (initials, or the color you gave it) when the agent has
 /// several accounts, so a switch to another account reads "[logo·WO] Sonnet 5.5 → [logo·PE] Sonnet 5.5", the logo a
@@ -511,10 +511,13 @@ struct ModelSwitchDivider: View {
         if change.isNoChange {
             EmptyView()
         } else if change.handoff || change.accountChanged {
-            TimelineSystemDivider(label: tr(change.handoff ? "agents.switch.handoff" : "agents.switch.account"),
-                                  symbol: change.handoff ? "arrow.left.arrow.right" : "person.2") {
+            // The label sits on the way from one side to the other: "[logo] Sonnet 5.5  Context handoff →  [logo] Opus 5.5".
+            TimelineSystemDivider(label: "") {
                 endpoint(change.from, model: true, effort: true)
-                Image(icon: "arrow.right").font(NookTheme.font(9, .semibold))
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(tr(change.handoff ? "agents.switch.handoff" : "agents.switch.account"))
+                    Image(icon: "arrow.right").font(NookTheme.font(9, .semibold))
+                }
                 endpoint(change.to, model: true, effort: true)
             }
         } else {
