@@ -762,4 +762,36 @@ export const table: Table = {
   },
   "Go to error": { de: "Zum Fehler", fr: "Aller à l'erreur", es: "Ir al error" },
   "To the end": { de: "Zum Ende", fr: "Aller à la fin", es: "Ir al final" },
+  "Commits & pull requests": { de: "Commits & Pull Requests", fr: "Commits et pull requests", es: "Commits y pull requests" },
+  "How Nook and coding agents write commits and pull requests.": {
+    de: "Wie Nook und Coding-Agenten Commits und Pull Requests schreiben.",
+    fr: "Comment Nook et les agents de code écrivent les commits et pull requests.",
+    es: "Cómo escriben Nook y los agentes de código los commits y pull requests.",
+  },
+  "Commit style": { de: "Commit-Stil", fr: "Style de commit", es: "Estilo de commit" },
+  "Conventional Commits": { de: "Conventional Commits", fr: "Conventional Commits", es: "Conventional Commits" },
+  "Match the repository": { de: "Repository folgen", fr: "Suivre le dépôt", es: "Seguir el repositorio" },
+  "Custom instructions": { de: "Eigene Anweisungen", fr: "Instructions personnalisées", es: "Instrucciones propias" },
+  "Commit instructions": { de: "Anweisungen für Commits", fr: "Instructions pour les commits", es: "Instrucciones de commit" },
+  "e.g. start the subject with a ticket key": {
+    de: "z. B. Betreff mit Ticketnummer beginnen",
+    fr: "ex. commencer le sujet par un numéro de ticket",
+    es: "p. ej. empezar el asunto con una clave de ticket",
+  },
+  "No agent credits in commits": { de: "Keine Agent-Credits in Commits", fr: "Aucun crédit d'agent dans les commits", es: "Sin créditos de agente en commits" },
+  "Agents Nook starts leave AI Co-Authored-By and Generated-with lines out of commits and pull requests.": {
+    de: "Agenten, die Nook startet, lassen KI-Co-Authored-By- und Generated-with-Zeilen aus Commits und Pull Requests weg.",
+    fr: "Les agents lancés par Nook omettent les lignes Co-Authored-By et Generated-with d'IA dans les commits et pull requests.",
+    es: "Los agentes que inicia Nook omiten las líneas Co-Authored-By y Generated-with de IA en commits y pull requests.",
+  },
+  "Strip agent credits on commit or merge": {
+    de: "Agent-Credits bei Commit oder Merge entfernen",
+    fr: "Retirer les crédits d'agent au commit ou merge",
+    es: "Quitar créditos de agente al hacer commit o merge",
+  },
+  "Nook strips AI credit lines from commit and pull request text while keeping human co-authors.": {
+    de: "Nook entfernt KI-Credit-Zeilen aus Commit- und PR-Texten, während menschliche Co-Autoren erhalten bleiben.",
+    fr: "Nook retire les lignes de crédit d'IA des commits et pull requests tout en gardant les co-auteurs humains.",
+    es: "Nook elimina las líneas de crédito de IA de los commits y pull requests manteniendo a los coautores humanos.",
+  },
 };

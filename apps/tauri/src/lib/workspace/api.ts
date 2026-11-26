@@ -201,7 +201,17 @@ export interface WorkspaceSettings {
   timelineDetail?: string;
   /// What a screen reader hears from the open session (`ws.screenReaderAnnouncements`; `announcements.ts`).
   screenReaderAnnouncements?: string;
+  /// Commit and pull request message style (`ws.commitStyle`, AG-122).
+  commitStyle?: CommitStyle;
+  /// Custom instructions when `commitStyle === "custom"`.
+  commitInstructions?: string;
+  /// Coding agents never add AI co-author trailers or "Generated with …" lines.
+  noAgentCredits?: boolean;
+  /// Strip AI agent credits from merge commits and commit bodies written by Nook.
+  stripAgentCredits?: boolean;
 }
+
+export type CommitStyle = "standard" | "conventional" | "repository" | "custom";
 
 /// Answer to a quick side question (`/btw`, `/side`, AG-61) asked while a session keeps running.
 export interface SideChatReply {

@@ -130,6 +130,14 @@ pub struct WorkspaceSettings {
     /// What a screen reader hears from the open session (`ws.screenReaderAnnouncements`): "off", "replies" or
     /// "everything" (`lib/workspace/announcements.ts`).
     pub screen_reader_announcements: String,
+    /// Commit and pull request style (`ws.commitStyle` on macOS, AG-122).
+    pub commit_style: super::commit_style::CommitStyle,
+    /// Custom instructions for commit messages and PRs when `commit_style == Custom`.
+    pub commit_instructions: String,
+    /// Tell coding agents never to add AI co-author trailers or "Generated with …" lines (`agents.commits.noAgentCredits`).
+    pub no_agent_credits: bool,
+    /// Strip AI agent credits from commit/PR text Nook writes or merges (`agents.pr.stripAgentCredits`).
+    pub strip_agent_credits: bool,
 }
 
 impl Default for WorkspaceSettings {
@@ -162,6 +170,10 @@ impl Default for WorkspaceSettings {
             max_working_sessions: 0,
             timeline_detail: "everything".into(),
             screen_reader_announcements: "replies".into(),
+            commit_style: super::commit_style::CommitStyle::Standard,
+            commit_instructions: String::new(),
+            no_agent_credits: false,
+            strip_agent_credits: false,
         }
     }
 }
