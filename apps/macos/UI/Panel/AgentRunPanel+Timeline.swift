@@ -208,29 +208,32 @@ extension AgentRunPanel {
                         }
                         .countsAsDrawnRow(drawnRows, id: block.id, reading: reading)
                         .id(block.id)
-                    }
-                    if let setup {
-                        WorktreeSetupChecklist(progress: setup, active: active) { workspace.stop(runID) }
-                    } else if active || settling {
-                        // The agent's task list, live, right above what it does now: the same live line as in an agent's
-                        // own transcript.
-                        let turn = TimelinePresentation.runningTurn(events)
-                        TranscriptLiveLine(activity: held != nil ? ended.map(AgentActivity.of) ?? .reviewing
-                                               : AgentActivity.current(turn, composing: workspace.composing[runID]),
-                                           tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
-                                           waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
-                                           asking: workspace.questions[runID] != nil,
-                                           openConsole: CommandConsole.running(turn).map { command -> () -> Void in
-                                               { sideLink.toggleConsole(command.id) }
-                                           },
-                                           help: TimelinePresentation.live(turn).tool,
-                                           progress: turn.last(where: TimelinePresentation.isLive).flatMap { memo.progress[$0.id] })
-                    }
-                    // A usage limit ended the turn: its own card, with the reset and how to go on.
-                    if UsageLimitCard.shows(run) {
-                        UsageLimitCard(run: run)
-                    } else if run.status == .failed || run.status == .stopped {
-                        recovery(run, events: events, blocks: blocks, proxy: proxy)
+                    } footer: {
+                        // Laid out with the rows: the room a fold leaves while the agent works goes under the live
+                        // line, not between it and the rows above.
+                        if let setup {
+                            WorktreeSetupChecklist(progress: setup, active: active) { workspace.stop(runID) }
+                        } else if active || settling {
+                            // The agent's task list, live, right above what it does now: the same live line as in an agent's
+                            // own transcript.
+                            let turn = TimelinePresentation.runningTurn(events)
+                            TranscriptLiveLine(activity: held != nil ? ended.map(AgentActivity.of) ?? .reviewing
+                                                   : AgentActivity.current(turn, composing: workspace.composing[runID]),
+                                               tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
+                                               waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
+                                               asking: workspace.questions[runID] != nil,
+                                               openConsole: CommandConsole.running(turn).map { command -> () -> Void in
+                                                   { sideLink.toggleConsole(command.id) }
+                                               },
+                                               help: TimelinePresentation.live(turn).tool,
+                                               progress: turn.last(where: TimelinePresentation.isLive).flatMap { memo.progress[$0.id] })
+                        }
+                        // A usage limit ended the turn: its own card, with the reset and how to go on.
+                        if UsageLimitCard.shows(run) {
+                            UsageLimitCard(run: run)
+                        } else if run.status == .failed || run.status == .stopped {
+                            recovery(run, events: events, blocks: blocks, proxy: proxy)
+                        }
                     }
                     // Room under a new turn held near the top while its reply grows (`TurnPinRoom`).
                     TurnPinRoomSpacer(pin: pinRoom)

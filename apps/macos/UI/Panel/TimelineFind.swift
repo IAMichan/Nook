@@ -141,7 +141,7 @@ enum TimelineSpace {
 /// its end and also after its scroll view was made again; rows drawn in full cannot, so the end of a conversation always
 /// shows, and `recoversBlankRows` scrolling there always lands on rows. Each row keeps its `.id`, so a scroll to it works
 /// in either part.
-struct ConversationRows<Item: Identifiable, Row: View>: View {
+struct ConversationRows<Item: Identifiable, Row: View, Footer: View>: View {
     let items: [Item]
     let eager: Int
     /// The gap between rows in the lazy part; the plain stack around it should use the same.
@@ -162,6 +162,9 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
     /// The agent works: a row that comes in grows in from nothing (`GlidesGrowth.growsIn`).
     var working = false
     @ViewBuilder let row: (Item) -> Row
+    /// What stands right under the rows (the live line, a card): laid out with them, so the room a fold leaves is under
+    /// it rather than between the last row and it, where it read as a stray gap in the conversation.
+    @ViewBuilder var footer: () -> Footer
     /// The first row drawn in full while the split is held; not state any view draws from.
     @State private var firstEager = Unobserved<Item.ID?>(nil)
 
@@ -179,6 +182,7 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
             ForEach(items[split...]) { item in
                 row(item).modifier(GlidesGrowth(active: glidesGrowth && item.id == last, growsIn: working))
             }
+            footer()
         }
         .onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.name)).minY } action: { drawn?.drawnFrom = $0 }
     }
@@ -190,6 +194,16 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
         let split = HistoryWindow.heldSplit(natural: natural, held: held)
         firstEager.value = split < items.count ? items[split].id : nil
         return split
+    }
+}
+
+extension ConversationRows where Footer == EmptyView {
+    init(items: [Item], eager: Int, spacing: CGFloat = NookTheme.Spacing.sm, holdsHeight: Bool = false, holdKey: Int = 0,
+         holdsSplit: Bool = false, drawn: DrawnRows? = nil, glidesGrowth: Bool = false, working: Bool = false,
+         @ViewBuilder row: @escaping (Item) -> Row) {
+        self.init(items: items, eager: eager, spacing: spacing, holdsHeight: holdsHeight, holdKey: holdKey,
+                  holdsSplit: holdsSplit, drawn: drawn, glidesGrowth: glidesGrowth, working: working, row: row,
+                  footer: { EmptyView() })
     }
 }
 
