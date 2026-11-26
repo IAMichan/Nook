@@ -89,7 +89,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [x] **UI-08** Folding sections (`SettingsFold`, #1651) · S Done (2026-11-20): `views/settings/Fold.svelte` (chevron, name, summary while closed), used for Face and finish, Text and layout, Custom colors, All models and runtimes, Model per agent and Away from home; a search for a setting inside opens it.
 
-- [ ] **UI-09** Setup sheets as numbered steps ending in a check (`SetupSheet`, `SetupCheckStep`) · M
+- [x] **UI-09** Setup sheets as numbered steps ending in a check (`SetupSheet`, `SetupCheckStep`) · M Done: shared `SetupSheet`, `SetupStep`, `SetupCheckStep`, `StepAction`, `SheetPart`, and `setup-check.ts` under `apps/tauri/src/components/ui/`, adopted across `PairPhoneSheet`, `ServiceSheet`, `GitLabSheet`, and `McpAddSheet`.
 
 - [ ] **UI-10** One field style and rows grouped into cards, note tones (`SettingsFormStyle`, `SettingToggle`, `SettingFieldRow`, `SettingNote`, #1607, #1551) · M
 

@@ -429,20 +429,10 @@
   "font": 17,
   "radius": 0
  },
- "src/views/connectors/GitLabSheet.svelte": {
-  "color": 1,
-  "font": 6,
-  "radius": 1
- },
  "src/views/connectors/HealthPill.svelte": {
   "color": 0,
   "font": 1,
   "radius": 0
- },
- "src/views/connectors/McpAddSheet.svelte": {
-  "color": 1,
-  "font": 3,
-  "radius": 2
  },
  "src/views/connectors/McpServers.svelte": {
   "color": 0,
@@ -453,11 +443,6 @@
   "color": 1,
   "font": 0,
   "radius": 0
- },
- "src/views/connectors/ServiceSheet.svelte": {
-  "color": 1,
-  "font": 10,
-  "radius": 2
  },
  "src/views/connectors/WhatsApp.svelte": {
   "color": 1,
@@ -507,11 +492,6 @@
  "src/views/NookHistory.svelte": {
   "color": 0,
   "font": 11,
-  "radius": 0
- },
- "src/views/services/Music.svelte": {
-  "color": 1,
-  "font": 2,
   "radius": 0
  },
  "src/views/Today.svelte": {

@@ -6,9 +6,11 @@
   import { companion, type CompanionInfo, type CompanionScope, type PairedDeviceView } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
   import { toast } from "../../lib/toast.svelte";
-  import Ico from "../../components/ui/Ico.svelte";
   import QRCodeView from "../../components/ui/QRCodeView.svelte";
-  import Sheet from "../../components/ui/Sheet.svelte";
+  import SetupCheckStep from "../../components/ui/SetupCheckStep.svelte";
+  import SetupSheet from "../../components/ui/SetupSheet.svelte";
+  import SetupStep from "../../components/ui/SetupStep.svelte";
+  import { setupCheck, type SetupCheckState } from "../../components/ui/setup-check";
   import Spinner from "../../components/ui/Spinner.svelte";
   import CompanionScopes from "./CompanionScopes.svelte";
   import SettingsTile from "./SettingsTile.svelte";
@@ -31,6 +33,14 @@
   const listening = $derived(info.state?.state === "listening");
   const minutesLeft = $derived(
     info.pairing ? Math.max(0, Math.ceil((new Date(info.pairing.until).getTime() - Date.now()) / 60000)) : 0,
+  );
+
+  const waitState = $derived<SetupCheckState>(
+    paired
+      ? setupCheck.passed(tr("{name} is gekoppeld.", "{name} is paired.", { name: paired.name }))
+      : info.pairing
+        ? setupCheck.checking()
+        : setupCheck.idle(),
   );
 
   async function begin(selectedHost?: string) {
@@ -126,184 +136,114 @@
   }
 </script>
 
-<Sheet onclose={close} label={tr("Nieuwe telefoon koppelen", "Pair a new phone")}>
-  <div class="sheet-head">
+<SetupSheet
+  title={tr("Nieuwe telefoon koppelen", "Pair a new phone")}
+  subtitle={tr(
+    "Koppel een telefoon aan deze computer om je sessies ermee te volgen en te sturen.",
+    "Pair a phone with this computer to follow and steer your sessions from it.",
+  )}
+  onclose={close}
+>
+  {#snippet icon()}
     <SettingsTile section="iphone" size={40} />
-    <div class="head-text">
-      <h4>{tr("Nieuwe telefoon koppelen", "Pair a new phone")}</h4>
-      <p class="subtitle">
-        {tr(
-          "Koppel een telefoon aan deze computer om je sessies ermee te volgen en te sturen.",
-          "Pair a phone with this computer to follow and steer your sessions from it.",
-        )}
-      </p>
-    </div>
-  </div>
+  {/snippet}
 
-  <div class="sheet-body">
-    <div class="step">
-      <span class="num" aria-hidden="true">1</span>
-      <div class="step-content">
-        <div class="step-title">{tr("Open Nook Companion op je telefoon", "Open Nook Companion on your phone")}</div>
+  <SetupStep number={1} title={tr("Open Nook Companion op je telefoon", "Open Nook Companion on your phone")}>
+    <p class="step-note">
+      {tr(
+        "Installeer Nook Companion op je iPhone of Nook op Android als die er nog niet staat, en houd je telefoon tijdens het koppelen in hetzelfde netwerk als deze computer (of via een VPN zoals Tailscale). Vraagt je firewall of Nook verbindingen mag ontvangen, sta dat dan toe voor je privénetwerk.",
+        "Install Nook Companion on your iPhone or Nook on Android if it is not there yet, and keep your phone on the same network as this computer while pairing (or through a VPN like Tailscale). If your firewall asks whether Nook may receive connections, allow it for your private network.",
+      )}
+    </p>
+  </SetupStep>
+
+  <SetupStep number={2} title={tr("Kies wat hij mag", "Choose what it may do")}>
+    <div class="step-scopes">
+      <CompanionScopes scopes={info.pendingScopes} onchange={setPendingScopes} />
+    </div>
+  </SetupStep>
+
+  <SetupStep number={3} title={tr("Scan de code", "Scan the code")} done={!!paired}>
+    {#if !paired}
+      {#if info.pairing}
+        <div class="qr-block">
+          <QRCodeView svg={info.pairing.qrSvg} label={tr("QR-code om te koppelen", "QR code to pair")} size={148} />
+          <div class="qr-details">
+            <p class="step-note">
+              {minutesLeft === 1
+                ? tr(
+                    "Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog 1 minuut en één keer.",
+                    "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for 1 more minute and only once.",
+                  )
+                : tr(
+                    "Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog {n} minuten en één keer.",
+                    "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for {n} more minutes and only once.",
+                    { n: minutesLeft },
+                  )}
+            </p>
+            <code class="link">{info.pairing.url}</code>
+            <div class="qr-actions">
+              <button type="button" class="step-btn" onclick={copy}>
+                {copied ? tr("Gekopieerd", "Copied") : tr("Kopieer link", "Copy link")}
+              </button>
+            </div>
+          </div>
+        </div>
+        {#if info.hosts.length > 1}
+          <label class="host-row">
+            <span class="step-note">{tr("Adres in de code", "Address in the code")}</span>
+            <select value={host ?? ""} onchange={pickHost}>
+              {#each info.hosts as h, i (h)}
+                <option value={i === 0 ? "" : h}>
+                  {h}{i === 0 ? " " + tr("(vindt je computer ook als het adres verandert)", "(finds your computer even when the address changes)") : ""}
+                </option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+      {:else if listening && starting}
+        <div class="checking"><Spinner size={12} /><span>{tr("Start…", "Starting…")}</span></div>
+      {:else if listening}
+        <button type="button" class="step-btn" onclick={() => begin(host)}>{tr("Koppel een telefoon", "Pair a phone")}</button>
+      {:else}
         <p class="step-note">
           {tr(
-            "Installeer Nook Companion op je iPhone of Nook op Android als die er nog niet staat, en houd je telefoon tijdens het koppelen in hetzelfde netwerk als deze computer (of via een VPN zoals Tailscale). Vraagt je firewall of Nook verbindingen mag ontvangen, sta dat dan toe voor je privénetwerk.",
-            "Install Nook Companion on your iPhone or Nook on Android if it is not there yet, and keep your phone on the same network as this computer while pairing (or through a VPN like Tailscale). If your firewall asks whether Nook may receive connections, allow it for your private network.",
+            "De code verschijnt zodra deze computer naar de telefoon luistert.",
+            "The code can be shown once this computer listens for the phone.",
           )}
         </p>
-      </div>
-    </div>
+      {/if}
+    {/if}
+  </SetupStep>
 
-    <div class="step">
-      <span class="num" aria-hidden="true">2</span>
-      <div class="step-content">
-        <div class="step-title">{tr("Kies wat hij mag", "Choose what it may do")}</div>
-        <div class="step-scopes">
-          <CompanionScopes scopes={info.pendingScopes} onchange={setPendingScopes} />
-        </div>
-      </div>
-    </div>
+  <SetupCheckStep
+    number={4}
+    title={tr("Wacht op de telefoon", "Wait for the phone")}
+    detail={tr(
+      "Zodra de telefoon de code scant, zet Nook hem bij je gekoppelde telefoons.",
+      "As soon as the phone scans the code, Nook adds it to your paired phones.",
+    )}
+    checkingLabel={tr(
+      "Zodra de telefoon de code scant, zet Nook hem bij je gekoppelde telefoons.",
+      "As soon as the phone scans the code, Nook adds it to your paired phones.",
+    )}
+    state={waitState}
+  />
 
-    <div class="step">
-      <span class="num" class:done={!!paired} aria-hidden="true">
-        {#if paired}<Ico name="check" size={12} stroke={2.8} />{:else}3{/if}
-      </span>
-      <div class="step-content">
-        <div class="step-title">{tr("Scan de code", "Scan the code")}</div>
-        {#if !paired}
-          {#if info.pairing}
-            <div class="qr-block">
-              <QRCodeView svg={info.pairing.qrSvg} label={tr("QR-code om te koppelen", "QR code to pair")} size={148} />
-              <div class="qr-details">
-                <p class="step-note">
-                  {minutesLeft === 1
-                    ? tr(
-                        "Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog 1 minuut en één keer.",
-                        "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for 1 more minute and only once.",
-                      )
-                    : tr(
-                        "Open Nook Companion op je iPhone, of Nook op Android › Companion, en scan deze code of plak de link. De code werkt nog {n} minuten en één keer.",
-                        "Open Nook Companion on your iPhone, or Nook on Android › Companion, and scan this code or paste the link. The code works for {n} more minutes and only once.",
-                        { n: minutesLeft },
-                      )}
-                </p>
-                <code class="link">{info.pairing.url}</code>
-                <div class="qr-actions">
-                  <button type="button" class="step-btn" onclick={copy}>
-                    {copied ? tr("Gekopieerd", "Copied") : tr("Kopieer link", "Copy link")}
-                  </button>
-                </div>
-              </div>
-            </div>
-            {#if info.hosts.length > 1}
-              <label class="host-row">
-                <span class="step-note">{tr("Adres in de code", "Address in the code")}</span>
-                <select value={host ?? ""} onchange={pickHost}>
-                  {#each info.hosts as h, i (h)}
-                    <option value={i === 0 ? "" : h}>
-                      {h}{i === 0 ? " " + tr("(vindt je computer ook als het adres verandert)", "(finds your computer even when the address changes)") : ""}
-                    </option>
-                  {/each}
-                </select>
-              </label>
-            {/if}
-          {:else if listening && starting}
-            <div class="checking"><Spinner size={12} /><span>{tr("Start…", "Starting…")}</span></div>
-          {:else if listening}
-            <button type="button" class="step-btn" onclick={() => begin(host)}>{tr("Koppel een telefoon", "Pair a phone")}</button>
-          {:else}
-            <p class="step-note">
-              {tr(
-                "De code verschijnt zodra deze computer naar de telefoon luistert.",
-                "The code can be shown once this computer listens for the phone.",
-              )}
-            </p>
-          {/if}
-        {/if}
-      </div>
-    </div>
+  {#if error}<p class="step-note err">{error}</p>{/if}
 
-    <div class="step">
-      <span class="num" class:done={!!paired} aria-hidden="true">
-        {#if paired}<Ico name="check" size={12} stroke={2.8} />{:else}4{/if}
-      </span>
-      <div class="step-content">
-        <div class="step-title">{tr("Wacht op de telefoon", "Wait for the phone")}</div>
-        {#if paired}
-          <p class="step-note ok">{tr("{name} is gekoppeld.", "{name} is paired.", { name: paired.name })}</p>
-        {:else if info.pairing}
-          <div class="checking">
-            <Spinner size={12} />
-            <span>
-              {tr(
-                "Zodra de telefoon de code scant, zet Nook hem bij je gekoppelde telefoons.",
-                "As soon as the phone scans the code, Nook adds it to your paired phones.",
-              )}
-            </span>
-          </div>
-        {:else}
-          <p class="step-note">
-            {tr(
-              "Zodra de telefoon de code scant, zet Nook hem bij je gekoppelde telefoons.",
-              "As soon as the phone scans the code, Nook adds it to your paired phones.",
-            )}
-          </p>
-        {/if}
-      </div>
-    </div>
-
-    {#if error}<p class="step-note err">{error}</p>{/if}
-  </div>
-
-  <div class="sheet-foot">
+  {#snippet footer()}
     <span class="spacer"></span>
     <button type="button" class="primary" onclick={close}>{tr("Klaar", "Done")}</button>
-  </div>
-</Sheet>
+  {/snippet}
+</SetupSheet>
 
 <style>
-  .sheet-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-16);
-    padding: var(--space-24);
-    border-bottom: 1px solid var(--separator);
-    flex: none;
-  }
-  .head-text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-  h4 { margin: 0; font: var(--text-heading); color: var(--paper); }
-  .subtitle { margin: 0; font: var(--text-detail); line-height: 1.35; color: var(--text2); }
-
-  .sheet-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: var(--space-24);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-24);
-  }
-  .step { display: flex; align-items: flex-start; gap: var(--space-16); }
-  .num {
-    width: 24px;
-    height: 24px;
-    flex: none;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--iris);
-    color: var(--on-iris);
-    font: var(--text-label);
-    font-weight: 700;
-  }
-  .num.done { background: var(--mint); color: var(--ink); }
-  .step-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-12); }
-  .step-title { font: var(--text-emphasis); color: var(--paper); padding-top: var(--space-2); }
   .step-note { margin: 0; font: var(--text-detail); line-height: 1.4; color: var(--text2); }
-  .step-note.ok { color: var(--mint); }
   .step-note.err { color: var(--coral); }
 
   .step-scopes {
+    width: 100%;
     background: var(--surface);
     border: 1px solid var(--separator);
     border-radius: var(--radius-card);
@@ -311,7 +251,7 @@
   }
   .step-scopes :global(.row) { padding: var(--space-8) 0; }
 
-  .qr-block { display: flex; align-items: flex-start; gap: var(--space-16); flex-wrap: wrap; }
+  .qr-block { display: flex; align-items: flex-start; gap: var(--space-16); flex-wrap: wrap; width: 100%; }
   .qr-details { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: var(--space-8); }
   .link {
     font: var(--text-code);
@@ -338,17 +278,9 @@
   }
   .step-btn:hover { background: var(--line2); }
 
-  .host-row { display: flex; flex-direction: column; gap: var(--space-6); }
+  .host-row { display: flex; flex-direction: column; gap: var(--space-6); width: 100%; }
   .host-row select { align-self: flex-start; max-width: 100%; }
 
   .checking { display: flex; align-items: flex-start; gap: var(--space-8); font: var(--text-detail); line-height: 1.4; color: var(--text2); }
-
-  .sheet-foot {
-    display: flex;
-    align-items: center;
-    padding: var(--space-16) var(--space-24);
-    border-top: 1px solid var(--separator);
-    flex: none;
-  }
   .spacer { flex: 1; }
 </style>
