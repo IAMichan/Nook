@@ -10,7 +10,7 @@
   import { tr } from "../lib/i18n.svelte";
   import { matchesSearch } from "../lib/shell-routes";
   import {
-    groupTitle, pageTitle, sectionTitle, sectionTrail, settingsGroup, settingsGroups, settingsHost, settingsPages, settingsParts,
+    groupTitle, pageTitle, sectionIcons, sectionTitle, sectionTrail, settingsGroup, settingsGroups, settingsHost, settingsPages, settingsParts,
     settingsSection, settingsSections, type SettingsSectionId,
   } from "../lib/settings-pages";
   import Ico from "../components/ui/Ico.svelte";
@@ -98,16 +98,7 @@
     maintenance: { component: Maintenance },
     about: { component: About },
   };
-  // The line icon in front of each page in the sidebar and on its tab, the Mac's `SettingsSection.sidebarSymbol` drawn
-  // with the Lucide icon `NookIcon` maps it to.
-  const icons: Record<SettingsSectionId, string> = {
-    start: "house", general: "settings", notch: "laptop", appearance: "palette", notifications: "bell", notificationApps: "bell-dot", sound: "volume-2",
-    shortcuts: "keyboard", games: "gamepad-2", brain: "brain", assistant: "sparkles", memory: "library", instructions: "list-checks",
-    autocomplete: "text-cursor", autocompleteApps: "layout-grid", autocompleteStyle: "type", autocompletePlayground: "text-cursor-input",
-    autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", skills: "book", usage: "chart-column", sessions: "messages-square",
-    worktrees: "folder", openIn: "external-link", archive: "archive", automation: "calendar-clock", projects: "folder-cog", pullRequests: "git-branch", chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone",
-    privacy: "hand", permissions: "shield-check", activityLog: "list", maintenance: "wrench", about: "info",
-  };
+  const icons = sectionIcons;
 
   const shown = (id: SettingsSectionId) => subjects[id].when?.() ?? true;
   /** The subjects of a page this platform shows; a page with none is left out of the sidebar. */

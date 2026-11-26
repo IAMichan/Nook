@@ -7,6 +7,7 @@
   import { nook } from "../lib/state.svelte";
   import { tr } from "../lib/i18n.svelte";
   import AgentMark from "../views/companion/ui/AgentMark.svelte";
+  import InUseLabel from "../views/settings/InUseLabel.svelte";
   import Ico from "./ui/Ico.svelte";
 
   // `rows`: the Mac's advice rows inside a Settings card (`adviceRows`): the memory as a note, then per model its logo,
@@ -65,7 +66,11 @@
   {#if r.choice.kind === "pull"}
     {#if r.ready}
       {@const m = { server: "ollama" as const, name: model }}
-      <button class:primary={!rows && !isCurrent(m)} disabled={isCurrent(m)} onclick={() => use(m)}>{isCurrent(m) ? tr("In gebruik", "In use") : tr("Gebruik", "Use")}</button>
+      {#if isCurrent(m)}
+        <InUseLabel />
+      {:else}
+        <button class:primary={!rows} onclick={() => use(m)}>{tr("Gebruik", "Use")}</button>
+      {/if}
     {:else if !advice?.ollamaRunning}
       <button onclick={() => openUrl("https://ollama.com/download")}>{tr("Ollama downloaden", "Download Ollama")}</button>
     {:else}
@@ -75,7 +80,11 @@
     {/if}
   {:else if r.choice.kind === "server"}
     {@const m = r.choice.model}
-    <button class:primary={!rows && !isCurrent(m)} disabled={isCurrent(m)} onclick={() => use(m)}>{isCurrent(m) ? tr("In gebruik", "In use") : tr("Gebruik", "Use")}</button>
+    {#if isCurrent(m)}
+      <InUseLabel />
+    {:else}
+      <button class:primary={!rows} onclick={() => use(m)}>{tr("Gebruik", "Use")}</button>
+    {/if}
   {/if}
 {/snippet}
 

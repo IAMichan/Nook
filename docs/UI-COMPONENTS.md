@@ -578,10 +578,10 @@ to share it (Nook has no hosting to publish to), and per-line comments inside a 
 | `SettingText`, `.settingsAnchor(_:)`, `SettingsHighlight` | `SettingsHighlight.swift` | A setting's name that a search can land on: the page scrolls it to the middle and lights it for a moment. `SettingToggle`, `SettingLabel` and `SettingsSectionTitle` do this themselves; a plain `Toggle`, `Picker`, `LabeledContent` or section header for a setting in `SettingsSearch.index` takes `SettingText("key")` as its label |
 | `SettingsSectionTitle(_:info:)`, `SettingsInfoButton` | `SettingsBlocks.swift` | A Settings section header with what the section is for written under it in smaller text, always visible; use it instead of an explanatory footer. A footer is only for a warning, an error, or the step that unlocks the section. `SettingsInfoButton` (ⓘ) is only for a detail beside a single value (a color token), never for what a group does |
 | `SettingNote(_:tone:)` | `SettingsBlocks.swift` | The one hint or status line under a setting: `info`, `success`, `warning`, `error`; a warning or error carries a symbol, not only a color |
-| `SettingsLinkRow` | `SettingsBlocks.swift` | A row that leads to another page or flow: tile, title, line under it, chevron; a status symbol only when something is not done |
-| `InUseLabel` | `SettingsBlocks.swift` | The mint "In use" check on the chosen model, file or key |
+| `SettingsLinkRow` | `SettingsBlocks.swift` (Tauri: `views/settings/SettingsLinkRow.svelte`) | A row that leads to another page or flow: tile, title, line under it, chevron; a status symbol only when something is not done |
+| `InUseLabel` | `SettingsBlocks.swift` (Tauri: `views/settings/InUseLabel.svelte`) | The mint "In use" check on the chosen model, file or key |
 | `HoverActionsRow` | `SettingsBlocks.swift` | A row whose buttons show under the pointer; at rest a small symbol says its state (memory rows) |
-| `SettingsTile`, `HealthPill`, `SetupStep`, `IntroCard` | `SettingsStyle.swift` | Tiles, a connection's state beside a sheet's title (`HealthPill`: its dot and word on a `StatusBadgeLabel`, no fill), setup steps |
+| `SettingsTile`, `HealthPill`, `SetupStep`, `IntroCard` | `SettingsStyle.swift` (Tauri: `views/settings/SettingsTile.svelte`) | Tiles, a connection's state beside a sheet's title (`HealthPill`: its dot and word on a `StatusBadgeLabel`, no fill), setup steps |
 | `NookStatTile` | `NookStatTile.swift` | One number with its label and a line under it, on a statistics page (autocomplete, music) |
 | `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of everything linked (chat apps, services, GitLab, your own servers, the iPhone, Spotify): icon, name with state, one line, then Fix when it needs you, a switch where it has one, and Manage |
 | `ServiceRowShape`, `AgentTile` | `ServiceRows.swift` | The same row with an icon of its own: the coding agents and their accounts under Settings › Agents use it with `AgentTile`, so an agent reads like any other linked thing. Never draw a status pill in a row; `HealthPill` is only for the status line of a sheet |
@@ -592,7 +592,7 @@ to share it (Nook has no hosting to publish to), and per-line comments inside a 
 | `AddConnectionSheet`, `ConnectionOptionGrid`, `ConnectionOptionTile`, `ConnectionCategoryChips` | `ConnectionCatalog.swift` | The one way to add anything: pick it (search or a group), then its steps in the same sheet. A tile shows how it links (`ConnectMethodBadge`) or that it is linked |
 | `ServiceSignInSheet` | `ConnectionCatalog.swift` | A service you sign in to on its own page, in two steps, with its key as the other way |
 | `SettingsFormSheet`, `IPhoneSheet` | `ConnectionCatalog.swift` | A sheet whose content is plain settings rows |
-| `ConnectMethodBadge`, `MCPServiceRow` | `ServiceRows.swift` | How an option links; a service you signed in to |
+| `ConnectMethodBadge`, `MCPServiceRow` | `ServiceRows.swift` (Tauri: `views/settings/ConnectMethodBadge.svelte`) | How an option links; a service you signed in to |
 | `GitLabHostRow`, `GitLabSetupSheet` | `GitLabSettings.swift` | GitLab in the same row and setup-sheet shapes |
 | `MCPServerCardRow`, `AddMCPServerWizardSheet` | `MCPSettingsSection.swift` | MCP servers in the same shapes |
 | `SetupSheet`, `SetupStep` | `SettingsStyle.swift` | Every setup flow: icon and title on top, numbered steps, one clear button below |

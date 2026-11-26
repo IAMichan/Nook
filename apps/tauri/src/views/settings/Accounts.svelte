@@ -32,6 +32,8 @@
   import { nook } from "../../lib/state.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "../../components/ui/Ico.svelte";
+  import SettingsTile from "./SettingsTile.svelte";
+  import ConnectMethodBadge from "./ConnectMethodBadge.svelte";
 
   type AddGroup = "mail" | "chats" | "workCode" | "mcp" | "custom";
 
@@ -1217,9 +1219,12 @@
         </div>
       {:else}
         <div class="add-head">
-          <div class="text">
-            <strong>{tr("Koppeling toevoegen", "Add a connection")}</strong>
-            <span class="faint small">{tr("Kies een chat-app, e-mail, dienst of eigen MCP-server.", "Pick a chat app, email, service or your own MCP server.")}</span>
+          <div class="add-head-row">
+            <SettingsTile section="connections" size={40} />
+            <div class="text">
+              <strong>{tr("Koppeling toevoegen", "Add a connection")}</strong>
+              <span class="faint small">{tr("Kies een chat-app, e-mail, dienst of eigen MCP-server.", "Pick a chat app, email, service or your own MCP server.")}</span>
+            </div>
           </div>
           <label class="search-card add-search">
             <Ico name="search" size={13} />
@@ -1256,7 +1261,7 @@
                         {#if opt.linked}
                           <span class="linked-mark" aria-label={tr("Gekoppeld", "Linked")}><Ico name="circle-check" size={16} /></span>
                         {:else}
-                          <span class="opt-method {opt.method}">{opt.method === "signIn" ? tr("Inloggen", "Sign in") : opt.method === "key" ? tr("Met sleutel", "With key") : "MCP"}</span>
+                          <ConnectMethodBadge method={opt.method} />
                         {/if}
                       </button>
                     {/each}
@@ -1312,6 +1317,7 @@
   /* Add connection sheet (`AddConnectionSheet` on the Mac). */
   .add-sheet { display: flex; flex-direction: column; max-height: 85vh; min-height: 0; }
   .add-head { display: flex; flex-direction: column; gap: var(--space-12); padding: var(--space-16); border-bottom: 1px solid var(--separator); flex: none; }
+  .add-head-row { display: flex; align-items: center; gap: var(--space-12); }
   .add-head strong { font: var(--text-title); color: var(--paper); }
   .add-search { height: 34px; }
   .add-chips { display: flex; gap: var(--space-6); overflow-x: auto; padding: var(--space-2) 0; scrollbar-width: none; }
@@ -1325,8 +1331,6 @@
   .opt-tile:hover:not(:disabled) { background: var(--smoke); }
   .opt-tile:disabled { opacity: 0.5; }
   .opt-name { font: var(--text-emphasis); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .opt-method { flex: none; padding: var(--space-4) var(--space-8); border-radius: var(--radius-control); font: var(--text-caption); background: color-mix(in srgb, var(--iris) 14%, transparent); color: var(--iris); white-space: nowrap; }
-  .opt-method.signIn { background: var(--iris); color: var(--on-iris); }
   .linked-mark { flex: none; color: var(--mint); display: grid; place-items: center; }
   .add-foot { display: flex; justify-content: flex-end; gap: var(--space-8); padding: var(--space-12) var(--space-16); border-top: 1px solid var(--separator); flex: none; }
 

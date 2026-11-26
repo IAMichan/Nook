@@ -8,7 +8,7 @@
   import { buddy } from "../../lib/buddy.svelte";
   import Orb from "../../components/Orb.svelte";
   import Segmented from "./Segmented.svelte";
-  import LinkRow from "./LinkRow.svelte";
+  import SettingsLinkRow from "./SettingsLinkRow.svelte";
   import Fold from "./Fold.svelte";
   import { readableShortcut } from "../../lib/accelerator";
   import { services, screenLine, type EnergyView, type ServicePrefs, type ScreenStatus } from "../../lib/services";
@@ -140,8 +140,8 @@
       <input type="checkbox" role="switch" checked={prefs.callNotes} onchange={(e) => save({ callNotes: e.currentTarget.checked })} />
     </label>
   {/if}
-  <LinkRow icon="brain" title={tr("Geheugen beheren", "Manage memory")} to="memory" />
-  <LinkRow icon="hand" title={tr("Beheer machtigingen bij Privacy en toegang", "Manage permissions under Privacy & access")} to="permissions" />
+  <SettingsLinkRow section="memory" title={tr("Geheugen beheren", "Manage memory")} to="memory" />
+  <SettingsLinkRow section="permissions" title={tr("Beheer machtigingen bij Privacy en toegang", "Manage permissions under Privacy & access")} to="permissions" />
 </div>
 
 <h3>{tr("Meedenken", "Proactive suggestions")}</h3>
@@ -161,7 +161,7 @@
     </label>
     {#if nook.info?.brainLocal}
       <p class="note">{tr("Meedenken terwijl je werkt gebruikt een online brein; met een lokaal brein blijft het uit om je processor en accu rustig te houden.", "Proactive suggestions while you work use an online brain; with a local brain this stays off to keep your processor and battery quiet.")}</p>
-      <LinkRow icon="cpu" title={tr("Kies een brein bij Brein", "Choose a brain under Brain")} to="brain" />
+      <SettingsLinkRow section="brain" title={tr("Kies een brein bij Brein", "Choose a brain under Brain")} to="brain" />
     {/if}
     {#if prefs && Object.keys(prefs.thinkAlongMuted).length}
       <div class="row">

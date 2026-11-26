@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { LUCIDE } from "./lucide";
 import {
-  pageTitle, sectionTrail, settingsGroup, settingsGroups, settingsHost, settingsPages, settingsParts, settingsSection, settingsSections,
+  pageTitle, sectionIcon, sectionIcons, sectionTileIcon, sectionTileIcons, sectionTrail, settingsGroup, settingsGroups,
+  settingsHost, settingsPages, settingsParts, settingsSection, settingsSections,
 } from "./settings-pages";
 
 describe("Settings pages", () => {
@@ -45,5 +47,16 @@ describe("Settings pages", () => {
     expect(settingsSection("companion")).toBe("iphone");
     expect(settingsSection("memory")).toBe("memory");
     for (const value of [null, undefined, "", "__proto__", "toString", "missing"]) expect(settingsSection(value)).toBe("start");
+  });
+
+  it("maps every section to a known Lucide icon for sidebar and SettingsTile", () => {
+    for (const id of settingsSections) {
+      expect(LUCIDE[sectionIcon(id)], `missing sidebar icon ${sectionIcons[id]} for ${id}`).toBeTruthy();
+      expect(LUCIDE[sectionTileIcon(id)], `missing tile icon ${sectionTileIcons[id]} for ${id}`).toBeTruthy();
+    }
+    expect(sectionTileIcon("autocomplete")).toBe("keyboard");
+    expect(sectionTileIcon("dictation")).toBe("audio-waveform");
+    expect(sectionTileIcon("automation")).toBe("history");
+    expect(sectionTileIcon("iphone")).toBe("smartphone");
   });
 });

@@ -93,7 +93,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-10** One field style and rows grouped into cards, note tones (`SettingsFormStyle`, `SettingToggle`, `SettingFieldRow`, `SettingNote`, #1607, #1551) · M
 
-- [ ] **UI-11** Settings components `SettingsTile`, `SettingsLinkRow`, `InUseLabel`, `ConnectMethodBadge` · S
+- [x] **UI-11** Settings components `SettingsTile`, `SettingsLinkRow`, `InUseLabel`, `ConnectMethodBadge` · S Done (2026-11-26): added `views/settings/SettingsTile.svelte`, `SettingsLinkRow.svelte`, `InUseLabel.svelte`, and `ConnectMethodBadge.svelte` with pure helpers and unit tests (`lib/settings-ui.ts`, `lib/settings-pages.ts` section/tile icon maps), wired into `Overview.svelte`, `Assistant.svelte`, `PairPhoneSheet.svelte`, `ModelAdvice.svelte`, `CatalogueCard.svelte`, and `Accounts.svelte`.
 
 - [x] **UI-12** Every Settings row the chat can change through BR-20 exists in the UI with the same key · S Done (2026-11-26): aligned `core/src/settings_catalog.rs` and `src-tauri/src/tools/settings.rs` 1:1 with the Settings UI (all 26 catalog keys including `nook_style`, `show_bar`, `open_window_at_launch`, `dictation`, `notices_chats`/`notices_nook`/`notices_suggestions`, `online_lyrics`, synced `notices_agents` card/strip/system/off, moved `energy_mode` to `maintenance`, synced all 37 `SECTIONS` with `settingsSections`, and added cross-layer UI binding tests in `src/lib/settings-catalog.test.ts`).
 
