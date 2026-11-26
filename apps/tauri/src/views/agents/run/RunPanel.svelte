@@ -568,7 +568,7 @@
           {:else}
             <!-- Suggested steps for what the agent just said (`ActionSuggestionBar`, BR-60), above the composer. -->
             <ActionSuggestionBar turn={suggestionTurn} busy={isActive(run.status)} place={{ kind: "agent", name: workspace.provider(run.provider)?.name ?? run.provider, title: run.title }}
-              lines={() => events.filter((e) => e.kind === "user" || e.kind === "assistant").slice(-12).map((e) => ({ speaker: e.kind === "user" ? "You" : (workspace.provider(run.provider)?.name ?? run.provider), text: e.text, id: e.id }))} />
+              lines={() => events.filter((e) => e.kind === "user" || e.kind === "assistant").slice(-12).map((e) => ({ speaker: e.kind === "user" ? "You" : (workspace.provider(run.provider)?.name ?? run.provider), text: e.text, id: e.id, mine: e.kind === "user" }))} />
             {#if run.goal}
               <GoalStrip runId={run.id} goal={run.goal} />
             {/if}

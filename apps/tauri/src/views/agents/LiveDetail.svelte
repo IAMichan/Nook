@@ -155,7 +155,7 @@
   <!-- What Nook could do for what was said here, as under a session Nook runs (`ActionSuggestionBar`). -->
   <ActionSuggestionBar turn={session.lastReply.trim() ? { conversation: `session:${session.id}`, message: String(session.lastReply.length) + ":" + session.lastReply.slice(-40), date: session.updated } : null}
     busy={session.status === "running"} place={{ kind: "agent", name: session.name, title: session.project }}
-    lines={() => [{ speaker: "You", text: session.lastPrompt, id: `${session.id}:prompt` }, { speaker: session.name, text: session.lastReply, id: `${session.id}:reply` }]} />
+    lines={() => [{ speaker: "You", text: session.lastPrompt, id: `${session.id}:prompt`, mine: true }, { speaker: session.name, text: session.lastReply, id: `${session.id}:reply` }]} />
 
   {#if canNook && ontakeover && session.status !== "detected"}
     <div class="reply-box">

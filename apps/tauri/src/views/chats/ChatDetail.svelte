@@ -576,7 +576,7 @@
     return last ? { conversation: entry.key, message: last.id, date: last.date } : null;
   });
   const suggestionLines = (): SuggestionLine[] =>
-    bubbles.filter((b) => !b.deleted).slice(-30).map((b) => ({ speaker: b.fromMe ? tr("Jij", "You") : b.sender || entry.name, text: b.text || fileLabel(b.media) || "", id: b.id }));
+    bubbles.filter((b) => !b.deleted).slice(-30).map((b) => ({ speaker: b.fromMe ? tr("Jij", "You") : b.sender || entry.name, text: b.text || fileLabel(b.media) || "", id: b.id, mine: b.fromMe }));
   // Forwarding a message (`ChatForward`, CH-48): to every chat whose capabilities accept the text/attachment.
   let forwarding = $state<Bubble | null>(null);
   function canForwardMessage(m: Bubble): boolean {

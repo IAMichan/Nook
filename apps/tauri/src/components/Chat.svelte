@@ -69,7 +69,7 @@
     return nook.active && last ? { conversation: `nook:${nook.active.id}`, message: last.id, date: last.date } : null;
   });
   const nookLines = (): Line[] =>
-    (nook.active?.messages ?? []).slice(-12).filter((m) => !m.isError).map((m) => ({ speaker: m.fromUser ? "You" : "Nook", text: m.text, id: m.id }));
+    (nook.active?.messages ?? []).slice(-12).filter((m) => !m.isError).map((m) => ({ speaker: m.fromUser ? "You" : "Nook", text: m.text, id: m.id, mine: m.fromUser }));
 
   // A message search everything opened: scroll to it once it is drawn, mark it for a moment.
   $effect(() => {

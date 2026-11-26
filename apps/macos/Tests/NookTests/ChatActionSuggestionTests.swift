@@ -63,7 +63,7 @@ final class ChatActionSuggestionTests: XCTestCase {
 
     /// Only reactions, bare links and a word or two are left out on the Mac; the rest is the brain's to judge.
     func testOnlyReactionsAreLeftOutBeforeTheBrain() {
-        func worth(_ text: String) -> Bool { ChatActionSuggestion.worthALook([.init(speaker: "X", text: text)]) }
+        func worth(_ text: String) -> Bool { ChatActionSuggestion.worthALook([.init(speaker: "X", text: text)], place: .chat(app: "WhatsApp", name: "X")) }
         XCTAssertTrue(worth("Eigenlijk moeten we pandabot nog toevoegen aan die pages"))
         XCTAssertTrue(worth("pandabot op die pages zou mooi zijn"), "a wish without a cue word still counts")
         XCTAssertTrue(worth("Can you fix the login page today?"))
@@ -74,12 +74,34 @@ final class ChatActionSuggestionTests: XCTestCase {
         }
     }
 
+    /// In an agent's session and Nook Chat only your own lines can ask for a step: a reply listing next steps does not.
+    func testRepliesOfAgentsAndNookDoNotAskForAStep() {
+        let reply = ChatActionSuggestion.Line(speaker: "Claude", text: "Next steps: add tests for the login flow and update the docs")
+        let yours = ChatActionSuggestion.Line(speaker: "You", text: "Remind me to tell Arjan about the login fix tomorrow", mine: true)
+        for place in [ChatActionSuggestion.Place.agent(name: "Claude", title: "Login"), .nook] {
+            XCTAssertFalse(ChatActionSuggestion.worthALook([reply], place: place))
+            XCTAssertTrue(ChatActionSuggestion.worthALook([reply, yours], place: place))
+            XCTAssertTrue(ChatActionSuggestion.prompt(place: place, lines: [yours, reply], fresh: 2, projects: [], handled: [])
+                .contains("Only a request in the user's own"))
+        }
+        XCTAssertTrue(ChatActionSuggestion.worthALook([reply], place: .chat(app: "Slack", name: "Team")),
+                      "in a chat, anyone's message can ask the user for something")
+    }
+
+    func testStepsTheBrainDoesNotStandBehindAreDropped() {
+        XCTAssertTrue(ChatActionSuggestion.backed("Arjan asked you to call him back at 3."))
+        for doubt in ["", "  ", "NONE", "none.", "Nothing to do here: NONE"] {
+            XCTAssertFalse(ChatActionSuggestion.backed(doubt), doubt)
+        }
+    }
+
     func testVagueStepsAreDropped() {
         let task = "Add the Pandabot chat widget to every page under apps/pages in the Infaris monorepo, using the existing embed script."
         XCTAssertTrue(ChatActionSuggestion.complete(tool: "start_agent_session", input: ["task": task, "folder": "infaris"]))
         XCTAssertFalse(ChatActionSuggestion.complete(tool: "start_agent_session", input: ["task": task]), "no folder")
         XCTAssertFalse(ChatActionSuggestion.complete(tool: "start_agent_session", input: ["task": "Add pandabot", "folder": "infaris"]))
         XCTAssertFalse(ChatActionSuggestion.complete(tool: "create_reminder", input: ["title": "Pandabot"]))
+        XCTAssertFalse(ChatActionSuggestion.complete(tool: "create_reminder", input: ["title": "Check pandabot"]))
         XCTAssertTrue(ChatActionSuggestion.complete(tool: "create_reminder", input: ["title": "Call Arjan about Pandabot"]))
         XCTAssertFalse(ChatActionSuggestion.complete(tool: "create_event", input: ["title": "Demo"]))
         XCTAssertTrue(ChatActionSuggestion.complete(tool: "create_event", input: ["title": "Demo", "start": "2026-11-17T10:00"]))
@@ -93,7 +115,7 @@ final class ChatActionSuggestionTests: XCTestCase {
         XCTAssertEqual(ChatActionSuggestion.newLines(lines, since: "gone").count, 3)
     }
 
-    func testPaceOnlyBoundsTheCost() {
+    func testPaceLooksOncePerFewMinutesAndStaysQuietAfterADismissal() {
         let now = Date()
         let calm = ChatActionSuggestion.Pace(lastLook: nil, waiting: false, looksThisHour: 0)
         XCTAssertTrue(calm.allows(now: now))
@@ -101,9 +123,14 @@ final class ChatActionSuggestionTests: XCTestCase {
         pace.waiting = true
         XCTAssertFalse(pace.allows(now: now), "not while one still waits")
         pace = calm
-        pace.lastLook = now.addingTimeInterval(-2)
-        XCTAssertFalse(pace.allows(now: now), "one look for a quick burst")
-        pace.lastLook = now.addingTimeInterval(-10)
+        pace.lastLook = now.addingTimeInterval(-60)
+        XCTAssertFalse(pace.allows(now: now), "one look for a running exchange")
+        pace.lastLook = now.addingTimeInterval(-ChatActionSuggestion.Pace.gap - 1)
+        XCTAssertTrue(pace.allows(now: now))
+        pace = calm
+        pace.dismissed = now.addingTimeInterval(-10 * 60)
+        XCTAssertFalse(pace.allows(now: now), "quiet a while after the cross")
+        pace.dismissed = now.addingTimeInterval(-ChatActionSuggestion.Pace.quiet - 1)
         XCTAssertTrue(pace.allows(now: now))
         pace = calm
         pace.looksThisHour = ChatActionSuggestion.Pace.looksPerHour
