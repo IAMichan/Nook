@@ -463,6 +463,8 @@ extension AgentRunPanel {
                                             shown: ([pullRequest] + branches.map(\.pullRequest)).compactMap { $0 },
                                             aliases: aliases)
         let hasPullRequests = pullRequest != nil || !branches.isEmpty || pending != nil || !others.isEmpty
+        // More than one pull request row: their states share one column (branch rows always use it), so the titles line up.
+        let columns = !branches.isEmpty || (pullRequest != nil && !others.isEmpty) || others.count > 1
         // What it will do by itself later: the scheduled tasks that continue this session, above its pull requests.
         let scheduled = SessionScheduledTaskRow.tasks(for: runID, in: scheduledTasks.tasks)
         if !scheduled.isEmpty || hasPullRequests || !waiting.isEmpty || !quotes.isEmpty {
@@ -476,12 +478,12 @@ extension AgentRunPanel {
                     }
                     ForEach(scheduled) { task in SessionScheduledTaskRow(task: task) }
                     if !scheduled.isEmpty && (hasPullRequests || !waiting.isEmpty) { ComposerTrayDivider() }
-                    ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases) }
+                    ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases, columns: columns) }
                     if !branches.isEmpty {
                         RunBranchTray(rows: branches, watches: watches, canWatchCurrent: watchable != nil, runID: runID, workspace: workspace,
                                       pullRequestSync: pullRequestSync, showsOlderBranches: $showsOlderBranches)
                     } else if let pullRequest {
-                        PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
+                        PullRequestWatchStrip(url: pullRequest, watch: watch, columns: columns, toggle: canWatch ? {
                             if watch == nil { workspace.watchPullRequest(runID, url: pullRequest) } else { workspace.stopWatchingPullRequest(runID, url: pullRequest) }
                         } : nil)
                     }
@@ -516,10 +518,10 @@ extension AgentRunPanel {
     /// A pull request the session works on that is not its own branch's, in the same row as those: its state, title and
     /// checks, watched from here (CI and reviews then wake the agent) while it can still change.
     @ViewBuilder
-    private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch], aliases: [String: String]) -> some View {
+    private func otherRow(_ link: PullRequestLink, watches: [PullRequestWatch], aliases: [String: String], columns: Bool) -> some View {
         if let url = URL(string: link.url) {
             let watch = SessionBranches.watch(for: link.url, in: watches, aliases: aliases)
-            PullRequestWatchStrip(url: url, watch: watch, title: link.title,
+            PullRequestWatchStrip(url: url, watch: watch, title: link.title, columns: columns,
                                   toggle: watch != nil || (link.state.isOpen && PullRequestWatch.canWatch(url)) ? {
                 if watch == nil { workspace.watchPullRequest(runID, url: url) } else { workspace.stopWatchingPullRequest(runID, url: url) }
             } : nil)

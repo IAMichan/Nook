@@ -418,6 +418,8 @@ struct PullRequestWatchStrip: View {
     /// The pull request's title, so each row says what it was. Nil: the newest read's (`PullRequestStatusStore`), which the
     /// state badge keeps current, so a row the branch sync has not named yet still says what it is.
     var title: String? = nil
+    /// The tray lists more than one pull request: the states take one column, so every title after them lines up.
+    var columns = false
     /// Nil for a session Nook does not run (or a request that landed): nothing to watch, so the row only shows and opens it.
     var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
@@ -435,8 +437,8 @@ struct PullRequestWatchStrip: View {
             }
             .buttonStyle(.nookPlain)
             .nookTip(tr("ws.prwatch.open"))
-            // In a list of branches the states share one column, so the titles after them line up.
-            .frame(minWidth: branch == nil ? nil : Self.stateColumn, alignment: .leading)
+            // In a list of branches or pull requests the states share one column, so the titles after them line up.
+            .frame(minWidth: branch == nil && !columns ? nil : Self.stateColumn, alignment: .leading)
             identity
             Spacer(minLength: NookTheme.Spacing.sm)
             if !summary.isEmpty {
