@@ -22,28 +22,49 @@
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    const MIN_HOST_WIDTH = 100;
+    const MIN_HOST_HEIGHT = 40;
     let disposed = false;
+    let ready = false;
     let unlisten: (() => void) | null = null;
-    toolsApi.replay(id).then((text) => {
-      if (disposed) return;
-      term.write(text);
-      toolEvents.onOutput((c) => c.id === id && term.write(c.data)).then((u) => (disposed ? u() : (unlisten = u)));
-    });
     const input = term.onData((data) => toolsApi.write(id, data).catch(() => {}));
     const resize = () => {
+      if (!host || !ready) return;
+      // A container still laying out can briefly measure a few pixels wide; don't start or resize a shell to that.
+      if (host.clientWidth < MIN_HOST_WIDTH || host.clientHeight < MIN_HOST_HEIGHT) return;
       try {
         fit.fit();
-        toolsApi.resize(id, term.cols, term.rows).catch(() => {});
+        if (term.cols >= 10 && term.rows >= 2) {
+          toolsApi.resize(id, term.cols, term.rows).catch(() => {});
+        }
       } catch {
-        // Nog niet zichtbaar.
+        // Not visible yet.
       }
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
-    requestAnimationFrame(() => {
-      resize();
-      term.focus();
-    });
+    // Attach the output stream and replay buffered bytes before sending the initial fitted size,
+    // so a shell that starts on the first `resize` never loses its earliest output.
+    toolsApi
+      .replay(id)
+      .catch(() => "")
+      .then((text) => {
+        if (disposed) return;
+        if (text) term.write(text);
+        return toolEvents.onOutput((c) => c.id === id && term.write(c.data)).then((u) => {
+          if (disposed) {
+            u();
+            return;
+          }
+          unlisten = u;
+          ready = true;
+          requestAnimationFrame(() => {
+            if (disposed) return;
+            resize();
+            term.focus();
+          });
+        });
+      });
     return () => {
       disposed = true;
       observer.disconnect();
