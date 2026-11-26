@@ -323,10 +323,9 @@ pub fn current_with(settings: &Settings, extras: Extras, id: &str) -> String {
         "wake_word" => flag(settings.wake_word),
         "dictation" => flag(extras.dictation),
         "agent_sounds" => flag(settings.sounds),
-        "notices_agents" => NoticeStyle::from_id(&settings.agent_notice)
-            .unwrap_or_else(|| settings.notice_rules.style(NoticeSource::Agents))
-            .id()
-            .into(),
+        "notices_agents" => {
+            NoticeStyle::from_id(&settings.agent_notice).unwrap_or_else(|| settings.notice_rules.style(NoticeSource::Agents)).id().into()
+        }
         "notices_chats" => settings.notice_rules.style(NoticeSource::Chats).id().into(),
         "notices_nook" => settings.notice_rules.style(NoticeSource::Nook).id().into(),
         "notices_suggestions" => settings.notice_rules.style(NoticeSource::Suggestions).id().into(),
