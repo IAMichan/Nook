@@ -88,7 +88,7 @@ By default, Nook runs **100% locally on your own computer** (on a Mac via built-
 |---|---|---|---|
 | **macOS 15+** | Native app (Swift, SwiftUI/AppKit): a main window, with the notch or a floating panel as an optional extra | [`apps/macos`](apps/macos) | Primary, most complete |
 | **iPhone** | **Nook Companion**: follow and approve your coding agents | [`apps/ios`](apps/ios) | Companion for Nook on Mac, Windows, or Linux |
-| **Windows** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys | [`apps/tauri`](apps/tauri) | Early: compiles in CI, not yet run on a real Windows PC |
+| **Windows** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys | [`apps/tauri`](apps/tauri) | Early: runs on a real Windows PC, not every feature tested there yet |
 | **Linux** | Tauri app: a bar at the top of the screen or floating, tray, global hotkeys (X11) | [`apps/tauri`](apps/tauri) | Early: tested in the app |
 | **Android** | Tauri app: Nooks, chat, settings, and the phone side of the Companion | [`apps/tauri`](apps/tauri) | Early: APK built in CI only |
 
@@ -429,7 +429,7 @@ nook/
 
 - **Early stage:** Not every Mac feature has been ported yet; [`docs/TAURI.md`](docs/TAURI.md) lists what is done, partial, or still to do.
 - **Interface language:** English, Dutch, German, French, and Spanish, like the Mac. Some error messages from the Rust side are still in Dutch.
-- **Testing:** The Windows build compiles in CI but has not yet been run on a real Windows PC, and the Android APK is only built in CI.
+- **Testing:** The Windows app runs on a real Windows PC, but not every feature has been tried there yet, and the Android APK is only built in CI.
 - **Wayland:** Global hotkeys and system-wide dictation need X11 on Linux.
 - **Android secrets:** Stored in a private app folder without backup; Android Keystore support is still to do.
 
@@ -437,7 +437,7 @@ nook/
 
 ## Contributing
 
-Bug reports, feature ideas, translations, and pull requests are very welcome, and **you don't need a Mac**: the Windows, Linux, and Android app is Rust and Svelte, and the Windows build is still waiting for its first run on a real PC. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request to learn about the architecture, localization coverage tests (`I18nCoverageTests`), and safety guidelines.
+Bug reports, feature ideas, translations, and pull requests are very welcome, and **you don't need a Mac**: the Windows, Linux, and Android app is Rust and Svelte, and the Windows app still needs testers to try every feature on a real PC. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request to learn about the architecture, localization coverage tests (`I18nCoverageTests`), and safety guidelines.
 
 The short version:
 
