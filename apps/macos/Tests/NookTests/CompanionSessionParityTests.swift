@@ -32,6 +32,21 @@ final class CompanionSessionParityTests: XCTestCase {
         XCTAssertEqual(SessionShelf.of(session("g", attention: "failed", settled: true), showWorking: true, now: 10), .needsYou)
     }
 
+    func testThePhoneKeepsEverySessionAtWorkOnTop() {
+        let question = SessionDigest.Item(id: "q", kind: .question, title: "Which?", detail: "", canAllow: false, options: [])
+        // What needs you still comes first, also while the agent reads as working.
+        XCTAssertEqual(SessionShelf.onPhone(session("a", attention: "working", items: [question]), now: 10), .needsYou)
+        // Work in progress is never tucked away on a shelf of the Mac.
+        XCTAssertEqual(SessionShelf.onPhone(session("b", attention: "working", pinned: true), now: 10), .working)
+        XCTAssertEqual(SessionShelf.onPhone(session("c", attention: "working", settled: true), now: 10), .working)
+        XCTAssertEqual(SessionShelf.onPhone(session("d", attention: "working", snoozedUntil: 20), now: 10), .working)
+        // The rest keeps the Mac's shelves.
+        XCTAssertEqual(SessionShelf.onPhone(session("e", pinned: true), now: 10), .pinned)
+        XCTAssertEqual(SessionShelf.onPhone(session("f", snoozedUntil: 20), now: 10), .snoozed)
+        XCTAssertEqual(SessionShelf.onPhone(session("g", settled: true), now: 10), .settled)
+        XCTAssertEqual(SessionShelf.onPhone(session("h", attention: "ready"), now: 10), .active)
+    }
+
     func testAnOlderMacPutsEverySessionWhereTheListHadIt() {
         // Without the Agents tab's flags nothing is pinned, settled or snoozed.
         let shelves = SessionShelf.place([session("a", updated: 1), session("b", attention: "working", updated: 2),

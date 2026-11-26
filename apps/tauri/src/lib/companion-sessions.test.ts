@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionDigest, SessionQuestion } from "./companion";
-import { HEADER_MENU, menuEntries, placeSessions, ROW_MENU, sessionShelf, toggleAnswer, validAnswers } from "./companion-sessions";
+import { HEADER_MENU, menuEntries, phoneShelf, placeSessions, ROW_MENU, sessionShelf, toggleAnswer, validAnswers } from "./companion-sessions";
 
 const session = (id: string, extra: Partial<SessionDigest> = {}): SessionDigest => ({
   id, title: id, agent: "Codex", attention: "idle", folder: "nook", updated: 0, excerpt: "", items: [], ...extra,
@@ -10,6 +10,18 @@ const question = (id: string, extra: Partial<SessionQuestion> = {}): SessionQues
 });
 
 describe("the Agents tab as on the Mac", () => {
+  it("keeps every session at work on top on the phone", () => {
+    const question = { id: "q", kind: "question", title: "Which?", detail: "", canAllow: false, options: [] } as SessionDigest["items"][number];
+    expect(phoneShelf(session("a", { attention: "working", items: [question] }), 10)).toBe("needsYou");
+    expect(phoneShelf(session("b", { attention: "working", pinned: true }), 10)).toBe("working");
+    expect(phoneShelf(session("c", { attention: "working", settled: true }), 10)).toBe("working");
+    expect(phoneShelf(session("d", { attention: "working", snoozedUntil: 20 }), 10)).toBe("working");
+    expect(phoneShelf(session("e", { pinned: true }), 10)).toBe("pinned");
+    expect(phoneShelf(session("f", { snoozedUntil: 20 }), 10)).toBe("snoozed");
+    expect(phoneShelf(session("g", { settled: true }), 10)).toBe("settled");
+    expect(phoneShelf(session("h", { attention: "ready" }), 10)).toBe("active");
+  });
+
   it("puts every session on the Mac's shelf", () => {
     const approval = { id: "i", kind: "approval" as const, title: "", detail: "", canAllow: true, options: [] };
     expect(sessionShelf(session("a", { items: [approval], pinned: true }), true, 10)).toBe("needsYou");

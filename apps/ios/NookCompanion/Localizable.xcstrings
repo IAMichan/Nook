@@ -15815,34 +15815,6 @@
         }
       }
     },
-    "Show working" : {
-      "localizations" : {
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toon wat werkt"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Arbeitende zeigen"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher celles au travail"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar las que trabajan"
-          }
-        }
-      }
-    },
     "Slow down a little." : {
       "extractionState" : "stale",
       "localizations" : {

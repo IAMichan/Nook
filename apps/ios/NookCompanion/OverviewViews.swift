@@ -54,13 +54,14 @@ struct AttentionOverview: View {
             } else {
                 if !calm {
                     HStack(spacing: Theme.Spacing.md) {
-                    if waiting > 0 {
-                        OverviewTile(count: waiting, title: String(localized: "Waiting on you"),
-                                     symbol: "hand.raised.fill", tint: Theme.amber, urgent: true) { open(.agents) }
-                    }
+                    // In the Agents list's order: what happens, then what is left for you.
                     if working > 0 {
                         OverviewTile(count: working, title: String(localized: "Working"),
                                      symbol: "circle.dotted", tint: Theme.blue) { open(.agents) }
+                    }
+                    if waiting > 0 {
+                        OverviewTile(count: waiting, title: String(localized: "Waiting on you"),
+                                     symbol: "hand.raised.fill", tint: Theme.amber, urgent: true) { open(.agents) }
                     }
                     if unread > 0 {
                         OverviewTile(count: unread, title: String(localized: "Unread chats"),
@@ -145,11 +146,11 @@ private struct OverviewTile: View {
             .padding(Theme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                LinearGradient(colors: [tint.opacity(urgent ? 0.14 : 0.06), tint.opacity(0)],
+                LinearGradient(colors: [tint.opacity(urgent ? 0.08 : 0.04), tint.opacity(0)],
                                startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: Theme.shape(Theme.Radius.panel)
             )
-            .cardBackground(Theme.surface, stroke: urgent ? tint.opacity(0.35) : Theme.line2,
+            .cardBackground(Theme.surface, stroke: urgent ? tint.opacity(0.22) : Theme.line2,
                             radius: Theme.Radius.panel)
             .roundedHitShape(Theme.Radius.panel)
         }

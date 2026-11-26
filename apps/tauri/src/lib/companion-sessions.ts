@@ -20,6 +20,21 @@ export function sessionShelf(s: SessionDigest, showWorking: boolean, now = Date.
   return "active";
 }
 
+/** The shelf in the phone's Agents list (`SessionShelf.onPhone`): what needs you, then every session at work (also a
+ * pinned, settled or snoozed one), then the Mac's shelves for the rest. */
+export function phoneShelf(s: SessionDigest, now = Date.now() / 1000): SessionShelf {
+  if (needsYou(s)) return "needsYou";
+  if (s.attention === "working") return "working";
+  return sessionShelf(s, false, now);
+}
+
+/** The sessions per shelf as the phone shows them, newest first within each. */
+export function placeOnPhone(sessions: SessionDigest[], now = Date.now() / 1000): Record<SessionShelf, SessionDigest[]> {
+  const shelves: Record<SessionShelf, SessionDigest[]> = { needsYou: [], pinned: [], working: [], active: [], snoozed: [], settled: [] };
+  for (const s of [...sessions].sort((a, b) => b.updated - a.updated)) shelves[phoneShelf(s, now)].push(s);
+  return shelves;
+}
+
 /** The sessions per shelf, newest first within each. */
 export function placeSessions(sessions: SessionDigest[], showWorking: boolean, now = Date.now() / 1000): Record<SessionShelf, SessionDigest[]> {
   const shelves: Record<SessionShelf, SessionDigest[]> = { needsYou: [], pinned: [], working: [], active: [], snoozed: [], settled: [] };

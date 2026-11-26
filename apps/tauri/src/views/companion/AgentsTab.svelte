@@ -22,7 +22,7 @@
   import SnoozePicker from "./SnoozePicker.svelte";
   import WaitingRow from "./ui/WaitingRow.svelte";
   import SessionPrompt from "./SessionPrompt.svelte";
-  import { placeSessions, ROW_MENU } from "../../lib/companion-sessions";
+  import { placeOnPhone, ROW_MENU } from "../../lib/companion-sessions";
   import { sessionMenu } from "./session-menu";
 
   let { view, act, took, onorb, oncomputers, ongear, onopen, onnew, onelsewhere }: {
@@ -96,22 +96,12 @@
     try { localStorage.setItem("companion.shelves", JSON.stringify(open)); } catch { /* remembered for this visit */ }
   }
 
-  // The Mac's shelves (`SessionShelf`): Pinned, what needs you, the rest, Working (with "Show working"), Snoozed and
-  // Settled. A computer without `agentsTab` pins, snoozes and settles nothing, so its sessions stay where they were.
-  let showWorking = $state(readShowWorking());
-  function readShowWorking(): boolean {
-    try { return localStorage.getItem("companion.showWorking") !== "0"; } catch { return true; }
-  }
-  function setShowWorking(on: boolean) {
-    haptic();
-    showWorking = on;
-    try { localStorage.setItem("companion.showWorking", on ? "1" : "0"); } catch { /* remembered for this visit */ }
-  }
-  let viewMenu = $state<DOMRect | null>(null);
-  let viewButton = $state<HTMLDivElement | null>(null);
+  // The phone's shelves (`SessionShelf.onPhone`): what is at work, what waits on you, then the Mac's Pinned, the rest,
+  // Snoozed and Settled. A computer without `agentsTab` pins, snoozes and settles nothing, so its sessions stay where
+  // they were.
   let prompt = $state<{ kind: "rename" | "delete" | "end"; session: SessionDigest } | null>(null);
   const all = $derived(sortSessions(view.sessions).filter((s) => !query.trim() || matchesSession(s, query)));
-  const shelves = $derived(placeSessions(all, showWorking));
+  const shelves = $derived(placeOnPhone(all));
   const waiting = $derived(sortSessions(shelves.needsYou));
   const working = $derived(shelves.working);
   const recent = $derived(shelves.active);
@@ -160,7 +150,6 @@
       {#if view.sessions.length > SHOWN || canHistory || has(view, Feature.agentsTab)}
         <div class="searchrow">
           <div class="grow"><SearchField bind:value={query} placeholder={tr("Zoek sessies", "Search sessions")} /></div>
-          {#if has(view, Feature.agentsTab)}<div bind:this={viewButton}><IconButton icon="list" label={tr("Weergave", "View")} onclick={() => (viewMenu = viewButton?.getBoundingClientRect() ?? null)} /></div>{/if}
         </div>
       {/if}
       {#if query.trim() && !all.length && !matches.length && !matchLoading}<p class="none">{tr("Geen sessie gevonden.", "No session matches.")}</p>{/if}
@@ -168,18 +157,25 @@
         <WaitingRow icon="square-pen" title={q.text} detail={tr("Nieuwe sessie · wacht op je Mac", "New session · waiting for your Mac")} ondiscard={async () => took(await companion.discard(q.id))} />
       {/each}
     </div>
-    {#if shelves.pinned.length}
-      <ShelfHeader title={tr("Vastgezet", "Pinned")} count={shelves.pinned.length} open={open.pinned ?? true} ontoggle={() => toggle("pinned")} />
-      {#if open.pinned ?? true}
-        {#each shelves.pinned as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
+    {#if working.length}
+      <ShelfHeader title={tr("Aan het werk", "Working")} count={working.length} open={open.working ?? true} ontoggle={() => toggle("working")} />
+      {#if open.working ?? true}
+        {#each working as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
       {/if}
     {/if}
     {#if waiting.length}
+      <h3 class="older on">{tr("Wacht op jou", "Waiting on you")}<span class="badge">{waiting.length}</span></h3>
       <div class="top">
         {#each waiting as s (s.id)}
           <SessionNotice {view} session={s} onopen={() => onopen(s.id)} {act} />
         {/each}
       </div>
+    {/if}
+    {#if shelves.pinned.length}
+      <ShelfHeader title={tr("Vastgezet", "Pinned")} count={shelves.pinned.length} open={open.pinned ?? true} ontoggle={() => toggle("pinned")} />
+      {#if open.pinned ?? true}
+        {#each shelves.pinned as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
+      {/if}
     {/if}
 
     {#if recent.length}
@@ -192,12 +188,6 @@
       {/if}
     {/if}
 
-    {#if working.length}
-      <ShelfHeader title={tr("Aan het werk", "Working")} count={working.length} open={open.working ?? true} ontoggle={() => toggle("working")} />
-      {#if open.working ?? true}
-        {#each working as s (s.id)}<AgentRow session={s} onopen={() => onopen(s.id)} onhold={(r) => (menu = { session: s, anchor: r })} />{/each}
-      {/if}
-    {/if}
     {#if shelves.snoozed.length}
       <ShelfHeader title={tr("Gesnoozed", "Snoozed")} count={shelves.snoozed.length} open={open.snoozed ?? true} ontoggle={() => toggle("snoozed")} />
       {#if open.snoozed ?? true}
@@ -248,11 +238,6 @@
   <Sheet onclose={() => (pulls = false)}><PullRequests {view} {took} onclose={() => (pulls = false)} onstarted={(id) => { pulls = false; onopen(id); }} /></Sheet>
 {/if}
 {#if menu}<Menu sections={menuSections} anchor={menu.anchor} onclose={() => (menu = null)} />{/if}
-{#if viewMenu}
-  <Menu anchor={viewMenu} onclose={() => (viewMenu = null)} sections={[[
-    { label: tr("Toon wat werkt", "Show working"), icon: "hammer", checked: showWorking, onselect: () => setShowWorking(!showWorking) },
-  ]]} />
-{/if}
 {#if prompt}
   {@const p = prompt}
   <SessionPrompt kind={p.kind} session={p.session} onclose={() => (prompt = null)} onrun={(action, text) => void manage(p.session, action, text)} />
