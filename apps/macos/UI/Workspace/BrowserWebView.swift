@@ -30,10 +30,23 @@ final class BrowserWebView: WKWebView {
 
     /// The tab keys (⌘T, ⌘W, ⌘⇧T); true when they did something. Set by the tab that owns this web view.
     var tabKey: ((Request) -> Bool)?
+    /// Nook reloads the page (your button or key, or the crash reload), as opposed to the page's own `location.reload()`:
+    /// the tab's `BrowserReloadGuard` starts counting again.
+    var reloadedByNook: (() -> Void)?
     /// When "Open Link in New Tab" in the right-click menu was chosen: the window WebKit asks for next becomes a tab.
     private var tabWindowAsked: Date?
     /// The menu item WebKit put in the right-click menu for opening a link in a new window, which ours runs.
     private var openLinkItem: (target: AnyObject?, action: Selector)?
+
+    override func reload() -> WKNavigation? {
+        reloadedByNook?()
+        return super.reload()
+    }
+
+    override func reloadFromOrigin() -> WKNavigation? {
+        reloadedByNook?()
+        return super.reloadFromOrigin()
+    }
 
     // MARK: Keys
 

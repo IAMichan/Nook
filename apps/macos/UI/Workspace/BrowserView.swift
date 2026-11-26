@@ -404,6 +404,8 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     @Published private(set) var certificateQuestion: CertificateQuestion?
     /// When the page was last loaded again after its process crashed.
     private var lastCrashReload = Date.distantPast
+    /// Counts the reloads the page asks for itself, so a dev server's reload loop stops (`BrowserReloadGuard`).
+    private var reloadGuard = BrowserReloadGuard()
     let webView: WKWebView
     /// The browser this tab is in.
     weak var store: BrowserStore?
@@ -485,6 +487,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         webView = browserWebView
         super.init()
         browserWebView.tabKey = { [weak self] request in self?.tabKey(request) ?? false }
+        browserWebView.reloadedByNook = { [weak self] in self?.reloadGuard.reset() }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -544,6 +547,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     func go(_ input: String) {
         guard let url = BrowserSearchEngine.address(input, engine: .current()) else { return }
         parked = nil
+        reloadGuard.reset()
         openedBy = nil
         webView.load(URLRequest(url: url))
     }
@@ -551,6 +555,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     /// Opens a page Nook's chat asked for, without waiting for it.
     func open(_ url: URL) {
         parked = nil
+        reloadGuard.reset()
         openedBy = nil
         lastError = nil
         // A web page opened from Finder (Nook as the default browser): WebKit only reads files it was allowed to, here the
@@ -565,6 +570,7 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     /// Opens a page for an agent and waits (up to `timeout`) until it has loaded. Returns the error when it failed.
     func load(_ url: URL, by agent: String, timeout: TimeInterval = 15) async -> String? {
         parked = nil
+        reloadGuard.reset()
         openedBy = agent
         lastError = nil
         webView.load(URLRequest(url: url))
@@ -772,11 +778,31 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         if webView.url != nil { webView.reload() } else if let url = URL(string: address) { webView.load(URLRequest(url: url)) }
     }
 
+    /// WebKit suspends a page that is out of view. A dev server's live-reload socket then drops, and when the page shows
+    /// again the dev server reloads it and compiles once more (Next.js, Vite). A page on this Mac keeps running, so its
+    /// updates arrive as they are made; other pages are suspended as before, and every page is put away after
+    /// `parkSeconds` out of sight.
+    private func keepAwakeIfLocal(_ url: URL?) {
+        let local = BridgeURLPolicy.isLoopback((url?.host ?? "").lowercased())
+        let policy: WKPreferences.InactiveSchedulingPolicy = local ? .none : .suspend
+        let preferences = webView.configuration.preferences
+        if preferences.inactiveSchedulingPolicy != policy { preferences.inactiveSchedulingPolicy = policy }
+    }
+
     /// Only web pages open inside; mail, phone and app links go to the system, other schemes are refused. Google's
     /// sign-in pages turn this browser away as an app's own, so there it calls itself Firefox (`WebSignInAgent`).
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         let scheme = navigationAction.request.url?.scheme?.lowercased() ?? ""
         if navigationAction.shouldPerformDownload { return .download }
+        if navigationAction.targetFrame?.isMainFrame == true {
+            // A page reloading itself over and over (a dev server's live reload gone round in circles) stops here.
+            if navigationAction.navigationType == .reload, !reloadGuard.pageReloads() {
+                lastError = tr("ws.browser.reloadLoop")
+                refresh(loading: false)
+                return .cancel
+            }
+            keepAwakeIfLocal(navigationAction.request.url)
+        }
         // ⌘-click or a middle click on a link opens it in a tab behind this one, as in every browser.
         if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url, let store,
            navigationAction.modifierFlags.contains(.command) || navigationAction.buttonNumber == 2 {
