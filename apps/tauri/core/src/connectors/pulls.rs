@@ -352,10 +352,14 @@ pub fn parse_watched(root: &Value, entries: &[String]) -> CResult<(Vec<PullReque
 }
 
 async fn post_graphql(env: &Env, token: &str, body: &Value) -> CResult<Value> {
-    let (status, bytes) =
-        env.http.send("POST", &format!("{}/graphql", api()), &[("Authorization", format!("Bearer {token}"))], Some(body), "GitHub").await?;
+    let url = format!("{}/graphql", api());
+    let (status, bytes) = env.http.send("POST", &url, &[("Authorization", format!("Bearer {token}"))], Some(body), "GitHub").await?;
     match status {
         200..=299 => serde_json::from_slice(&bytes).map_err(|_| ConnectorError::new("GitHub gaf een onverwacht antwoord.")),
+        403 if env.http.budget.paused_until(&url, Utc::now()).is_some() => {
+            let until = env.http.budget.paused_until(&url, Utc::now()).unwrap_or_else(Utc::now);
+            Err(super::ForgeRateBudget::local_refusal(&url, until))
+        }
         401 | 403 => Err(ConnectorError::kind(
             "De inloggegevens werden geweigerd. Controleer ze bij Instellingen › Accounts & koppelingen.",
             ErrorKind::Auth,
@@ -1343,6 +1347,243 @@ pub async fn load_ci_log(env: &Env, token: &str, repo: &str, job: i64) -> CResul
     Ok(log)
 }
 
+// MARK: GraphQL pull request snapshot (`GitHubPullRequestSnapshotQuery`, AG-135)
+
+/// Maximum pull requests per batched GraphQL snapshot query.
+pub const SNAPSHOT_BATCH_LIMIT: usize = 20;
+
+const SNAPSHOT_FRAGMENT: &str = "fragment nookSnapshot on PullRequest {
+  title url state merged isDraft mergeable mergeStateStatus baseRefName headRefName headRefOid
+  autoMergeRequest { enabledAt }
+  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+    __typename
+    ... on CheckRun { name status conclusion startedAt databaseId }
+    ... on StatusContext { context state }
+  } } } } } }
+  reviews(last: 100) { nodes { databaseId state body author { __typename login } } }
+  comments(last: 100) { nodes { databaseId body createdAt author { __typename login } } }
+  reviewThreads(last: 50) { nodes { path comments(last: 20) { nodes { databaseId body createdAt author { __typename login } } } } }
+}";
+
+/// GraphQL request body for a single pull request snapshot; `None` when `repo` is not `owner/name`.
+pub fn snapshot_query_body(repo: &str, number: i64) -> Option<Value> {
+    let (owner, name) = repo.split_once('/')?;
+    if owner.is_empty() || name.is_empty() {
+        return None;
+    }
+    let query = format!(
+        "query NookPullRequestSnapshot($owner: String!, $name: String!, $number: Int!) {{\n  repository(owner: $owner, name: $name) {{ pullRequest(number: $number) {{ ...nookSnapshot }} }}\n}}\n{SNAPSHOT_FRAGMENT}"
+    );
+    Some(json!({ "query": query, "variables": { "owner": owner, "name": name, "number": number } }))
+}
+
+/// GraphQL request body reading up to `SNAPSHOT_BATCH_LIMIT` pull requests in one request under aliases `p0`, `p1`, …
+pub fn snapshot_batch_body(items: &[(&str, i64)]) -> Option<Value> {
+    let mut declarations = Vec::new();
+    let mut fields = Vec::new();
+    let mut variables = serde_json::Map::new();
+    for (index, (repo, number)) in items.iter().take(SNAPSHOT_BATCH_LIMIT).enumerate() {
+        let Some((owner, name)) = repo.split_once('/').filter(|(o, n)| !o.is_empty() && !n.is_empty()) else {
+            continue;
+        };
+        declarations.push(format!("$o{index}: String!, $n{index}: String!, $k{index}: Int!"));
+        fields.push(format!(
+            "  p{index}: repository(owner: $o{index}, name: $n{index}) {{ pullRequest(number: $k{index}) {{ ...nookSnapshot }} }}"
+        ));
+        variables.insert(format!("o{index}"), json!(owner));
+        variables.insert(format!("n{index}"), json!(name));
+        variables.insert(format!("k{index}"), json!(number));
+    }
+    if fields.is_empty() {
+        return None;
+    }
+    let query = format!("query NookPullRequestSnapshots({}) {{\n{}\n}}\n{SNAPSHOT_FRAGMENT}", declarations.join(", "), fields.join("\n"));
+    Some(json!({ "query": query, "variables": variables }))
+}
+
+/// Keeps only the newest run of each CheckRun by `(startedAt, databaseId)`, preserving all StatusContexts.
+pub fn latest_check_runs(contexts: &[Value]) -> Vec<Value> {
+    fn order(run: &Value) -> (&str, i64) {
+        (run["startedAt"].as_str().unwrap_or(""), int(&run["databaseId"]).unwrap_or(0))
+    }
+    let mut newest: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut result: Vec<Value> = Vec::new();
+    for context in contexts {
+        if context["__typename"].as_str() != Some("CheckRun") {
+            result.push(context.clone());
+            continue;
+        }
+        let name = context["name"].as_str().unwrap_or("?").to_string();
+        if let Some(&idx) = newest.get(&name) {
+            if order(context) > order(&result[idx]) {
+                result[idx] = context.clone();
+            }
+        } else {
+            newest.insert(name, result.len());
+            result.push(context.clone());
+        }
+    }
+    result
+}
+
+fn graphql_author(item: &Value) -> String {
+    let who = &item["author"];
+    let Some(login) = who["login"].as_str() else { return "?".to_string() };
+    if who["__typename"].as_str() == Some("Bot") && !login.ends_with("[bot]") {
+        format!("{login}[bot]")
+    } else {
+        login.to_string()
+    }
+}
+
+/// Parses one GraphQL `PullRequest` node into [`crate::workspace::bridge::PullRequestSnapshot`].
+pub fn parse_graphql_snapshot_node(
+    pull: &Value,
+    repo: &str,
+    number: i64,
+    fallback_url: &str,
+) -> Option<crate::workspace::bridge::PullRequestSnapshot> {
+    if !pull.is_object() {
+        return None;
+    }
+    let merged = pull["merged"].as_bool().unwrap_or(false);
+    let draft = pull["isDraft"].as_bool().unwrap_or(false);
+    let state = if merged {
+        "merged"
+    } else if pull["state"].as_str() == Some("OPEN") {
+        if draft {
+            "draft"
+        } else {
+            "open"
+        }
+    } else {
+        "closed"
+    }
+    .to_string();
+
+    let contexts_raw =
+        list(&pull["commits"]["nodes"]).last().map(|c| list(&c["commit"]["statusCheckRollup"]["contexts"]["nodes"])).unwrap_or(&[]);
+    let checks: Vec<crate::workspace::bridge::PrCheckSummary> = latest_check_runs(contexts_raw)
+        .into_iter()
+        .map(|ctx| {
+            if ctx["__typename"].as_str() == Some("StatusContext") {
+                let name = ctx["context"].as_str().unwrap_or("?").to_string();
+                let st = ctx["state"].as_str().unwrap_or("").to_ascii_uppercase();
+                let outcome = match st.as_str() {
+                    "FAILURE" | "ERROR" => "failing",
+                    "PENDING" | "EXPECTED" => "pending",
+                    "SUCCESS" => "passing",
+                    _ => "skipped",
+                }
+                .to_string();
+                crate::workspace::bridge::PrCheckSummary { name, outcome, detail: String::new() }
+            } else {
+                let name = ctx["name"].as_str().unwrap_or("?").to_string();
+                let status = ctx["status"].as_str().unwrap_or("").to_ascii_uppercase();
+                let conclusion = ctx["conclusion"].as_str().unwrap_or("").to_ascii_uppercase();
+                let outcome = if status != "COMPLETED" {
+                    "pending"
+                } else if matches!(conclusion.as_str(), "FAILURE" | "TIMED_OUT" | "CANCELLED" | "ACTION_REQUIRED" | "STARTUP_FAILURE") {
+                    "failing"
+                } else if matches!(conclusion.as_str(), "SKIPPED" | "NEUTRAL") {
+                    "skipped"
+                } else {
+                    "passing"
+                }
+                .to_string();
+                crate::workspace::bridge::PrCheckSummary { name, outcome, detail: conclusion.to_ascii_lowercase() }
+            }
+        })
+        .collect();
+
+    let reviews: Vec<crate::workspace::bridge::PrReviewSummary> = list(&pull["reviews"]["nodes"])
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r["state"].as_str() != Some("PENDING"))
+        .map(|(i, r)| crate::workspace::bridge::PrReviewSummary {
+            id: format!("review-{}", int(&r["databaseId"]).map(|n| n.to_string()).unwrap_or_else(|| format!("#{i}"))),
+            author: graphql_author(r),
+            state: r["state"].as_str().unwrap_or("").to_string(),
+            body: r["body"].as_str().unwrap_or("").to_string(),
+        })
+        .collect();
+
+    let mut dated: Vec<(String, usize, String)> = Vec::new();
+    for (i, c) in list(&pull["comments"]["nodes"]).iter().enumerate() {
+        let id = format!("comment-{}", int(&c["databaseId"]).map(|n| n.to_string()).unwrap_or_else(|| format!("#{i}")));
+        dated.push((c["createdAt"].as_str().unwrap_or("").to_string(), dated.len(), id));
+    }
+    for thread in list(&pull["reviewThreads"]["nodes"]) {
+        for (i, c) in list(&thread["comments"]["nodes"]).iter().enumerate() {
+            let id = format!("line-{}", int(&c["databaseId"]).map(|n| n.to_string()).unwrap_or_else(|| format!("#{i}")));
+            dated.push((c["createdAt"].as_str().unwrap_or("").to_string(), dated.len(), id));
+        }
+    }
+    dated.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    let comment_ids: Vec<String> = dated.into_iter().map(|(_, _, id)| id).collect();
+
+    let mergeable = pull["mergeable"].as_str().unwrap_or("UNKNOWN").to_ascii_uppercase();
+    let merge_state = pull["mergeStateStatus"].as_str().unwrap_or("UNKNOWN").to_ascii_lowercase();
+    let conflicted = mergeable == "CONFLICTING" || merge_state == "dirty";
+
+    Some(crate::workspace::bridge::PullRequestSnapshot {
+        repo: repo.to_string(),
+        number,
+        title: pull["title"].as_str().unwrap_or("Untitled").to_string(),
+        url: link(pull["url"].as_str()).unwrap_or_else(|| fallback_url.to_string()),
+        state,
+        head_branch: pull["headRefName"].as_str().unwrap_or("").to_string(),
+        base_branch: pull["baseRefName"].as_str().unwrap_or("").to_string(),
+        head_sha: pull["headRefOid"].as_str().unwrap_or("").to_string(),
+        conflicted,
+        merge_state,
+        checks,
+        reviews,
+        comment_ids,
+    })
+}
+
+/// Parses the response of [`snapshot_query_body`].
+pub fn parse_graphql_snapshot(
+    root: &Value,
+    repo: &str,
+    number: i64,
+    fallback_url: &str,
+) -> Option<crate::workspace::bridge::PullRequestSnapshot> {
+    let pull = &root["data"]["repository"]["pullRequest"];
+    parse_graphql_snapshot_node(pull, repo, number, fallback_url)
+}
+
+/// Parses the response of [`snapshot_batch_body`], returning one `Option<PullRequestSnapshot>` per requested item.
+pub fn parse_graphql_snapshot_batch(
+    root: &Value,
+    items: &[(&str, i64, &str)],
+) -> Vec<Option<crate::workspace::bridge::PullRequestSnapshot>> {
+    let data = &root["data"];
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, (repo, number, fallback_url))| {
+            let pull = &data[format!("p{i}")]["pullRequest"];
+            parse_graphql_snapshot_node(pull, repo, *number, fallback_url)
+        })
+        .collect()
+}
+
+/// Loads one GitHub pull request snapshot in a single GraphQL request.
+pub async fn load_snapshot_graphql(
+    env: &Env,
+    token: &str,
+    repo: &str,
+    number: i64,
+    fallback_url: &str,
+) -> CResult<crate::workspace::bridge::PullRequestSnapshot> {
+    let body = snapshot_query_body(repo, number).ok_or_else(|| ConnectorError::new("Repository must be owner/name."))?;
+    let root = post_graphql(env, token, &body).await?;
+    parse_graphql_snapshot(&root, repo, number, fallback_url)
+        .ok_or_else(|| ConnectorError::new("GitHub returned no pull request snapshot."))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1685,5 +1926,91 @@ mod tests {
             item("a/b", 3, "2026-10-19T12:00:00Z", PullState::Open),
         ];
         assert_eq!(open_first(items).iter().map(|i| i.number).collect::<Vec<_>>(), vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn graphql_snapshot_parses_checks_reviews_comments_and_conflicts() {
+        let root = json!({
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "title": "Fix it",
+                        "url": "https://github.com/a/b/pull/1",
+                        "state": "OPEN",
+                        "merged": false,
+                        "isDraft": false,
+                        "mergeable": "CONFLICTING",
+                        "mergeStateStatus": "DIRTY",
+                        "baseRefName": "main",
+                        "headRefName": "fix/it",
+                        "headRefOid": "abc123",
+                        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+                            {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "FAILURE"},
+                            {"__typename": "CheckRun", "name": "lint", "status": "IN_PROGRESS", "conclusion": null},
+                            {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS"}
+                        ]}}}}]},
+                        "reviews": {"nodes": [
+                            {"databaseId": 10, "state": "PENDING", "body": "draft", "author": {"__typename": "User", "login": "ann"}},
+                            {"databaseId": 11, "state": "CHANGES_REQUESTED", "body": "Please fix", "author": {"__typename": "Bot", "login": "coderabbitai"}}
+                        ]},
+                        "comments": {"nodes": [
+                            {"databaseId": 20, "body": "Later", "createdAt": "2026-11-19T10:05:00Z", "author": {"__typename": "Bot", "login": "coderabbitai"}}
+                        ]},
+                        "reviewThreads": {"nodes": [{"path": "a.rs", "comments": {"nodes": [
+                            {"databaseId": 21, "body": "Here", "createdAt": "2026-11-19T10:00:00Z", "author": {"__typename": "User", "login": "bob"}}
+                        ]}}]}
+                    }
+                }
+            }
+        });
+        let snap = parse_graphql_snapshot(&root, "a/b", 1, "https://github.com/a/b/pull/1").unwrap();
+        assert_eq!(snap.state, "open");
+        assert!(snap.conflicted);
+        assert_eq!(snap.merge_state, "dirty");
+        assert_eq!(snap.base_branch, "main");
+        assert_eq!(snap.head_branch, "fix/it");
+        assert_eq!(snap.failing_checks(), vec!["build"]);
+        assert_eq!(snap.reviews.len(), 1);
+        assert_eq!(snap.reviews[0].author, "coderabbitai[bot]");
+        assert_eq!(snap.comment_ids, vec!["line-21", "comment-20"]);
+        assert!(snapshot_query_body("no-owner", 1).is_none());
+        assert!(parse_graphql_snapshot(&json!({"data": {"repository": null}}), "a/b", 1, "").is_none());
+    }
+
+    #[test]
+    fn graphql_snapshot_counts_only_newest_check_run() {
+        let make = |newest: &str| {
+            json!({
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "title": "Fix it",
+                            "state": "OPEN",
+                            "merged": false,
+                            "isDraft": false,
+                            "mergeable": "MERGEABLE",
+                            "mergeStateStatus": "BLOCKED",
+                            "baseRefName": "main",
+                            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+                                {"__typename": "CheckRun", "name": "template", "status": "COMPLETED", "conclusion": "FAILURE", "startedAt": "2026-11-21T17:50:18Z", "databaseId": 1},
+                                {"__typename": "CheckRun", "name": "template", "status": "COMPLETED", "conclusion": newest, "startedAt": "2026-11-21T17:53:48Z", "databaseId": 3},
+                                {"__typename": "CheckRun", "name": "template", "status": "COMPLETED", "conclusion": "SUCCESS", "startedAt": "2026-11-21T17:52:21Z", "databaseId": 2},
+                                {"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS", "conclusion": null, "startedAt": "2026-11-21T17:50:43Z", "databaseId": 4}
+                            ]}}}}]},
+                            "reviews": {"nodes": []},
+                            "comments": {"nodes": []},
+                            "reviewThreads": {"nodes": []}
+                        }
+                    }
+                }
+            })
+        };
+        let passing = parse_graphql_snapshot(&make("SUCCESS"), "a/b", 1, "").unwrap();
+        assert!(passing.failing_checks().is_empty());
+
+        let failing = parse_graphql_snapshot(&make("FAILURE"), "a/b", 1, "").unwrap();
+        assert_eq!(failing.failing_checks(), vec!["template"]);
+
+        assert!(snapshot_batch_body(&[("a/b", 1), ("c/d", 2)]).is_some());
     }
 }

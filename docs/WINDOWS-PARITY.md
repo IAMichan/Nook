@@ -589,7 +589,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-104** Linked pull requests, branch tray, PR badges and hover cards in rows (`LinkedPullRequests`, `RunBranchTray`, `PullRequestSync`) · M
 
-- [ ] **AG-135** Forge rate-limit budget with AG-104: read `X-RateLimit-*` from every answer, slow background reads as a limit runs low and stop them under the last 10%, answer requests to a used-up limit locally until the reset, and read pull request status through GraphQL once REST runs low (`ForgeRateBudget`, `ForgeRateGate`, `GitHubPullRequestSnapshotQuery`) · S
+- [x] **AG-135** Forge rate-limit budget with AG-104: read `X-RateLimit-*` from every answer, slow background reads as a limit runs low and stop them under the last 10%, answer requests to a used-up limit locally until the reset, and read pull request status through GraphQL once REST runs low (`ForgeRateBudget`, `ForgeRateGate`, `GitHubPullRequestSnapshotQuery`) · S
 
 - [x] **AG-105** Browser element snippets into the composer (#1570) · S Done (2026-11-23): interactive browser element picker (`src-tauri/src/workspace/browser.rs`, `views/workspace/Browser.svelte`) inserts picked element snippets into the composer.
 

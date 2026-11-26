@@ -165,11 +165,27 @@ async fn fetch_github_snapshot(app: &AppHandle, reference: &PullRequestRef) -> R
     }
     let connectors = app.try_state::<Connectors>().ok_or("Connectors are not ready.")?;
     let env = connectors.env.clone();
+    let host = nook_core::connectors::ForgeRateBudget::host_of(&nook_core::connectors::github::api())
+        .unwrap_or_else(|| "api.github.com".to_string());
+    let use_graphql = env.http.budget.prefers_graphql(&host, chrono::Utc::now());
     let mut last_err = None;
     for token in tokens {
-        match pulls::load_detail(&env, &token, &reference.repo, reference.number).await {
-            Ok(detail) => return Ok(snapshot_from_github(detail, &reference.url)),
-            Err(e) => last_err = Some(e.message),
+        if use_graphql {
+            match pulls::load_snapshot_graphql(&env, &token, &reference.repo, reference.number, &reference.url).await {
+                Ok(snapshot) => return Ok(snapshot),
+                Err(e) if e.kind == nook_core::connectors::ErrorKind::RateLimited => last_err = Some(e.message),
+                Err(e) => {
+                    last_err = Some(e.message);
+                    if let Ok(detail) = pulls::load_detail(&env, &token, &reference.repo, reference.number).await {
+                        return Ok(snapshot_from_github(detail, &reference.url));
+                    }
+                }
+            }
+        } else {
+            match pulls::load_detail(&env, &token, &reference.repo, reference.number).await {
+                Ok(detail) => return Ok(snapshot_from_github(detail, &reference.url)),
+                Err(e) => last_err = Some(e.message),
+            }
         }
     }
     Err(last_err.unwrap_or_else(|| format!("Could not read pull request {}#{}.", reference.repo, reference.number)))
@@ -354,12 +370,23 @@ pub(super) async fn watch_pull_request(
     let mut last_snapshot = initial.clone();
     let handle = tauri::async_runtime::spawn(async move {
         let mut failures = 0u32;
+        let is_github = matches!(ref_bg.host, PrHost::Github);
         loop {
-            tokio::time::sleep(Duration::from_secs(WATCH_POLL_SECONDS)).await;
+            let slowdown = app_bg
+                .try_state::<Connectors>()
+                .map(|c| c.env.http.budget.slowdown_for_page(Some(&ref_bg.url), is_github, chrono::Utc::now()))
+                .unwrap_or(1.0);
+            let wait_secs = ((WATCH_POLL_SECONDS as f64) * slowdown).round().max(WATCH_POLL_SECONDS as f64) as u64;
+            tokio::time::sleep(Duration::from_secs(wait_secs)).await;
             let Some(ws) = workspace(&app_bg) else { break };
             let Some(run) = ws.manager.run(run_id) else { break };
             if run.archived {
                 break;
+            }
+            if let Some(connectors) = app_bg.try_state::<Connectors>() {
+                if !connectors.env.http.budget.allows_background_for_page(Some(&ref_bg.url), is_github, chrono::Utc::now()) {
+                    continue;
+                }
             }
             match fetch_snapshot(&app_bg, &ref_bg).await {
                 Ok(next) => {
