@@ -3,6 +3,7 @@
 // tabs. Each chat app only translates its own data into a `ChatEntry` (WhatsApp in `whatsAppEntry`), so a view or a fix
 // here reaches every app at once.
 import { noticeText, type ChatGroupChange, type ChatMembership } from "./chat-notice";
+import { emojiUsage } from "./emoji-usage";
 import { locale as appLocale, tr } from "./i18n.svelte";
 import type { ChatReaction, ChatReadState, ChatSummary, InboxMessage, WhatsAppConversation, WhatsAppMessage, WhatsAppReceipt } from "./connectors";
 
@@ -270,26 +271,13 @@ export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"
 export const COMMON_EMOJI = ["😀", "😂", "🥲", "😊", "😍", "😘", "😎", "🤔", "😅", "😭", "😴", "🙄", "😬", "🤗", "🥳", "😇",
   "👍", "👎", "👏", "🙌", "🙏", "💪", "👋", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🔥", "✨",
   "🎉", "🎂", "☕", "🍕", "🍻", "⚽", "🚗", "✈️", "🏠", "📅", "✅", "❌", "⚠️", "💡", "📎", "👀"];
-const FREQUENT = "chats.emoji.frequent";
-
-/** The emoji you used, most used first (`ChatEmojiFrequency`). */
+/** The emoji you used, most used first (`EmojiUsage`). */
 export function frequentEmoji(): string[] {
-  try {
-    const counts = JSON.parse(localStorage.getItem(FREQUENT) ?? "{}") as Record<string, number>;
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([e]) => e).slice(0, 16);
-  } catch {
-    return [];
-  }
+  return emojiUsage.ranked();
 }
 
 export function usedEmoji(emoji: string) {
-  try {
-    const counts = JSON.parse(localStorage.getItem(FREQUENT) ?? "{}") as Record<string, number>;
-    counts[emoji] = (counts[emoji] ?? 0) + 1;
-    localStorage.setItem(FREQUENT, JSON.stringify(counts));
-  } catch {
-    // Not remembered.
-  }
+  emojiUsage.record(emoji);
 }
 
 /** The "@Name" being typed at the end of the text before the cursor, for the list of a group's people (`ChatTags`). */

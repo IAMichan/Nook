@@ -456,7 +456,7 @@ The Tauri app (Windows, Linux, Android) builds its views from the same parts, as
 names. Each takes its colors, type, radii and spacing from the variables in `src/app.css` (the twins of `NookTheme`)
 and draws the desktop look by default; inside the companion (`.phone`, `views/companion/ui/phone.css`) it takes the
 iPhone's look, so the phone and the desktop share one component. Use these instead of drawing a dialog, menu, sheet or
-switch of your own. FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) lists the twins still to build.
+switch of your own (all twins from FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) are listed below).
 
 | Svelte | Swift | Use |
 | --- | --- | --- |
@@ -489,6 +489,8 @@ switch of your own. FD-05 in [WINDOWS-PARITY.md](WINDOWS-PARITY.md) lists the tw
 | `ImageModal.svelte` | `ImageModal` | A picture shown big over a dimmed window; a click or Escape closes it, an optional button opens the file in the system's viewer |
 | `TimelineNewDivider.svelte`, `TimelineEarlierRow.svelte` | `TimelineNewDivider`, `TimelineEarlierRow` | "New since your last visit" above what came in; "Show earlier messages" between hairlines at the top of a conversation that opened with only its latest turns |
 | `DropdownTileGrid.svelte` | `DropdownTileGrid`, `DropdownTile`, `DropdownNote` | The big choices on top of a dropdown as tinted tiles in a grid of three, with an optional tip line |
+| `ModelPickerDropdown.svelte`, `lib/model-picker.ts` | `ModelPickerDropdown`, `ModelPicker` | The one model picker for Nook's brain (`BrainPicker.svelte`) and the coding agents (`AgentModelPicker.svelte`): a grouped rail of places (this computer, cross-agent choices, agents/accounts) with "+" to Settings, searchable model column with favorites, keyboard arrows/Return and Ctrl+1–9 shortcuts, optional trailing effort column and options footer |
+| `EmojiBrowser.svelte`, `lib/emoji-catalog.ts`, `lib/emoji-usage.ts` | `EmojiBrowser`, `EmojiCatalog`, `EmojiUsage` | Full Unicode Emoji 15.1 browser (9 groups, 9-column grid, sticky headers, multilingual search by English and Nook shortcodes, decayed frecency under "Frequently Used" shared across every chat app) behind the composer smiley and the reaction picker's "+" in `Menu.svelte` |
 | `components/NoticeOk.svelte` | `NookAcknowledgeButton` | The OK of a notice, with its countdown ring while it closes by itself |
 
 ## Shortcut cheat sheet
