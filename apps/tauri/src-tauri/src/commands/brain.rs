@@ -189,6 +189,23 @@ pub async fn brain_test(app: AppHandle) -> Res<String> {
     service::test(&settings, &env(&app)).await.map_err(|e| e.0)
 }
 
+/// Tests one API text generator (provider + optional model) with a tiny prompt (`TextGeneratorAPI.test`, SV-65).
+#[tauri::command]
+pub async fn text_generator_test(app: AppHandle, provider: String, model: String) -> Res<String> {
+    use nook_core::workspace::text_generation::{self, TextGenerationRoute, TextGenerator, TextGeneratorError};
+
+    let Some(ai_provider) = AIProvider::from_id(provider.trim()).filter(|p| !p.is_subscription()) else {
+        return Err(TextGeneratorError::BadEndpoint.to_string());
+    };
+    let state = app.state::<AppState>();
+    let generator = TextGenerator::Api { provider: ai_provider, model: model.trim().to_string() };
+    let route = TextGenerationRoute::resolve(&generator, |p| state.key_for(p));
+    let TextGenerationRoute::Api { provider: resolved_provider, model: resolved_model, key } = route else {
+        return Err(TextGeneratorError::MissingKey(ai_provider.title().to_string()).to_string());
+    };
+    text_generation::test_api(resolved_provider, &resolved_model, key.as_deref()).await.map_err(|e| e.to_string())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvalResult {

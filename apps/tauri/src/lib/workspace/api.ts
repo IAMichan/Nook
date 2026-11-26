@@ -209,6 +209,10 @@ export interface WorkspaceSettings {
   noAgentCredits?: boolean;
   /// Strip AI agent credits from merge commits and commit bodies written by Nook.
   stripAgentCredits?: boolean;
+  /// Suggest a follow-up prompt in the empty session composer (`ws.suggestNextPrompt`, SV-65).
+  suggestNextPrompt?: boolean;
+  /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
+  textGenerators?: Record<string, string>;
 }
 
 export type CommitStyle = "standard" | "conventional" | "repository" | "custom";

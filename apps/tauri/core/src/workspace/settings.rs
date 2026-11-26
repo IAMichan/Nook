@@ -138,6 +138,10 @@ pub struct WorkspaceSettings {
     pub no_agent_credits: bool,
     /// Strip AI agent credits from commit/PR text Nook writes or merges (`agents.pr.stripAgentCredits`).
     pub strip_agent_credits: bool,
+    /// Suggest a follow-up prompt in the empty session composer (`ws.suggestNextPrompt`, SV-65).
+    pub suggest_next_prompt: bool,
+    /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
+    pub text_generators: BTreeMap<String, String>,
 }
 
 impl Default for WorkspaceSettings {
@@ -174,6 +178,8 @@ impl Default for WorkspaceSettings {
             commit_instructions: String::new(),
             no_agent_credits: false,
             strip_agent_credits: false,
+            suggest_next_prompt: true,
+            text_generators: BTreeMap::new(),
         }
     }
 }

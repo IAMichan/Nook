@@ -16,6 +16,10 @@
   import SnoozeOptions from "./SnoozeOptions.svelte";
   import { TIMELINE_DETAILS, timelineDetail, type TimelineDetail } from "../../lib/workspace/timeline-detail";
   import { announcementLevel, SCREEN_READER_LEVELS, type ScreenReaderAnnouncements } from "../../lib/workspace/announcements";
+  import { api } from "../../lib/api";
+  import type { ProviderInfo } from "../../lib/types";
+  import TextGeneratorRow from "./TextGeneratorRow.svelte";
+  import { textGeneratorSummary, type TextTask } from "../../lib/text-generation";
   import {
     loadRules as loadSettleRules,
     loadSettleActions,
@@ -53,26 +57,24 @@
     settleActions = loadSettleActions();
   }
 
-  // AG-70 Text generation preferences (next-prompt suggestion toggle + generator selectors).
-  let suggestNextPrompt = $state<boolean>((() => {
-    try { return localStorage.getItem("nook.suggestNextPrompt") !== "false"; } catch { return true; }
-  })());
+  // Brain API providers for per-kind text generation (SV-65).
+  let brainProviders = $state<ProviderInfo[]>([]);
+  $effect(() => {
+    if (part === "sessions") api.providers().then((p) => (brainProviders = p)).catch(() => {});
+  });
+
   function setSuggestNextPrompt(v: boolean) {
-    suggestNextPrompt = v;
+    if (s) {
+      s.suggestNextPrompt = v;
+      save();
+    }
     try { localStorage.setItem("nook.suggestNextPrompt", v ? "true" : "false"); } catch {}
   }
 
-  let titleGenerator = $state<string>((() => {
-    try { return localStorage.getItem("nook.textGenerator.titles") || "automatic"; } catch { return "automatic"; }
-  })());
-  let commitGenerator = $state<string>((() => {
-    try { return localStorage.getItem("nook.textGenerator.commits") || "automatic"; } catch { return "automatic"; }
-  })());
-  let promptGenerator = $state<string>((() => {
-    try { return localStorage.getItem("nook.textGenerator.nextPrompt") || "automatic"; } catch { return "automatic"; }
-  })());
-  function saveGenerator(key: string, val: string) {
-    try { localStorage.setItem(key, val); } catch {}
+  function setTextGenerator(task: TextTask, stored: string) {
+    if (!s) return;
+    s.textGenerators = { ...(s.textGenerators ?? {}), [task]: stored };
+    save();
   }
 
   let { part = "sessions" }: { part?: "sessions" | "worktrees" | "openIn" | "bridge" } = $props();
@@ -202,27 +204,34 @@
     {/if}
     <label class="row">
       <span>{tr("Volgende prompt voorstellen", "Suggest the next prompt")}<br /><small>{tr("Stelt na een antwoord van de agent een vervolgbericht voor in het lege invoerveld (Tab neemt over, Esc verbergt).", "Suggests a follow-up prompt in the empty composer after the agent replies (Tab accepts, Esc dismisses).")}</small></span>
-      <input type="checkbox" role="switch" checked={suggestNextPrompt} onchange={(e) => setSuggestNextPrompt(e.currentTarget.checked)} />
+      <input type="checkbox" role="switch" checked={s.suggestNextPrompt !== false} onchange={(e) => setSuggestNextPrompt(e.currentTarget.checked)} />
     </label>
-    <Fold title={tr("Tekstgeneratie", "Text generation")} summary={titleGenerator === "automatic" ? tr("Automatisch", "Automatic") : (workspace.provider(titleGenerator)?.name ?? titleGenerator)}>
-      <label class="row"><span>{tr("Sessietitels genereren met", "Generate session titles with")}</span>
-        <select value={titleGenerator} onchange={(e) => { titleGenerator = e.currentTarget.value; saveGenerator("nook.textGenerator.titles", titleGenerator); }}>
-          <option value="automatic">{tr("Automatisch (snelste model)", "Automatic (fastest model)")}</option>
-          {#each providers as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
-        </select>
-      </label>
-      <label class="row"><span>{tr("Commit- en PR-tekst genereren met", "Generate commit and PR text with")}</span>
-        <select value={commitGenerator} onchange={(e) => { commitGenerator = e.currentTarget.value; saveGenerator("nook.textGenerator.commits", commitGenerator); }}>
-          <option value="automatic">{tr("Automatisch (snelste model)", "Automatic (fastest model)")}</option>
-          {#each providers as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
-        </select>
-      </label>
-      <label class="row"><span>{tr("Volgende prompt voorstellen met", "Suggest next prompt with")}</span>
-        <select value={promptGenerator} onchange={(e) => { promptGenerator = e.currentTarget.value; saveGenerator("nook.textGenerator.nextPrompt", promptGenerator); }}>
-          <option value="automatic">{tr("Automatisch (snelste model)", "Automatic (fastest model)")}</option>
-          {#each providers as p (p.provider)}<option value={p.provider}>{p.name}</option>{/each}
-        </select>
-      </label>
+    <Fold
+      title={tr("Tekstgeneratie", "Text generation")}
+      summary={textGeneratorSummary(s.textGenerators, brainProviders, tr("Coding agent", "Coding agent"), tr("Claude · API-sleutel", "Claude · API key"))}
+    >
+      <p class="note">{tr(
+        "Wie de korte teksten schrijft die Nook vraagt: sessietitels, commitberichten en pull requests, en de voorgestelde volgende prompt. De CLI van de coding agent gebruikt je abonnement; een model-API gebruikt zijn eigen sleutel en start nooit een agent.",
+        "Who writes the short texts Nook asks for: session titles, commit messages and pull requests, and the suggested next prompt. The coding agent's CLI uses your subscription; a model API uses its own key and never starts an agent.",
+      )}</p>
+      <TextGeneratorRow
+        label={tr("Sessietitels", "Session titles")}
+        value={s.textGenerators?.titles ?? "agent"}
+        providers={brainProviders}
+        onchange={(v) => setTextGenerator("titles", v)}
+      />
+      <TextGeneratorRow
+        label={tr("Tekst voor commits en pull requests", "Commit and pull request text")}
+        value={s.textGenerators?.gitText ?? "agent"}
+        providers={brainProviders}
+        onchange={(v) => setTextGenerator("gitText", v)}
+      />
+      <TextGeneratorRow
+        label={tr("Voorgestelde volgende prompt", "Suggested next prompt")}
+        value={s.textGenerators?.nextPrompt ?? "agent"}
+        providers={brainProviders}
+        onchange={(v) => setTextGenerator("nextPrompt", v)}
+      />
     </Fold>
     <label class="row stacked">
       <span>{tr("Instructies voor elke agent", "Instructions for every agent")}<br /><small>{tr("Nook geeft ze bij de start aan elke coding agent, voor de eigen instructies van de sessie, ook aan agents die geen CLAUDE.md of AGENTS.md lezen. Een wijziging telt vanaf de volgende start van een agent.", "Nook gives these to every coding agent at launch, before the session's own instructions, also to agents that read no CLAUDE.md or AGENTS.md. A change counts from an agent's next start.")}</small></span>
