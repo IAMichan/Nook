@@ -466,6 +466,17 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     /// A call its app noted in the chat ("Missed voice call"), read from its line the same way for every app.
     var call: ChatCall? { media == nil && poll == nil && !isNotice && !isDeleted ? ChatFormat.call(text) : nil }
 
+    /// The icon a chat list shows in front of `summary`, as chat apps mark a photo, a voice message, a poll or a call in
+    /// their list; nil for plain text and for a line about the group.
+    var summarySymbol: String? {
+        if isNotice { return nil }
+        if isDeleted { return "nosign" }
+        if poll != nil { return "chart.bar.fill" }
+        if let call { return call.symbol(mine: isMine) }
+        // As the bubble shows it: a file that is a picture gets the photo's icon.
+        return media?.shownKind.symbol
+    }
+
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
         if let notice { return notice }

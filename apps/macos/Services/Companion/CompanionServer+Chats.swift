@@ -148,9 +148,12 @@ extension CompanionServer {
         digest.pinned = entry.pinned
         if abilities.pin { digest.pinnedInApp = abilities.pinned }
         if abilities.mute { digest.mutedInApp = abilities.muted }
+        digest.muted = entry.muted
         digest.group = entry.kind == .group || (entry.members?.count ?? 0) > 1
         digest.account = entry.account.map { CompanionPolicy.clip($0, limit: 80) }
         digest.suggestion = Self.suggestion(entry.id)
+        digest.previewSymbol = entry.previewSymbol
+        digest.previewSender = entry.previewSender
         digest.hasInfo = !(entry.members ?? []).isEmpty || entry.profile.map { !$0.isEmpty } == true || app.chatPhone(entry) != nil
         return digest
     }

@@ -1020,17 +1020,7 @@ enum ChatAttachmentThumbnail {
         }
     }
 
-    static func symbol(_ kind: ChatMedia.Kind) -> String {
-        switch kind {
-        case .photo: return "photo"
-        case .video: return "video"
-        case .gif: return "play.square.stack"
-        case .sticker: return "face.smiling"
-        case .audio: return "music.note"
-        case .voice: return "waveform"
-        case .file: return "doc"
-        }
-    }
+    static func symbol(_ kind: ChatMedia.Kind) -> String { kind.symbol }
 }
 
 /// The frame of every panel above the field: what it is, a cross to close it, and its content.

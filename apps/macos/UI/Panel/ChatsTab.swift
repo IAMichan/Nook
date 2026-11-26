@@ -13,6 +13,12 @@ struct ChatsEntry: Identifiable, Equatable {
     let name: String
     /// The newest message, with who wrote it in a group ("Jan: dinner?"). While you search, the newest one that matched.
     var preview: String
+    /// The icon in front of the newest message: what came with it (a photo, a voice message, a poll, a call), as chat
+    /// apps mark it in their list (`InboxMessage.summarySymbol`); nil for plain text.
+    var previewSymbol: String? = nil
+    /// Who wrote the newest message as `preview` starts with it ("Jan", "You"), so the icon goes after the name; nil when
+    /// `preview` names no one.
+    var previewSender: String? = nil
     let last: Date
     /// Where the chat stands, the same for every app: something new, read in Nook only, or read in the app too.
     let read: ChatReadState
@@ -33,8 +39,14 @@ struct ChatsEntry: Identifiable, Equatable {
     var handle: String? = nil
     /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
     var avatar: String? = nil
-    /// The account the chat is in, by its name, while its app has more than one linked; nil otherwise.
+    /// The account the chat is in, by its name (the one linked account when its app has a single one).
     var account: String? = nil
+    /// Whether the row names `account`: only while the list holds chats of more than one account of its app. With one
+    /// account the same name on every row ("Privé", your own Instagram name) only took room from the time.
+    var showsAccount = true
+    /// Muted in Nook, or in its app while Nook follows the app (`ChatNoticeRules`): its row says so and its count goes
+    /// grey, as chat apps draw a muted chat, so the amber stays for what waits on you.
+    var muted = false
     /// The chat's own id in its app, when its app gives one (`InboxThread.chatID`).
     var chatID: String? = nil
     /// Person, group, status or channel, when its app says (`InboxThread.kind`).
@@ -109,9 +121,25 @@ extension ChatsEntry {
             if thread.chatID == nil, let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
             entries.append(row?(thread) ?? entry(thread, hidden: hidden))
         }
+        // An app's account is named on its rows only while the list holds chats of more than one of its accounts.
+        var accounts: [String: Set<String>] = [:]
+        for entry in entries { if let account = entry.account { accounts[entry.app, default: []].insert(account) } }
+        for index in entries.indices where (accounts[entries[index].app]?.count ?? 0) < 2 {
+            entries[index].showsAccount = false
+        }
         return entries.sorted { a, b in
             if a.pinned != b.pinned { return a.pinned }
             return a.last != b.last ? a.last > b.last : a.id < b.id
+        }
+    }
+
+    /// Muted in Nook, or in its app while Nook's choice for it is automatic.
+    @MainActor
+    static func isMuted(_ thread: InboxThread) -> Bool {
+        switch ChatNoticeRulesStore.shared.rules.mode(for: thread.id) {
+        case .muted: return true
+        case .loud: return false
+        case .automatic: return thread.mutedInApp == true
         }
     }
 
@@ -130,11 +158,13 @@ extension ChatsEntry {
         let readKnown = thread.readKnown != false || thread.readInNook != nil
         // Dated by what the line shows (`InboxThread.last`), so the row's time and its place in the list match its line.
         let last = newest.map { max($0.date, reaction?.date ?? .distantPast) } ?? thread.last
+        let shown = reaction == nil ? newest : nil
         return ChatsEntry(id: thread.id, app: thread.app, name: thread.name, preview: preview,
+                          previewSymbol: shown?.summarySymbol, previewSender: shown.flatMap(sender),
                           last: last, read: thread.readState,
                           lastIsMine: reaction == nil && newest?.isMine ?? false, readKnown: readKnown, ticks: ticks,
                           members: thread.members, profile: thread.profile, handle: thread.handle, avatar: thread.avatar,
-                          account: thread.account ?? ChatLinker.shared.accountName(for: thread.app),
+                          account: thread.account ?? ChatLinker.shared.accountName(for: thread.app), muted: isMuted(thread),
                           chatID: thread.chatID, kind: thread.kind, pinned: ChatPins.shared.isPinned(thread.id))
     }
 
@@ -157,8 +187,15 @@ extension ChatsEntry {
     /// A message as one line in the list, with who wrote it in a group ("Jan: dinner?").
     @MainActor
     static func line(_ message: InboxMessage) -> String {
+        guard let who = sender(message) else { return message.summary }
+        return "\(who): \(message.summary)"
+    }
+
+    /// Who a message's line in the list names in front of it: you, or the first name of who wrote it in a group.
+    @MainActor
+    static func sender(_ message: InboxMessage) -> String? {
         let who = message.isMine ? tr("chat.you") : shortSender(message.sender)
-        return who.isEmpty ? message.summary : "\(who): \(message.summary)"
+        return who.isEmpty ? nil : who
     }
 
     /// The chat as the Chats tab's search finds it: by its name or its people as it is, else by the newest of its
@@ -173,10 +210,12 @@ extension ChatsEntry {
         guard let thread = capture.inbox.threads[id] else { return nil }
         let match = thread.messages.last { message in
             message.summary.localizedCaseInsensitiveContains(needle) || message.sender.localizedCaseInsensitiveContains(needle)
-        }.map(Self.line)
+        }
         guard let match else { return nil }
         var entry = self
-        entry.preview = match
+        entry.preview = Self.line(match)
+        entry.previewSymbol = match.summarySymbol
+        entry.previewSender = Self.sender(match)
         return entry
     }
 }
@@ -427,6 +466,8 @@ struct ChatsTab: View {
     @ObservedObject private var typing = ChatTypingCenter.shared
     /// The chats you pinned: a pin moves a chat to the top of the list at once.
     @ObservedObject private var pins = ChatPins.shared
+    /// Muting, hiding or waking a chat: its row's bell and grey count, and whether it shows, change at once.
+    @ObservedObject private var noticeRules = ChatNoticeRulesStore.shared
     /// The list scrolls to the open chat only when it was opened from elsewhere (the keyboard, a card, "@chat"): a click
     /// on a row that is in view already leaves the list where it is.
     @State private var revealSelection = false
@@ -842,7 +883,10 @@ struct ChatsTab: View {
         let kind = shownListKind
         guard let filter else { return all.filter { kind.shows($0) } }
         let chosen = shownAccount
-        return all.filter { $0.app == filter && (chosen == nil || $0.account == chosen) && kind.shows($0) }
+        let chats = all.filter { $0.app == filter && (chosen == nil || $0.account == chosen) && kind.shows($0) }
+        // One account chosen: its name on every row would only repeat the sidebar.
+        guard chosen != nil else { return chats }
+        return chats.map { var entry = $0; entry.showsAccount = false; return entry }
     }
 
     /// The lists the chosen app has here: its chats, and Status and Channels while it has status updates or channels.
@@ -1519,11 +1563,13 @@ struct ChatsRow: View, Equatable {
 
     /// Where the chat stands, in words, for VoiceOver.
     private var stateLabel: String {
+        let state: String
         switch entry.read {
-        case .unread(let count): return tr("chats.status.unread", count)
-        case .readInNook: return tr("chats.legend.readInNook")
-        case .read: return tr("chats.legend.read")
+        case .unread(let count): state = tr("chats.status.unread", count)
+        case .readInNook: state = tr("chats.legend.readInNook")
+        case .read: state = tr("chats.legend.read")
         }
+        return entry.muted ? state + ", " + tr("chats.row.muted") : state
     }
 
     private var row: some View {
@@ -1534,14 +1580,17 @@ struct ChatsRow: View, Equatable {
                 // A chat on the phone that wrote nothing since Nook was linked: its newest message is being fetched
                 // (`loadChatLine`); until then the line stays blank rather than claiming something.
                 preview: entry.preview.isEmpty ? " " : previewText,
-                unread: entry.read.isUnread, ticks: entry.ticks, typing: typing,
-                // The WhatsApp account, while more than one is linked.
-                detail: entry.account, hidesTime: hovering && rowAction != nil
+                // Your own message drops "You:" for its ticks, so its icon comes first.
+                previewSymbol: entry.previewSymbol,
+                previewSender: entry.ticks != nil && entry.previewSender == tr("chat.you") ? nil : entry.previewSender,
+                unread: entry.read.isUnread, muted: entry.muted, ticks: entry.ticks, typing: typing,
+                // The account, while the list holds chats of more than one account of its app.
+                detail: entry.showsAccount ? entry.account : nil, hidesTime: hovering && rowAction != nil
             ) {
                 ChatsFace(entry: entry, size: SharedMetrics.avatar)
             } trailing: {
                 // Where it stands, the same mark for every app; your own newest message has its ticks in front.
-                if entry.showsReadMark { ChatReadMark(state: entry.read) }
+                if entry.showsReadMark { ChatReadMark(state: entry.read, muted: entry.muted) }
             }
             .roundedBackground(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear), radius: NookTheme.Radius.card)
             .contentShape(Rectangle())

@@ -391,6 +391,14 @@ struct ChatCall: Equatable, Sendable {
     /// How long it lasted, when the app says.
     var seconds: Double? = nil
 
+    /// Its icon, named the SF Symbol way: an arrow in or out, a camera for video, a hung-up phone for one you missed.
+    func symbol(mine fromMe: Bool) -> String {
+        let mine = outgoing ?? fromMe
+        if missed && !mine { return video ? "video.slash.fill" : "phone.down.fill" }
+        if video { return "video.fill" }
+        return mine ? "phone.arrow.up.right.fill" : "phone.arrow.down.left.fill"
+    }
+
     /// What the chat calls it: "Video call", or "Missed voice call" for one you did not answer.
     func title(mine: Bool) -> String {
         if missed, !(outgoing ?? mine) { return tr(video ? "chat.call.missedVideo" : "chat.call.missedVoice") }
