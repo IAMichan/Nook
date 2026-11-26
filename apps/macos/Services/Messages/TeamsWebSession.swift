@@ -15,8 +15,8 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     @Published private(set) var accounts: [TeamsWebData.Account] = []
     /// The sign-in window is open.
     @Published private(set) var isSigningIn = false
-    /// Why the last sign-in did not link Teams, shown until the next one.
-    @Published private(set) var problem: String?
+    /// Why the last sign-in did not link an account, or that it added none, shown until the next one starts.
+    @Published private(set) var feedback: WebSignInFeedback?
 
     var isSignedIn: Bool { !accounts.isEmpty }
 
@@ -32,6 +32,8 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     /// The store the website is open in now.
     private var store: UUID?
     private var onSignedIn: (() -> Void)?
+    /// The open window adds an account (instead of signing in again for one).
+    private var adding = false
     /// A renewal out of sight under way, and who waits for it.
     private var renewing: [CheckedContinuation<TeamsWebData.Session?, Never>] = []
     private var renewTimeout: Task<Void, Never>?
@@ -60,7 +62,9 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         finishRenewing(nil)
         close()
         self.onSignedIn = onSignedIn
-        let store = accounts.first { $0.id == id }?.store ?? UUID()
+        let known = accounts.first { $0.id == id }
+        adding = known == nil
+        let store = known?.store ?? UUID()
         let web = makeWebView(store: store)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 760),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
@@ -73,7 +77,7 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
         isSigningIn = true
-        problem = nil
+        feedback = nil
         web.load(URLRequest(url: Self.start))
         startWatching()
     }
@@ -115,6 +119,7 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         accounts.removeAll { $0.id == id }
         save()
         Self.remove(account.store)
+        feedback = nil
     }
 
     /// The token was refused (a 401): the next read renews it first.
@@ -177,7 +182,13 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     /// A session the website in `store` gave, while it is still open there.
     private func take(_ found: TeamsWebData.Session, store: UUID) {
         guard self.store == store else { return }
+        // Adding an account, but signed in with one that is linked already: it is renewed, and the sheet says so.
+        let known = isSigningIn && adding ? accounts.first { $0.id == found.me && $0.store != store } : nil
         keep(found, store: store)
+        if let known {
+            let name = accounts.first { $0.id == found.me }?.label ?? known.label
+            feedback = .alreadyLinked(name.isEmpty ? "Teams" : name)
+        }
         if isSigningIn {
             let done = onSignedIn
             close()
@@ -263,7 +274,7 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     private func keep(_ found: TeamsWebData.Session, store: UUID) {
         let (kept, dropped) = TeamsWebData.keep(found, store: store, in: accounts)
         accounts = kept
-        problem = nil
+        feedback = nil
         save()
         dropped.forEach(Self.remove)
     }
@@ -325,13 +336,15 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         watch?.invalidate()
         watch = nil
         guard let store else { return }
+        // Where the window stood says why: still on a sign-in page, Teams free, or Teams itself.
+        let last = web?.url
         if renewing.isEmpty { dropWebView() }
         Task {
             if let found = await offer(await Self.cookieTokens(store)) {
                 keep(found, store: store)
                 done?()
             } else if !accounts.contains(where: { $0.store == store }) {
-                problem = tr("chats.teams.web.notTaken")
+                feedback = WebSignInFeedback.teamsClosed(at: last)
                 Self.remove(store)
             }
         }

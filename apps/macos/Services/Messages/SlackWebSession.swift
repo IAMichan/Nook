@@ -13,6 +13,8 @@ final class SlackWebSession: NSObject, ObservableObject, WKNavigationDelegate, W
     @Published private(set) var auth: SlackData.Auth?
     /// The sign-in window is open.
     @Published private(set) var isSigningIn = false
+    /// Why the last sign-in did not link Slack, shown until the next one starts.
+    @Published private(set) var feedback: WebSignInFeedback?
 
     var isSignedIn: Bool { auth != nil }
 
@@ -57,6 +59,7 @@ final class SlackWebSession: NSObject, ObservableObject, WKNavigationDelegate, W
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
         isSigningIn = true
+        feedback = nil
         web.load(URLRequest(url: Self.start))
         watch = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.look() }
@@ -66,6 +69,7 @@ final class SlackWebSession: NSObject, ObservableObject, WKNavigationDelegate, W
     /// Forgets the sign-in, here and in the website's store on this Mac.
     func signOut() {
         close()
+        feedback = nil
         auth = nil
         Keychain.remove(Self.authAccount)
         Task { try? await WKWebsiteDataStore.remove(forIdentifier: Self.storeID) }
@@ -145,8 +149,11 @@ final class SlackWebSession: NSObject, ObservableObject, WKNavigationDelegate, W
         web = nil
     }
 
+    /// Closed before Nook took over the sign-in: why, from where the window stood (Slack's web client, or still a
+    /// sign-in page).
     func windowWillClose(_ notification: Notification) {
         window = nil
+        if isSigningIn { feedback = .closed(reachedApp: web?.url?.host == Self.start.host) }
         close()
     }
 }

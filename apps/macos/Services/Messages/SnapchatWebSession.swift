@@ -17,6 +17,8 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
     @Published private(set) var isSignedIn: Bool
     /// The sign-in window is open.
     @Published private(set) var isSigningIn = false
+    /// Why the last sign-in did not link Snapchat, shown until the next one starts.
+    @Published private(set) var feedback: WebSignInFeedback?
 
     private static let linkedKey = "chats.snapchat.web.linked"
     /// The website's own store, kept between launches.
@@ -84,6 +86,7 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
         isSigningIn = true
+        feedback = nil
         web.load(URLRequest(url: SnapchatWebData.start))
         watch = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.look() }
@@ -93,6 +96,7 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
     /// Forgets the sign-in, here and in the website's store on this Mac.
     func signOut() {
         closeWindow()
+        feedback = nil
         dropWebView()
         setSignedIn(false)
         Task { try? await WKWebsiteDataStore.remove(forIdentifier: Self.storeID) }
@@ -365,8 +369,10 @@ final class SnapchatWebSession: NSObject, ObservableObject, WKNavigationDelegate
         web = nil
     }
 
+    /// Closed before Nook saw your chats: why, from where the window stood (the chats, or still a sign-in page).
     func windowWillClose(_ notification: Notification) {
         window = nil
+        if isSigningIn, !isSignedIn { feedback = .closed(reachedApp: SnapchatWebData.isChatPage(web?.url)) }
         closeWindow()
     }
 }
