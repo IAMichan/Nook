@@ -17,12 +17,13 @@
   } = $props();
 
   // The title names the field's own control for screen readers. A wrapping <label> would also forward clicks on the
-  // title to a button in the slot, so the first select, input or textarea without its own name gets aria-labelledby.
+  // title to a button in the slot, so the first select, input or textarea without its own name (ARIA, title or <label>) gets aria-labelledby.
   const titleId = $props.id();
   let slot: HTMLElement | undefined = $state();
   $effect(() => {
-    const control = slot?.querySelector<HTMLElement>("select, input, textarea");
-    if (control && !control.hasAttribute("aria-label") && !control.hasAttribute("aria-labelledby")) {
+    const control = slot?.querySelector<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>("select, input, textarea");
+    const named = control && (["aria-label", "aria-labelledby", "title"].some((a) => control.hasAttribute(a)) || (control.labels?.length ?? 0) > 0);
+    if (control && !named) {
       control.setAttribute("aria-labelledby", titleId);
     }
   });
