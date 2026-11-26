@@ -275,9 +275,6 @@ extension AgentRunPanel {
                 lastFrame.value = frame
                 // Reading back: what you read stays put while the rows above it change height.
                 reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop, holding: holdsReading)
-                // You scrolling (the wheel too, which reports no phase): following stops at once, not only once a drag
-                // that began at the end lets go, so the agent's output no longer pulls the view down under your fingers.
-                if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: frame) { scroll.userScrolled() }
                 keepEnd(old, frame, proxy)
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in

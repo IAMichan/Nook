@@ -314,7 +314,7 @@ extension View {
 
     /// Lets `reading` scroll the conversation's scroll view; on a view inside its content. `wheel` gets each scroll-wheel
     /// or trackpad step of yours over the conversation (its vertical delta, above zero toward the start) before the view
-    /// moves by it (`ScrollModel.releases(wheel:)`).
+    /// moves by it (`ScrollModel.releases(wheel:)`), and each key that scrolls it (`ScrollKey`) as a step of 1 or -1.
     ///
     /// `followsEnd` says whether the conversation follows its end now (not while finding or during a scroll of the
     /// view's own): while it does, the AppKit scroll view is put back at its end the moment it leaves it without you
@@ -533,6 +533,7 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
         var wheel: (Double) -> Void = { _ in }
         var followsEnd: () -> Bool = { false }
         private var monitor: Any?
+        private var keyMonitor: Any?
         private var boundsObserver: NSObjectProtocol?
         private var frameObserver: NSObjectProtocol?
         private weak var watchedClip: NSClipView?
@@ -553,7 +554,9 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
 
         func stopWatching() {
             if let monitor { NSEvent.removeMonitor(monitor) }
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             monitor = nil
+            keyMonitor = nil
             if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
             if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
             boundsObserver = nil
@@ -569,6 +572,22 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
                 self?.saw(event)
                 return event
             }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                self?.sawKey(event)
+                return event
+            }
+        }
+
+        /// A key that scrolls this conversation (`ScrollKey`): Page Up and the like while the keyboard is in the
+        /// conversation, not in a field or the composer, where the same keys move the caret.
+        private func sawKey(_ event: NSEvent) {
+            guard let scrollView = enclosingScrollView, let window, event.window === window,
+                  let responder = window.firstResponder as? NSView, responder.isDescendant(of: scrollView),
+                  !((responder as? NSTextView)?.isEditable ?? false),
+                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  let step = ScrollKey.step(keyCode: event.keyCode, shift: event.modifierFlags.contains(.shift)) else { return }
+            reading?.userStep(deltaY: step, precise: false)
+            wheel(step)
         }
 
         /// Watches the clip view move and the content change size: while the conversation follows its end, the scroll

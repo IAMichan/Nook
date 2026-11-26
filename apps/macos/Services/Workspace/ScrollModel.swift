@@ -52,18 +52,6 @@ struct ScrollModel: Equatable, Sendable {
         if endIsInView { reachedEnd() }
     }
 
-    /// Whether a move of the view while its sizes stayed the same, up and away from the end, is you scrolling: the
-    /// keyboard and anything else that sends no scroll-wheel step. A move caused by a size change (the reply growing, a
-    /// row measured) never is, nor is a move down: only a step of yours up lets go of the end, never where the view
-    /// happens to stand (as in t3code, where the end leaves the view for a frame with every streamed chunk).
-    ///
-    /// Nothing when nothing changes: the view calls this for every frame of a scroll, and writing its scroll state
-    /// each time would draw the whole conversation again for each frame.
-    func releases(movedFrom old: ScrollFrame, to new: ScrollFrame) -> Bool {
-        guard !new.resized(from: old), !isFreeAfterUserScroll, !Self.movedBySelf(from: old, to: new) else { return false }
-        return new.offset < old.offset - 0.5 && new.maxOffset - new.offset > 4
-    }
-
     /// Whether a move of the view up while its sizes stayed the same was the scroll view's own: more than a page at
     /// once, which no step of yours makes (the wheel and trackpad let go before the view moves, and Page Up moves less
     /// than a page). A lazy stack that measures a row anew guesses the height of everything above it again, by thousands
@@ -75,7 +63,7 @@ struct ScrollModel: Equatable, Sendable {
     }
 
     /// Whether a view that follows the end must be put back at its end after the move from `old` to `new`: its sizes
-    /// changed and it is off its end, or the scroll view put back an old offset by itself (`movedBySelf`). Not during a
+    /// changed and it is off its end, or the scroll view moved it up by itself (`lostEnd`). Not during a
     /// scroll of the view's own (`animating`: a jump to a mark, the pill), and not while finding (the find owns the
     /// position).
     ///
@@ -91,10 +79,13 @@ struct ScrollModel: Equatable, Sendable {
     }
 
     /// Whether the move from `old` to `new` took a view that follows the end away from it without you: its sizes
-    /// changed and it is off its end, or it went up by more than a page at once (`movedBySelf`).
+    /// changed and it is off its end, or it went up off its end by itself. A step of yours (wheel, trackpad, a scroll
+    /// key) stops following before the view moves by it (`releases(wheel:)`, `ScrollKey`), so while the view follows,
+    /// any move up is the scroll view's own: a lazy stack laying its rows out at a new width moves the offset up in a
+    /// report of its own, with no size change.
     static func lostEnd(from old: ScrollFrame, to new: ScrollFrame) -> Bool {
-        if movedBySelf(from: old, to: new) { return true }
-        return new.resized(from: old) && new.maxOffset - new.offset > 0.5
+        guard new.maxOffset - new.offset > 0.5 else { return false }
+        return new.resized(from: old) || new.offset < old.offset - 0.5
     }
 
     /// Whether a scroll-wheel or trackpad step of yours over the conversation, before the view moves by it, lets go of
@@ -149,6 +140,23 @@ struct ScrollModel: Equatable, Sendable {
 
     func jumpPill(awayFor: TimeInterval) -> Bool {
         mode == .free && !isFinding && awayFor >= Self.pillDelay
+    }
+}
+
+/// A key that scrolls a conversation, as a step of yours (`ScrollModel.releases(wheel:)`): the same sign as a wheel step,
+/// above zero toward the start. Only input says you scrolled, never where the view stands: a move of the view with no
+/// size change was taken for the keyboard, and the scroll view makes those by itself while it lays the rows out again
+/// (dragging the side panel's line rewraps every row, and one report moved the view up by 136 pt), which stopped
+/// following the end and left the conversation behind a working agent (measured in `SidePanelDragStaysAtEnd`).
+enum ScrollKey {
+    /// The step for a key (`keyCode` as AppKit gives it), or nil for a key that does not scroll.
+    static func step(keyCode: UInt16, shift: Bool) -> Double? {
+        switch keyCode {
+        case 0x74, 0x73, 0x7E: return 1    // Page Up, Home, up arrow
+        case 0x79, 0x77, 0x7D: return -1   // Page Down, End, down arrow
+        case 0x31: return shift ? 1 : -1   // Space pages down, with Shift up
+        default: return nil
+        }
     }
 }
 

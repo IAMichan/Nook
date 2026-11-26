@@ -36,13 +36,11 @@ final class SidePanelKeepsPlace: Scenario {
             }
             try app.screenshot("at-end")
 
-            // Read back, well above the end.
-            for _ in 0..<50 {
-                let clip = scrollView.contentView
-                clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: max(0, clip.bounds.origin.y - 30)))
-                scrollView.reflectScrolledClipView(clip)
-                RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 60))
-            }
+            // Read back, well above the end, with wheel steps: moving the clip view alone is no scroll of yours, and
+            // the conversation would go straight back to its end.
+            let wheel = Wheel(window: screen.window, scrollView: scrollView)
+            defer { wheel.finish() }
+            for _ in 0..<50 { wheel.step(deltaY: 30) }
             screen.settle(1.0)
             for step in 0..<8 {
                 guard let (prompt, before) = Self.topPrompt(prompts, screen) else {

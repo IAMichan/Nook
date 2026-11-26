@@ -444,7 +444,7 @@ struct TranscriptConversation: View {
     /// Keeps the conversation at its end while it is there. The anchor for size changes alone let it slip up as it opens:
     /// the lazy rows below measure taller after the first scroll, and the composer under it grows (a card, a draft),
     /// which changes the inset rather than the content. Either happens at the end without you, so the conversation stays
-    /// there; only moving while the sizes stay the same is you scrolling away (a mouse wheel too, which reports no phase).
+    /// there; only a step of yours (`readingScroller`: the wheel, the trackpad, a scroll key) scrolls away.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
         // Back to the end while following: a size change off the end, or the scroll view putting back an old offset by
         // itself, also while a scroll of yours toward the end runs out (`ScrollModel.keepsEnd`). At once
@@ -455,11 +455,7 @@ struct TranscriptConversation: View {
             var still = Transaction()
             still.disablesAnimations = true
             withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
-            return
         }
-        // A size change or a move of the view's own is never you scrolling.
-        if new.resized(from: old) || ScrollModel.movedBySelf(from: old, to: new) { return }
-        if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: new) { scroll.userScrolled() }
     }
 
     /// Once the conversation has loaded: its very end, with what came in since your last visit under its line. Scrolls

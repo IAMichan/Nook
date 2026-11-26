@@ -5,16 +5,25 @@ final class ScrollModelTests: XCTestCase {
         ScrollFrame(offset: offset, content: content, container: 600)
     }
 
-    func testScrollingUpNearTheEndStopsFollowingAtOnce() {
-        // The keyboard, or anything else without a wheel step: up while the sizes stay the same, within the margin too.
+    func testScrollKeysAreStepsOfYours() {
+        // The keyboard lets go of the end as a wheel step does: by the key, never by where the view went.
         let model = ScrollModel()
-        XCTAssertTrue(model.releases(movedFrom: frame(1400), to: frame(1390)))
+        for key: UInt16 in [0x74, 0x73, 0x7E] {
+            XCTAssertEqual(ScrollKey.step(keyCode: key, shift: false), 1)
+            XCTAssertTrue(model.releases(wheel: ScrollKey.step(keyCode: key, shift: false)!))
+        }
+        for key: UInt16 in [0x79, 0x77, 0x7D] {
+            XCTAssertEqual(ScrollKey.step(keyCode: key, shift: false), -1)
+            XCTAssertFalse(model.releases(wheel: ScrollKey.step(keyCode: key, shift: false)!))
+        }
+        XCTAssertEqual(ScrollKey.step(keyCode: 0x31, shift: false), -1, "Space pages down")
+        XCTAssertEqual(ScrollKey.step(keyCode: 0x31, shift: true), 1, "Shift-Space pages up")
+        XCTAssertNil(ScrollKey.step(keyCode: 0x00, shift: false), "A does not scroll")
     }
 
     func testAWheelStepUpStopsFollowingWhileTheContentGrows() {
         // While an agent works the sizes change on nearly every frame, so a move alone cannot tell you scrolled.
         var model = ScrollModel()
-        XCTAssertFalse(model.releases(movedFrom: frame(1400), to: frame(1500, content: 2100)))
         XCTAssertTrue(model.releases(wheel: 3), "up, even within the end margin")
         model.userScrolled()
         XCTAssertFalse(model.shouldFollowEnd)
@@ -26,15 +35,18 @@ final class ScrollModelTests: XCTestCase {
         // While following, the end leaves the view for a frame with each new line: a scroll down then is no release.
         let model = ScrollModel()
         XCTAssertFalse(model.releases(wheel: -3))
-        XCTAssertFalse(model.releases(movedFrom: frame(1300), to: frame(1340)))
     }
 
-    func testGrowthIsNotAScroll() {
-        var model = ScrollModel()
-        XCTAssertFalse(model.releases(movedFrom: frame(1400), to: frame(1380, content: 1980)), "a row above measured shorter")
-        XCTAssertFalse(model.releases(movedFrom: frame(1400), to: frame(1600, content: 2200)), "the reply grew")
-        model.userScrolled()
-        XCTAssertFalse(model.releases(movedFrom: frame(1200), to: frame(1100)), "already free: nothing to write")
+    func testAMoveUpOfTheScrollViewsOwnWhileRowsRewrapKeepsTheEnd() {
+        // Seen while dragging the side panel's line beside a working agent: the rows rewrap, and in a report of its
+        // own, with no size change, the view went 136 pt up off its end. That was taken for the keyboard and stopped
+        // following; the conversation stayed behind, thousands of points up, as the agent went on.
+        let model = ScrollModel()
+        let atEnd = ScrollFrame(offset: 24494, content: 25093, container: 599)
+        let nudged = ScrollFrame(offset: 24358, content: 25093, container: 599)
+        XCTAssertTrue(ScrollModel.lostEnd(from: atEnd, to: nudged))
+        XCTAssertTrue(model.keepsEnd(movedFrom: atEnd, to: nudged, animating: false), "back to the end, still following")
+        XCTAssertTrue(model.shouldFollowEnd)
     }
 
     func testAJumpOfTheScrollViewsOwnIsNotYou() {
@@ -43,10 +55,8 @@ final class ScrollModelTests: XCTestCase {
         let atEnd = frame(5400, content: 6000)
         let putBack = frame(1400, content: 6000)
         XCTAssertTrue(ScrollModel.movedBySelf(from: atEnd, to: putBack))
-        XCTAssertFalse(model.releases(movedFrom: atEnd, to: putBack), "following goes on, back to the end")
-        // Page Up moves less than a page, an arrow key a line: those are still you.
+        XCTAssertTrue(model.keepsEnd(movedFrom: atEnd, to: putBack, animating: false), "following goes on, back to the end")
         XCTAssertFalse(ScrollModel.movedBySelf(from: atEnd, to: frame(4860, content: 6000)))
-        XCTAssertTrue(model.releases(movedFrom: atEnd, to: frame(4860, content: 6000)))
         // A move with a size change, or down, is not one of these.
         XCTAssertFalse(ScrollModel.movedBySelf(from: atEnd, to: frame(1400, content: 6100)))
         XCTAssertFalse(ScrollModel.movedBySelf(from: putBack, to: atEnd))
@@ -59,7 +69,8 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertTrue(ScrollModel.lostEnd(from: frame(7146, content: 7745), to: frame(5400, content: 7745)), "put back by itself")
         XCTAssertTrue(ScrollModel.lostEnd(from: atEnd, to: frame(5400, content: 7600)), "grew under a view that stayed put")
         XCTAssertFalse(ScrollModel.lostEnd(from: atEnd, to: frame(7000, content: 7600)), "grew and the view kept its end")
-        XCTAssertFalse(ScrollModel.lostEnd(from: atEnd, to: frame(4860, content: 6000)), "Page Up is you")
+        // While following, a move up is the scroll view's own: a step of yours stops following before the view moves.
+        XCTAssertTrue(ScrollModel.lostEnd(from: atEnd, to: frame(4860, content: 6000)), "up by itself")
         XCTAssertFalse(ScrollModel.lostEnd(from: frame(5000, content: 6000), to: frame(5040, content: 6000)), "a step down")
     }
 
@@ -80,7 +91,7 @@ final class ScrollModelTests: XCTestCase {
 
     func testABounceBackToTheEndKeepsFollowing() {
         let model = ScrollModel()
-        XCTAssertFalse(model.releases(movedFrom: frame(1420), to: frame(1400)))
+        XCTAssertFalse(model.keepsEnd(movedFrom: frame(1420), to: frame(1400), animating: false), "already at the end")
     }
 
     func testTheEndComingIntoViewByItselfDoesNotFollowAgain() {

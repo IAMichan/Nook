@@ -23,16 +23,14 @@ final class ScrollBackStaysPut: Scenario {
                 throw ScenarioFailure.couldNotRun("the conversation's scroll view was not found")
             }
             let started = Date()
+            let wheel = Wheel(window: screen.window, scrollView: scrollView)
+            defer { wheel.finish() }
             // Up to the start and back down twice, 30 pt a step, with a reader's pause every 20 steps.
-            for direction in [-1.0, 1.0, -1.0, 1.0] {
+            for deltaY in [30.0, -30.0, 30.0, -30.0] {
                 for step in 1...400 {
-                    let clip = scrollView.contentView
-                    let end = max(0, (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height)
-                    let y = min(max(0, clip.bounds.origin.y + direction * 30), end)
-                    if y == clip.bounds.origin.y { break }
-                    clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
-                    scrollView.reflectScrolledClipView(clip)
-                    RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 60))
+                    let before = scrollView.contentView.bounds.origin.y
+                    wheel.step(deltaY: deltaY)
+                    if scrollView.contentView.bounds.origin.y == before { break }
                     if step % 20 == 0 { screen.settle(0.6) }
                 }
             }
