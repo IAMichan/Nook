@@ -5,8 +5,8 @@ or an external AI, Nooks, memory, plans that only do something after you press *
 connectors. The macOS app in [`apps/macos`](../macos) is the specification: names, behavior, and copy follow it.
 
 > **Status:** early version. Everything from the Mac app has either been ported or is on the list in
-> [docs/TAURI.md](../../docs/TAURI.md) with a reason. On Linux it has been tested in the app; Windows code compiles but
-> has not yet been run on a real Windows PC, and Android builds only in CI.
+> [docs/TAURI.md](../../docs/TAURI.md) with a reason. On Linux it has been tested in the app; Windows it runs on a real
+> PC, but not every feature has been tried there yet, and Android builds only in CI.
 
 > **Interface language:** like the Mac, the interface speaks English, Dutch, German, French, and Spanish. It starts in
 > the system's language when Nook speaks it, otherwise in English; change it in **Settings › General › Language**.

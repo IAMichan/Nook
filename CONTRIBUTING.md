@@ -7,7 +7,7 @@ Thanks for your interest in contributing to Nook! Bug reports, feature ideas, tr
 | You have… | You can help with… | Start here |
 |---|---|---|
 | **A Mac** | The native macOS app (Swift, SwiftUI/AppKit), the primary and most complete version of Nook | [macOS](#macos) |
-| **A Windows PC** | Run the Tauri app on real Windows hardware for the first time and report what works; fix what doesn't | [Windows, Linux & Android](#windows-linux--android-tauri) |
+| **A Windows PC** | Run the Tauri app on real Windows hardware, try the features not tested there yet, and report what works; fix what doesn't | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **A Linux machine** | The Tauri app (Rust core, Svelte 5 UI), Wayland support, packaging | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **An Android phone** | Install the APK from CI on a real device and report what works | [Windows, Linux & Android](#windows-linux--android-tauri) |
 | **An iPhone** | The Nook Companion app (SwiftUI) | [iPhone Companion](#iphone-companion) |
@@ -75,7 +75,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 
 Especially welcome right now:
 
-- **Windows testers.** The Windows build compiles in CI but has never been run on a real Windows PC. Install it, try the bar, hotkeys, screen reading, and autocomplete, and open an issue with what you find.
+- **Windows testers.** The Windows app runs on a real Windows PC, but not every feature has been tried there. Install it, try the bar, hotkeys, screen reading, and autocomplete, and open an issue with what you find.
 - **Android testers.** Download the unsigned APK from the latest **Android** CI job and try it as a companion.
 - **Ports.** Pick a ○ or ◐ row in [docs/TAURI.md](docs/TAURI.md) and port it from the Mac app.
 
