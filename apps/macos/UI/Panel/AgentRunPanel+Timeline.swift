@@ -120,6 +120,10 @@ extension AgentRunPanel {
         // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
         // that runs now only in the live line at the end, not also in the list above it.
         let active = run.status.isActive
+        // Just finished: for one frame the end still looks as it did while working, then it glides into its finished look.
+        let settling = finishGlided >= 0 && finishGlide.settling(runID, active: active, following: scroll.shouldFollowEnd,
+                                                                 glided: $finishGlided, gliding: $glidingEnd)
+        let lastAnswer = settling ? events.last(where: { $0.kind == .assistant })?.id : nil
         // A new worktree still being set up: its checklist is the live state, in place of "Working for …".
         let setup = workspace.visibleSetup(run)
         let workingUnder = active && setup == nil ? events.last(where: { $0.kind == .user })?.id : nil
@@ -138,7 +142,8 @@ extension AgentRunPanel {
         let shownBlocks = firstRow > 0 ? Array(blocks[firstRow...]) : blocks
         let context = TimelineRowContext(structure: memo.revision, status: run.status,
                                          directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
-                                         openEvents: expanded, shownFile: sideLink.shownFile, counted: countedLines)
+                                         openEvents: expanded, shownFile: sideLink.shownFile, counted: countedLines,
+                                         settling: settling)
         // The latest turns drawn in full, the rest lazily (`ConversationRows`): the end never stays blank.
         let eager = HistoryWindow.eagerRows(rowsPerTurn: memo.rowsPerTurn, start: start)
         return ScrollViewReader { proxy in
@@ -166,9 +171,10 @@ extension AgentRunPanel {
                     // leaves room instead of bouncing the conversation down. Also once you scroll up: letting go then
                     // shrank the end the moment you started to scroll, and the view jumped under your fingers.
                     ConversationRows(items: shownBlocks, eager: eager,
-                                     holdsHeight: active && !finding,
+                                     holdsHeight: (active || settling) && !finding,
                                      holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start),
-                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { block in
+                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows,
+                                     glidesGrowth: mayGlide || (settling && !glidingEnd), working: active) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             // The held step is in the last block; its block is drawn again when it lets go of it.
@@ -185,10 +191,12 @@ extension AgentRunPanel {
                                                 sideLink.openDiff(TurnDiffSelection(turn: turn.id, file: file))
                                             })
                                         }
-                                        let inReply = event.kind == .assistant && memo.finalAnswers.contains(event.id)
-                                        eventRow(event, final: memo.finalAnswers.contains(event.id),
+                                        let final: Bool = memo.finalAnswers.contains(event.id) && event.id != lastAnswer
+                                        let inReply: Bool = event.kind == .assistant && final
+                                        eventRow(event, final: final,
                                                  extras: inReply ? card : nil, answerable: memo.answerable == event.id)
-                                        if !inReply, let card { card }
+                                        let cardBelow: Bool = !inReply && event.id != lastAnswer
+                                        if cardBelow, let card { card }
                                         if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
@@ -203,7 +211,7 @@ extension AgentRunPanel {
                     }
                     if let setup {
                         WorktreeSetupChecklist(progress: setup, active: active) { workspace.stop(runID) }
-                    } else if active {
+                    } else if active || settling {
                         // The agent's task list, live, right above what it does now: the same live line as in an agent's
                         // own transcript.
                         let turn = TimelinePresentation.runningTurn(events)
@@ -224,13 +232,15 @@ extension AgentRunPanel {
                     } else if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
                     }
+                    // Room under a new turn held near the top while its reply grows (`TurnPinRoom`).
+                    TurnPinRoomSpacer(pin: pinRoom)
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .scrollTargetLayout()
                 // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                 .coordinateSpace(name: TimelineSpace.name)
                 .readingStackTop(reading)
-                .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating }) { deltaY in
+                .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && !glidingEnd && !pinRoom.holds && scrollPhase.value != .animating }) { deltaY in
                     if scroll.releases(wheel: deltaY) {
                         scroll.userScrolled()
                     } else if scroll.returns(wheel: deltaY) {
@@ -253,7 +263,10 @@ extension AgentRunPanel {
             // Also once the run is done, as in an agent's own transcript: the turn folds to "Worked for …" in the update
             // that ends the run and its card comes under it, and rows above are measured anew; let go then, the
             // conversation jumped up by hundreds of points (thousands in a long session) before `keepEnd` caught it.
-            .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
+            // Not while a new turn is held near the top: its room shrinks as its reply grows, and the view stays put.
+            .defaultScrollAnchor(scroll.shouldFollowEnd && !glidingEnd && !pinRoom.holds ? .bottom : nil, for: .sizeChanges)
+            // A run that just finished: from where the view stands to its new end, in one glide (`FinishGlide`).
+            .glidesToEnd(after: finishGlided, gliding: $glidingEnd, proxy: proxy)
             .scrollIndicators(.never)
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -273,11 +286,9 @@ extension AgentRunPanel {
                 ScrollFrame(geometry)
             } action: { old, frame in
                 lastFrame.value = frame
+                pinRoom.viewed(container: frame.container)
                 // Reading back: what you read stays put while the rows above it change height.
                 reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop, holding: holdsReading)
-                // You scrolling (the wheel too, which reports no phase): following stops at once, not only once a drag
-                // that began at the end lets go, so the agent's output no longer pulls the view down under your fingers.
-                if scrollPhase.value != .animating, scroll.releases(movedFrom: old, to: frame) { scroll.userScrolled() }
                 keepEnd(old, frame, proxy)
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
@@ -388,20 +399,31 @@ extension AgentRunPanel {
             }
             .onChange(of: events.count) { _, _ in
                 // Not animated, and only when the view is off its end: at the end `defaultScrollAnchor` and `keepEnd`
-                // already hold it there, and an animated scroll on every new event fought them.
-                guard scroll.shouldFollowEnd, !atEnd else { return }
+                // already hold it there, and an animated scroll on every new event fought them. Nor while it glides to
+                // its end (`glidesToEnd`): this took it there at once.
+                guard scroll.shouldFollowEnd, !atEnd, !glidingEnd else { return }
                 var still = Transaction()
                 still.disablesAnimations = true
                 withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            // You sent something: it is the newest thing and shows again, also when you had scrolled up. It lands at the
-            // end under what came before, and the reply is followed from there: no jump up to hold it near the top.
-            .onChange(of: sentCount) { _, _ in settleAtEnd(proxy) }
+            // You sent something: it is the newest thing and shows again, also when you had scrolled up. It glides up near
+            // the top and its reply grows under it (`TurnPinRoom`), as in t3code.
+            .onChange(of: sentCount) { _, _ in pinNewTurn(sent: true, proxy) }
             // A message that came in otherwise (a queued one going out, a goal's next turn, one from your phone) only
             // while you follow: reading higher up, it pulled you down to the end.
-            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in
-                if scroll.shouldFollowEnd { settleAtEnd(proxy) }
+            .onChange(of: events.last(where: { $0.kind == .user })?.id) { _, _ in pinNewTurn(sent: false, proxy) }
+            // The reply filled the view and the agent works with tools: on to the end, and following from there.
+            .onChange(of: PinRelease(holds: pinRoom.holds, work: workUnderPin(events))) { _, now in
+                guard scroll.releasesPin(room: now.holds ? 1 : 0, workStarted: now.work) else { return }
+                scroll.jumpedToEnd()
+                pinRoom.drop()
+                // Down to the end in one glide (`glidesToEnd`), holding no end meanwhile: what the reply wrote past its
+                // room came in at once as the view took its end again.
+                glidingEnd = true
+                finishGlided += 1
             }
+            .onChange(of: runID) { _, _ in pinRoom.reset() }
+            .onAppear { drawnRows.pin = pinRoom }
         }
         // VoiceOver hears the step, the finished replies and what waits on you, as for an agent's own transcript.
         .announcesAgentProgress(key: "run:" + runID.uuidString, author: run.provider.displayName, snapshot: announcement(run))
@@ -441,20 +463,59 @@ extension AgentRunPanel {
         !scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating
     }
 
-    /// Scrolls to the end now and again while the layout settles: the lazy rows only learn their real height once
-    /// laid out, so a single scroll from far up lands short of the end. Stops when you scroll away in the meantime.
+    /// Whether what the agent writes grows into view in a glide (`ConversationRows.glidesGrowth`): you follow it working.
+    /// Also in the pass it finishes (`settling`), until the glide to the end takes over: what was left of the last line's
+    /// glide came in at once with the view still holding its end, and the answer jumped up.
+    private var mayGlide: Bool {
+        guard scroll.shouldFollowEnd, !finding else { return false }
+        return workspace.run(runID)?.status.isActive == true
+    }
+
+    /// What decides whether a held new turn gives way to following (`ScrollModel.releasesPin`).
+    struct PinRelease: Equatable {
+        let holds: Bool
+        let work: Bool
+    }
+
+    /// The agent works with tools or thinks under the held message.
+    private func workUnderPin(_ events: [RunEvent]) -> Bool {
+        guard pinRoom.pinned != nil else { return false }
+        return TimelinePresentation.runningTurn(events).contains { $0.kind == .tool || $0.kind == .thinking }
+    }
+
+    /// A new turn came in (`sent`: you sent it): held near the top with its reply growing under it, gliding up to there
+    /// once it is laid out; or, while you read back or find, as before (only what you sent shows again).
+    private func pinNewTurn(sent: Bool, _ proxy: ScrollViewProxy) {
+        guard let run = workspace.run(runID),
+              let message = workspace.timeline(runID).last(where: { $0.kind == .user }),
+              let block = currentDerived(run).blocks.last(where: { $0.eventIDs.contains(message.id) })?.id else {
+            if sent { settleAtEnd(proxy) }
+            return
+        }
+        guard AnyHashable(block) != pinRoom.pinned else { return }
+        pinRoom.track(block)
+        guard scroll.pinsNewTurn(sentByYou: sent) else {
+            if sent || scroll.shouldFollowEnd { settleAtEnd(proxy) }
+            return
+        }
+        pinRoom.pin(block)
+        // Once the message and its room are laid out (a pass or two): up to it in one glide.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard scroll.isPinned, pinRoom.pinned == AnyHashable(block) else { return }
+            withAnimation(NookTheme.scroll) { proxy.scrollTo(block, anchor: .top) }
+        }
+    }
+
+    /// Scrolls to the end now and again while the layout settles (`EndSettle`): the lazy rows only learn their real
+    /// height once laid out, so a single scroll from far up lands short of the end. Stops when you scroll away.
     /// Again only while it is not there yet: at its end, `keepEnd` holds it as the rows grow, and every `scrollTo`
     /// first brings the whole panel up to date, which cost the click that opened the session a full update each time.
     private func settleAtEnd(_ proxy: ScrollViewProxy) {
         scroll.jumpedToEnd()
-        proxy.scrollTo("bottom", anchor: .bottom)
-        for delay in [0.0, 0.1, 0.3] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard scroll.shouldFollowEnd else { return }
-                // Exactly at its end (not `atEnd`, which allows a margin): nothing to do.
-                if let frame = lastFrame.value, frame.maxOffset - frame.offset <= 0.5 { return }
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
+        // Each frame until it stays there (`EndSettle`); exactly at its end (not `atEnd`, which allows a margin) it does
+        // nothing.
+        EndSettle.run(following: { scroll.shouldFollowEnd && !glidingEnd }, frame: { lastFrame.value }) {
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 
@@ -486,7 +547,7 @@ extension AgentRunPanel {
     /// sizes stay the same, or a wheel step up, is you scrolling away. Also while a scroll of yours toward the end runs
     /// out (`ScrollModel.keepsEnd`), and at once (`TimelineReadingAnchor.jump`), so no frame shows the view off its end.
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
-        guard !finding, scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) else { return }
+        guard !finding, !glidingEnd, !pinRoom.holds, scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) else { return }
         if reading.jump(to: new.maxOffset) { return }
         var still = Transaction()
         still.disablesAnimations = true

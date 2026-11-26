@@ -215,4 +215,47 @@ final class TimelineReadingAnchorTests: XCTestCase {
         XCTAssertTrue(anchor.jump(to: 900))
         XCTAssertEqual(scrolls, [900])
     }
+
+    /// A long answer of 2000 points read 800 points in, in a 300-point view at a width of 600.
+    private func readingALongAnswer(clock: @escaping () -> Date) -> TimelineReadingAnchor {
+        let anchor = TimelineReadingAnchor()
+        anchor.scroll = { [unowned self] in scrolls.append($0) }
+        anchor.later = { $0() }
+        anchor.now = clock
+        anchor.width(600)
+        anchor.place("answer", top: 0, height: 2000)
+        anchor.place("next", top: 2000, height: 100)
+        anchor.moved(offset: 800, container: 300, holding: true)
+        return anchor
+    }
+
+    func testTheLineYouReadInALongAnswerStaysInViewWhenItWrapsAnew() {
+        let now = Date()
+        let anchor = readingALongAnswer(clock: { now })
+        XCTAssertEqual(anchor.held, AnyHashable("answer"))
+        // The side panel takes room: the answer wraps to half again as many lines.
+        anchor.width(400)
+        anchor.place("answer", top: 0, height: 3000)
+        // As far into the answer as before, in parts of it: the text you read was 800 of 2000 points in.
+        XCTAssertEqual(scrolls, [1200])
+    }
+
+    func testALongAnswerThatGrowsAtTheSameWidthMovesNothing() {
+        let anchor = readingALongAnswer(clock: { Date() })
+        // The agent writes on into it while you read its start.
+        anchor.place("answer", top: 0, height: 2400)
+        XCTAssertEqual(scrolls, [])
+    }
+
+    func testALongAnswerThatGrowsWellAfterAResizeMovesNothing() {
+        var now = Date()
+        let anchor = readingALongAnswer(clock: { now })
+        anchor.width(400)
+        anchor.place("answer", top: 0, height: 3000)
+        anchor.moved(offset: 1200, container: 300, holding: true)
+        scrolls = []
+        now += 5
+        anchor.place("answer", top: 0, height: 3400)
+        XCTAssertEqual(scrolls, [])
+    }
 }

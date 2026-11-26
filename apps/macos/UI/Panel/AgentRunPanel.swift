@@ -57,6 +57,14 @@ struct AgentRunPanel: View {
     @State var timelineBuild = 0
     /// The step that just ended, held on the live line a moment and kept out of the rows meanwhile (`EndedStepHold`).
     @State var endedHold = EndedStepHold<UUID>()
+    /// The run that just finished, for the frame before what comes under its answer glides in (`FinishGlide`).
+    @State var finishGlide = FinishGlide()
+    /// Bumped when a run that just finished takes its finished look (`FinishGlide`).
+    @State var finishGlided = 0
+    /// The view glides to the end of a run that just finished: nothing else moves it meanwhile (`FinishGlide`).
+    @State var glidingEnd = false
+    /// The room under a new turn held near the top while its reply grows (`TurnPinRoom`).
+    @State var pinRoom = TurnPinRoom()
     /// Counts the messages you sent from the composer (also those that steer or wait in line): each brings the
     /// conversation down to its end, wherever you had scrolled.
     @State var sentCount = 0

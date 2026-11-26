@@ -841,7 +841,7 @@ enum BackgroundWork {
     /// complete before proceeding."): a quiet line among the commands, not an answer. Empty for any other text.
     static func notice(_ text: String) -> [String] {
         // Most answers are longer than a notice: their size alone rules them out, before counting characters.
-        guard !text.isEmpty, text.utf8.count <= 8_000, text.count <= 2_000, let regex = noticePattern else { return [] }
+        guard !text.isEmpty, text.utf8.count <= 8_000, mayBeNotice(text), text.count <= 2_000, let regex = noticePattern else { return [] }
         var tasks: [String] = []
         var end = text.startIndex
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
@@ -850,6 +850,16 @@ enum BackgroundWork {
             end = whole.upperBound
         }
         return end == text.endIndex ? tasks : []
+    }
+
+    /// Whether `text` ends as a notice does ("… in the background." or "… before proceeding."), from its last few
+    /// characters only. Every assistant message of the turn is checked on each streamed update, and the pattern ran over
+    /// every one of them in full (an ICU regex, case-insensitive) for each few words the agent typed.
+    private static func mayBeNotice(_ text: String) -> Bool {
+        let tail = text.utf8.suffix(48)
+        guard let end = String(tail)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return true }
+        let words = end.hasSuffix(".") ? String(end.dropLast()) : end
+        return words.hasSuffix("background") || words.hasSuffix("proceeding")
     }
 
     /// Compiled once: every assistant message of a session is checked against it each time its timeline is laid out.
