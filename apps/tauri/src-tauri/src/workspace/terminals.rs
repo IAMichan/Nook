@@ -28,6 +28,8 @@ pub const MIN_SHOWN_ROWS: u16 = 2;
 /// the last shown terminal size (or `DEFAULT_COLS × DEFAULT_ROWS`) anyway, matching Mac's
 /// `TerminalSession.startDeadline`.
 const START_DEADLINE: Duration = Duration::from_millis(500);
+const ERR_TERMINAL_GONE: &str = "Deze terminal bestaat niet meer.";
+const ERR_SHELL_CLOSED: &str = "De shell neemt geen invoer meer aan.";
 
 /// De agent die een terminal startte via de werkruimte-brug (`terminal_run`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -406,7 +408,7 @@ impl Terminals {
 
     pub fn write(&self, id: &str, data: &str) -> Result<(), String> {
         let mut map = lock(&self.inner);
-        let t = map.get_mut(id).ok_or("Deze terminal bestaat niet meer.")?;
+        let t = map.get_mut(id).ok_or(ERR_TERMINAL_GONE)?;
         match &mut t.state {
             TermState::Pending(p) => {
                 p.queued_input.push(data.as_bytes().to_vec());
@@ -416,8 +418,8 @@ impl Terminals {
                 queued_input.push(data.as_bytes().to_vec());
                 Ok(())
             }
-            TermState::Running(r) => r.input.send(data.as_bytes().to_vec()).map_err(|_| "De shell neemt geen invoer meer aan.".to_string()),
-            TermState::Exited => Err("De shell neemt geen invoer meer aan.".to_string()),
+            TermState::Running(r) => r.input.send(data.as_bytes().to_vec()).map_err(|_| ERR_SHELL_CLOSED.to_string()),
+            TermState::Exited => Err(ERR_SHELL_CLOSED.to_string()),
         }
     }
 
@@ -456,9 +458,9 @@ impl Terminals {
     /// Ctrl+C naar wat er in de shell draait; de shell zelf blijft open zodat de uitvoer leesbaar blijft.
     pub fn interrupt(&self, id: &str) -> Result<(), String> {
         let map = lock(&self.inner);
-        let t = map.get(id).ok_or("Deze terminal bestaat niet meer.")?;
+        let t = map.get(id).ok_or(ERR_TERMINAL_GONE)?;
         match &t.state {
-            TermState::Running(r) => r.input.send(b"\x03".to_vec()).map_err(|_| "De shell neemt geen invoer meer aan.".to_string()),
+            TermState::Running(r) => r.input.send(b"\x03".to_vec()).map_err(|_| ERR_SHELL_CLOSED.to_string()),
             // Matching Mac's `guard running, started else { return }`: no process to interrupt yet.
             TermState::Pending(_) | TermState::Starting { .. } | TermState::Exited => Ok(()),
         }
