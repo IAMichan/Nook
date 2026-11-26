@@ -83,11 +83,48 @@
 .settings .row:has(> input[type="checkbox"]) { flex-wrap: nowrap; }
 .settings .row:has(> input[type="checkbox"]) > span:first-child { flex: 1; min-width: 0; }
 /* A line of explanation inside a card is a row of its own, as the Mac's footnote rows are; under a card, a footer. */
-.settings .group > p.note { margin: 0; padding: var(--row-pad-y) 0; border-bottom: 1px solid var(--separator); font: var(--text-detail); color: var(--text2); }
-.settings .group > p.note:last-child { border-bottom: none; }
-.settings .group + p.note, .settings .group + .faint.note { margin: var(--space-8) 0 0; padding: 0 var(--space-2); font: var(--text-detail); color: var(--text2); }
+.settings .group > p.note,
+.settings .group > .setting-note { margin: 0; padding: var(--row-pad-y) 0; border-bottom: 1px solid var(--separator); font: var(--text-detail); color: var(--text2); }
+.settings .group > p.note:last-child,
+.settings .group > .setting-note:last-child { border-bottom: none; }
+.settings .group + p.note,
+.settings .group + .faint.note,
+.settings .group + .setting-note { margin: var(--space-8) 0 0; padding: 0 var(--space-2); font: var(--text-detail); color: var(--text2); }
 /* A page's first section sits 32 px under the intro, wherever it starts. */
 .settings .intro + * { margin-top: var(--space-32); }
+
+/* Unified text/secret field style across every Settings card (`SettingsFieldStyle`, `SettingsControl` on the Mac):
+   Nook's field fill, hairline stroke lifting to `--line2` on focus, 28 px minimum height, leading-aligned body type,
+   and a 220 px column width on inline rows so fields align down the right edge of every card. */
+.settings .group input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.bare-input),
+.settings .group textarea:not(.bare-input) {
+  min-height: 28px;
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  border: 1px solid var(--field-stroke);
+  font: var(--text-body);
+  color: var(--paper);
+  text-align: left;
+  transition: border-color var(--motion-quick, 150ms ease-out);
+}
+.settings .group input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.bare-input):focus,
+.settings .group textarea:not(.bare-input):focus {
+  border-color: var(--line2);
+  outline: none;
+}
+.settings .group input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.bare-input)::placeholder,
+.settings .group textarea:not(.bare-input)::placeholder {
+  color: var(--text3);
+}
+.settings .row:not(.stacked) > input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.bare-input) {
+  width: 220px;
+  max-width: 100%;
+}
+.settings .row.stacked > input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.bare-input),
+.settings .row.stacked > textarea:not(.bare-input) {
+  width: 100%;
+}
 
 /* The controls on a row, as on the Mac (SettingsFormStyle, SettingsControl): the system's fill for a control on a card,
    and the raised fill of a chosen segment. */

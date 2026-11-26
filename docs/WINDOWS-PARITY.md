@@ -91,7 +91,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [x] **UI-09** Setup sheets as numbered steps ending in a check (`SetupSheet`, `SetupCheckStep`) · M Done: shared `SetupSheet`, `SetupStep`, `SetupCheckStep`, `StepAction`, `SheetPart`, and `setup-check.ts` under `apps/tauri/src/components/ui/`, adopted across `PairPhoneSheet`, `ServiceSheet`, `GitLabSheet`, and `McpAddSheet`.
 
-- [ ] **UI-10** One field style and rows grouped into cards, note tones (`SettingsFormStyle`, `SettingToggle`, `SettingFieldRow`, `SettingNote`, #1607, #1551) · M
+- [x] **UI-10** One field style and rows grouped into cards, note tones (`SettingsFormStyle`, `SettingToggle`, `SettingFieldRow`, `SettingNote`, #1607, #1551) · M Done: unified Settings field style (`28px` height, `220px` inline width, `--field` / `--field-stroke` lifting to `--line2` on focus) in `views/settings/settings.css`, shared `SettingsSection`, `SettingToggle`, `SettingFieldRow`, `SettingNote` (with icon+color tones `info`/`success`/`warning`/`error`), and `setting-note.ts` under `apps/tauri/src/views/settings/`, adopted in `General.svelte` and `Notch.svelte`.
 
 - [x] **UI-11** Settings components `SettingsTile`, `SettingsLinkRow`, `InUseLabel`, `ConnectMethodBadge` · S Done (2026-11-26): added `views/settings/SettingsTile.svelte`, `SettingsLinkRow.svelte`, `InUseLabel.svelte`, and `ConnectMethodBadge.svelte` with pure helpers and unit tests (`lib/settings-ui.ts`, `lib/settings-pages.ts` section/tile icon maps), wired into `Overview.svelte`, `Assistant.svelte`, `PairPhoneSheet.svelte`, `ModelAdvice.svelte`, `CatalogueCard.svelte`, and `Accounts.svelte`.
 
