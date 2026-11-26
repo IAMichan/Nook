@@ -9,3 +9,4 @@ pub mod inbox;
 pub mod info;
 pub mod link;
 pub mod notify;
+pub mod system_notices;

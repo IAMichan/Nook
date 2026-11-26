@@ -93,6 +93,7 @@ pub fn setup(app: &AppHandle) {
         chat_helper,
     });
     crate::chats::follow_up::setup(app);
+    crate::chats::system_notices::setup(app, chats.clone());
     // Verversen en luisteren draaien op de runtime van Tauri.
     tauri::async_runtime::spawn(async move {
         // Saved at most every few seconds, and only when something changed.

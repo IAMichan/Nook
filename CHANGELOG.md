@@ -14,6 +14,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 - Settings › Browser has a Passkeys row: on a build signed with Apple's browser entitlement it asks macOS once whether
   Nook may use your passkeys, and it says what is missing when they cannot work.
+- On Windows, the Chats tab shows Discord messages from Windows' own notifications, read-only, as the Mac does from
+  macOS notifications. WhatsApp, Telegram, Signal, Viber, WeChat and Threema come in the same way when Nook has no link
+  of its own to them.
 
 ### Changed
 

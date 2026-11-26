@@ -121,7 +121,8 @@ pub(crate) fn sends(c: &Connectors, app: &str) -> bool {
     if app == whatsapp::APP {
         c.whatsapp_accounts.is_connected()
     } else {
-        c.chat_helper.bridge.client().is_some()
+        // Only the helper's own networks: a chat Nook knows from a notification (Discord) has no link to write in.
+        nook_core::chats::chatd::APPS.contains(&app) && c.chat_helper.bridge.client().is_some()
     }
 }
 
@@ -145,15 +146,13 @@ pub(crate) fn changed(app: &AppHandle) {
 #[tauri::command]
 pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
     let now = Utc::now();
-    let helper = c.chat_helper.bridge.client().is_some();
-    let wa = c.whatsapp_accounts.is_connected();
     c.env.chats.read(|inbox| {
         inbox
             .sorted()
             .into_iter()
             // A chat Nook knows only from disk, without a message, shows once its app lists it or brings one again.
             .filter(|t| !t.messages.is_empty() || ChatInbox::is_listed(t, now))
-            .map(|t| summary(t, if t.app == whatsapp::APP { wa } else { helper }, c.chat_helper.typing_in(&t.id)))
+            .map(|t| summary(t, sends(&c, &t.app), c.chat_helper.typing_in(&t.id)))
             .collect()
     })
 }

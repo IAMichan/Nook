@@ -689,7 +689,14 @@ both phones the same way for every app: the Mac lists per chat what its app take
 (`CompanionServer+ChatActions.swift`). What stays on the Mac for every app: voice messages, sending polls, places,
 contacts, stickers and GIFs, a message's edit history, calls through the app on the Mac (the phones call through
 themselves where the app gives a number), and *@nook* drafting. The Linux and Windows apps have no chat inbox of their
-own. If one gets one, it reads these same fields.
+own for the phones yet. If one gets one, it reads these same fields.
+
+On Windows the Tauri app's own Chats tab also reads Windows' notifications, as the Mac reads macOS ones
+(`nook_core::chats::system_notices`, `src-tauri/src/chats/system_notices.rs`): every few seconds the new toasts of
+Discord, WhatsApp, Telegram, Signal, Viber, WeChat and Threema are read read-only from `wpndatabase.db` and go into the
+shared inbox through each app's notice layout (Discord titles a channel's message "Anna (#general, Server)",
+`NoticeLayout.chat_in_parentheses`). An app with a link of its own here (WhatsApp's gateway, the chat helper's
+networks) is left to that link. These chats are previews only: no history, no sending. Linux has no such store.
 
 ## Platforms and offline
 
