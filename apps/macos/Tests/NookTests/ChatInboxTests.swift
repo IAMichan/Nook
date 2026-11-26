@@ -1920,6 +1920,33 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TeamsData.unread(messages, readUntil: chats[0].readUntil), 1)
     }
 
+    /// Read in the Teams app (or on the phone) while the chat's newest message stays the same: Nook reads it too at the
+    /// next look at the list, without waiting for a new message, and shows it read in Teams as well.
+    func testTeamsChatReadInTeamsIsReadInNook() {
+        let newest = message("m2", "you there?", at: 2)
+        var chat = TeamsData.Chat(id: "1", name: "Anna", isGroup: false, last: newest.date,
+                                  readUntil: now.addingTimeInterval(0.5), preview: newest)
+        XCTAssertNil(TeamsData.readInTeams(chat), "still unread in Teams: the history's count stands")
+
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "teams", chat: "Anna")
+        inbox.merge(BridgedChat(app: "teams", name: "Anna", messages: [message("m1", "hi", at: 1), newest],
+                                unread: TeamsData.unread([message("m1", "hi", at: 1), newest], readUntil: chat.readUntil)))
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(2))
+
+        chat.readUntil = newest.date.addingTimeInterval(0.4)
+        XCTAssertEqual(TeamsData.readInTeams(chat), 0)
+        inbox.merge(BridgedChat(app: "teams", name: "Anna", messages: [newest], unread: TeamsData.readInTeams(chat), listed: true))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read, "read in Teams: read in Nook too, and in Teams as well")
+    }
+
+    /// Teams through the website is read every 15 s in the background, so a message shows without clicking its chat.
+    func testTeamsIsReadOftenInTheBackground() {
+        XCTAssertEqual(TeamsData.readGap(throughWebsite: true, ticksWaiting: false), 15)
+        XCTAssertEqual(TeamsData.readGap(throughWebsite: false, ticksWaiting: true), 15)
+        XCTAssertEqual(TeamsData.readGap(throughWebsite: false, ticksWaiting: false), 60, "Graph alone throttles harder")
+    }
+
     func testTeamsChatReadBeforeGraphListsItsNewestMessage() {
         let last = ChatJSON.date("2026-10-22T09:00:00.123Z")
         let early: [String: Any] = ["value": [["id": "m1", "createdDateTime": "2026-10-22T08:59:00Z"]]]
