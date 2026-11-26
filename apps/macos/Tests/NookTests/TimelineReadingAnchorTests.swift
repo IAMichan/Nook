@@ -73,6 +73,44 @@ final class TimelineReadingAnchorTests: XCTestCase {
         XCTAssertEqual(anchor.held, AnyHashable("r9"))
     }
 
+    /// A page of older messages drawn above a chat you read back: the probe moved the view down by the growth in the
+    /// same pass (`shifted`), so the reports that follow, in either order, scroll nothing more.
+    func testAPageDrawnAboveMovesNothingMore() {
+        for rowsFirst in [true, false] {
+            scrolls = []
+            let anchor = reading()
+            // The flush runs once the pass is done, after both reports.
+            var queued: [@MainActor () -> Void] = []
+            anchor.later = { queued.append($0) }
+            anchor.growsAbove()
+            XCTAssertTrue(anchor.takesGrowthAbove())
+            XCTAssertFalse(anchor.takesGrowthAbove(), "taken once")
+            anchor.shifted(by: 3000)
+            let rows = { for index in 0..<10 { anchor.place("r\(index)", top: Double(index) * 100 + 3000) } }
+            if rowsFirst { rows() }
+            anchor.moved(offset: 3440, container: 300, holding: true)
+            if !rowsFirst { rows() }
+            queued.forEach { $0() }
+            queued = []
+            XCTAssertEqual(scrolls, [], "rows first: \(rowsFirst)")
+            XCTAssertEqual(anchor.held, AnyHashable("r5"))
+            // Your next step still moves the view as far.
+            anchor.userStep(deltaY: 30, precise: true)
+            anchor.moved(offset: 3410, container: 300, holding: true)
+            queued.forEach { $0() }
+            XCTAssertEqual(scrolls, [], "rows first: \(rowsFirst)")
+        }
+    }
+
+    func testAPromiseOfGrowthAboveRunsOut() {
+        let anchor = reading()
+        var clock = Date(timeIntervalSince1970: 0)
+        anchor.now = { clock }
+        anchor.growsAbove(for: 0.5)
+        clock = clock.addingTimeInterval(1)
+        XCTAssertFalse(anchor.takesGrowthAbove(), "a page that drew nothing promises nothing to a picture loading later")
+    }
+
     func testEarlierTurnsDrawnAboveKeepTheRowInPlace() {
         let anchor = reading()
         // "Show earlier messages" puts 200 points of turns above the stack of rows.

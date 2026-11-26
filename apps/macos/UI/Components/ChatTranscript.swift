@@ -75,10 +75,9 @@ struct ChatTranscript: View, Equatable {
     @State private var openedAt = Date()
     /// Where the messages are and which ones a drag picked, for asking Nook about them (`TranscriptSelection`).
     @StateObject private var selection = TranscriptSelection()
-    /// Keeps the message you read in place while what is above it loads or changes size (`TranscriptReadingAnchor`).
-    @State private var reading = TranscriptReadingAnchor()
-    /// Where `reading` scrolls the chat to; in `@State`, so a scroll that writes it does not redraw the chat.
-    @State private var scrollTarget = TranscriptScrollTarget()
+    /// Keeps the message you read in place while what is above it loads or changes size, or older messages are drawn
+    /// above it: the same anchor the agent conversations read back with (`TimelineReadingAnchor`, `readingScroller`).
+    @State private var reading = TimelineReadingAnchor()
     /// The answered message a click on its quote asked for: the chat scrolls to it (`scroller`).
     @State private var quoteJump: String?
     /// The answered message just scrolled to, lit for a moment so the eye finds it.
@@ -124,9 +123,11 @@ struct ChatTranscript: View, Equatable {
         return start == 0 ? bubbles : Array(bubbles[start...])
     }
 
-    /// Whether the message you read is held in place: not at the newest message, which follows the end instead, and
-    /// not while older messages are drawn or fetched, which put the old top message back themselves.
-    private var holdsReading: Bool { !atBottom && !loadingOlder && !drawingOlder }
+    /// Whether the message you read is held in place: not at the newest message, which follows the end instead. Also
+    /// while older messages are drawn above it: the view moves down by what they add in the same pass
+    /// (`TimelineReadingAnchor.growsAbove`), where a `scrollTo` the old top message a frame later showed the chat jump
+    /// down and back up for every page.
+    private var holdsReading: Bool { !atBottom }
 
     /// You moved the chat: what is drawn stays put from now on, so a new message does not push the oldest one out above
     /// what you read.
@@ -142,13 +143,14 @@ struct ChatTranscript: View, Equatable {
         let shown = drawn
         guard shown.count < bubbles.count, let top = shown.first?.id,
               let index = bubbles.firstIndex(where: { $0.id == top }) else { return false }
+        if !toEnd { reading.growsAbove() }
         drawnFrom = bubbles[max(index - Self.olderPage, 0)].id
         drawingOlder = true
         DispatchQueue.main.async {
-            var still = Transaction()
-            still.disablesAnimations = true
-            withTransaction(still) {
-                if toEnd { proxy.scrollTo(Self.bottomID, anchor: .bottom) } else { proxy.scrollTo(top, anchor: .top) }
+            if toEnd {
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
             }
             drawingOlder = false
         }
@@ -176,16 +178,20 @@ struct ChatTranscript: View, Equatable {
                         loadOlderButton { loadOlder(proxy) }
                     }
                     stack
-                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: {
-                            reading.stack(at: $0, holding: holdsReading)
+                        .onGeometryChange(for: Double.self) { $0.frame(in: .named(Self.contentSpace)).minY } action: {
+                            reading.stack(at: $0)
                         }
+                        .onGeometryChange(for: Double.self) { $0.size.width } action: { reading.width($0) }
                     Color.clear
                         .frame(height: 0)
                         .id(Self.bottomID)
                 }
+                // Lets `reading` move the scroll view itself, and learn of your wheel and trackpad steps.
+                .readingScroller(reading) { deltaY in
+                    if deltaY > 0 { userScrolled() }
+                }
                 .coordinateSpace(.named(Self.contentSpace))
             }
-            .modifier(TranscriptScrollPosition(target: scrollTarget))
             .scrollIndicators(.never)
             // The messages stay inside the transcript: unclipped, a bubble scrolled past the top was drawn over the
             // chat's header above it.
@@ -216,11 +222,10 @@ struct ChatTranscript: View, Equatable {
             .onScrollGeometryChange(for: TranscriptScrollGeometry.self) { geometry in
                 TranscriptScrollGeometry(offset: geometry.contentOffset.y,
                                          container: geometry.containerSize.height,
-                                         content: geometry.contentSize.height)
+                                         content: geometry.contentSize.height,
+                                         insetTop: geometry.contentInsets.top)
             } action: { old, new in
-                reading.moved(from: old.offset, to: new.offset, container: new.container,
-                              sizesSame: new.content == old.content && new.container == old.container,
-                              holding: holdsReading)
+                reading.moved(offset: new.offset, container: new.container, insetTop: new.insetTop, holding: holdsReading)
                 // The chat grew while you were at its newest message (pictures appearing, a chat's history or a new
                 // message arriving), or its room shrank (the field grows with a longer message): it stays at the newest
                 // at once, so the messages move up with the field instead of slipping under it. `atBottom` counts as
@@ -292,24 +297,21 @@ struct ChatTranscript: View, Equatable {
             }
             // A chat opens at its newest message, also when its first layout took more than one pass.
             .onAppear {
-                reading.scroll = { [scrollTarget] y in
-                    var still = Transaction()
-                    still.disablesAnimations = true
-                    withTransaction(still) { scrollTarget.position.scrollTo(y: y) }
-                }
                 guard fills else { return }
                 var jump = Transaction()
                 jump.disablesAnimations = true
                 DispatchQueue.main.async { withTransaction(jump) { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
             }
             // Older messages from the app are in: the page above what was the oldest is drawn, and it stays in its place.
-            .onChange(of: bubbles.first?.id) { _, _ in
+            // The view moves down by what they add, in the pass that draws them (`TimelineReadingAnchor.growsAbove`).
+            .onChange(of: bubbles.first?.id) { old, _ in
+                // A host that draws every message (a card) draws the fetched ones at once, above the old first one.
+                let prepended = old.flatMap { id in bubbles.firstIndex { $0.id == id } }.map { $0 > 0 } ?? false
+                if prepended, !atBottom, !fills || drawsAll { reading.growsAbove() }
                 guard let anchor = olderAnchor, let index = bubbles.firstIndex(where: { $0.id == anchor }) else { return }
                 olderAnchor = nil
+                if !atBottom { reading.growsAbove() }
                 drawnFrom = bubbles[max(index - Self.olderPage, 0)].id
-                var still = Transaction()
-                still.disablesAnimations = true
-                DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo(anchor, anchor: .top) } }
             }
             // Someone starts typing: their bubble comes into view under the last message.
             // A click on a quote: the answered message is drawn (with a few before it, so reaching the top does not draw
@@ -320,6 +322,8 @@ struct ChatTranscript: View, Equatable {
                 userScrolled()
                 if fills, !drawsAll, !drawn.contains(where: { $0.id == id }),
                    let index = bubbles.firstIndex(where: { $0.id == id }) {
+                    // Drawn above what is in view, which stays put until the glide starts.
+                    reading.growsAbove()
                     drawnFrom = bubbles[max(index - Self.quoteRoom, 0)].id
                 }
                 // Not at the newest any more: the chat does not follow its end while it glides up.
@@ -370,12 +374,12 @@ struct ChatTranscript: View, Equatable {
             if loaded {
                 // A host that draws every message (a card) draws these too.
                 if !fills || anchor == nil { drawsAll = true }
+                // Fetched above what you read: they were drawn with the view moved down by as much
+                // (`onChange(of: bubbles.first?.id)`), so the message you read stays where it is without a scroll here.
                 if toEnd {
                     // Every message: all were drawn and short, and drawn from the old top the fetched ones stayed out.
                     drawnFrom = bubbles.first?.id
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                } else if let anchor {
-                    proxy.scrollTo(anchor, anchor: .top)
                 }
             } else {
                 olderAnchor = nil
@@ -454,11 +458,11 @@ struct ChatTranscript: View, Equatable {
                             .background(TranscriptPickMark(selection: selection, id: bubble.id))
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TranscriptSelection.space)) } action: {
                                 selection.place(bubble.id, at: $0)
-                                reading.place(bubble.id, at: $0, holding: holdsReading)
+                                reading.place(bubble.id, top: $0.minY, height: $0.height)
                             }
                             .onDisappear {
                                 selection.place(bubble.id, at: nil)
-                                reading.place(bubble.id, at: nil, holding: holdsReading)
+                                reading.place(bubble.id, top: nil)
                             }
                             // A new run starts with room above it; the messages of one run sit close together, so who
                             // said what reads at a glance.
@@ -2113,25 +2117,14 @@ private struct TranscriptScrollGeometry: Equatable {
     var offset: Double
     var container: Double
     var content: Double
+    /// The room above the messages the view shows them from under.
+    var insetTop: Double = 0
 
-    var nearTop: Bool { offset <= 80 }
+    /// Within a screen of the oldest message drawn: the page before it is drawn while you still scroll toward it, so
+    /// scrolling up runs on instead of stopping at the top to wait for it.
+    var nearTop: Bool { offset + insetTop <= max(80, container) }
     /// The newest message is in view, give or take a line.
     var nearBottom: Bool { content <= container || offset + container >= content - 60 }
-}
-
-/// The scroll target `TranscriptReadingAnchor` sets, observed only by the modifier that hands it to the scroll view:
-/// the chat itself does not redraw for each step of a scroll that writes it.
-@MainActor
-final class TranscriptScrollTarget: ObservableObject {
-    @Published var position = ScrollPosition()
-}
-
-private struct TranscriptScrollPosition: ViewModifier {
-    @ObservedObject var target: TranscriptScrollTarget
-
-    func body(content: Content) -> some View {
-        content.scrollPosition($target.position)
-    }
 }
 
 /// "Deleted" beside the time of a message its writer deleted for everyone that still shows what it said, as "Edited"

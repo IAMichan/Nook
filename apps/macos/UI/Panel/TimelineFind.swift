@@ -768,6 +768,16 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
             let frame = Self.frame(of: scrollView)
             let old = lastFrame
             lastFrame = frame
+            // Content that grew all above what you read (older messages drawn above, `growsAbove`): the view moves down
+            // by as much now, before the frame is drawn, so what you read stays where it is.
+            if let old, let reading, frame.content > old.content + 0.5, reading.takesGrowthAbove() {
+                let delta = frame.content - old.content
+                reading.shifted(by: delta)
+                let clip = scrollView.contentView
+                clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: clip.bounds.origin.y + delta))
+                scrollView.reflectScrolledClipView(clip)
+                return
+            }
             guard let old, followsEnd(), ScrollModel.lostEnd(from: old, to: frame) else { return }
             // Moves the clip view again, which comes back here at the end.
             let clip = scrollView.contentView

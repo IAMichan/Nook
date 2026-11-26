@@ -760,8 +760,8 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [x] **CH-58** Mark unread; pin, mute, archive and delete in the app itself (`ChatAbilities`) · M
   - Done: Mark as unread and read in Nook or in the app for every app (the helper's apps are told; WhatsApp's gateway has no unread call, so there it stays in Nook); Mute / Unmute and Archive in the app itself for the helper's apps (`chat_inbox_in_app`, the helper's `PATCH` and `/archive`); removing a chat from Nook after a yes. Open: Pin in the app (the helper's chat list does not say yet whether a chat is pinned there), and anything in WhatsApp itself, which its gateway does not offer.
 
-- [x] **CH-59** Keep the reading position while older content loads (`TranscriptReadingAnchor`) · S
-  - Done: older messages that come in above keep the message you were reading in place (the scroll height before and after, `TranscriptReadingAnchor`), for every app.
+- [x] **CH-59** Keep the reading position while older content loads (`TimelineReadingAnchor` on the Mac) · S
+  - Done: older messages that come in above keep the message you were reading in place (the scroll height before and after; on the Mac `TimelineReadingAnchor`), for every app.
 
 ### 5.5 Suggestions, notices and calls
 
