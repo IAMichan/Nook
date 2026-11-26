@@ -392,6 +392,24 @@ enum TeamsData {
         return messages.count(where: { !$0.isMine && $0.date > readUntil })
     }
 
+    /// The time between two reads of Teams. Through the website every 15 s: one read asks each account's chat list once
+    /// (the history only of chats that moved), so a message shows in the background about as soon as in the open chat,
+    /// not only once you click it. Through Graph alone once a minute, unless a message you sent in the last 15 minutes
+    /// waits to be read (its ticks turn as soon as Teams says they read it): a Graph read pages through every chat with
+    /// its members, and Graph throttles harder.
+    static func readGap(throughWebsite: Bool, ticksWaiting: Bool) -> TimeInterval {
+        throughWebsite || ticksWaiting ? 15 : 60
+    }
+
+    /// The count for a chat whose history Nook read already and whose newest message stayed the same: nothing new once
+    /// Teams says you read it up to that message (in the Teams app, on the phone, on the website), so the read reaches
+    /// Nook without waiting for a new message. Nil while Teams still holds it unread: the history's count stands. The list
+    /// and the read mark round the same moment differently, so a second's difference is the same message.
+    static func readInTeams(_ chat: Chat) -> Int? {
+        guard let readUntil = chat.readUntil, let newest = chat.preview?.date ?? chat.last else { return nil }
+        return newest <= readUntil.addingTimeInterval(1) ? 0 : nil
+    }
+
     /// Teams' HTML as plain text: line breaks kept, tags dropped, the common entities back.
     static func plain(html: String) -> String {
         var text = html

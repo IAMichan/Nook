@@ -11,15 +11,14 @@ import ImageIO
 @MainActor
 final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     let app = "teams"
-    /// Once a minute; every 15 s while a message you sent in the last 15 minutes waits to be read, so its ticks turn as
-    /// soon as Teams says they read it (Teams has no live line Nook holds). Most messages are read within minutes, if at
-    /// all soon; later the usual minute is enough.
+    /// How often Teams is read (`TeamsData.readGap`): Teams has no live line Nook holds, so a new message, a read or an
+    /// edit shows at the next read, also while no chat is open.
     var interval: TimeInterval {
         let recent = Date().addingTimeInterval(-Self.tickWatch)
         let waiting = web.values.contains { state in
             state.unseen.values.contains { chat in (chat.messages.last?.date ?? .distantPast) > recent }
         }
-        return waiting ? 15 : 60
+        return TeamsData.readGap(throughWebsite: !TeamsWebSession.shared.accounts.isEmpty, ticksWaiting: waiting)
     }
     /// How long after you sent a message its ticks are watched closely.
     private static let tickWatch: TimeInterval = 900
@@ -402,8 +401,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         for chat in chats where !fetched.contains(chat.id) {
             let preview = chat.preview.map { [$0] } ?? []
             // Until its history is read, the list's newest message is all Nook knows: it is unread when it came after
-            // you last read the chat. After that the count from the history stands.
-            let unread = seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
+            // you last read the chat. After that the count from the history stands, until Teams says you read it there.
+            let unread = seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : TeamsData.readInTeams(chat)
             var bridged = BridgedChat(app: app, name: chat.name, messages: preview, unread: unread,
                                       members: chat.members.isEmpty ? nil : chat.members, listed: true)
             bridged.profile = chat.profile
@@ -543,7 +542,8 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         for chat in chats where !fetched.contains(chat.id) && !chat.name.isEmpty {
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let preview = chat.preview.map { [$0] } ?? []
-            let unread = state.seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
+            // Read in Teams since (its read mark reached the newest message): read in Nook too.
+            let unread = state.seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : TeamsData.readInTeams(chat)
             var bridged = BridgedChat(app: app, name: chat.name, messages: preview, unread: unread, listed: true)
             bridged.profile = chat.profile
             result.append(bridged)
