@@ -2194,6 +2194,10 @@ extension CompanionClient {
                           folder: "nook", branch: "main", updated: now - 7200, excerpt: "", items: []),
             SessionDigest(id: "s5", title: "Write release notes", agent: "OpenCode", attention: "finished",
                           folder: "docs", branch: nil, updated: now - 90000, excerpt: "", items: []),
+            SessionDigest(id: "s6", title: "Speed up the chat search", agent: "Claude Code", attention: "working",
+                          folder: "nook", branch: "perf/search", updated: now - 40, excerpt: "", items: []),
+            SessionDigest(id: "s7", title: "Fix the pricing page layout", agent: "Codex", attention: "ready",
+                          folder: "website", branch: "fix/pricing", updated: now - 2400, excerpt: "", items: []),
         ]
         sessions = Self.demoAgentsTab(sessions, now: now)
         timelines["s5"] = [

@@ -490,8 +490,6 @@ struct SessionListView: View {
     @AppStorage("nook.companion.shelf.pinned") private var pinnedOpen = true
     @AppStorage("nook.companion.shelf.snoozed") private var snoozedOpen = true
     @AppStorage("nook.companion.shelf.settled") private var settledOpen = false
-    /// Sessions that work and need nothing from you on a shelf of their own, as the Mac's "Show working". Remembered.
-    @AppStorage("nook.companion.showWorking") private var showWorking = true
     /// The recent sessions under their project's folder, as the Mac's Agents list with "Group by project" on. Remembered.
     @AppStorage("nook.companion.groupByProject") private var groupByProject = true
     /// The project folders folded away (`ProjectGroups.encode`); remembered.
@@ -522,13 +520,14 @@ struct SessionListView: View {
         var settled: [SessionDigest] = []
     }
 
-    /// The Mac's shelves (`SessionShelf`): Pinned, what needs you, the rest, Working, Snoozed and Settled. A Mac without
-    /// `CompanionFeature.agentsTab` pins, snoozes and settles nothing, so its sessions stay where they always were.
+    /// The phone's shelves (`SessionShelf.onPhone`): what is at work, what needs you, then the Mac's Pinned, the rest,
+    /// Snoozed and Settled. A Mac without `CompanionFeature.agentsTab` pins, snoozes and settles nothing, so its sessions
+    /// stay where they always were.
     private var lanes: Lanes {
         var lanes = Lanes(all: ordered)
         let now = Date().timeIntervalSince1970
         for session in lanes.all {
-            switch SessionShelf.of(session, showWorking: showWorking, now: now) {
+            switch SessionShelf.onPhone(session, now: now) {
             case .needsYou: lanes.needsYou.append(session)
             case .pinned: lanes.pinned.append(session)
             case .working: lanes.working.append(session)
@@ -559,12 +558,12 @@ struct SessionListView: View {
         !session.items.isEmpty || ["approval", "input", "failed", "limited"].contains(session.attention)
     }
 
-    /// The sessions in the order the list shows them: what needs you, what works, then the rest, each newest first.
+    /// The sessions in the order the list shows them: what works, what needs you, then the rest, each newest first.
     static func order(_ sessions: [SessionDigest]) -> [SessionDigest] {
         let newest = sessions.sorted { $0.updated > $1.updated }
         let waiting = newest.filter(needsYou)
         let working = newest.filter { !needsYou($0) && $0.attention == "working" }
-        return waiting + working + newest.filter { !needsYou($0) && $0.attention != "working" }
+        return working + waiting + newest.filter { !needsYou($0) && $0.attention != "working" }
     }
 
     var body: some View {
@@ -610,13 +609,23 @@ struct SessionListView: View {
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
-                group(String(localized: "Pinned"), lanes.pinned, open: $pinnedOpen)
+                // Top-down: what happens now, what is left for you, then the rest. With neither, one calm line.
+                if working.isEmpty, needsYou.isEmpty, !lanes.all.isEmpty, query.isEmpty {
+                    CalmLine()
+                        .padding(.horizontal, Theme.Spacing.xl)
+                        .padding(.top, Theme.Spacing.md)
+                }
+                group(String(localized: "Working"), working, open: $workingOpen)
                 if !needsYou.isEmpty {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    WaitingShelfTitle(count: needsYou.count)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.top, Theme.Spacing.md)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         ForEach(needsYou) { session in SessionNotice(session: session) { path.append(session.id) } }
                     }
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
+                group(String(localized: "Pinned"), lanes.pinned, open: $pinnedOpen)
                 if groupByProject {
                     projectShelves(rest)
                 } else {
@@ -632,7 +641,6 @@ struct SessionListView: View {
                     .buttonStyle(PressFade())
                     .padding(.horizontal, Theme.Spacing.xl)
                 }
-                group(String(localized: "Working"), working, open: $workingOpen)
                 group(String(localized: "Snoozed"), lanes.snoozed, open: $snoozedOpen)
                 group(String(localized: "Settled"), lanes.settled, open: $settledOpen)
                 olderShelves(restCount: rest.count)
@@ -734,13 +742,6 @@ struct SessionListView: View {
             })) {
                 Label("Group by project", systemImage: "folder")
             }
-            // The Mac's "Show working": sessions at work on a shelf of their own, or among the others.
-            Toggle(isOn: Binding(get: { showWorking }, set: { value in
-                Haptics.tap()
-                withAnimation(Theme.reveal) { showWorking = value }
-            })) {
-                Label("Show working", systemImage: "bolt")
-            }
         } label: {
             Image(icon: "line.3.horizontal.decrease")
                 .font(Theme.textFont(14, .medium))
@@ -795,7 +796,10 @@ struct SessionListView: View {
     /// One session in a shelf: a tap opens it, a swipe snoozes or archives it, and a long press offers what you do
     /// with it most from here (write to it, stop it, start another in its folder) beside the rest.
     private func sessionRow(_ session: SessionDigest) -> some View {
-        Button { path.append(session.id) } label: { AgentRow(session: session).equatable().detailSelected(session.id) }
+        Button { path.append(session.id) } label: {
+            AgentRow(session: session, quietWorking: session.attention == "working" && !Self.needsYou(session))
+                .equatable().detailSelected(session.id)
+        }
             .buttonStyle(RowPress())
             .padding(.horizontal, Theme.Spacing.md)
             .contextMenu {
@@ -882,6 +886,40 @@ struct SessionListView: View {
                 ForEach(sessions) { session in sessionRow(session) }
             }
         }
+    }
+}
+
+/// The head of the shelf of what waits on you: as a shelf's header, with the count in amber and no fold, since what
+/// needs you never folds away.
+private struct WaitingShelfTitle: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Text("Waiting on you")
+                .font(Theme.TextStyle.label)
+                .foregroundStyle(Theme.textSecondary)
+            Spacer(minLength: 0)
+            NookCountBadge(count: count)
+        }
+        .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xxs)
+        .frame(minHeight: 36)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Nothing at work and nothing waiting: one quiet line on top, so the list says at once that all is calm.
+private struct CalmLine: View {
+    var body: some View {
+        Label {
+            Text("All calm. Nothing needs you right now.").foregroundStyle(Theme.textSecondary)
+        } icon: {
+            Image(icon: "checkmark.circle.fill").foregroundStyle(Theme.mint)
+        }
+        .font(Theme.TextStyle.body)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.opacity)
     }
 }
 
@@ -1124,6 +1162,9 @@ struct WaitingRow: View {
 /// recedes, so what needs you is the only loud thing; the logo is grey at rest, as on the Mac.
 struct AgentRow: View, Equatable {
     let session: SessionDigest
+    /// On the Working shelf, whose header already says so: a pulsing dot and how long ago it last moved instead of the
+    /// word "Working" on every row.
+    var quietWorking = false
     /// The minute it was drawn in: with `.equatable()` a row is drawn again only when its session changed or its
     /// "12 min" moved on, not each time the list redraws while an agent streams.
     var minute = Int(Date().timeIntervalSince1970 / 60)
@@ -1183,7 +1224,20 @@ struct AgentRow: View, Equatable {
     /// The status where it says something (working, waiting, failed, ready), otherwise how long ago.
     @ViewBuilder
     private var slot: some View {
-        if ["working", "ready"].contains(session.attention) || Theme.needsYou(session.attention) {
+        if quietWorking, session.attention == "working" {
+            HStack(spacing: Theme.Spacing.sm) {
+                PulseDot(color: Theme.color("working"), size: 6)
+                // Its own minute clock: an `.equatable()` row is not drawn again while the list stays quiet, and work
+                // in progress should not read "now" for ten minutes.
+                TimelineView(.everyMinute) { context in
+                    Text(Self.age(context.date.timeIntervalSince1970 - session.updated))
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(Theme.word("working")))
+        } else if ["working", "ready"].contains(session.attention) || Theme.needsYou(session.attention) {
             StatusPill(attention: session.attention, short: true)
         } else {
             Text(Self.age(Date().timeIntervalSince1970 - session.updated))
@@ -1213,7 +1267,7 @@ struct SessionNotice: View {
     private var item: SessionDigest.Item? { session.items.first }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             opener {
                 HStack(spacing: Theme.Spacing.md) {
                     AgentMark(agent: session.agent, size: 16)
@@ -1240,14 +1294,11 @@ struct SessionNotice: View {
                 Text(session.excerpt).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(3)
             }
         }
-        .padding(Theme.Spacing.xl)
+        .padding(Theme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: [Theme.color(session.attention).opacity(0.10), Theme.color(session.attention).opacity(0)],
-                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.6)),
-            in: Theme.shape(Theme.Radius.panel)
-        )
-        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.35), radius: Theme.Radius.panel)
+        // Calm: a plain card with the state's color only on its mark and a thin edge, so several asks read as a list
+        // instead of a wall of color.
+        .cardBackground(Theme.surface, stroke: Theme.color(session.attention).opacity(0.2), radius: Theme.Radius.panel)
     }
 
     @ViewBuilder

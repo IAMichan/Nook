@@ -69,6 +69,16 @@ enum SessionShelf: String, CaseIterable, Sendable {
         return .active
     }
 
+    /// The shelf of `session` in the phone's Agents list, which reads top-down as what happens and what is left to do:
+    /// what needs you, then every session at work (also a pinned, settled or snoozed one, so work in progress is never
+    /// tucked away), then the Mac's shelves for the rest. The iPhone and the Tauri/Android companion (`phoneShelf`)
+    /// share this rule.
+    static func onPhone(_ session: SessionDigest, now: Double = Date().timeIntervalSince1970) -> SessionShelf {
+        if needsYou(session) { return .needsYou }
+        if session.attention == "working" { return .working }
+        return of(session, showWorking: false, now: now)
+    }
+
     /// An approval or a question waits, or the session stopped on something only you can resolve.
     static func needsYou(_ session: SessionDigest) -> Bool {
         !session.items.isEmpty || ["approval", "input", "failed", "limited"].contains(session.attention)
