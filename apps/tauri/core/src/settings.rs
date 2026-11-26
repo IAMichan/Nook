@@ -68,6 +68,28 @@ impl Default for NookLook {
     }
 }
 
+impl NookLook {
+    /// The ready-made face looks (`LOOK_PRESETS` in `src/lib/types.ts`, `NookLook.presets` on the Mac).
+    pub fn preset(id: &str) -> Option<Self> {
+        match id {
+            "minimal" => Some(Self { eyes: "dots".into(), mouth: "none".into(), gloss: false, glow: false, cheeks: false }),
+            "classic" => Some(Self::default()),
+            "playful" => Some(Self { eyes: "round".into(), mouth: "expressive".into(), gloss: true, glow: true, cheeks: true }),
+            _ => None,
+        }
+    }
+
+    /// Which ready-made look this matches, or `"custom"` when edited by hand.
+    pub fn preset_id(&self) -> &'static str {
+        for id in ["minimal", "classic", "playful"] {
+            if Self::preset(id).as_ref() == Some(self) {
+                return id;
+            }
+        }
+        "custom"
+    }
+}
+
 /// Colors set by hand over a theme, per appearance: token name ("canvas", "accent", …) to "#rrggbb".
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

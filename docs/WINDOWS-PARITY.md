@@ -95,7 +95,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-11** Settings components `SettingsTile`, `SettingsLinkRow`, `InUseLabel`, `ConnectMethodBadge` · S
 
-- [ ] **UI-12** Every Settings row the chat can change through BR-20 exists in the UI with the same key · S
+- [x] **UI-12** Every Settings row the chat can change through BR-20 exists in the UI with the same key · S Done (2026-11-26): aligned `core/src/settings_catalog.rs` and `src-tauri/src/tools/settings.rs` 1:1 with the Settings UI (all 26 catalog keys including `nook_style`, `show_bar`, `open_window_at_launch`, `dictation`, `notices_chats`/`notices_nook`/`notices_suggestions`, `online_lyrics`, synced `notices_agents` card/strip/system/off, moved `energy_mode` to `maintenance`, synced all 37 `SECTIONS` with `settingsSections`, and added cross-layer UI binding tests in `src/lib/settings-catalog.test.ts`).
 
 - [x] **UI-13** Open the right OS settings page from a task: a table of `ms-settings:` URIs (GNOME/KDE panels on Linux) in `core/src/brain/os_settings.rs` (`SettingsPanes`) · M Done (2026-11-23): `core/src/brain/os_settings.rs` maps Windows `ms-settings:` URIs plus GNOME/KDE panels with Dutch/English keyword matching (`matching`, `find`, `guide`).
 
