@@ -615,7 +615,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-121** Worktree cleanup with report, archive, move, build leftovers (#1616), disk usage warning (`WorktreeCleanup`, `WorktreeCleanupReportView`, `WorktreeArchive`, `WorktreeMove`, `BuildLeftovers`) · M Done (2026-11-23): `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/settings/Worktrees.svelte` add cleanup report, `.scratch` archive, worktree move detection, build leftovers sweep, and low-disk warning.
 
-- [ ] **AG-122** Commit style, removing agent credits from commits, PR body check against the template (`CommitStyle`, `PullRequestBodyCheck`, #1561) · S
+- [x] **AG-122** Commit style, removing agent credits from commits, PR body check against the template (`CommitStyle`, `PullRequestBodyCheck`, #1561) · S Done: added `core/src/workspace/commit_style.rs` (`CommitStyle`, `strip_agent_credits`, `launch_instructions`, `pr_body_problems`, `pr_body_refusal`, `find_pr_template`), persisted settings on `WorkspaceSettings`, wired template validation and credit stripping into `pull_request_create`, `workspace_start`, and `workspace_commit_all`, and added the Settings › Pull requests controls.
 
 - [ ] **AG-123** Skip approval for a PR the user asked for (#1602), PR news as a new turn (#1601), PR mentions · S
 

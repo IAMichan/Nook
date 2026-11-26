@@ -208,11 +208,23 @@ pub async fn workspace_start(
     }
     // What the project sets for itself (Settings › Projects): its branch prefix, and the instructions for every agent,
     // which go before the session's own (`agentInstructions` on the Mac).
-    let project = lock(&state.settings).defaults_for(&config.project_path);
+    let (project, commit_style, commit_instructions, no_agent_credits) = {
+        let s = lock(&state.settings);
+        (s.defaults_for(&config.project_path), s.commit_style, s.commit_instructions.clone(), s.no_agent_credits)
+    };
     let every = project.agent_instructions.trim();
     if !every.is_empty() {
         let own = config.instructions.trim();
         config.instructions = if own.is_empty() { every.to_string() } else { format!("{every}\n\n{own}") };
+    }
+    let style_rules = commit_style.commit_rules(&[], &commit_instructions);
+    if !style_rules.is_empty() {
+        let block = format!("Commit style rules:\n{}", style_rules.join("\n"));
+        let own = config.instructions.trim();
+        config.instructions = if own.is_empty() { block } else { format!("{own}\n\n{block}") };
+    }
+    if no_agent_credits {
+        config.instructions = nook_core::workspace::commit_style::launch_instructions(&config.instructions, None, true);
     }
     // De branchnaam komt uit de opdracht, pas op het moment van starten.
     if config.isolation == IsolationMode::Worktree && config.branch_name.trim().is_empty() {
@@ -927,6 +939,11 @@ pub async fn workspace_pull(state: State<'_, WorkspaceState>, run: String) -> Re
 #[tauri::command]
 pub async fn workspace_commit_all(state: State<'_, WorkspaceState>, run: String, subject: String, body: String) -> Res<String> {
     let run = id(&run)?;
+    let omit_credits = {
+        let s = lock(&state.settings);
+        s.no_agent_credits || s.strip_agent_credits
+    };
+    let clean_body = if omit_credits { nook_core::workspace::commit_style::strip_agent_credits(&body) } else { body };
     let m = state.manager.clone();
     blocking(move || {
         let r = m.run(run).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
@@ -934,7 +951,7 @@ pub async fn workspace_commit_all(state: State<'_, WorkspaceState>, run: String,
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").to_string());
         }
         let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
-        let sha = git.commit_all(&r.working_directory, subject.trim(), &body).map_err(|e| e.0)?;
+        let sha = git.commit_all(&r.working_directory, subject.trim(), &clean_body).map_err(|e| e.0)?;
         m.note(run, &format!("Commit {sha}: {}", subject.trim()));
         m.mark_reviewed(run);
         m.refresh_git(run);

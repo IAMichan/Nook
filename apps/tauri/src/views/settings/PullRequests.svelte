@@ -1,18 +1,20 @@
 <script lang="ts">
   import { tip } from "../../components/ui/tip";
-  // Settings › Projects & pull requests › Pull requests (`WatchedPullRequestsSection` on the Mac): a prompt to connect
-  // GitHub when none is linked yet, followed by watched organizations ("acme") and repositories ("acme/web") whose
-  // pull requests show under Agents › Pull requests alongside yours.
+  // Settings › Projects & pull requests › Pull requests (`WatchedPullRequestsSection` + `commitStyle` on the Mac):
+  // GitHub prompt when unlinked, watched organizations/repositories, commit style and agent-credit switches.
   import { api } from "../../lib/api";
   import { connectorsApi, connectorEvents, type Overview } from "../../lib/connectors";
   import { tr } from "../../lib/i18n.svelte";
   import { pullsApi } from "../../lib/pulls";
   import { pullRequests } from "../../lib/pulls.svelte";
   import { nook } from "../../lib/state.svelte";
+  import { workspaceApi, type CommitStyle, type WorkspaceSettings } from "../../lib/workspace/api";
+  import { workspace } from "../../lib/workspace/store.svelte";
   import Ico from "../../components/ui/Ico.svelte";
 
   const LIMIT = 20;
   let overview = $state<Overview | null>(null);
+  let ws = $state<WorkspaceSettings | null>(null);
   let adding = $state(false);
   let text = $state("");
   let error = $state<string | null>(null);
@@ -21,6 +23,9 @@
   $effect(() => {
     const load = () => connectorsApi.overview().then((o) => (overview = o)).catch(() => {});
     load();
+    workspace.start().then(() => {
+      ws = workspace.settings ? { ...workspace.settings } : null;
+    });
     const un = connectorEvents.onChanged(load);
     return () => {
       un.then((f) => f());
@@ -61,6 +66,13 @@
 
   async function remove(entry: string) {
     await changed(await pullsApi.watchRemove(entry));
+  }
+
+  async function saveWs(patch: Partial<WorkspaceSettings>) {
+    if (!ws) return;
+    ws = { ...ws, ...patch };
+    await workspaceApi.saveSettings($state.snapshot(ws));
+    await workspace.refresh();
   }
 </script>
 
@@ -110,6 +122,62 @@
   {/each}
   {#if error}<p class="note err">{error}</p>{:else if entries.length >= LIMIT}<p class="note">{tr("Je kunt tot {n} organisaties en repositories volgen.", "You can watch up to {n} organizations and repositories.", { n: LIMIT })}</p>{/if}
 </div>
+
+{#if ws}
+  <h3>{tr("Commits & pull requests", "Commits & pull requests")}</h3>
+  <p class="section-info">{tr("Hoe Nook en coding-agents commits en pull requests schrijven.", "How Nook and coding agents write commits and pull requests.")}</p>
+  <div class="group">
+    <label class="row">
+      <span>{tr("Commitstijl", "Commit style")}</span>
+      <select
+        value={ws.commitStyle ?? "standard"}
+        onchange={(e) => saveWs({ commitStyle: e.currentTarget.value as CommitStyle })}
+      >
+        <option value="standard">{tr("Standaard", "Standard")}</option>
+        <option value="conventional">{tr("Conventional Commits", "Conventional Commits")}</option>
+        <option value="repository">{tr("Volg de repository", "Match the repository")}</option>
+        <option value="custom">{tr("Eigen instructies", "Custom instructions")}</option>
+      </select>
+    </label>
+    {#if ws.commitStyle === "custom"}
+      <div class="row stacked">
+        <span>{tr("Instructies voor commits", "Commit instructions")}</span>
+        <textarea
+          rows="3"
+          value={ws.commitInstructions ?? ""}
+          placeholder={tr("Bijv. begin het onderwerp met een ticketnummer", "e.g. start the subject with a ticket key")}
+          onchange={(e) => saveWs({ commitInstructions: e.currentTarget.value })}
+        ></textarea>
+      </div>
+    {/if}
+    <label class="row">
+      <span>
+        {tr("Geen agent-credits in commits", "No agent credits in commits")}
+        <br />
+        <small>{tr("Agents die Nook start zetten geen Co-Authored-By of Generated-with-regel in commits en pull requests.", "Agents Nook starts leave AI Co-Authored-By and Generated-with lines out of commits and pull requests.")}</small>
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={!!ws.noAgentCredits}
+        onchange={(e) => saveWs({ noAgentCredits: e.currentTarget.checked })}
+      />
+    </label>
+    <label class="row">
+      <span>
+        {tr("Verwijder agent-credits bij commit of merge", "Strip agent credits on commit or merge")}
+        <br />
+        <small>{tr("Nook haalt AI-regels weg uit commit- en PR-teksten terwijl menselijke mede-auteurs blijven staan.", "Nook strips AI credit lines from commit and pull request text while keeping human co-authors.")}</small>
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={!!ws.stripAgentCredits}
+        onchange={(e) => saveWs({ stripAgentCredits: e.currentTarget.checked })}
+      />
+    </label>
+  </div>
+{/if}
 
 <style>
   .entry { flex-wrap: nowrap; }

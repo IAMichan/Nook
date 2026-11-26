@@ -17,6 +17,7 @@ pub mod capacity;
 pub mod clone_progress;
 pub mod codex_app_server;
 pub mod command;
+pub mod commit_style;
 pub mod context_usage;
 pub mod delegation;
 pub mod dev_stop;

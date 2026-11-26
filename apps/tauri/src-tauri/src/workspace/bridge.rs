@@ -849,14 +849,28 @@ async fn pull_request_create(
     context: &Context,
 ) -> Result<ToolResult, String> {
     let ws = workspace(app).ok_or("Nook is not ready.")?;
-    let title = arg(a, "title").to_string();
+    let mut title = arg(a, "title").to_string();
     if title.is_empty() {
         return Err("Give the pull request a title.".into());
     }
-    let body = a.get("body").and_then(Value::as_str).unwrap_or("").to_string();
+    let mut body = a.get("body").and_then(Value::as_str).unwrap_or("").to_string();
     let draft = a.get("draft").and_then(Value::as_bool).unwrap_or(true);
     if let Verdict::Refuse(reason) = check(app, BridgeTool::PullRequestCreate, caller, None) {
         return Err(refusal(reason).into());
+    }
+    let omit_credits = {
+        let s = lock(&ws.settings);
+        s.no_agent_credits || s.strip_agent_credits
+    };
+    if omit_credits {
+        title = nook_core::workspace::commit_style::strip_agent_credits(&title);
+        body = nook_core::workspace::commit_style::strip_agent_credits(&body);
+    }
+    if let Some(template) = nook_core::workspace::commit_style::find_pr_template(std::path::Path::new(&caller.directory)) {
+        let problems = nook_core::workspace::commit_style::pr_body_problems(&body, &template);
+        if !problems.is_empty() {
+            return Err(nook_core::workspace::commit_style::pr_body_refusal(&problems, &template));
+        }
     }
     let run = caller.run.as_ref().and_then(|r| Uuid::parse_str(r).ok());
     let session_base = run.and_then(|id| ws.manager.run(id)).and_then(|r| r.base_branch);
