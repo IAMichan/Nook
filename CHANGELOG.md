@@ -10,7 +10,15 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+### Added
+
+- Settings › Browser has a Passkeys row: on a build signed with Apple's browser entitlement it asks macOS once whether
+  Nook may use your passkeys, and it says what is missing when they cannot work.
+
 ### Changed
+
+- An extension that needs an app on your Mac (native messaging), such as Apple's iCloud Passwords, now says why it
+  cannot work in Nook's browser, when you click it and in Settings › Browser, instead of opening an empty popup.
 
 - Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
 

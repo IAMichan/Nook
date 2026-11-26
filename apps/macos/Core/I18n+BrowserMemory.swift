@@ -117,7 +117,17 @@ let browserMemoryTranslations: [AppLanguage: [String: String]] = [
         "settings.browser.extensions.link": "Chrome Web Store link",
         "settings.browser.extensions.openStore": "Open the Chrome Web Store",
         "settings.browser.extensions.fromFileButton": "Add from a file…",
-        "settings.browser.extensions.pickMessage": "Choose an extension: a folder with a manifest.json, a .zip or a .crx file."
+        "settings.browser.extensions.pickMessage": "Choose an extension: a folder with a manifest.json, a .zip or a .crx file.",
+        "browser.extensions.needsHelper": "%@ doesn't work in Nook",
+        "browser.extensions.needsHelper.detail": "It needs to talk to an app on your Mac (native messaging), and Nook's browser can't pass that on.",
+        "browser.extensions.needsHelper.apple": "It needs Apple's iCloud Passwords helper, which macOS only lets Chrome, Edge and Firefox start. Nook's own saved passwords (Settings › Browser) work instead.",
+        "settings.browser.passkeys": "Passkeys",
+        "settings.browser.passkeys.allow": "Allow passkeys…",
+        "settings.browser.passkeys.openSettings": "Open System Settings",
+        "settings.browser.passkeys.needsEntitlement": "This build of Nook isn't signed with Apple's browser permission for passkeys, so sites offer a password or a code instead.",
+        "settings.browser.passkeys.notAsked": "Sign in with passkeys from iCloud Keychain, a phone nearby or a security key. macOS asks once whether Nook may use them.",
+        "settings.browser.passkeys.allowed": "Sites can use your passkeys from iCloud Keychain, a phone nearby or a security key.",
+        "settings.browser.passkeys.denied": "macOS doesn't let Nook use your passkeys, so sites offer a password or a code instead. You can allow it in System Settings › Privacy & Security."
     ],
     .nl: [
         "browser.history.title": "Geschiedenis",
@@ -232,7 +242,17 @@ let browserMemoryTranslations: [AppLanguage: [String: String]] = [
         "settings.browser.extensions.link": "Link uit de Chrome Web Store",
         "settings.browser.extensions.openStore": "Chrome Web Store openen",
         "settings.browser.extensions.fromFileButton": "Uit een bestand toevoegen…",
-        "settings.browser.extensions.pickMessage": "Kies een extensie: een map met een manifest.json, een .zip- of een .crx-bestand."
+        "settings.browser.extensions.pickMessage": "Kies een extensie: een map met een manifest.json, een .zip- of een .crx-bestand.",
+        "browser.extensions.needsHelper": "%@ werkt niet in Nook",
+        "browser.extensions.needsHelper.detail": "Deze extensie moet praten met een app op je Mac (native messaging), en dat kan de browser van Nook niet doorgeven.",
+        "browser.extensions.needsHelper.apple": "Deze extensie heeft het iCloud-wachtwoorden-hulpprogramma van Apple nodig, en macOS laat dat alleen door Chrome, Edge en Firefox starten. Gebruik in plaats daarvan de opgeslagen wachtwoorden van Nook (Instellingen › Browser).",
+        "settings.browser.passkeys": "Passkeys",
+        "settings.browser.passkeys.allow": "Passkeys toestaan…",
+        "settings.browser.passkeys.openSettings": "Open Systeeminstellingen",
+        "settings.browser.passkeys.needsEntitlement": "Deze versie van Nook is niet ondertekend met Apple's browsertoestemming voor passkeys, dus sites bieden een wachtwoord of een code aan.",
+        "settings.browser.passkeys.notAsked": "Log in met passkeys uit de iCloud-sleutelhanger, een telefoon in de buurt of een beveiligingssleutel. macOS vraagt één keer of Nook ze mag gebruiken.",
+        "settings.browser.passkeys.allowed": "Sites kunnen je passkeys gebruiken uit de iCloud-sleutelhanger, een telefoon in de buurt of een beveiligingssleutel.",
+        "settings.browser.passkeys.denied": "macOS laat Nook je passkeys niet gebruiken, dus sites bieden een wachtwoord of een code aan. Je kunt het toestaan in Systeeminstellingen › Privacy en beveiliging."
     ],
     .de: [
         "browser.history.title": "Verlauf",
@@ -347,7 +367,17 @@ let browserMemoryTranslations: [AppLanguage: [String: String]] = [
         "settings.browser.extensions.link": "Link aus dem Chrome Web Store",
         "settings.browser.extensions.openStore": "Chrome Web Store öffnen",
         "settings.browser.extensions.fromFileButton": "Aus einer Datei hinzufügen …",
-        "settings.browser.extensions.pickMessage": "Wähle eine Erweiterung: einen Ordner mit einer manifest.json, eine .zip- oder eine .crx-Datei."
+        "settings.browser.extensions.pickMessage": "Wähle eine Erweiterung: einen Ordner mit einer manifest.json, eine .zip- oder eine .crx-Datei.",
+        "browser.extensions.needsHelper": "%@ funktioniert nicht in Nook",
+        "browser.extensions.needsHelper.detail": "Die Erweiterung muss mit einer App auf deinem Mac sprechen (Native Messaging), und Nooks Browser kann das nicht weitergeben.",
+        "browser.extensions.needsHelper.apple": "Die Erweiterung braucht Apples iCloud-Passwörter-Hilfsprogramm, das macOS nur von Chrome, Edge und Firefox starten lässt. Nutze stattdessen Nooks gespeicherte Passwörter (Einstellungen › Browser).",
+        "settings.browser.passkeys": "Passkeys",
+        "settings.browser.passkeys.allow": "Passkeys erlauben …",
+        "settings.browser.passkeys.openSettings": "Systemeinstellungen öffnen",
+        "settings.browser.passkeys.needsEntitlement": "Diese Version von Nook ist nicht mit Apples Browser-Berechtigung für Passkeys signiert, daher bieten Websites ein Passwort oder einen Code an.",
+        "settings.browser.passkeys.notAsked": "Melde dich mit Passkeys aus dem iCloud-Schlüsselbund, einem Telefon in der Nähe oder einem Sicherheitsschlüssel an. macOS fragt einmal, ob Nook sie verwenden darf.",
+        "settings.browser.passkeys.allowed": "Websites können deine Passkeys aus dem iCloud-Schlüsselbund, einem Telefon in der Nähe oder einem Sicherheitsschlüssel verwenden.",
+        "settings.browser.passkeys.denied": "macOS lässt Nook deine Passkeys nicht verwenden, daher bieten Websites ein Passwort oder einen Code an. Du kannst es in Systemeinstellungen › Datenschutz & Sicherheit erlauben."
     ],
     .fr: [
         "browser.history.title": "Historique",
@@ -462,7 +492,17 @@ let browserMemoryTranslations: [AppLanguage: [String: String]] = [
         "settings.browser.extensions.link": "Lien du Chrome Web Store",
         "settings.browser.extensions.openStore": "Ouvrir le Chrome Web Store",
         "settings.browser.extensions.fromFileButton": "Ajouter depuis un fichier…",
-        "settings.browser.extensions.pickMessage": "Choisissez une extension : un dossier avec un manifest.json, un fichier .zip ou .crx."
+        "settings.browser.extensions.pickMessage": "Choisissez une extension : un dossier avec un manifest.json, un fichier .zip ou .crx.",
+        "browser.extensions.needsHelper": "%@ ne fonctionne pas dans Nook",
+        "browser.extensions.needsHelper.detail": "Cette extension doit communiquer avec une app de votre Mac (messagerie native), et le navigateur de Nook ne peut pas la transmettre.",
+        "browser.extensions.needsHelper.apple": "Cette extension a besoin de l'outil Mots de passe iCloud d'Apple, que macOS ne laisse lancer que par Chrome, Edge et Firefox. Utilisez plutôt les mots de passe enregistrés de Nook (Réglages › Navigateur).",
+        "settings.browser.passkeys": "Clés d'identification",
+        "settings.browser.passkeys.allow": "Autoriser les clés…",
+        "settings.browser.passkeys.openSettings": "Ouvrir Réglages Système",
+        "settings.browser.passkeys.needsEntitlement": "Cette version de Nook n'est pas signée avec l'autorisation de navigateur d'Apple pour les clés d'identification ; les sites proposent donc un mot de passe ou un code.",
+        "settings.browser.passkeys.notAsked": "Connectez-vous avec les clés d'identification du trousseau iCloud, d'un téléphone à proximité ou d'une clé de sécurité. macOS demande une fois si Nook peut les utiliser.",
+        "settings.browser.passkeys.allowed": "Les sites peuvent utiliser vos clés d'identification du trousseau iCloud, d'un téléphone à proximité ou d'une clé de sécurité.",
+        "settings.browser.passkeys.denied": "macOS ne laisse pas Nook utiliser vos clés d'identification ; les sites proposent donc un mot de passe ou un code. Vous pouvez l'autoriser dans Réglages Système › Confidentialité et sécurité."
     ],
     .es: [
         "browser.history.title": "Historial",
@@ -577,6 +617,16 @@ let browserMemoryTranslations: [AppLanguage: [String: String]] = [
         "settings.browser.extensions.link": "Enlace de la Chrome Web Store",
         "settings.browser.extensions.openStore": "Abrir la Chrome Web Store",
         "settings.browser.extensions.fromFileButton": "Añadir desde un archivo…",
-        "settings.browser.extensions.pickMessage": "Elige una extensión: una carpeta con un manifest.json, un archivo .zip o .crx."
+        "settings.browser.extensions.pickMessage": "Elige una extensión: una carpeta con un manifest.json, un archivo .zip o .crx.",
+        "browser.extensions.needsHelper": "%@ no funciona en Nook",
+        "browser.extensions.needsHelper.detail": "Esta extensión necesita hablar con una app de tu Mac (mensajería nativa), y el navegador de Nook no puede transmitirlo.",
+        "browser.extensions.needsHelper.apple": "Esta extensión necesita el asistente de Contraseñas de iCloud de Apple, que macOS solo deja abrir a Chrome, Edge y Firefox. Usa en su lugar las contraseñas guardadas de Nook (Ajustes › Navegador).",
+        "settings.browser.passkeys": "Llaves de acceso",
+        "settings.browser.passkeys.allow": "Permitir llaves de acceso…",
+        "settings.browser.passkeys.openSettings": "Abrir Ajustes del Sistema",
+        "settings.browser.passkeys.needsEntitlement": "Esta versión de Nook no está firmada con el permiso de navegador de Apple para llaves de acceso, así que los sitios ofrecen una contraseña o un código.",
+        "settings.browser.passkeys.notAsked": "Inicia sesión con llaves de acceso del llavero de iCloud, un teléfono cercano o una llave de seguridad. macOS pregunta una vez si Nook puede usarlas.",
+        "settings.browser.passkeys.allowed": "Los sitios pueden usar tus llaves de acceso del llavero de iCloud, un teléfono cercano o una llave de seguridad.",
+        "settings.browser.passkeys.denied": "macOS no deja que Nook use tus llaves de acceso, así que los sitios ofrecen una contraseña o un código. Puedes permitirlo en Ajustes del Sistema › Privacidad y seguridad."
     ]
 ]

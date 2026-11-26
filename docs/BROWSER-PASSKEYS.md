@@ -14,6 +14,10 @@ that itself once the entitlement is present, so Nook needs no bridge.
 - **Signed with the entitlement:** WebKit handles WebAuthn like Safari does: passkeys from iCloud Keychain, a phone
   nearby (over Bluetooth or a QR code) and security keys. Nook checks the entitlement at launch
   (`BrowserStore.hasPasskeyEntitlement`).
+- **macOS's permission:** on such a build macOS also asks you once whether Nook may use your passkeys. Nook asks
+  the first time its browser opens; Settings › Browser › Passkeys shows the answer, asks again while it is open, and
+  links to System Settings › Privacy & Security after a no (`BrowserPasskeys`). After a no Nook hides passkeys from
+  pages, as without the entitlement.
 - **Without it (default):** Nook hides passkeys from pages, so sites offer a password, a code or the phone prompt
   instead of the Bluetooth dead end. The **Open in your own browser** button hands the page to the default browser for
   anything that still needs one.
@@ -32,6 +36,16 @@ that itself once the entitlement is present, so Nook needs no bridge.
 
 3. Run `xcodegen` in `apps/macos` and build with that team's signing identity. Builds signed ad hoc or by a team
    without the grant fail to sign with this key, so leave it out for those.
+
+## The iCloud Passwords extension
+
+Apple's iCloud Passwords extension from the Chrome Web Store loads in Nook's browser, but it cannot work there. All it
+shows comes from Apple's `PasswordManagerBrowserExtensionHelper`, which it reaches through native messaging
+(`runtime.connectNative("com.apple.passwordmanager")`). That helper carries a launch constraint: macOS kills it unless
+Chrome, Edge or Firefox started it. Nook's browser does not pass native messaging on to apps on the Mac at all, so
+an extension that asks for one gets an error, and Nook explains this when you click its button and in Settings ›
+Browser › Extensions (`BrowserExtensions.needsHelper`). Nook's own saved passwords and passkeys are the way to sign
+in instead.
 
 ## Default browser, imported sign-ins and session links
 

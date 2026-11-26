@@ -466,7 +466,11 @@ final class BrowserPage: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         configuration.userContentController.addScriptMessageHandler(passwords, contentWorld: .defaultClient,
                                                                     name: BrowserPasswordScript.handlerName)
         BrowserExtensions.shared.configure(configuration)
-        if !BrowserStore.hasPasskeyEntitlement {
+        // Passkeys only where they can work: a build with Apple's browser entitlement whose passkeys macOS did not
+        // refuse. On such a build macOS asks once, the first time the browser opens, whether Nook may use them.
+        if BrowserPasskeys.usable {
+            BrowserPasskeys.shared.ask()
+        } else {
             configuration.userContentController.addUserScript(
                 WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
