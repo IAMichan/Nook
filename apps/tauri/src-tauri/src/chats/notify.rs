@@ -166,6 +166,10 @@ pub fn arrived(handle: &AppHandle, before: &ChatInbox, now: &ChatInbox) {
             is_group: thread.is_group(),
             id: newest.id.clone(),
         });
+        // A snoozed chat stays quiet until its time is up; notice history already recorded the message.
+        if super::follow_up::is_snoozed(handle, &key) {
+            continue;
+        }
         // A question or a mention never counts as urgent here (`ChatNoticePriority`: priority only passes a pacer, it
         // never bypasses a user rule like quiet hours, quiet mode, or an app switched off).
         match style(handle, &thread.app, false) {

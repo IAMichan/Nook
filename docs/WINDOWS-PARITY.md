@@ -712,8 +712,8 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **CH-39** Leave scam and phishing chats out of owed replies and reply suggestions (scoring itself is BR-08) · S
 
-- [ ] **CH-40** Snooze a chat · S
-  - Done in part: snoozing a chat out of what you owe, with its wake-up when the time is up, is in Rust (`FollowUps::snooze`, `chat_snooze`; the follow-up tick lets it go). Open: the Mac offers it only in `ChatFollowUpView` (with the Settings › Sessions snooze presets), which no Mac screen places yet; Windows adds the menu when the Mac shows it.
+- [x] **CH-40** Snooze a chat · S
+  - Done: snoozing a chat out of owed replies and arrival notices (`FollowUps::snooze`, `chat_snooze`, `chat_snoozes`, quiet arrival suppression in `chats/notify.rs` and `connectors/mod.rs`), user-configured snooze presets in every chat menu (`ChatRow`, `ChatDetail`, `ChatInfo`), Today owed-chat quick snooze (`lib/inbox-sources.ts`), row badge, and detail banner with one-click "Bring it back now".
 
 - [x] **CH-41** Scheduled send (`ChatScheduledSend`) · M
   - Done: scheduled messages as on the Mac (`ChatScheduledSend`, `ChatFollowUpTick`): kept in `chat-follow-ups.json`, sent by the follow-up tick when due through the same send as one by hand, and one that comes more than two hours late (Nook was off) or whose chat is gone is not sent by itself but comes up for your OK (`chat-scheduled-confirm`); commands `chat_schedule`, `chat_scheduled`, `chat_schedule_cancel`. The Mac has no place in its UI to schedule one yet (its strings exist, no view uses them), so Windows has none either until it does.

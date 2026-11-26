@@ -26,7 +26,7 @@
   import ChatPeople from "./chats/ChatPeople.svelte";
   import ChatRow from "./chats/ChatRow.svelte";
   import ChatsSidebar, { type ChatsMode, type SidebarApp } from "./chats/ChatsSidebar.svelte";
-  import { pins } from "./chats/chat-actions.svelte";
+  import { pins, snoozes } from "./chats/chat-actions.svelte";
   import GitHubPanel from "./connectors/GitHubPanel.svelte";
 
   let { onnook }: { onnook: (nookId: string) => void } = $props();
@@ -52,7 +52,12 @@
 
   async function load() {
     try {
-      const [o, w, i] = await Promise.all([connectorsApi.overview(), connectorsApi.whatsapp().catch(() => null), chatsApi.list().catch(() => [])]);
+      const [o, w, i] = await Promise.all([
+        connectorsApi.overview(),
+        connectorsApi.whatsapp().catch(() => null),
+        chatsApi.list().catch(() => []),
+        snoozes.refresh(),
+      ]);
       overview = o;
       wa = w;
       inbox = i;
@@ -78,10 +83,9 @@
       typingByKey = { ...typingByKey, [e.payload.key]: e.payload.typing ?? [] };
     });
     const timer = setInterval(load, 30_000);
-    let day = new Date().toDateString();
-    // A new day: the groups ("Today", "Yesterday") and the rows' times move on with it.
+    // Keep relative day groups and expired snooze indicators fresh every minute.
     const clock = setInterval(() => {
-      if (new Date().toDateString() !== day) { day = new Date().toDateString(); now = new Date(); }
+      now = new Date();
     }, 60_000);
     return () => {
       a.then((f) => f());

@@ -514,6 +514,10 @@ export const chatsApi = {
   linkPreview: (url: string) => invoke<{ title: string | null; image: string | null; video: boolean } | null>("chat_link_preview", { url }),
   /** The chats you owe a reply, every app at once, questions first (`chats::follow_up::chat_owed`). */
   owed: (limit = 3) => invoke<OwedTurn[]>("chat_owed", { limit }),
+  /** Snoozes a chat until `until` (ms since epoch), or `null` to bring it back now (`chats::follow_up::chat_snooze`). */
+  snooze: (key: string, until: number | null) => invoke<void>("chat_snooze", { key, until }),
+  /** Active snoozed chats as `{ [chatKey]: untilMs }` (`chats::follow_up::chat_snoozes`). */
+  snoozes: () => invoke<Record<string, number>>("chat_snoozes"),
 };
 
 /** A chat whose newest message is someone else's and waits on your answer (`nook_core::chats::follow_up::Turn`). */

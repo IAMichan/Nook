@@ -47,7 +47,19 @@
   import DropdownRow from "../../components/ui/DropdownRow.svelte";
   import Dropdown from "../../components/ui/Dropdown.svelte";
   import DropdownTileGrid from "../../components/ui/DropdownTileGrid.svelte";
-  import { chatMenu, invokeOrFallback, isChatArchived, isChatMuted, isChatPinned, markReadInApp, markReadInNook, openChatSettings } from "./chat-actions.svelte";
+  import {
+    chatMenu,
+    chatSnoozedUntil,
+    formatSnoozeUntil,
+    invokeOrFallback,
+    isChatArchived,
+    isChatMuted,
+    isChatPinned,
+    markReadInApp,
+    markReadInNook,
+    openChatSettings,
+    unsnoozeChat,
+  } from "./chat-actions.svelte";
 
   let { entry, targets = [], onclose, onnook, onopenchat }: {
     entry: ChatEntry;
@@ -743,6 +755,7 @@
     window.addEventListener("keydown", esc, true);
     return () => window.removeEventListener("keydown", esc, true);
   });
+  const snoozedUntil = $derived(chatSnoozedUntil(entry));
 </script>
 
 <div class="detail">
@@ -759,6 +772,10 @@
           {#if isGroup}
             <span class="dot" aria-hidden="true">·</span>
             <span title={people.join(", ")}>{people.length ? tr("{n} leden", "{n} members", { n: people.length }) : tr("Groep", "Group")}</span>
+          {/if}
+          {#if snoozedUntil !== null}
+            <span class="dot" aria-hidden="true">·</span>
+            <span class="status-mark" title={tr("Gesnoozed tot {time}", "Snoozed until {time}", { time: formatSnoozeUntil(snoozedUntil) })}><Ico name="alarm-clock" size={11} stroke={2.4} /></span>
           {/if}
           {#if isChatPinned(entry)}
             <span class="dot" aria-hidden="true">·</span>
@@ -787,6 +804,14 @@
     <IconButton title={tr("Open {app}", "Open {app}", { app })} size={24} onclick={() => activeCall.openApp(entry.app)}><Ico name="external-link" size={14} /></IconButton>
     <IconButton title={tr("Meer acties", "More actions")} size={24} onclick={(e) => (menuAnchor = (e.currentTarget as HTMLElement).getBoundingClientRect())}><Ico name="ellipsis" size={14} stroke={2.4} /></IconButton>
   </header>
+
+  {#if snoozedUntil !== null}
+    <div class="snooze-banner">
+      <Ico name="alarm-clock" size={13} stroke={2.2} />
+      <span>{tr("Gesnoozed tot {time}", "Snoozed until {time}", { time: formatSnoozeUntil(snoozedUntil) })}</span>
+      <button type="button" class="snooze-undo" onclick={() => unsnoozeChat(entry)}>{tr("Nu terughalen", "Bring it back now")}</button>
+    </div>
+  {/if}
 
   <div class="transcript" bind:this={scroller} onscroll={scrolled}>
     <!-- The messages sit at the bottom, as a chat app's do; the room above them stays empty. -->
@@ -1178,6 +1203,10 @@
   .status-mark { display: inline-flex; align-items: center; color: var(--text3); }
   .typing-head { color: var(--mint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { flex: 1; }
+  .snooze-banner { flex: none; display: flex; align-items: center; gap: var(--space-8); padding: var(--space-6) var(--space-12); border-bottom: 1px solid var(--hairline); background: var(--surface); font: var(--text-detail); color: var(--text2); }
+  .snooze-banner span { flex: 1; min-width: 0; }
+  .snooze-undo { flex: none; padding: var(--space-2) var(--space-8); border: 1px solid var(--separator); border-radius: var(--radius-control); background: transparent; color: var(--paper); font: var(--text-caption); font-weight: 600; }
+  .snooze-undo:hover:not(:disabled) { background: var(--row-hover); }
 
   .transcript { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: var(--space-8) var(--space-4); }
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-6); padding-top: var(--space-32); text-align: center; }

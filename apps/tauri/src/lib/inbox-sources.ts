@@ -1,6 +1,7 @@
 // What each Nook feature puts in Home's inbox. Every provider translates its feature's own data (the same calls the
 // feature's view makes) into `InboxItem`s and handles their actions; the inbox and Home know none of them by name.
 import { invoke } from "@tauri-apps/api/core";
+import { loadOptions, snoozeMenu } from "./snooze-options";
 import { listen } from "@tauri-apps/api/event";
 import { calendarBirthdays, type DayEvent } from "./birthdays";
 import { api, events } from "./api";
@@ -214,10 +215,23 @@ const owed: InboxProvider = {
       title: tr("{name} wacht op je antwoord", "{name} is waiting for your reply", { name: t.name }),
       detail: [appName(t.app), t.date ? relativeTime(t.date) : ""].filter(Boolean).join(" · "),
       at: t.date ?? new Date().toISOString(),
-      actions: [{ id: "reply", label: tr("Antwoorden", "Reply") }],
+      actions: [
+        { id: "reply", label: tr("Antwoorden", "Reply") },
+        { id: "snooze", label: tr("Later", "Snooze") },
+      ],
     }));
   },
-  act: (item) => (item.ref ? { kind: "chat", key: item.ref } : undefined),
+  async act(item, action) {
+    if (!item.ref) return;
+    if (action === "snooze") {
+      const now = new Date();
+      const first = snoozeMenu(loadOptions(), now)[0];
+      const until = first ? first.end.getTime() : now.getTime() + 60 * 60_000;
+      await chatsApi.snooze(item.ref, until);
+      return;
+    }
+    return { kind: "chat", key: item.ref };
+  },
   watch: (changed) => unlisten(connectorEvents.onChats(changed)),
 };
 

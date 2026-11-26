@@ -2,7 +2,7 @@
 //! scheduled messages, and the tick that settles them with the inbox once a minute, reminds you of a wait whose time is
 //! up and sends a scheduled message when it is due (one that comes too late waits for your OK).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
@@ -12,6 +12,16 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::connectors::Connectors;
 
 pub struct FollowUpState(pub Arc<FollowUpStore>);
+
+/// Whether `key` is currently snoozed (`ChatFollowUpStore.shared.follow.isSnoozed` on the Mac).
+pub fn is_snoozed(app: &AppHandle, key: &str) -> bool {
+    app.try_state::<FollowUpState>().is_some_and(|f| f.0.read(|state| state.is_snoozed(key, Utc::now())))
+}
+
+/// Active snoozed chats as `chat_key -> until_millis` (only those still in the future at `now`).
+pub fn active_snoozes(store: &FollowUpStore, now: DateTime<Utc>) -> HashMap<String, i64> {
+    store.read(|f| f.snoozed.iter().filter(|(_, until)| **until > now).map(|(k, until)| (k.clone(), until.timestamp_millis())).collect())
+}
 
 /// Called once from `connectors::setup`: the store, and the tick.
 pub fn setup(app: &AppHandle) {
@@ -30,7 +40,11 @@ async fn tick(app: &AppHandle, store: &FollowUpStore) {
     let Some(c) = app.try_state::<Connectors>() else { return };
     let now = Utc::now();
     let turns = c.env.chats.read(|inbox| follow_up::turns(inbox, now));
+    let had_snoozes = store.read(|f| f.snoozed.len());
     store.change(|f| f.settle(&turns, now));
+    if store.read(|f| f.snoozed.len()) != had_snoozes {
+        let _ = app.emit("chats-changed", ());
+    }
     let chats: HashSet<String> = turns.iter().map(|t| t.chat.clone()).collect();
     let plan = store.read(|f| f.plan(&chats, now));
     for chat in &plan.reminders {
@@ -93,13 +107,20 @@ pub fn chat_follow_up_wait(f: State<'_, FollowUpState>, key: String, waiting: bo
     });
 }
 
-/// Snoozes a chat out of what you owe until `until` (milliseconds since 1970), or (`None`) brings it back.
+/// Snoozes a chat out of what you owe and arrival notices until `until` (milliseconds since 1970), or (`None`) brings it back.
 #[tauri::command]
-pub fn chat_snooze(f: State<'_, FollowUpState>, key: String, until: Option<i64>) {
+pub fn chat_snooze(app: AppHandle, f: State<'_, FollowUpState>, key: String, until: Option<i64>) {
     f.0.change(|f| match until.and_then(DateTime::from_timestamp_millis) {
         Some(until) => f.snooze(&key, until),
         None => f.unsnooze(&key),
     });
+    let _ = app.emit("chats-changed", ());
+}
+
+/// Active chat snoozes (`chat_key -> until_millis`) so the Chats list and detail header can display and cancel them.
+#[tauri::command]
+pub fn chat_snoozes(f: State<'_, FollowUpState>) -> HashMap<String, i64> {
+    active_snoozes(&f.0, Utc::now())
 }
 
 /// Schedules a message to go at `at` (milliseconds since 1970); its id, to cancel it.
@@ -123,4 +144,30 @@ pub fn chat_scheduled(f: State<'_, FollowUpState>, key: String) -> Vec<Scheduled
 #[tauri::command]
 pub fn chat_schedule_cancel(f: State<'_, FollowUpState>, id: String) {
     f.0.change(|f| f.cancel_scheduled(&id));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_snoozes_filters_expired_and_supports_unsnooze() {
+        let store = FollowUpStore::memory();
+        let now = DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
+        let future = now + Duration::hours(2);
+        let past = now - Duration::minutes(5);
+
+        store.change(|f| {
+            f.snooze("whatsapp#alice", future);
+            f.snooze("telegram#bob", past);
+        });
+
+        let active = active_snoozes(&store, now);
+        assert_eq!(active.len(), 1);
+        assert_eq!(active.get("whatsapp#alice"), Some(&future.timestamp_millis()));
+        assert!(!active.contains_key("telegram#bob"));
+
+        store.change(|f| f.unsnooze("whatsapp#alice"));
+        assert!(active_snoozes(&store, now).is_empty());
+    }
 }

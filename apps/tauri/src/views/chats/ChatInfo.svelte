@@ -171,9 +171,16 @@
     {/if}
     <div class="card">
       {#each rows as r (r.label)}
-        <button class="row" class:danger={r.destructive} onclick={() => { r.onselect?.(); onclose(); }}>
-          {#if r.icon}<Ico name={r.icon} size={14} />{/if}<span>{r.label}</span>
-        </button>
+        {#if r.onselect}
+          <button class="row" class:danger={r.destructive} onclick={() => { r.onselect?.(); onclose(); }}>
+            {#if r.icon}<Ico name={r.icon} size={14} />{/if}
+            <span>{r.label}{#if r.detail}<em class="row-detail"> · {r.detail}</em>{/if}</span>
+          </button>
+        {:else}
+          <div class="row static">
+            {#if r.icon}<Ico name={r.icon} size={14} />{/if}<span>{r.label}</span>
+          </div>
+        {/if}
       {/each}
       {#if bubbles.length}
         <button class="row" onclick={exportChat}><Ico name="download" size={14} /><span>{tr("Exporteer chat", "Export chat")}</span></button>
@@ -202,8 +209,10 @@
   .member { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-4) var(--space-12); font: var(--text-control); font-weight: 400; color: var(--text-strong); }
   .row { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-8) var(--space-12); border: 0; border-radius: 0; background: transparent; text-align: left; font: var(--text-control); font-weight: 400; color: var(--paper); }
   .row + .row { border-top: 1px solid var(--separator); }
-  .row:hover:not(:disabled) { background: var(--row-hover); border-color: var(--separator); }
+  .row:hover:not(:disabled):not(.static) { background: var(--row-hover); border-color: var(--separator); }
+  .row.static { color: var(--text3); font: var(--text-label); }
   .row.danger { color: var(--coral); }
+  .row-detail { font-style: normal; font: var(--text-detail); color: var(--text3); }
   .text { padding: var(--space-8) var(--space-12); }
   .text p, .bio { margin: 0; font: var(--text-body); color: var(--paper); user-select: text; white-space: pre-wrap; }
   .rules { display: flex; flex-direction: column; gap: var(--space-4); font: var(--text-detail); color: var(--text2); }
