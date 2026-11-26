@@ -11,6 +11,8 @@
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { apply, authors, defaultFilter, isActive, isEmpty, itemId, stateNames, unreadable } from "../../../lib/pulls";
   import { nook } from "../../../lib/state.svelte";
+  import { workspace } from "../../../lib/workspace/store.svelte";
+  import { matchedMentionedPullRequests, prMentionsInEvents } from "../../../lib/workspace/pr-mentions";
   import { ago } from "../time";
   import { tr } from "../../../lib/i18n.svelte";
   import FilterMenu from "./FilterMenu.svelte";
@@ -31,6 +33,11 @@
   const accounts = $derived(pullRequests.accounts);
   const shown = $derived(accounts.map((a) => apply(filter, a)));
   const missing = $derived(unreadable(accounts, watching));
+  const mentioned = $derived.by(() => {
+    if (!session) return [];
+    const events = workspace.timelines[session] ?? [];
+    return matchedMentionedPullRequests(prMentionsInEvents(events), accounts);
+  });
 
   // The last list shows at once; a stale one refreshes in the background, and again every minute while open.
   $effect(() => {
@@ -120,6 +127,32 @@
         {/if}
       {:else}
         <div class="list">
+          {#if mentioned.length}
+            <section class="account">
+              <div class="group">
+                <div class="title faint">{tr("Genoemd in deze sessie ({n})", "Mentioned in this session ({n})", { n: mentioned.length })}</div>
+                {#each mentioned as m (itemId(m.item))}
+                  {@const item = m.item}
+                  <button class="row" title={tr("Bekijk pull request", "View pull request")} onclick={() => (opened = { account: m.accountId, item })}>
+                    <span class="mark">
+                      {#if item.state === "merged"}<span class="merged" title={stateNames.merged}><PullGlyph glyph="merged" size={13} /></span>
+                      {:else if item.state === "closed"}<span class="closed" title={stateNames.closed}><PullGlyph glyph="closed" size={13} /></span>
+                      {:else if item.ci === "passing"}<span class="pass">✓</span>
+                      {:else if item.ci === "failing"}<span class="fail">✕</span>
+                      {:else if item.ci === "pending"}<span class="dot waiting"></span>
+                      {:else}<span class="dot hollow"></span>{/if}
+                    </span>
+                    <span class="text">
+                      <span class="name">{item.title}</span>
+                      <span class="meta faint">{itemId(item)}{#if item.author} · @{item.author}{/if}{#if item.draft} · {tr("concept", "draft")}{/if}</span>
+                    </span>
+                    {#if item.updated}<span class="faint small">{ago(item.updated, now)}</span>{/if}
+                    <span class="chevron faint">›</span>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
           {#each shown.filter(visible) as account (account.id)}
             <section class="account">
               {#if accounts.length > 1}

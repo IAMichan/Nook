@@ -400,7 +400,14 @@ pub(super) async fn watch_pull_request(
                             next.url,
                             diffs.join("\n- ")
                         );
-                        ws.manager.note(run_id, &format!("PR {}#{}: {}", next.repo, next.number, diffs.join(" · ")));
+                        ws.manager.append_event(
+                            run_id,
+                            nook_core::workspace::models::RunEvent::new(
+                                nook_core::workspace::models::EventKind::System,
+                                format!("PR {}#{}: {}", next.repo, next.number, diffs.join(" · ")),
+                            )
+                            .with_tool("prwatch"),
+                        );
                         if run.status.is_active() {
                             ws.manager.enqueue(run_id, &summary);
                         } else {

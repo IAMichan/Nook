@@ -3,7 +3,7 @@ import type { EventKind, EventState, RunEvent } from "./api";
 import {
   backgroundCommandOutputFile, backgroundCommandTail, backgroundLaunchNotice, blocks, categoryOf, containers, countLabel,
   currentBackgroundCommands, currentSubagents, duration, firstFailure, group, headline, isBackgroundCommand,
-  isBackgroundNotice, isSubagentLaunch, listBackgroundCommands, listSubagents, live, nextMatch, orderedBackgroundCommands,
+  isBackgroundNotice, isSubagentLaunch, lastTurn, listBackgroundCommands, listSubagents, live, nextMatch, orderedBackgroundCommands,
   parts, planFileName, planPreview, planTitle, previousMatch, readableName, search, sentence, split, tally, toolLabel,
 } from "./timeline";
 
@@ -325,6 +325,30 @@ describe("Subagents, background commands and wake turns (AG-73)", () => {
     // currentSubagents and currentBackgroundCommands include running items from earlier turns
     expect(currentBackgroundCommands(timeline).length).toBe(1);
     expect(currentSubagents(timeline).length).toBe(0);
+  });
+
+  it("starts a new turn for PR news after a finished turn while keeping mid-turn news in place (#1601)", () => {
+    const news = event("system", "PR acme/web#42: CI failed", { tool: "prwatch", at: 300 });
+    const timeline = [
+      ...finishedTurn(),
+      news,
+      event("tool", "Bash · gh pr view", { tool: "Bash", state: "done", at: 305 }),
+      event("tool", "Bash · gh pr checks", { tool: "Bash", state: "done", at: 310 }),
+      event("assistant", "Er hoeft niets aangepast te worden.", { state: "done", at: 320 }),
+      event("result", "20s", { state: "done", at: 321 }),
+    ];
+
+    expect(split(timeline).length).toBe(2);
+    expect(lastTurn(timeline)[0]?.id).toBe(news.id);
+
+    const visibleAnswers = blocks(timeline, false)
+      .filter((b): b is Extract<ReturnType<typeof blocks>[number], { type: "event" }> => b.type === "event" && b.event.kind === "assistant")
+      .map((b) => b.event.text);
+    expect(visibleAnswers).toEqual(["Opgelost.", "Er hoeft niets aangepast te worden."]);
+
+    // News arriving before the turn has finished stays inside that running turn.
+    const running = [...finishedTurn().slice(0, -2), news];
+    expect(split(running).length).toBe(1);
   });
 });
 

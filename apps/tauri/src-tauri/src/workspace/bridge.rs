@@ -923,18 +923,26 @@ async fn pull_request_create(
     if !via_connector {
         notes.push("Er is geen koppeling met deze host: Nook opent daarna de pagina in je browser om af te ronden.".into());
     }
-    let allowed = ws
-        .bridge
-        .ask(
-            app,
-            caller,
-            BridgeTool::PullRequestCreate,
-            format!("{} wil een pull request openen", caller.agent),
-            detail,
-            notes.join(" "),
-            &context.connection,
-        )
-        .await;
+    let user_asked = run.is_some_and(|id| {
+        let events = ws.manager.timeline(id);
+        let delegated = nook_core::workspace::pr_links::is_delegated_timeline(&events);
+        nook_core::workspace::pr_links::asked_in_events(&events, delegated)
+    });
+    let allowed = if user_asked {
+        true
+    } else {
+        ws.bridge
+            .ask(
+                app,
+                caller,
+                BridgeTool::PullRequestCreate,
+                format!("{} wil een pull request openen", caller.agent),
+                detail,
+                notes.join(" "),
+                &context.connection,
+            )
+            .await
+    };
     let summary = format!("{} {branch} → {base}", repo.display_name());
     if !allowed {
         audit(app, BridgeTool::PullRequestCreate, caller, &summary, "niet toegestaan");
