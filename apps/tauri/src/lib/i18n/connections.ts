@@ -425,4 +425,9 @@ export const table: Table = {
   "{n} of {total} sessions with figures": { de: "{n} von {total} Sitzungen mit Zahlen", fr: "{n} sessions sur {total} avec des chiffres", es: "{n} de {total} sesiones con cifras" },
   "{n} setup(s) seen once.": { de: "{n} Setup(s) einmal gesehen.", fr: "{n} setup(s) vu(s) une fois.", es: "{n} setup(s) visto(s) una vez." },
   "▶ Play": { de: "▶ Abspielen", fr: "▶ Lire", es: "▶ Reproducir" },
+  "Check": { de: "Prüfen", fr: "Vérifier", es: "Comprobar" },
+  "Enter a command or address in step 2 first.": { de: "Gib zuerst einen Befehl oder eine Adresse in Schritt 2 ein.", fr: "Saisis d'abord une commande ou une adresse à l'étape 2.", es: "Introduce primero un comando o una dirección en el paso 2." },
+  "Ready to add": { de: "Bereit zum Hinzufügen", fr: "Prêt à ajouter", es: "Listo para añadir" },
+  "Ready to add. Nook starts and checks the server once you click Add.": { de: "Bereit zum Hinzufügen. Nook startet und prüft den Server, sobald du auf Hinzufügen klickst.", fr: "Prêt à ajouter. Nook démarre et vérifie le serveur dès que tu cliques sur Ajouter.", es: "Listo para añadir. Nook inicia y comprueba el servidor en cuanto haces clic en Añadir." },
+  "Sign in in step 1 first.": { de: "Melde dich zuerst in Schritt 1 an.", fr: "Connecte-toi d'abord à l'étape 1.", es: "Inicia sesión primero en el paso 1." },
 };

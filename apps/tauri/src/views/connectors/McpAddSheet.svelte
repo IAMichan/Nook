@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  // Kant-en-klare MCP-servers voor de catalogus van Accounts & koppelingen.
+  // Ready-made MCP servers for the Accounts & connections catalog.
   export interface Preset {
     id: string;
     name: string;
@@ -18,7 +18,6 @@
   import { tr } from "../../lib/i18n.svelte";
 
   // Names and details are getters, so they follow the interface language when read.
-  // Geen geheugenserver hier: geheugen zit in Nook zelf (Instellingen › Geheugen), zonder Node of npx.
   export const presets: Preset[] = [
     { id: "filesystem", get name() { return tr("Bestanden & mappen", "Files & folders"); }, get detail() { return tr("Laat Nook documenten en mappen op deze computer direct doorzoeken en lezen.", "Let Nook search and read documents and folders on this computer directly."); }, domain: null, command: "npx -y @modelcontextprotocol/server-filesystem ~/Desktop ~/Documents ~/Downloads", env: [], help: null, category: "local" },
     { id: "github", name: "GitHub MCP", get detail() { return tr("Beheer repositories, issues en commits via de officiële MCP-server.", "Manage repositories, issues and commits through the official MCP server."); }, domain: "github.com", command: "npx -y @modelcontextprotocol/server-github", env: [{ name: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "GitHub Personal Access Token", placeholder: "ghp_..." }], help: "https://github.com/settings/tokens/new", category: "development" },
@@ -29,12 +28,16 @@
 </script>
 
 <script lang="ts">
-  // Een MCP-server toevoegen: een kant-en-klare, of plak een opdracht (npx, uvx), een Claude Desktop-configuratie of
-  // een https-adres. Tools die alleen lezen gebruikt Nook bij een antwoord; al het andere wordt een actie die pas na
-  // jouw Uitvoeren gebeurt.
+  // Add an MCP server inside the shared `SetupSheet` with numbered `SetupStep`s ending in `SetupCheckStep`.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { untrack } from "svelte";
   import { connectorsApi, type Caps } from "../../lib/connectors";
+  import Ico from "../../components/ui/Ico.svelte";
+  import SetupCheckStep from "../../components/ui/SetupCheckStep.svelte";
+  import SetupSheet from "../../components/ui/SetupSheet.svelte";
+  import SetupStep from "../../components/ui/SetupStep.svelte";
+  import { setupCheck, type SetupCheckState } from "../../components/ui/setup-check";
+  import ServiceIcon from "./ServiceIcon.svelte";
 
   let { preset: initial, caps, onclose, onchange }: { preset: Preset | null; caps: Caps; onclose: () => void; onchange: () => void } = $props();
 
@@ -45,6 +48,21 @@
   let secrets = $state("");
   let envDrafts = $state<Record<string, string>>({});
   let problem = $state("");
+
+  const readyToAdd = $derived(target.trim().length > 0);
+  const checkStepNumber = $derived(preset?.env.length ? 4 : 3);
+  const checkState = $derived<SetupCheckState>(
+    problem
+      ? setupCheck.failed(problem)
+      : readyToAdd
+        ? setupCheck.passed(
+            tr(
+              "Klaar om toe te voegen. Nook start en controleert de server zodra je op Toevoegen klikt.",
+              "Ready to add. Nook starts and checks the server once you click Add.",
+            ),
+          )
+        : setupCheck.idle(),
+  );
 
   async function smartPaste() {
     try {
@@ -77,55 +95,100 @@
   }
 </script>
 
-<div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="sheet" role="dialog" aria-label={tr("MCP-server toevoegen", "Add MCP server")}>
-    <h3>{preset ? tr("{name} toevoegen", "Add {name}", { name: preset.name }) : tr("MCP-server toevoegen", "Add MCP server")}</h3>
-    <p class="muted small">{tr("Volg de eenvoudige stappen om deze koppeling te activeren.", "Follow the simple steps to turn on this connection.")}</p>
-    {#if !preset}
-      <div class="paste">
-        <strong>{tr("Slim plakken", "Smart paste")}</strong>
-        <span class="faint small">{tr("Heb je een opdracht of een configuratie gekopieerd? Klik op Plakken en Nook vult alle velden voor je in.", "Copied a command or a configuration? Click Paste and Nook fills in all the fields for you.")}</span>
-        <button onclick={smartPaste}>{tr("Plakken", "Paste")}</button>
-      </div>
+<SetupSheet
+  title={preset ? tr("{name} toevoegen", "Add {name}", { name: preset.name }) : tr("MCP-server toevoegen", "Add MCP server")}
+  subtitle={tr("Volg de eenvoudige stappen om deze koppeling te activeren.", "Follow the simple steps to turn on this connection.")}
+  {onclose}
+>
+  {#snippet icon()}
+    {#if preset?.domain}
+      <ServiceIcon domain={preset.domain} title={preset.name} size={44} />
+    {:else}
+      <div class="tile" aria-hidden="true"><Ico name="plug" size={20} /></div>
     {/if}
-    <label>1. {tr("Geef de koppeling een herkenbare naam", "Give the connection a recognizable name")}<input bind:value={name} placeholder={tr("Naam", "Name")} /></label>
-    <div class="inline">
-      <label><input type="radio" checked={!remote} onchange={() => (remote = false)} disabled={!caps.stdio} /> {tr("Programma op deze computer", "Program on this computer")}</label>
-      <label><input type="radio" checked={remote} onchange={() => (remote = true)} /> {tr("Adres op internet", "Address on the internet")}</label>
+  {/snippet}
+
+  {#if !preset}
+    <div class="paste">
+      <strong>{tr("Slim plakken", "Smart paste")}</strong>
+      <span class="faint small">{tr("Heb je een opdracht of een configuratie gekopieerd? Klik op Plakken en Nook vult alle velden voor je in.", "Copied a command or a configuration? Click Paste and Nook fills in all the fields for you.")}</span>
+      <button type="button" onclick={smartPaste}>{tr("Plakken", "Paste")}</button>
     </div>
-    <label>2. {remote ? tr("Adres", "Address") : tr("Opdracht", "Command")}<input bind:value={target} placeholder={remote ? "https://…/mcp" : "npx -y @modelcontextprotocol/server-…"} onpaste={(e) => { const t = e.clipboardData?.getData("text") ?? ""; if (t.trim().startsWith("{")) { e.preventDefault(); usePasted(t); } }} /></label>
-    {#if preset?.env.length}
-      <div class="faint small">3. {tr("Voer eventuele sleutels in", "Enter any keys")}</div>
-      {#each preset.env as v (v.name)}
-        <label>{v.label}<input type="password" placeholder={v.placeholder} bind:value={envDrafts[v.name]} /></label>
-      {/each}
-      {#if preset.help}<button class="link" onclick={() => openUrl(preset!.help!)}>{tr("Haal sleutel op", "Get a key")} ↗</button>{/if}
-    {/if}
-    <label>{remote ? tr("Sleutels (headers)", "Keys (headers)") : tr("Sleutels (omgevingsvariabelen)", "Keys (environment variables)")}
+  {/if}
+
+  <SetupStep number={1} title={tr("Geef de koppeling een herkenbare naam", "Give the connection a recognizable name")} done={name.trim().length > 0}>
+    <input class="full" bind:value={name} placeholder={tr("Naam", "Name")} />
+  </SetupStep>
+
+  <SetupStep number={2} title={remote ? tr("Adres", "Address") : tr("Opdracht", "Command")} done={readyToAdd}>
+    <div class="inline">
+      <label class="radio"><input type="radio" checked={!remote} onchange={() => (remote = false)} disabled={!caps.stdio} /> {tr("Programma op deze computer", "Program on this computer")}</label>
+      <label class="radio"><input type="radio" checked={remote} onchange={() => (remote = true)} /> {tr("Adres op internet", "Address on the internet")}</label>
+    </div>
+    <input
+      class="full"
+      bind:value={target}
+      placeholder={remote ? "https://…/mcp" : "npx -y @modelcontextprotocol/server-…"}
+      onpaste={(e) => { const t = e.clipboardData?.getData("text") ?? ""; if (t.trim().startsWith("{")) { e.preventDefault(); usePasted(t); } }}
+    />
+    <label class="field">
+      <span class="faint small">{remote ? tr("Sleutels (headers)", "Keys (headers)") : tr("Sleutels (omgevingsvariabelen)", "Keys (environment variables)")}</span>
       <textarea rows="3" bind:value={secrets} placeholder={remote ? "Authorization: Bearer …" : "GITHUB_TOKEN=ghp_…"}></textarea>
       <span class="faint small">{remote ? tr("Eén per regel: Authorization: Bearer … Ze gaan naar de kluis.", "One per line: Authorization: Bearer … They go to the keychain.") : tr("Eén per regel, zoals in de README: GITHUB_TOKEN=ghp_… Ze gaan naar de kluis.", "One per line, as in the README: GITHUB_TOKEN=ghp_… They go to the keychain.")}</span>
     </label>
-    <p class="warn small">{remote ? tr("Wat Nook aan deze server vraagt, gaat naar dat adres. Acties van de server vragen altijd eerst je goedkeuring.", "What Nook asks this server goes to that address. The server's actions always ask for your approval first.") : tr("Een lokale MCP-server draait met jouw rechten op deze computer. Voeg alleen servers toe die je vertrouwt. Acties van de server vragen altijd eerst je goedkeuring.", "A local MCP server runs with your permissions on this computer. Only add servers you trust. The server's actions always ask for your approval first.")}</p>
-    {#if problem}<p class="err">{problem}</p>{/if}
-    <div class="inline end">
-      <button onclick={onclose}>{tr("Annuleer", "Cancel")}</button>
-      <button class="primary" onclick={add} disabled={!target.trim()}>{tr("Toevoegen", "Add")}</button>
-    </div>
-  </div>
-</div>
+  </SetupStep>
+
+  {#if preset?.env.length}
+    <SetupStep number={3} title={tr("Voer eventuele sleutels in", "Enter any keys")}>
+      {#each preset.env as v (v.name)}
+        <label class="field">
+          <span class="faint small">{v.label}</span>
+          <input type="password" placeholder={v.placeholder} bind:value={envDrafts[v.name]} />
+        </label>
+      {/each}
+      {#if preset.help}
+        <button type="button" class="link" onclick={() => openUrl(preset!.help!)}>{tr("Haal sleutel op", "Get a key")} ↗</button>
+      {/if}
+    </SetupStep>
+  {/if}
+
+  <SetupCheckStep
+    number={checkStepNumber}
+    title={tr("Klaar om toe te voegen", "Ready to add")}
+    detail={tr("Vul eerst een opdracht of adres in bij stap 2.", "Enter a command or address in step 2 first.")}
+    state={checkState}
+  />
+
+  <p class="warn small">{remote ? tr("Wat Nook aan deze server vraagt, gaat naar dat adres. Acties van de server vragen altijd eerst je goedkeuring.", "What Nook asks this server goes to that address. The server's actions always ask for your approval first.") : tr("Een lokale MCP-server draait met jouw rechten op deze computer. Voeg alleen servers toe die je vertrouwt. Acties van de server vragen altijd eerst je goedkeuring.", "A local MCP server runs with your permissions on this computer. Only add servers you trust. The server's actions always ask for your approval first.")}</p>
+
+  {#snippet footer()}
+    <span class="spacer"></span>
+    <button type="button" onclick={onclose}>{tr("Annuleer", "Cancel")}</button>
+    <button type="button" class="primary" onclick={add} disabled={!readyToAdd}>{tr("Toevoegen", "Add")}</button>
+  {/snippet}
+</SetupSheet>
 
 <style>
-  .small { font-size: 11px; }
-  .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; z-index: 50; padding: 16px; }
-  .sheet { background: var(--graphite); border: 1px solid var(--line2); border-radius: 18px; width: min(560px, 100%); max-height: 90vh; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
-  .sheet h3 { margin: 0; }
-  .sheet label { display: flex; flex-direction: column; gap: 4px; }
-  .sheet .inline label { flex-direction: row; align-items: center; gap: 6px; }
-  .paste { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px dashed var(--line2); border-radius: 10px; align-items: flex-start; }
-  textarea { font-family: var(--mono); font-size: 12px; }
+  .tile {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-card);
+    background: var(--smoke);
+    color: var(--paper);
+  }
+  .small { font: var(--text-meta); }
+  .full { width: 100%; }
+  .field { display: flex; flex-direction: column; gap: var(--space-4); width: 100%; }
+  .field input, .field textarea { width: 100%; }
+  .radio { display: inline-flex; align-items: center; gap: var(--space-6); }
+  .paste { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-12); border: 1px dashed var(--line2); border-radius: var(--radius-card); align-items: flex-start; }
+  textarea { font: var(--text-code); resize: vertical; }
   .warn { color: var(--amber); margin: 0; }
-  .end { justify-content: flex-end; }
   .link { background: none; border: none; padding: 0; color: var(--text2); text-align: left; }
-  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .err { color: var(--coral); font-size: 12px; }
+  .link:hover { background: none; color: var(--paper); }
+  .inline { display: flex; gap: var(--space-12); align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
 </style>
