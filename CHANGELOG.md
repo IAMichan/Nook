@@ -23,11 +23,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
 - A session with several pull requests shows the one not merged yet in its badge, also when a newer one already merged, so you can see the session is not done.
 
-## [0.1.3-beta.3] - 2026-11-25
+## [0.1.3] - 2026-11-26
 
 Only internal changes; the release page lists them.
-
-## [0.1.3-beta.2] - 2026-11-24
 
 ### Changed
 
@@ -81,10 +79,6 @@ Only internal changes; the release page lists them.
 
 - Scrolling back through a long agent conversation no longer jumps: rows that scrolled back into view were taken for
   a blank conversation, and the view was pulled back to an earlier row or to the end (and rebuilt) while you read.
-
-## [0.1.3-beta.1] - 2026-11-23
-
-### Fixed
 
 - When an agent changes files in another repository than its session's own, the session panel now shows that
   repository too, with its branch, changes and the commit, push and pull request button, instead of saying there is
@@ -548,9 +542,7 @@ Only internal changes; the release page lists them.
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
-[0.1.3-beta.3]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3-beta.3
-[0.1.3-beta.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3-beta.2
-[0.1.3-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3-beta.1
+[0.1.3]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3
 [0.1.2-beta.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.2
 [0.1.2-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.1
 [0.1.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.1
