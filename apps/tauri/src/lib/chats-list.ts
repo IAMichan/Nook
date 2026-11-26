@@ -326,21 +326,37 @@ export function shows(view: ChatView, e: ChatEntry): boolean {
   return view === "all" || e.read === view;
 }
 
+/** How well a chat's own name answers a search, best first (`ChatsEntry.nameRank`): the name itself (0), a word of it
+ *  that starts with it (1), anywhere in the name (2). Null when only its messages hold it. */
+export function nameRank(e: ChatEntry, query: string): number | null {
+  const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  const needle = fold(query.trim());
+  if (!needle) return null;
+  const name = fold(e.name);
+  if (name === needle) return 0;
+  if (name.startsWith(needle) || name.split(/[^\p{L}\p{N}]+/u).some((w) => w.startsWith(needle))) return 1;
+  if (name.includes(needle)) return 2;
+  return null;
+}
+
 /** What the list shows: the chosen view, app, account and tab, matching the search by name or newest message, newest
- *  first. */
+ *  first; while searching, the chats found by their name on top, best match first. */
 export function shown(all: ChatEntry[], o: { view: ChatView; app: string | null; account?: string | null; kind: ChatListKind; query: string }): ChatEntry[] {
   const needle = o.query.trim().toLowerCase();
+  const rank = (e: ChatEntry) => nameRank(e, o.query) ?? 9;
   return all
     .filter((e) => e.listKind === o.kind && (!o.app || e.app === o.app) && (!o.account || e.account === o.account))
     .filter((e) => (needle ? `${e.name}\n${e.preview}`.toLowerCase().includes(needle) : !e.archived && shows(o.view, e)))
-    .sort((a, b) => (b.last?.getTime() ?? 0) - (a.last?.getTime() ?? 0));
+    .sort((a, b) => (needle ? rank(a) - rank(b) : 0) || (b.last?.getTime() ?? 0) - (a.last?.getTime() ?? 0));
 }
 
-/** The list's groups (`ChatsGroup`): the chats you pinned on top, then by when a chat last moved. */
-export type ChatGroup = "pinned" | "today" | "yesterday" | "week" | "month" | "earlier";
+/** The list's groups (`ChatsGroup`): while searching the chats found by their name, then the chats you pinned, then by
+ *  when a chat last moved. */
+export type ChatGroup = "named" | "pinned" | "today" | "yesterday" | "week" | "month" | "earlier";
 
 export function groupTitle(g: ChatGroup): string {
   switch (g) {
+    case "named": return tr("Chats", "Chats");
     case "pinned": return tr("Vastgezet", "Pinned");
     case "today": return tr("Vandaag", "Today");
     case "yesterday": return tr("Gisteren", "Yesterday");
@@ -364,14 +380,18 @@ export function groupOf(last: Date | null, now: Date): ChatGroup {
   return "earlier";
 }
 
-/** The rows in their groups, in order, pinned ones first; empty groups are left out. */
-export function sections(entries: ChatEntry[], now: Date, pinned: string[] = []): { group: ChatGroup; entries: ChatEntry[] }[] {
+/** The rows in their groups, in order: the ones a search found by their name first, then the pinned ones; empty
+ *  groups are left out. */
+export function sections(entries: ChatEntry[], now: Date, pinned: string[] = [], query = ""): { group: ChatGroup; entries: ChatEntry[] }[] {
   const out: { group: ChatGroup; entries: ChatEntry[] }[] = [];
-  const isPinned = (e: ChatEntry) => !!e.pinned || pinned.includes(e.key);
+  const isNamed = (e: ChatEntry) => nameRank(e, query) !== null;
+  const isPinned = (e: ChatEntry) => !isNamed(e) && (!!e.pinned || pinned.includes(e.key));
+  const named = entries.filter(isNamed);
+  if (named.length) out.push({ group: "named", entries: named });
   const pins = entries.filter(isPinned);
   if (pins.length) out.push({ group: "pinned", entries: pins });
   for (const e of entries) {
-    if (isPinned(e)) continue;
+    if (isNamed(e) || isPinned(e)) continue;
     const g = groupOf(e.last, now);
     const tail = out[out.length - 1];
     if (tail?.group === g) tail.entries.push(e);
