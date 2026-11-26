@@ -434,6 +434,11 @@ final class AgentProcess: @unchecked Sendable {
                     LiveAgentProcesses.shared.untrack(self)
                     self.markFinished()
                     self.onExit?(status, tail)
+                    // Nothing comes after the exit, and the handlers often capture this process or its client: let them go,
+                    // or both stay in memory for as long as Nook runs.
+                    self.onLine = nil
+                    self.onLines = nil
+                    self.onExit = nil
                 }
             }
         })

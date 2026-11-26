@@ -101,6 +101,7 @@ final class KeyCommandCenter: ObservableObject {
     func update(_ id: UUID, view: NSView, enabled: Bool, priority: Int, context: [String: Bool],
                 handlers: [String: () -> Bool]) {
         start()
+        pruneGone()
         var order = registrations[id]?.order ?? 0
         if order == 0 {
             nextOrder += 1
@@ -112,6 +113,15 @@ final class KeyCommandCenter: ObservableObject {
 
     func remove(_ id: UUID) {
         registrations[id] = nil
+    }
+
+    /// Drops the registrations whose view is gone. SwiftUI does not always call `dismantleNSView` (a window or popover
+    /// torn down as a whole), and such a registration kept its handlers, and everything they capture (the rows of a list,
+    /// a composer's session), for as long as Nook ran: 1 271 of them for 21 views on screen after a few hours. Checked on
+    /// every update, which is cheap: the views on screen number a few dozen.
+    private func pruneGone() {
+        guard registrations.values.contains(where: { $0.view == nil }) else { return }
+        registrations = registrations.filter { $0.value.view != nil }
     }
 
     /// True when a handler took the key.

@@ -997,6 +997,14 @@ final class AcpClient: @unchecked Sendable {
             }
             for completion in waiting { completion(.failure(.exited(stderr))) }
             self.onExit?(status, stderr)
+            // Nothing comes after the exit, and the handlers often capture this client (to answer a permission, or to
+            // stop it): let them go, or the client, its process and what they hold stay in memory for good. On the
+            // process's queue, as `handle` is, so no line is being handled meanwhile.
+            self.onMessage = nil
+            self.onExit = nil
+            self.onText = nil
+            self.onBrokenFrame = nil
+            self.onOrphanAnswer = nil
         }
         try process.start()
     }
