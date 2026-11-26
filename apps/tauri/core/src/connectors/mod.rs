@@ -25,18 +25,21 @@ pub mod oauth;
 pub mod openrouter;
 pub mod pull_batch_merge;
 pub mod pulls;
+pub mod rate_budget;
 pub mod store;
 pub mod whatsapp;
 
 #[cfg(test)]
 pub(crate) mod testserver;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use hub::{Connector, ConnectorHub};
+pub use rate_budget::{ForgeRateBudget, ForgeRateWindow};
 pub use store::ConnectorStore;
 
 /// Hoe een koppeling ervoor staat, voor de instellingen.
@@ -320,6 +323,7 @@ pub fn schema(properties: Value) -> Value {
 #[derive(Clone)]
 pub struct Http {
     pub client: reqwest::Client,
+    pub budget: Arc<ForgeRateBudget>,
 }
 
 impl Default for Http {
@@ -336,13 +340,18 @@ impl Http {
             .user_agent("Nook")
             .build()
             .unwrap_or_default();
-        Self { client }
+        Self { client, budget: Arc::new(ForgeRateBudget::new()) }
     }
 
     /// GET of een ander verzoek dat JSON teruggeeft. `headers` bevat meestal de Authorization-header.
     pub async fn json(&self, method: &str, url: &str, headers: &[(&str, String)], body: Option<&Value>, service: &str) -> CResult<Value> {
         let (status, bytes) = self.send(method, url, headers, body, service).await?;
         if !(200..300).contains(&status) {
+            if status == 403 {
+                if let Some(until) = self.budget.paused_until(url, chrono::Utc::now()) {
+                    return Err(ForgeRateBudget::local_refusal(url, until));
+                }
+            }
             return Err(status_error(status, service));
         }
         if bytes.is_empty() {
@@ -364,6 +373,9 @@ impl Http {
         body: Option<&Value>,
         service: &str,
     ) -> CResult<(u16, Vec<u8>)> {
+        if let Some(until) = self.budget.paused_until(url, chrono::Utc::now()) {
+            return Err(ForgeRateBudget::local_refusal(url, until));
+        }
         let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET);
         let mut request = self.client.request(method, url).header("Accept", "application/json");
         for (k, v) in headers {
@@ -374,6 +386,7 @@ impl Http {
         }
         let response = request.send().await.map_err(|e| network_error(e, service))?;
         let status = response.status().as_u16();
+        self.budget.record_reqwest(url, status, response.headers());
         let bytes = response.bytes().await.map_err(|e| network_error(e, service))?.to_vec();
         Ok((status, bytes))
     }

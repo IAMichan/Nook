@@ -936,7 +936,10 @@ impl Connector for GitHub {
     }
 
     fn refresh_interval(&self) -> u64 {
-        180
+        let host = super::ForgeRateBudget::host_of(&api()).unwrap_or_else(|| "api.github.com".to_string());
+        let now = Utc::now();
+        let factor = self.env.http.budget.slowdown(&host, "core", now).max(self.env.http.budget.slowdown(&host, "search", now));
+        (180.0 * factor).round() as u64
     }
 
     async fn refresh(&self) {
@@ -944,6 +947,11 @@ impl Connector for GitHub {
         if !self.env.store.is_on(ID) || available.is_empty() {
             self.snapshots.lock().unwrap_or_else(|e| e.into_inner()).clear();
             *self.status.lock().unwrap_or_else(|e| e.into_inner()) = ConnectorStatus::default();
+            return;
+        }
+        let host = super::ForgeRateBudget::host_of(&api()).unwrap_or_else(|| "api.github.com".to_string());
+        let now = Utc::now();
+        if !self.env.http.budget.allows_background(&host, "core", now) || !self.env.http.budget.allows_background(&host, "search", now) {
             return;
         }
         let mut fresh = HashMap::new();
