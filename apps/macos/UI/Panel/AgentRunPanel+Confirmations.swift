@@ -5,36 +5,63 @@ import Combine
 
 /// The confirmations before going back to an earlier message, editing one, or deleting the session, and an approval.
 extension AgentRunPanel {
+    /// Rewind: back to before a message of yours, with the files and the conversation, only the files, or only the
+    /// conversation, as far as this session can (`WorkspaceManager.rewindScopes`).
     func revertConfirmation(_ target: RunEvent) -> some View {
-        AdaptiveActionRow(spacing: NookTheme.Spacing.md) {
+        let scopes = workspace.rewindScopes(runID, before: target.date)
+        let message = ToolSummary.oneLine(target.text, 60)
+        return AdaptiveActionRow(spacing: NookTheme.Spacing.md) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(tr("ws.revert.confirm"))
+                Text(tr("ws.rewind.confirm"))
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
-                Text(revertError ?? tr(workspace.canRollbackConversation(runID) ? "ws.revert.detailConversation" : "ws.revert.detail",
-                                       ToolSummary.oneLine(target.text, 60)))
+                Text(revertError ?? Self.rewindDetail(scopes, message: message))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(revertError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } actions: {
             NookGhostButton(title: tr("button.cancel")) { revertTarget = nil }
-            NookPrimaryButton(title: reverting ? tr("ws.revert.working") : tr("ws.revert.action")) {
-                guard !reverting else { return }
-                reverting = true
-                Task {
-                    do {
-                        try await workspace.revertFiles(runID, before: target.date)
-                        revertTarget = nil
-                    } catch {
-                        revertError = error.localizedDescription
-                    }
-                    reverting = false
+            ForEach(Array(scopes.enumerated()), id: \.element) { index, scope in
+                if index == 0 {
+                    NookPrimaryButton(title: reverting ? tr("ws.revert.working") : Self.rewindTitle(scope)) { rewind(target, scope) }
+                } else {
+                    NookGhostButton(title: Self.rewindTitle(scope)) { rewind(target, scope) }
                 }
             }
         }
         .padding(NookTheme.Spacing.lg)
         .roundedBackground(NookTheme.surface, radius: NookTheme.Radius.panel)
+    }
+
+    private static func rewindTitle(_ scope: RewindScope) -> String {
+        switch scope {
+        case .everything: return tr("ws.rewind.everything")
+        case .files: return tr("ws.rewind.files")
+        case .conversation: return tr("ws.rewind.conversation")
+        }
+    }
+
+    /// What each choice does, for the choices there are.
+    private static func rewindDetail(_ scopes: [RewindScope], message: String) -> String {
+        if scopes.isEmpty { return tr("ws.edit.unavailable") }
+        if scopes == [.files] { return tr("ws.rewind.detailFiles", message) }
+        if scopes == [.conversation] { return tr("ws.rewind.detailConversation", message) }
+        return tr("ws.rewind.detail", message)
+    }
+
+    private func rewind(_ target: RunEvent, _ scope: RewindScope) {
+        guard !reverting else { return }
+        reverting = true
+        Task {
+            do {
+                try await workspace.rewind(runID, before: target.date, scope: scope)
+                revertTarget = nil
+            } catch {
+                revertError = error.localizedDescription
+            }
+            reverting = false
+        }
     }
 
     /// "Edit from here": go back to before the message, keeping the files as they are or putting them back too (only

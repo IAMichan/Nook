@@ -22,6 +22,8 @@ struct EventRow: View {
     var shownFile: String? = nil
     /// "Edit from here" under a message of yours; nil where the session cannot go back to before it.
     var onEdit: (() -> Void)? = nil
+    /// Rewind under a message of yours (files, conversation, or both); nil where the session cannot go back to before it.
+    var onRewind: (() -> Void)? = nil
     /// Opens a command the agent left running in the background in the bar above the composer, where it goes on; nil
     /// where there is no such bar.
     var showBackground: (() -> Void)? = nil
@@ -39,7 +41,8 @@ struct EventRow: View {
         case .user:
             // Each turn starts as its own block, as in the Nook chat and an agent's transcript.
             TranscriptUserMessage(text: event.text, date: event.date, steered: event.steer == .steer,
-                                  promoted: event.steer == .promoted, steerStatus: event.steerStatus, onEdit: onEdit)
+                                  promoted: event.steer == .promoted, steerStatus: event.steerStatus, onEdit: onEdit,
+                                  onRewind: onRewind)
                 .padding(.top, event.steer == nil ? TranscriptStyle.turnGap - NookTheme.Spacing.sm : NookTheme.Spacing.xs)
                 .padding(.bottom, NookTheme.Spacing.xxs)
 
