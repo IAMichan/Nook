@@ -15,14 +15,25 @@
     stacked?: boolean;
     children: Snippet;
   } = $props();
+
+  // The title names the field's own control for screen readers. A wrapping <label> would also forward clicks on the
+  // title to a button in the slot, so the first select, input or textarea without its own name gets aria-labelledby.
+  const titleId = $props.id();
+  let slot: HTMLElement | undefined = $state();
+  $effect(() => {
+    const control = slot?.querySelector<HTMLElement>("select, input, textarea");
+    if (control && !control.hasAttribute("aria-label") && !control.hasAttribute("aria-labelledby")) {
+      control.setAttribute("aria-labelledby", titleId);
+    }
+  });
 </script>
 
 <div class="row setting-field-row" class:stacked>
   <span class="row-copy">
-    <span class="row-title">{title}</span>
+    <span class="row-title" id={titleId}>{title}</span>
     {#if detail}<small class="row-detail">{detail}</small>{/if}
   </span>
-  <div class="field-slot" class:stacked>
+  <div class="field-slot" class:stacked bind:this={slot}>
     {@render children()}
   </div>
 </div>
