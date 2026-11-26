@@ -56,6 +56,7 @@ pub mod source_control;
 pub mod store;
 pub mod tasks;
 pub mod terminal;
+pub mod text_generation;
 pub mod titles;
 pub mod traffic;
 pub mod webhook;

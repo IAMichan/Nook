@@ -195,6 +195,7 @@ export const brainApi = {
   pull: (model: string) => invoke<void>("pull_model", { model }),
   useLocal: (server: string, model: string) => invoke<Settings>("use_local_model", { server, model }),
   test: () => invoke<string>("brain_test"),
+  testTextGenerator: (provider: string, model: string) => invoke<string>("text_generator_test", { provider, model }),
   evaluate: () => invoke<EvalResult[]>("brain_eval"),
 
   mailUpdate: (nookId: string, draft: MailDraft) => invoke<void>("mail_update", { nookId, draft }),

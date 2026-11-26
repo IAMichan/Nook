@@ -440,6 +440,7 @@ pub fn run() {
             commands::brain::pull_model,
             commands::brain::use_local_model,
             commands::brain::brain_test,
+            commands::brain::text_generator_test,
             commands::brain::brain_eval,
             commands::brain::brain_local_eval_questions,
             commands::brain::brain_local_eval_run,

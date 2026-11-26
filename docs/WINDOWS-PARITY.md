@@ -948,7 +948,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-64** Everything `docs/AUTOCOMPLETE.md` lists as not yet ported: typo fixes, terminals, insert modes, screen context, token healing, write-ahead memo, ranking candidates, word alternatives, Suggest-now key, per-website rules, battery behaviour, 30-day chart · L
 
-- [ ] **SV-65** Choosing the generator per kind (CLI or API) with Test (`TextGenerationSettings`; with AG-70) · S
+- [x] **SV-65** Choosing the generator per kind (CLI or API) with Test (`TextGenerationSettings`; with AG-70) · S Done (2026-11-26): `text_generation` routing/API tester in `nook-core`, `text_generator_test` Tauri command, `WorkspaceSettings.textGenerators`, and `TextGeneratorRow.svelte` per-kind CLI/API pickers with model, inline key save, and live Test button in `AgentsWorkspace.svelte`.
 
 ### 6.6 Screen, windows, control
 
