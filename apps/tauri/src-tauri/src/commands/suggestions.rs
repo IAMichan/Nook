@@ -48,6 +48,9 @@ pub struct SuggestRequest {
     /// A suggestion there still waits for the user: no new look meanwhile.
     #[serde(default)]
     pub waiting: bool,
+    /// When the user last dismissed a suggestion there: quiet for a while after.
+    #[serde(default)]
+    pub dismissed: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -95,14 +98,20 @@ pub async fn suggest_actions(app: AppHandle, request: SuggestRequest) -> Res<Opt
         let mut all = lock(&HISTORY);
         let past = all.get_or_insert_with(HashMap::new).entry(request.conversation.clone()).or_default();
         let fresh = rules::new_lines(&request.lines, past.seen.as_deref());
-        // Read up to here either way: the next look starts after these lines.
-        past.seen = request.lines.last().map(Line::key).or(past.seen.take());
-        let mut looks = lock(&LOOKS);
-        looks.retain(|l| (now - *l).num_seconds() < 3600);
-        let pace = rules::Pace { last_look: past.last_look, waiting: request.waiting, looks_this_hour: looks.len() };
-        if fresh.is_empty() || !rules::worth_a_look(&fresh) || !pace.allows(now) {
+        if fresh.is_empty() || !rules::worth_a_look(&fresh, &request.place) {
+            // Nothing that could ask for a step: the next look starts after these lines.
+            past.seen = request.lines.last().map(Line::key).or(past.seen.take());
             return Ok(None);
         }
+        let mut looks = lock(&LOOKS);
+        looks.retain(|l| (now - *l).num_seconds() < 3600);
+        let pace =
+            rules::Pace { last_look: past.last_look, waiting: request.waiting, looks_this_hour: looks.len(), dismissed: request.dismissed };
+        // Not now: these lines stay new, so the next look still reads them.
+        if !pace.allows(now) {
+            return Ok(None);
+        }
+        past.seen = request.lines.last().map(Line::key).or(past.seen.take());
         past.last_look = Some(now);
         looks.push(now);
         fresh.len()
@@ -140,13 +149,15 @@ pub async fn suggest_actions(app: AppHandle, request: SuggestRequest) -> Res<Opt
         .map(|a| SuggestedStep { summary: tools::summarize(&a.tool, &a.input), tool: a.tool, input: a.input })
         .collect();
     let kept = rules::keep(steps, |s| s.tool.clone(), |s| s.summary.clone(), &handled);
+    // Steps the brain does not back with its closing line (or with "NONE") are not shown.
+    let Some(reason) = rules::reason(&plan.text) else { return Ok(None) };
     if kept.is_empty() {
         return Ok(None);
     }
     if let Some(past) = lock(&HISTORY).as_mut().and_then(|h| h.get_mut(&request.conversation)) {
         past.offered.extend(kept.iter().map(|s| s.summary.clone()));
     }
-    Ok(Some(Suggestion { reason: rules::reason(&plan.text), actions: kept }))
+    Ok(Some(Suggestion { reason: Some(reason), actions: kept }))
 }
 
 /// Do it: the steps run one after another, each checked against its tool's fields first, as a plan in Nook Chat does.

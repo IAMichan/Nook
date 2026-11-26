@@ -27,14 +27,12 @@ extension AppModel {
                 return ""
             }
         }
-        guard let plan = box.plan, !plan.actions.isEmpty else { return ActionSuggestionFound() }
+        guard let plan = box.plan, !plan.actions.isEmpty, ChatActionSuggestion.backed(plan.text) else { return ActionSuggestionFound() }
         let steps = zip(plan.actions, planSteps(plan.actions)).map { ChatDraftAction(action: $0.0, step: $0.1) }
         let complete = steps.filter { ChatActionSuggestion.complete(tool: $0.action.tool, input: $0.action.input) }
         let kept = ChatActionSuggestion.keep(complete, tool: { $0.action.tool }, summary: { $0.step.text }, handled: handled)
         let reason = plan.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let shown = reason.isEmpty || reason.uppercased().hasPrefix(ChatActionSuggestion.nothing) ? nil
-            : TextKit.clip(reason, to: 200, wordBoundary: true)
-        return ActionSuggestionFound(actions: kept, reason: kept.isEmpty ? nil : shown)
+        return ActionSuggestionFound(actions: kept, reason: kept.isEmpty ? nil : TextKit.clip(reason, to: 200, wordBoundary: true))
     }
 
     /// A chat card's lines in the notch: the chat the card shows.
@@ -62,7 +60,8 @@ extension AppModel {
         guard let run = workspace.run(runID), run.delegation == nil else { return [] }
         let agent = run.provider.displayName
         return NextPromptSuggestion.messages(workspace.timeline(runID)).suffix(12).map { message in
-            ChatActionSuggestion.Line(speaker: message.role == .user ? tr("chat.you") : agent, text: message.text)
+            ChatActionSuggestion.Line(speaker: message.role == .user ? tr("chat.you") : agent, text: message.text,
+                                      mine: message.role == .user)
         }
     }
 
@@ -80,7 +79,7 @@ extension AppModel {
     }
 
     static func agentActionLines(_ session: AgentSession) -> [ChatActionSuggestion.Line] {
-        [ChatActionSuggestion.Line(speaker: tr("chat.you"), text: session.lastPrompt),
+        [ChatActionSuggestion.Line(speaker: tr("chat.you"), text: session.lastPrompt, mine: true),
          ChatActionSuggestion.Line(speaker: session.name, text: session.lastReply)]
     }
 
@@ -88,7 +87,7 @@ extension AppModel {
     static func nookActionLines(_ messages: [ChatMessage]) -> [ChatActionSuggestion.Line] {
         messages.suffix(12).map { message in
             ChatActionSuggestion.Line(speaker: message.role == .user ? tr("chat.you") : "Nook", text: message.text,
-                                      id: message.id.uuidString)
+                                      id: message.id.uuidString, mine: message.role == .user)
         }
     }
 
@@ -118,9 +117,10 @@ private final class SuggestionPlanBox {
 }
 
 /// The suggested steps of every conversation, shared by every place a conversation shows (the Chats tab and a chat card,
-/// the Agents tab and the session window) so it is asked once and reads the same. Not rationed: a look whenever new
-/// lines say more than a reaction (`ChatActionSuggestion.worthALook`), and a suggestion whenever it clears the bar
-/// (`ChatActionSuggestion.system`, `complete`); `ChatActionSuggestion.Pace` only bounds the cost.
+/// the Agents tab and the session window) so it is asked once and reads the same. A look only when new lines say more
+/// than a reaction (`ChatActionSuggestion.worthALook`) and the pace allows (`ChatActionSuggestion.Pace`: a few minutes
+/// apart per conversation, quiet a while after a dismissal), and a suggestion only when it clears the bar
+/// (`ChatActionSuggestion.system`, `backed`, `complete`).
 @MainActor
 final class ChatActionSuggestions: ObservableObject {
     static let shared = ChatActionSuggestions()
@@ -139,6 +139,7 @@ final class ChatActionSuggestions: ObservableObject {
     private struct History {
         var seen: String?
         var lastLook: Date?
+        var dismissed: Date?
         var offered: [String] = []
     }
 
@@ -189,13 +190,17 @@ final class ChatActionSuggestions: ObservableObject {
         looks.removeAll { now.timeIntervalSince($0) > 3600 }
         var past = history[key] ?? History()
         let fresh = ChatActionSuggestion.newLines(lines, since: past.seen)
-        // Read up to here either way: the next look starts after these lines.
-        past.seen = lines.last?.key ?? past.seen
-        let pace = ChatActionSuggestion.Pace(lastLook: past.lastLook, waiting: shown(key) != nil, looksThisHour: looks.count)
-        guard !fresh.isEmpty, ChatActionSuggestion.worthALook(fresh), pace.allows(now: now) else {
+        guard !fresh.isEmpty, ChatActionSuggestion.worthALook(fresh, place: place) else {
+            // Nothing that could ask for a step: the next look starts after these lines.
+            past.seen = lines.last?.key ?? past.seen
             history[key] = past
             return
         }
+        let pace = ChatActionSuggestion.Pace(lastLook: past.lastLook, waiting: shown(key) != nil, looksThisHour: looks.count,
+                                             dismissed: past.dismissed)
+        // Not now: these lines stay new, so the next look (for a later message) still reads them.
+        guard pace.allows(now: now) else { return }
+        past.seen = lines.last?.key ?? past.seen
         past.lastLook = now
         history[key] = past
         looks.append(now)
@@ -237,6 +242,10 @@ final class ChatActionSuggestions: ObservableObject {
     /// The cross: the steps go without running (they are not offered again), or are put away once done.
     func dismiss(_ conversation: String) {
         guard var state = states[conversation], state.run != .running else { return }
+        // Dismissing a proposal that still waited says this conversation needs no help now: quiet for a while.
+        if state.run == .waiting, !state.actions.isEmpty {
+            history[conversation, default: History()].dismissed = Date()
+        }
         state.actions = []
         state.reason = nil
         state.run = .waiting

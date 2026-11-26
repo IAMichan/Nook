@@ -5,7 +5,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type Place = { kind: "nook" } | { kind: "chat"; app: string; name: string } | { kind: "agent"; name: string; title: string };
-export interface Line { speaker: string; text: string; id: string }
+/// `mine`: the user wrote it (in an agent's session and Nook Chat only those lines can ask for a step).
+export interface Line { speaker: string; text: string; id: string; mine?: boolean }
 export interface SuggestedStep { tool: string; input: unknown; summary: string }
 
 /// The message a suggestion is for: the conversation and its newest message.
@@ -32,6 +33,8 @@ export function outcome(results: string[], many: (n: number) => string): string 
 class ActionSuggestions {
   states = $state<Record<string, SuggestionState>>({});
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** When a suggestion was last dismissed per conversation: the backend stays quiet there for a while (`Pace`). */
+  private dismissed = new Map<string, string>();
 
   /** The steps to show for a conversation now, if any. */
   shown(conversation: string): SuggestionState | null {
@@ -63,7 +66,7 @@ class ActionSuggestions {
     this.states[key].looking = true;
     const waiting = !!this.shown(key);
     const found = await invoke<{ actions: SuggestedStep[]; reason: string | null } | null>("suggest_actions", {
-      request: { conversation: key, place, lines, date: turn.date, waiting },
+      request: { conversation: key, place, lines, date: turn.date, waiting, dismissed: this.dismissed.get(key) ?? null },
     }).catch(() => null);
     const state = this.states[key];
     if (!state || state.turn.message !== turn.message) return;
@@ -92,6 +95,8 @@ class ActionSuggestions {
   dismiss(conversation: string) {
     const state = this.states[conversation];
     if (!state || state.run.kind === "running") return;
+    // Dismissing one that still waited says this conversation needs no help now.
+    if (state.run.kind === "waiting" && state.actions.length) this.dismissed.set(conversation, new Date().toISOString());
     state.actions = [];
     state.reason = null;
     state.run = { kind: "waiting" };

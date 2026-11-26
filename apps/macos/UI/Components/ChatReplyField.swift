@@ -1578,7 +1578,7 @@ extension ChatActionSuggestion {
         bubbles.filter { $0.notice == nil && !$0.deleted }.suffix(30).map { bubble in
             let mine = bubble.fromMe || bubble.local
             return Line(speaker: mine ? tr("chat.you") : (bubble.sender.isEmpty ? contact : bubble.sender), text: bubble.copyText,
-                        id: bubble.id)
+                        id: bubble.id, mine: mine)
         }
     }
 }
