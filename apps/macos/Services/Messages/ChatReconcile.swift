@@ -62,15 +62,28 @@ enum ChatReconcile {
             .map(\.id)
     }
 
-    /// The stored messages a notification brought ("n" and its record) that the page has under the app's own id: the
-    /// same words from the same person within `ChatInbox.sameMessageWindow`. Only the app's copy stays.
+    /// The stored messages a notification brought ("n" and its record) that the page has under the app's own id
+    /// (`isCopy`). Only the app's copy stays.
     static func copies(_ stored: [InboxMessage], of page: [InboxMessage]) -> [String] {
-        stored.filter { notice in
-            isNotice(notice.id) && page.contains { message in
-                !message.text.isEmpty && message.text == notice.text
-                    && abs(message.date.timeIntervalSince(notice.date)) < ChatInbox.sameMessageWindow
-            }
-        }.map(\.id)
+        stored.filter { notice in page.contains { isCopy(notice, of: $0) } }.map(\.id)
+    }
+
+    /// Whether `notice`, a message a notification brought, is the app's own `message`: the same words within
+    /// `ChatInbox.sameMessageWindow`, or, when the app says the message was edited since, the words it had then (which no
+    /// one knows any more) from the person the notification names, at the same moment.
+    static func isCopy(_ notice: InboxMessage, of message: InboxMessage) -> Bool {
+        guard isNotice(notice.id), !isNotice(message.id), !message.isMine, !message.isNotice,
+              abs(message.date.timeIntervalSince(notice.date)) < ChatInbox.sameMessageWindow else { return false }
+        if !message.text.isEmpty, message.text == notice.text { return true }
+        return message.isEdited && !message.isDeleted && sameSender(notice.sender, message.sender)
+    }
+
+    /// A notification names someone shorter than their app does ("Aron" for "Aron Zwaan | Bettr Health"), or not at
+    /// all in a private chat: the same person when one name starts the other.
+    private static func sameSender(_ notice: String, _ app: String) -> Bool {
+        let notice = ChatCapture.unmarked(notice).lowercased(), app = ChatCapture.unmarked(app).lowercased()
+        guard !notice.isEmpty, !app.isEmpty else { return true }
+        return app.hasPrefix(notice) || notice.hasPrefix(app)
     }
 
     /// An id Nook gave a message a notification brought (`ChatCaptureService`: "n" and the notification's record).

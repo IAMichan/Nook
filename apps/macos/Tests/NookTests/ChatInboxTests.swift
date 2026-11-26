@@ -887,6 +887,28 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["back"])
     }
 
+    /// A notification that came before the bridge read the chat, of a message edited since: the app's edited copy
+    /// replaces it, also when the notification names the person shorter. Not someone else's message of that moment.
+    func testAnEditedMessageReplacesTheNotificationsCopyOfItsOldWords() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "teams", chat: "Dev")
+        XCTAssertTrue(inbox.add(ChatNotice(app: "teams", chat: "Dev", sender: "Aron", text: "geen error", date: now), id: "n1"))
+        XCTAssertTrue(inbox.add(ChatNotice(app: "teams", chat: "Dev", sender: "Rutger", text: "klopt", date: now), id: "n2"))
+        var edited = message("teams-1", "geen errors", sender: "Aron Zwaan | Bettr Health")
+        edited.edited = true
+        inbox.merge(BridgedChat(app: "teams", name: "Dev", messages: [edited], unread: nil), now: now)
+        XCTAssertEqual(inbox.threads[key]?.messages.map(\.id).sorted(), ["n2", "teams-1"])
+
+        // Without an edit, the same words: in a chat known by its id the app's copy came in beside it, and replaces it.
+        let byID = ChatInbox.key(app: "teams", id: "19:dev")
+        var known = InboxThread(id: byID, app: "teams", name: "Dev 2")
+        known.messages = [InboxMessage(id: "n3", sender: "Aron", text: "hoi", date: now)]
+        inbox.threads[byID] = known
+        inbox.merge(BridgedChat(app: "teams", name: "Dev 2", messages: [message("teams-2", "hoi", at: 2, sender: "Aron Zwaan")],
+                                unread: nil, chatID: "19:dev"), now: now)
+        XCTAssertEqual(inbox.threads[byID]?.messages.map(\.id), ["teams-2"])
+    }
+
     func testAGoneChatKeepsOutTheLeaveNoticeThatCameWithIt() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "telegram", chat: "Club")

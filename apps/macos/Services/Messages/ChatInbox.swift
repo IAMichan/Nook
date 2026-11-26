@@ -1429,6 +1429,16 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 thread.unread += 1
             }
         }
+        // A notification that came before its bridge did (the bridge was not reading then) brought a copy of a message
+        // the chat now has under its app's id, maybe edited since: only the app's own stays. Only where the app's copy
+        // is in the chat: elsewhere the notification's copy may be the one that stands for it.
+        if thread.messages.contains(where: { ChatReconcile.isNotice($0.id) }) {
+            let brought = Set(messages.map(\.id))
+            let own = thread.messages.filter { brought.contains($0.id) }
+            let copies = Set(thread.messages.filter { notice in own.contains { ChatReconcile.isCopy(notice, of: $0) } }.map(\.id))
+            // What it counted unread stands for the app's copy, which came in no newer than it and was not counted.
+            if !copies.isEmpty { thread.messages.removeAll { copies.contains($0.id) } }
+        }
         // A message that came in after what the chat had is its newest change: the line again, even when the emoji the
         // line showed was dated later by this Mac's clock (it was read before the message, or in the same read).
         if let newest = thread.messages.last, newest.id != before.messages.last?.id,

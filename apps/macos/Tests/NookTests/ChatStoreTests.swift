@@ -184,6 +184,18 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertTrue(all.last?.isDeleted == true)
     }
 
+    func testANotificationsCopyOfAMessageEditedSinceGoes() {
+        let notice = InboxMessage(id: "n5", sender: "Anna", text: "geen error", date: message(2).date)
+        let chat = thread(messages: [message(1), notice, message(3)])
+        XCTAssertTrue(store.apply(from: nil, to: inbox(chat)))
+        var edited = message(2, "geen errors", sender: "Anna de Vries")
+        edited.edited = true
+        let page = ChatReconcile.Page(messages: [message(1), edited], high: message(3).date)
+        XCTAssertEqual(store.reconcile(page, key: chat.id), 1)
+        let all = store.between(chat.id, after: .distantPast, before: .distantFuture)
+        XCTAssertEqual(all.map(\.id), ["m1", "m2", "m3"], "the notification's copy of the old words made way for the app's own")
+    }
+
     /// "Read up to here" (Telegram) gives your stored messages their blue ticks, also those older than what the chat
     /// shows; theirs, yours still going out, a failed one and those after the mark stay as they are.
     func testReadUpToHereReachesYourStoredMessages() {
