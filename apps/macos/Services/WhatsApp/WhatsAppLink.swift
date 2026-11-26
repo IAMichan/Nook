@@ -1591,7 +1591,12 @@ final class WhatsAppLink: ObservableObject {
         markInboxRead(key)
         clearMarkedUnread(key)
         guard let provider, isConnected else { throw NookError(statusLine) }
-        let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
+        var last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
+        // Nook keeps a chat's messages in memory only: after a restart (or for a chat known only from the phone's list)
+        // it has none, and GOWA reads a chat by its newest message. Its stored history names that message.
+        if last == nil, provider.kind == .gowa {
+            last = (try? await fetchHistory(key, limit: 20).messages)?.last { !$0.fromMe }?.id
+        }
         do {
             try await provider.markRead(chat: key, lastIncoming: last)
         } catch let error as WAError {

@@ -60,9 +60,11 @@ extension AppModel {
         switch route {
         case .whatsApp(let key):
             let (link, jid) = WhatsAppAccounts.shared.route(key)
-            // Muting and deleting a chat go through OpenWA; GOWA has no call for either.
+            // Muting and deleting a chat go through OpenWA; GOWA has no call for either. "Mark as read" always goes to the
+            // link, also while it reconnects: it then says why it could not, instead of opening WhatsApp and claiming the
+            // chat was read there.
             return ChatAbilities(send: true, sends: link.sends, reply: true, react: true, edit: link.canEdit, delete: link.canDelete,
-                                 markRead: link.isConnected, markUnread: link.canMarkUnreadInWhatsApp, pin: link.canPin, mute: link.canMuteInWhatsApp, archive: link.canArchive,
+                                 markRead: true, markUnread: link.canMarkUnreadInWhatsApp, pin: link.canPin, mute: link.canMuteInWhatsApp, archive: link.canArchive,
                                  deleteChat: link.canDeleteChat, pinned: link.isPinned(jid), muted: link.isMutedInWhatsApp(jid), vote: link.canVote)
         case .telegram(let id):
             let telegram = capture.telegramBridge
