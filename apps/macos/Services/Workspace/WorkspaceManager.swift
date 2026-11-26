@@ -1015,8 +1015,10 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Puts the worktree's files back to the last snapshot before `date` (a message of yours). Where the agent can, its
-    /// conversation goes back with them (see `rollBackConversation`); otherwise the conversation stays.
-    func revertFiles(_ id: UUID, before date: Date) async throws {
+    /// conversation goes back with them (see `rollBackConversation`); otherwise the conversation stays. With
+    /// `rollingBackConversation` false (Rewind's "Files only") the agent keeps every turn, later snapshots stay so a
+    /// later message can still go back to them, and your next message tells the agent what changed on disk.
+    func revertFiles(_ id: UUID, before date: Date, rollingBackConversation: Bool = true) async throws {
         guard canRevert(id, before: date), let run = run(id), let git = sessionGit(for: run),
               let index = RevertPlan.checkpointIndex(run.checkpoints ?? [], missed: run.missedCheckpoints ?? [], before: date),
               let checkpoint = run.checkpoints?[index] else {
@@ -1027,6 +1029,12 @@ final class WorkspaceManager: ObservableObject {
         restoringFolders.insert(held)
         defer { releaseRestore(held) }
         try await FolderLease.shared.run(folderKey(run), priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }
+        guard rollingBackConversation else {
+            noteFilesRestored(id, before: date)
+            append(id, RunEvent(kind: .system, text: tr("ws.rewind.doneFiles")))
+            refreshGit(id)
+            return
+        }
         let conversation = rollBackConversation(id, to: checkpoint, index: index)
         append(id, RunEvent(kind: .system, text: tr(conversation ? "ws.revert.doneConversation" : "ws.revert.done")))
         refreshGit(id)
@@ -1048,7 +1056,7 @@ final class WorkspaceManager: ObservableObject {
             return false
         }
         let fresh = (fromYou && takeFreshArm(id)) || fresh
-        let text = fromYou ? withMainThreadNote(id, text) : text
+        let text = fromYou ? withRewindNote(id, withMainThreadNote(id, text)) : text
         let waiting = queued[id].map { !$0.isEmpty && !$0.isHeld } ?? false
         let busy = run.status.isActive || processes[id] != nil || checkpointing.contains(id) || waiting
         var cleared = false

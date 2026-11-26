@@ -243,6 +243,7 @@ targets:
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+DiffReview.swift
+      - path: Core/I18n+Rewind.swift
       - path: Core/I18n+AgentMaintenance.swift
       - path: Core/I18n+Skills.swift
       - path: Core/I18n+AccountOptions.swift
@@ -479,6 +480,7 @@ targets:
       - path: Services/Workspace/SessionProjects.swift
       - path: Services/Workspace/AgentAttention.swift
       - path: Services/Workspace/Delegation.swift
+      - path: Services/Workspace/Rewind.swift
       - path: Services/Workspace/ContextHandoff.swift
       - path: Services/Workspace/ComposerCore.swift
       - path: Services/Workspace/ComposerInlineName.swift

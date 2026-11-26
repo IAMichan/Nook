@@ -168,6 +168,8 @@ extension WorkspaceManager {
             run.checkpoints = trimmed.kept
             guard follows else { return }
             run.pendingRollback = ConversationRollback.merge(run.pendingRollback, with: plan)
+            // The agent forgets the turns whose files went back earlier: nothing left to tell it.
+            run.filesRestoredNote = nil
             if case .fresh = plan {
                 run.providerSessionID = nil
                 run.conversation = ConversationLog(provider: run.provider)

@@ -23,6 +23,8 @@ struct TranscriptUserMessage<Attachments: View>: View {
     var steerStatus: RunEvent.SteerStatus? = nil
     /// "Edit from here": goes back to before this message and puts it in the composer again; nil where it cannot.
     var onEdit: (() -> Void)? = nil
+    /// Rewind: goes back to before this message with the files, the conversation, or both; nil where it cannot.
+    var onRewind: (() -> Void)? = nil
     /// Pictures that came with the message as attachments rather than as paths in its text (the Nook chat's).
     @ViewBuilder var attachments: () -> Attachments
     @State private var expanded = false
@@ -72,6 +74,9 @@ struct TranscriptUserMessage<Attachments: View>: View {
                     if let link = PromptLink.build(text: parts.text, project: fileLinkBase.map { ($0 as NSString).lastPathComponent }) {
                         CopyIconButton(tr("agents.message.copyPromptLink"), symbol: "link", copiedLabel: tr("agents.message.promptLinkCopied"),
                                        height: 22, width: 22) { link.absoluteString }
+                    }
+                    if let onRewind {
+                        ToolbarIconButton("arrow.uturn.backward", tr("ws.rewind.menu"), height: 22, width: 22, onRewind)
                     }
                     if let onEdit {
                         ToolbarIconButton("pencil", tr("agents.message.editFromHere"), height: 22, width: 22, onEdit)
@@ -159,8 +164,9 @@ struct TranscriptQuoteCard: View {
 
 extension TranscriptUserMessage where Attachments == EmptyView {
     init(text: String, date: Date? = nil, steered: Bool = false, promoted: Bool = false,
-         steerStatus: RunEvent.SteerStatus? = nil, onEdit: (() -> Void)? = nil) {
-        self.init(text: text, date: date, steered: steered, promoted: promoted, steerStatus: steerStatus, onEdit: onEdit) { EmptyView() }
+         steerStatus: RunEvent.SteerStatus? = nil, onEdit: (() -> Void)? = nil, onRewind: (() -> Void)? = nil) {
+        self.init(text: text, date: date, steered: steered, promoted: promoted, steerStatus: steerStatus, onEdit: onEdit,
+                  onRewind: onRewind) { EmptyView() }
     }
 }
 

@@ -532,6 +532,9 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     /// goes out with the next turn (see `ConversationRollback`).
     var conversation: ConversationLog? = nil
     var pendingRollback: PendingRollback? = nil
+    /// Only the files went back (Rewind's "Files only") while the agent still remembers its turns: told with your next
+    /// message (`RewindPlan.note`), then cleared.
+    var filesRestoredNote: String? = nil
     /// The agent's own conversation this session started from when it could not continue it (see
     /// `carryOverConversation`): taking that conversation over again opens this session, not a second one.
     var carriedOverFrom: String? = nil

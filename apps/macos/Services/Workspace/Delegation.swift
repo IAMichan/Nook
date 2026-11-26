@@ -408,14 +408,7 @@ enum MainThread {
 
     /// The note added to the hidden part of a message, after its references (`ContextRefs.project`).
     static func attach(_ note: String, to text: String) -> String {
-        let record = "<mode id=\"main-thread\">\n" + ContextRefs.escape(note) + "\n</mode>"
-        let open = "\n\n<nook_context>\n", close = "\n</nook_context>"
-        if let start = text.range(of: open), let end = text.range(of: close, range: start.upperBound..<text.endIndex) {
-            var result = text
-            result.insert(contentsOf: "\n" + record, at: end.lowerBound)
-            return result
-        }
-        return text + open + record + close
+        ContextRefs.attachMode("main-thread", note, to: text)
     }
 
     /// Only for an agent that may delegate (Settings › Automation › Tools per agent).

@@ -584,18 +584,21 @@ extension AgentRunPanel {
                 workspace.send(runID, text: tr("ws.plan.implementPrompt") + "\n\n" + kept)
             })
         } else if event.kind == .user {
+            let canRewind = !workspace.rewindScopes(runID, before: event.date).isEmpty
+            let rewind = {
+                revertError = nil
+                editTarget = nil
+                revertTarget = event
+            }
             eventView(event, onEdit: workspace.canEditFromHere(runID, before: event.date) ? {
                 editError = nil
                 revertTarget = nil
                 editTarget = event
-            } : nil)
+            } : nil, onRewind: canRewind ? rewind : nil)
                 .contextMenu {
-                    // "Edit from here": the worktree's files go back to how they were before this message.
-                    Button(tr("ws.revert.menu")) {
-                        revertError = nil
-                        revertTarget = event
-                    }
-                    .disabled(!workspace.canRevert(runID, before: event.date))
+                    // Rewind: back to before this message, with the files, the conversation, or both.
+                    Button(tr("ws.rewind.menu"), action: rewind)
+                        .disabled(!canRewind)
                     // A fork that starts before this message, to try another way.
                     Button(tr("agents.fork.here")) { forkBefore(event) }
                         .disabled(!workspace.canTransfer(runID))
@@ -630,7 +633,7 @@ extension AgentRunPanel {
     }
 
     private func eventView(_ event: RunEvent, final: Bool = true, extras: AnyView? = nil, answerable: Bool = false,
-                           onEdit: (() -> Void)? = nil) -> some View {
+                           onEdit: (() -> Void)? = nil, onRewind: (() -> Void)? = nil) -> some View {
         EventRow(
             event: event,
             final: final,
@@ -656,6 +659,7 @@ extension AgentRunPanel {
             directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
             shownFile: sideLink.shownFile,
             onEdit: onEdit,
+            onRewind: onRewind,
             // In the bar while it is there (this turn's commands, and any still running); else in the side panel.
             showBackground: {
                 if derived.commands.contains(where: { $0.id == event.id }) { barFocus = event.id } else { outputsLink.showSubagents?() }
