@@ -174,8 +174,17 @@ struct CompletionPolicy: Equatable {
         guard before.lazy.filter({ !$0.isWhitespace }).prefix(minimumContext).count >= minimumContext else { return false }
         // Inside a word ("mor|gen"): whatever the model writes would split it.
         if let next = after.first, next.isLetter || next.isNumber, let last = before.last, last.isLetter || last.isNumber { return false }
+        if Self.isNumberEntry(before: before, after: after) { return false }
         if midLine { return true }
         return after.prefix { !$0.isNewline }.allSatisfy { $0.isWhitespace || Self.closing.contains($0) }
+    }
+
+    /// A field that holds only numbers, with the cursor right after a digit: a verification code (often one wide hidden
+    /// input over six boxes, so the narrow-field check does not catch it), a PIN, a phone number or an amount. The model
+    /// cannot know what comes next, and a guess in such a field is only in the way.
+    static func isNumberEntry(before: String, after: String) -> Bool {
+        guard before.last?.isNumber == true else { return false }
+        return !before.contains(where: \.isLetter) && !after.contains(where: \.isLetter)
     }
 }
 

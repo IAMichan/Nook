@@ -207,6 +207,18 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(CompletionPolicy(midLine: true).shouldComplete(before: "Dear Anna", after: " there", hasSelection: false))
     }
 
+    func testPolicySkipsCodesAndNumbers() {
+        let policy = CompletionPolicy(midLine: true)
+        // A verification code, typed into one field or box by box: nothing to guess.
+        XCTAssertFalse(policy.shouldComplete(before: "23", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: "2", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: "482 9", after: "", hasSelection: false))
+        XCTAssertFalse(policy.shouldComplete(before: "+31 6 12", after: "", hasSelection: false))
+        // Numbers inside writing still get suggestions.
+        XCTAssertTrue(policy.shouldComplete(before: "Ik ben er om 10", after: "", hasSelection: false))
+        XCTAssertTrue(policy.shouldComplete(before: "2 ", after: "", hasSelection: false))
+    }
+
     func testPolicyWhileEditingASentence() {
         let policy = CompletionPolicy()
         // Editing before the sentence's period, or inside brackets or quotes: still the end of what is written.
