@@ -10,20 +10,32 @@ pub fn autocomplete_view(state: State<'_, Autocomplete>) -> View {
 }
 
 #[tauri::command]
-pub fn autocomplete_pause(state: State<'_, Autocomplete>, minutes: Option<u64>) -> View {
+pub fn autocomplete_pause(app: AppHandle, state: State<'_, Autocomplete>, minutes: Option<u64>) -> View {
     state.pause(minutes);
+    #[cfg(desktop)]
+    crate::platform::tray_live::refresh(&app);
+    #[cfg(not(desktop))]
+    let _ = app;
     state.view()
 }
 
 #[tauri::command]
-pub fn autocomplete_resume(state: State<'_, Autocomplete>) -> View {
+pub fn autocomplete_resume(app: AppHandle, state: State<'_, Autocomplete>) -> View {
     state.resume();
+    #[cfg(desktop)]
+    crate::platform::tray_live::refresh(&app);
+    #[cfg(not(desktop))]
+    let _ = app;
     state.view()
 }
 
 #[tauri::command]
-pub fn autocomplete_reset_stats(state: State<'_, Autocomplete>) -> View {
+pub fn autocomplete_reset_stats(app: AppHandle, state: State<'_, Autocomplete>) -> View {
     state.reset_stats();
+    #[cfg(desktop)]
+    crate::platform::tray_live::refresh(&app);
+    #[cfg(not(desktop))]
+    let _ = app;
     state.view()
 }
 

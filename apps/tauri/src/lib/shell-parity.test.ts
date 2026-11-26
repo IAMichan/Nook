@@ -144,9 +144,10 @@ describe("tray status lines", async () => {
     expect([t.update, t.updateVersion]).toEqual(["available", "1.2.0"]);
   });
 
-  it("puts a Nook that asks you first", () => {
-    const t = trayLive({ ...base, sessions: [session("waiting")], nooks: [{ id: "n1", title: "Offsite", status: "waiting" }] as never });
+  it("puts a Nook that asks you first and forwards wordsToday", () => {
+    const t = trayLive({ ...base, sessions: [session("waiting")], nooks: [{ id: "n1", title: "Offsite", status: "waiting" }] as never, wordsToday: 42 });
     expect([t.needsYou, t.needsYouRoute]).toEqual(["Offsite", "nook:n1"]);
+    expect(t.wordsToday).toBe(42);
   });
 });
 

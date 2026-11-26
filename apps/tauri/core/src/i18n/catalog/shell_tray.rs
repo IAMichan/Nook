@@ -16,4 +16,6 @@ pub const ROWS: &[Row] = &[
     ("Pause", "Pausieren", "Pause", "Pausa"),
     ("Play", "Abspielen", "Lecture", "Reproducir"),
     ("Next track", "Nächster Titel", "Piste suivante", "Siguiente pista"),
+    ("Pause autocomplete", "Vervollständigung pausieren", "Mettre la complétion en pause", "Pausar autocompletado"),
+    ("Resume autocomplete", "Vervollständigung fortsetzen", "Reprendre la complétion", "Reanudar autocompletado"),
 ];

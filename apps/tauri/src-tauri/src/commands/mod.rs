@@ -78,7 +78,10 @@ pub fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Setti
     let saved = state.update_settings(|s| *s = settings);
     #[cfg(desktop)]
     {
-        if before.app_language != saved.app_language {
+        if before.app_language != saved.app_language
+            || before.autocomplete.enabled != saved.autocomplete.enabled
+            || before.autocomplete.menu_bar_count != saved.autocomplete.menu_bar_count
+        {
             crate::platform::desktop::refresh_tray(&app);
         }
         if before.shortcuts != saved.shortcuts {

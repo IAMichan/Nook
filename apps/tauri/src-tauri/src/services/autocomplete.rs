@@ -170,6 +170,10 @@ impl Autocomplete {
         let _ = self.tx.send(Msg::Settings);
     }
 
+    pub fn words_today(&self) -> u64 {
+        self.stats.lock().unwrap_or_else(|e| e.into_inner()).summary(chrono::Local::now().date_naive()).today.words as u64
+    }
+
     pub fn view(&self) -> View {
         View {
             status: self.status(),
@@ -588,6 +592,10 @@ impl Controller {
         let today = chrono::Local::now().date_naive();
         self.shared().record(|s| s.record_accepted(&rendered, true, Some(&open.app), today));
         self.shared().record_emoji(&chosen.character);
+        #[cfg(desktop)]
+        if self.settings.autocomplete.menu_bar_count {
+            crate::platform::tray_live::refresh(&self.app);
+        }
         let delay = Duration::from_millis(self.settings.autocomplete.delay_milliseconds.clamp(20, 1000));
         self.schedule_read(delay, false, 0);
     }
@@ -630,6 +638,10 @@ impl Controller {
         }
         let today = chrono::Local::now().date_naive();
         self.shared().record(|s| s.record_accepted(&accepted.text, accepted.first, Some(&accepted.app), today));
+        #[cfg(desktop)]
+        if self.settings.autocomplete.menu_bar_count {
+            crate::platform::tray_live::refresh(&self.app);
+        }
         // The ghost goes until the app shows the word; the read puts the rest where the caret is then.
         show_ghost(&self.app, &self.input, None, "");
         self.expected = Some(accepted.anchor.clone());

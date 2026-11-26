@@ -46,6 +46,7 @@ export interface AutocompleteSettings {
   matchSpelling: boolean;
   acceptWord: string;
   acceptAll: string;
+  menuBarCount?: boolean;
 }
 
 export interface AutocompleteStatus {
