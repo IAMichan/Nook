@@ -673,6 +673,10 @@ final class CodexAppServerClient: @unchecked Sendable {
             }
             for completion in waiting { completion(.failure(.exited(stderr))) }
             self.onExit?(status, stderr)
+            // As `AcpClient` does: nothing comes after the exit, and handlers that capture this client would keep it, its
+            // process and what they hold in memory for good. On the process's queue, as `handle` is.
+            self.onMessage = nil
+            self.onExit = nil
         }
         try process.start()
     }
