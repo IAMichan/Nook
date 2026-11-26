@@ -101,6 +101,7 @@ export const SETTINGS_INDEX: readonly (readonly [string, string, SettingsSection
   ["Contextinspecteur", "Context inspector", "instructions"],
   ["Typ minder, in elke app", "Type less, in any app", "autocomplete"],
   ["Zinnen aanvullen terwijl je typt", "Complete sentences as you type", "autocomplete"],
+  ["Woorden van vandaag in de tooltip van het systeemvak", "Words today in the tray tooltip", "autocomplete"],
   ["In de composers van Nook", "In Nook's composers", "autocomplete"],
   ["Acties voorstellen uit gesprekken", "Suggest actions from conversations", "autocomplete"],
   ["Model voor voorstellen", "Model for suggestions", "autocomplete"],

@@ -172,6 +172,13 @@
           </span>
         {/if}
       </div>
+      <label class="row">
+        <span>
+          {tr("Woorden van vandaag in de tooltip van het systeemvak", "Words today in the tray tooltip")}<br />
+          <small class="faint">{tr("Toont in de tooltip van het Nook-icoon hoeveel woorden aanvullen vandaag voor je typte.", "Shows in the Nook tray icon tooltip how many words autocomplete typed for you today.")}</small>
+        </span>
+        <input type="checkbox" role="switch" checked={!!ac.menuBarCount} onchange={(e) => save({ menuBarCount: e.currentTarget.checked })} />
+      </label>
     {/if}
   </div>
   <!-- Nook's composers (`ComposerAutocompleteSection` on the Mac): the steps Nook offers from what a conversation says.

@@ -101,4 +101,6 @@ export const table: Table = {
   "days": { de: "Tage", fr: "jours", es: "días" },
   "hours": { de: "Stunden", fr: "heures", es: "horas" },
   "Stuck": { de: "Hängt fest", fr: "Bloqué", es: "Atascado" },
+  "Words today in the tray tooltip": { de: "Wörter von heute im Infobereich-Tooltip", fr: "Mots du jour dans l’infobulle de la zone de notification", es: "Palabras de hoy en la información de la bandeja" },
+  "Shows in the Nook tray icon tooltip how many words autocomplete typed for you today.": { de: "Zeigt im Tooltip des Nook-Symbols, wie viele Wörter die Vervollständigung heute für dich getippt hat.", fr: "Affiche dans l’infobulle de l’icône Nook combien de mots la complétion a tapés pour vous aujourd’hui.", es: "Muestra en la información del icono de Nook cuántas palabras ha escrito el autocompletado por ti hoy." },
 };

@@ -135,6 +135,8 @@ pub struct AutocompleteSettings {
     /// Accelerator-style names ("Tab", "Shift+Tab", "Alt+Right"); empty turns the key off.
     pub accept_word: String,
     pub accept_all: String,
+    /// Show today's completed word count in the tray tooltip (`menuBarCount` on the Mac).
+    pub menu_bar_count: bool,
 }
 
 impl Default for AutocompleteSettings {
@@ -165,6 +167,7 @@ impl Default for AutocompleteSettings {
             match_spelling: true,
             accept_word: "Tab".into(),
             accept_all: "Shift+Tab".into(),
+            menu_bar_count: false,
         }
     }
 }

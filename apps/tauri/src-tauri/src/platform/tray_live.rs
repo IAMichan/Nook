@@ -148,14 +148,38 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Ok(menu)
 }
 
+/// Label for the tray's Pause / Resume autocomplete item (`AppDelegate.rebuild` on the Mac).
+pub fn autocomplete_menu_label(paused: bool) -> &'static str {
+    if paused {
+        tr("Aanvullen hervatten", "Resume autocomplete")
+    } else {
+        tr("Aanvullen pauzeren", "Pause autocomplete")
+    }
+}
+
+/// Today's completed word count for the tray tooltip: an explicit value from the interface wins, otherwise the live
+/// autocomplete counter when both autocomplete and its tray-count switch are on.
+pub fn words_today_for(enabled: bool, show_count: bool, live_words: u64, override_words: Option<u64>) -> Option<u64> {
+    override_words.or_else(|| (enabled && show_count).then_some(live_words))
+}
+
+fn effective_words_today(app: &AppHandle, override_words: Option<u64>) -> Option<u64> {
+    let settings = app.try_state::<crate::state::AppState>().map(|s| s.settings());
+    let enabled = settings.as_ref().is_some_and(|s| s.autocomplete.enabled);
+    let show_count = settings.as_ref().is_some_and(|s| s.autocomplete.menu_bar_count);
+    let live_words = app.try_state::<crate::services::autocomplete::Autocomplete>().map(|ac| ac.words_today()).unwrap_or(0);
+    words_today_for(enabled, show_count, live_words, override_words)
+}
+
 /// Rebuilds the tray's menu and tooltip and the taskbar badge from what is known now.
 pub fn refresh(app: &AppHandle) {
-    let (waiting, working, words, badge, changed) = with_live(|l| {
+    let (waiting, working, words_override, badge, changed) = with_live(|l| {
         let badge = badge_count(l.waiting, &l.info);
         let changed = l.badge != Some(badge);
         l.badge = Some(badge);
         (l.waiting, l.working, l.info.words_today, badge, changed)
     });
+    let words = effective_words_today(app, words_override);
     if let Some(tray) = app.tray_by_id("nook") {
         let _ = tray.set_tooltip(Some(tooltip(waiting, working, words)));
         if let Ok(menu) = build_menu(app) {
@@ -192,7 +216,7 @@ pub fn tray_live(app: AppHandle, live: TrayLive) {
     }
 }
 
-/// A click on a status line or the music controls; false for an id that is not one of them.
+/// A click on a status line, the music controls or the autocomplete pause toggle; false for an id that is not one of them.
 pub fn handle_menu(app: &AppHandle, id: &str) -> bool {
     match id {
         "status-event" => super::desktop::show_main(app, "chat"),
@@ -202,6 +226,16 @@ pub fn handle_menu(app: &AppHandle, id: &str) -> bool {
             super::desktop::show_main(app, &route);
         }
         "status-update" => super::desktop::show_main(app, "settings:maintenance"),
+        "autocomplete-toggle" => {
+            if let Some(ac) = app.try_state::<crate::services::autocomplete::Autocomplete>() {
+                if ac.is_paused() {
+                    ac.resume();
+                } else {
+                    ac.pause(None);
+                }
+                refresh(app);
+            }
+        }
         "music-play" | "music-next" => {
             let command =
                 if id == "music-next" { nook_core::platform::MediaCommand::Next } else { nook_core::platform::MediaCommand::PlayPause };
@@ -345,6 +379,12 @@ mod tests {
         nook_core::i18n::set_language("en");
         assert_eq!(tooltip(0, 0, None), "Nook");
         assert!(tooltip(0, 0, Some(42)).ends_with("42 words completed today"));
+        assert_eq!(words_today_for(false, true, 12, None), None);
+        assert_eq!(words_today_for(true, false, 12, None), None);
+        assert_eq!(words_today_for(true, true, 12, None), Some(12));
+        assert_eq!(words_today_for(false, false, 0, Some(7)), Some(7));
+        assert_eq!(autocomplete_menu_label(false), "Pause autocomplete");
+        assert_eq!(autocomplete_menu_label(true), "Resume autocomplete");
     }
 
     #[test]

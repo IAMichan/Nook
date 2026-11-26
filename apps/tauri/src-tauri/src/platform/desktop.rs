@@ -632,28 +632,28 @@ fn tray_labels(language: &str) -> [&'static str; 7] {
 
 /// The actions of the tray menu; `tray_live::build_menu` puts the status lines above them (UI-48).
 pub(crate) fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let [open, window, new_nook, agents, chats, settings, quit] = tray_labels(&app.state::<AppState>().settings().app_language);
+    let settings = app.state::<AppState>().settings();
+    let [open, window, new_nook, agents, chats, settings_label, quit] = tray_labels(&settings.app_language);
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let window = MenuItem::with_id(app, "window", window, true, Some("Alt+CommandOrControl+W"))?;
     let new_nook = MenuItem::with_id(app, "new", new_nook, true, None::<&str>)?;
     let agents = MenuItem::with_id(app, "agents", agents, true, None::<&str>)?;
     let chats = MenuItem::with_id(app, "chats", chats, true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", settings, true, Some("CommandOrControl+,"))?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let settings_item = MenuItem::with_id(app, "settings", settings_label, true, Some("CommandOrControl+,"))?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
-    Menu::with_items(
-        app,
-        &[
-            &open,
-            &window,
-            &new_nook,
-            &agents,
-            &chats,
-            &PredefinedMenuItem::separator(app)?,
-            &settings,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&open, &window, &new_nook, &agents, &chats, &sep1];
+    let ac_toggle;
+    if settings.autocomplete.enabled {
+        let paused = app.try_state::<crate::services::autocomplete::Autocomplete>().is_some_and(|ac| ac.is_paused());
+        ac_toggle = MenuItem::with_id(app, "autocomplete-toggle", super::tray_live::autocomplete_menu_label(paused), true, None::<&str>)?;
+        items.push(&ac_toggle);
+    }
+    items.push(&settings_item);
+    items.push(&sep2);
+    items.push(&quit);
+    Menu::with_items(app, &items)
 }
 
 /// Rebuilds the tray menu and Jump List after the interface language or status changed.

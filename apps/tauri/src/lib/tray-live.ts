@@ -34,6 +34,8 @@ export function trayLive(input: {
   updateVersion: string | null;
   /// How welcome each source is, from what you did before (`attention_weights`); none ranks by the rules alone.
   weights?: Map<string, number>;
+  /// Words autocomplete typed today when Settings › Typing › Autocomplete shows the count in the tray tooltip.
+  wordsToday?: number | null;
 }): TrayLive {
   const { now } = input;
   // The meeting that is on or comes next today, as on the Mac (`upcoming.first { end > now }`).
@@ -70,6 +72,6 @@ export function trayLive(input: {
     playing: !!input.playing?.playing,
     update,
     updateVersion: update === "available" ? input.updateVersion : null,
-    wordsToday: null,
+    wordsToday: input.wordsToday ?? null,
   };
 }
