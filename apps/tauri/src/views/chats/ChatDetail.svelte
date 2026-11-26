@@ -40,6 +40,9 @@
   import { canCallChat } from "../../lib/chats-call";
   import { activeCall } from "../../lib/chats-call.svelte";
   import { chatOptions } from "../../lib/chat-options.svelte";
+  import { autocomplete } from "../../lib/autocomplete";
+  import { acceptChatGhost, advanceChatGhost, shouldRequestChatCompletion } from "../../lib/chat-ghost";
+  import { nook as appState } from "../../lib/state.svelte";
   import ChatGifShelf from "./ChatGifShelf.svelte";
   import ChatImageEditor from "./ChatImageEditor.svelte";
   import ChatPollForm from "./ChatPollForm.svelte";
@@ -316,6 +319,28 @@
   // someone else's; Tab puts it in the field, typing hides it. One try per message.
   let suggestion = $state<{ turn: string; text: string } | null>(null);
   let askedTurn = "";
+  let typingGhost = $state("");
+  let prevDraft = "";
+  let ghostTimer: ReturnType<typeof setTimeout> | undefined;
+  let ghostSeq = 0;
+  let mirrorEl: HTMLDivElement | undefined = $state();
+
+  function clearTypingGhost(cancelRemote = false) {
+    clearTimeout(ghostTimer);
+    ghostSeq += 1;
+    typingGhost = "";
+    if (cancelRemote) autocomplete.cancelPlayground().catch(() => {});
+  }
+
+  $effect(() => {
+    const _key = entry.key;
+    suggestion = null;
+    askedTurn = "";
+    prevDraft = draft;
+    clearTypingGhost(false);
+    return () => clearTimeout(ghostTimer);
+  });
+
   $effect(() => {
     const last = bubbles[bubbles.length - 1];
     if (!last || last.fromMe || !entry.sends || askedTurn === last.id) return;
@@ -324,6 +349,48 @@
     chatsApi.suggestReply(entry.key).then((text) => { if (text && askedTurn === turn) suggestion = { turn, text }; }).catch(() => {});
   });
   const ghost = $derived(suggestion && !draft && suggestion.turn === bubbles[bubbles.length - 1]?.id ? suggestion.text : null);
+
+  function scheduleTypingGhost(continuing = false) {
+    clearTimeout(ghostTimer);
+    const snapshot = draft;
+    const eligible = shouldRequestChatCompletion({
+      draft: snapshot,
+      caret,
+      isEditing: !!editing,
+      isWriting: writing,
+      isRecording: !!recording,
+      isNookCommand: nookInstruction(snapshot) !== null,
+    });
+    if (!eligible) {
+      typingGhost = "";
+      return;
+    }
+    const seq = ++ghostSeq;
+    ghostTimer = setTimeout(async () => {
+      try {
+        const result = await autocomplete.playground(snapshot, continuing);
+        if (seq === ghostSeq && draft === snapshot && caret === snapshot.length) {
+          typingGhost = result?.shown ?? "";
+        }
+      } catch {
+        if (seq === ghostSeq) typingGhost = "";
+      }
+    }, continuing ? 90 : 180);
+  }
+
+  function handleDraftInput() {
+    caret = field?.selectionStart ?? draft.length;
+    if (mirrorEl && field) mirrorEl.scrollTop = field.scrollTop;
+    const advanced = advanceChatGhost(prevDraft, draft, typingGhost);
+    prevDraft = draft;
+    if (advanced) {
+      typingGhost = advanced;
+      return;
+    }
+    typingGhost = "";
+    autocomplete.cancelPlayground().catch(() => {});
+    scheduleTypingGhost(false);
+  }
 
   async function send() {
     const text = draft.trim();
@@ -632,10 +699,15 @@
     }
   }
 
+  const activeTypingGhost = $derived(draft && caret === draft.length && !editing && !writing && !recording ? typingGhost : "");
+
   function keydown(e: KeyboardEvent) {
     if (e.key === "Tab" && !e.shiftKey && ghost) {
       e.preventDefault();
       draft = ghost;
+      prevDraft = draft;
+      caret = draft.length;
+      suggestion = null;
       return;
     }
     if (e.key === "Escape" && ghost) {
@@ -643,8 +715,31 @@
       suggestion = null;
       return;
     }
+    if (e.key === "Tab" && activeTypingGhost) {
+      e.preventDefault();
+      const ac = appState.settings?.autocomplete;
+      const accepted = acceptChatGhost(
+        draft,
+        activeTypingGhost,
+        e.shiftKey ? "all" : "word",
+        ac?.punctuationWithWord ?? true,
+        ac?.trailingSpace ?? true,
+      );
+      draft = accepted.nextDraft;
+      prevDraft = draft;
+      caret = draft.length;
+      typingGhost = accepted.remainingGhost;
+      if (accepted.consumedAll) scheduleTypingGhost(true);
+      return;
+    }
+    if (e.key === "Escape" && activeTypingGhost) {
+      e.preventDefault();
+      clearTypingGhost(true);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
+      clearTypingGhost(true);
       send();
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -1077,10 +1172,25 @@
           </Dropdown>
         </div>
       {/if}
-      <textarea class:hidden={!!recording} bind:this={field} rows="1" bind:value={draft} onkeydown={keydown} onpaste={paste}
-        onkeyup={() => (caret = field?.selectionStart ?? draft.length)} onclick={() => (caret = field?.selectionStart ?? draft.length)} oninput={() => (caret = field?.selectionStart ?? draft.length)} aria-label={tr("Bericht aan {name}", "Message {name}", { name: entry.name })}
-        placeholder={writing ? tr("Nook schrijft je bericht…", "Nook is writing your message…") : ghost ?? tr("Bericht aan {name} · @nook schrijft mee", "Message {name} · @nook helps you write", { name: entry.name })}
-        disabled={writing} title={ghost ? tr("Tab zet dit antwoord in het veld", "Tab puts this answer in the field") : undefined}></textarea>
+      <div class="field-wrap" class:hidden={!!recording}>
+        {#if (ghost && !draft && !writing) || activeTypingGhost}
+          <div class="field-mirror" bind:this={mirrorEl} aria-hidden="true">
+            {#if ghost && !draft && !writing}
+              <span class="ghost-text">{ghost}</span><kbd class="ghost-tab">Tab</kbd>
+            {:else if activeTypingGhost}
+              <span class="mirror-typed">{draft}</span><span class="ghost-text">{activeTypingGhost}</span>
+            {/if}
+          </div>
+        {/if}
+        <textarea bind:this={field} rows="1" bind:value={draft} onkeydown={keydown} onpaste={paste}
+          onkeyup={() => (caret = field?.selectionStart ?? draft.length)}
+          onclick={() => (caret = field?.selectionStart ?? draft.length)}
+          oninput={handleDraftInput}
+          onscroll={() => { if (mirrorEl && field) mirrorEl.scrollTop = field.scrollTop; }}
+          aria-label={tr("Bericht aan {name}", "Message {name}", { name: entry.name })}
+          placeholder={writing ? tr("Nook schrijft je bericht…", "Nook is writing your message…") : ghost ? "" : tr("Bericht aan {name} · @nook schrijft mee", "Message {name} · @nook helps you write", { name: entry.name })}
+          disabled={writing} title={ghost ? tr("Tab zet dit antwoord in het veld", "Tab puts this answer in the field") : undefined}></textarea>
+      </div>
       {#if recording}
         <span class="recording" aria-label={tr("Spraakbericht wordt opgenomen", "Recording a voice message")}><span class="rec-dot"></span>{clock(elapsed)}</span>
         <IconButton title={tr("Opname weggooien", "Discard recording")} size={28} onclick={() => stopRecording()}><Ico name="trash-2" size={14} /></IconButton>
@@ -1348,7 +1458,12 @@
   /* The answer field (`ChatReplyField`): the composer's box with the round send button inside it. */
   .box { position: relative; z-index: 1; display: flex; align-items: flex-end; gap: var(--space-8); padding: var(--space-6) var(--space-6) var(--space-6) var(--space-12); background: var(--composer-tray); border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); transition: background 120ms ease, border-color 120ms ease; }
   .box:focus-within { background: var(--composer); border-color: var(--separator); }
-  textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 160px; field-sizing: content; resize: none; padding: var(--space-6) 0; border: 0 !important; background: transparent; box-shadow: none !important; font: var(--text-body); color: var(--paper); }
+  .field-wrap { position: relative; flex: 1; min-width: 0; display: flex; }
+  .field-mirror { position: absolute; inset: 0; pointer-events: none; overflow: hidden; padding: var(--space-6) 0; font: var(--text-body); white-space: pre-wrap; word-wrap: break-word; }
+  .mirror-typed { color: transparent; }
+  .ghost-text { color: var(--text3); }
+  .ghost-tab { display: inline-block; margin-left: var(--space-6); padding: 0 var(--space-4); border-radius: var(--radius-chip); background: var(--smoke); color: var(--text2); font: var(--text-caption); vertical-align: baseline; }
+  textarea { position: relative; width: 100%; min-width: 0; min-height: 32px; max-height: 160px; field-sizing: content; resize: none; padding: var(--space-6) 0; border: 0 !important; background: transparent; box-shadow: none !important; font: var(--text-body); color: var(--paper); }
   textarea::placeholder { color: var(--text3); }
   .send { flex: none; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--smoke); color: var(--text3); }
   .send.ready { background: var(--iris); color: var(--on-iris); }

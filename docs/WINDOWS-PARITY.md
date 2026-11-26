@@ -766,7 +766,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **CH-60** Browser extension: native-messaging host for Chrome, Edge and Brave, the `chrome_*` tools, Settings page (`BrowserExtensionService/Host/Hub/Tools/Look`, `BrowserExtensionSection`, #1573, #1627), and live side panel tasks that ask per step in the panel (`BrowserTask`, `ToolRunner.performs`) in `src-tauri/src/browser_ext/` · L
 
-- [ ] **CH-61** Suggested reply as ghost text in the empty field (#1654), ghost completion while typing · S
+- [x] **CH-61** Suggested reply as ghost text in the empty field (#1654), ghost completion while typing · S Done (2026-11-26): empty-field suggested reply ghost text with `Tab` keycap (`chat_suggest_reply`) plus debounced inline ghost completion while typing (`autocomplete_playground`, `Tab` next word / `Shift+Tab` all / `Esc` dismiss / smooth type-through) in `ChatDetail.svelte` and `chat-ghost.ts`.
   - Still open after round 6: the ghost completion while typing needs the composer autocomplete (`ComposerCompletion`, `ComposerInlineGhost`, SV-60), which Windows has only as the system-wide service and its Settings playground, not inside a text field of Nook's own.
   - Done: the suggested reply (`ChatReplySuggestion`) for every app: when you open a chat whose newest message is someone else's, Nook writes the answer you would likely send (`chat_suggest_reply`, the Mac's `ChatDraft` prompt with no request, `core/src/chats/draft.rs`) and it shows grey in the empty field; Tab puts it in, typing hides it, Escape lets it go, one try per message. Open: the ghost completion while typing (the composer autocomplete, SV-60) and its switch under Typing › Complete (UI-81, another area).
 
