@@ -2,7 +2,8 @@ import AppKit
 import Foundation
 
 /// Watching an agent type a long answer, at the end of the conversation, without touching anything: what you read
-/// never moves down (a bounce), and when the agent finishes the answer stays where it is instead of jumping. Each frame
+/// never moves down (a bounce) nor up by more than a glide's step, and when the agent finishes the answer stays where it
+/// is instead of jumping. Each frame
 /// of the screen is laid out and drawn as the window would draw it, so a frame that takes long is a stutter you see.
 final class AnswerStreamsSmoothly: Scenario {
     /// The answer's first paragraph, unique to the turn that streams.
@@ -12,6 +13,10 @@ final class AnswerStreamsSmoothly: Scenario {
     /// How far the answer may move up in one frame once the agent is done: a glide's step, not the whole way at once
     /// (it jumped about 100 pt in one frame when its footer and card came in under it).
     static let finishStep = 48.0
+    /// How far it may move up in one frame while the agent types: a glide's step, as when it finishes (it moved up by a
+    /// line or a whole new part of the answer at once, 57 to 76 pt; the glide down when a held turn lets go peaks near
+    /// 35 pt).
+    static let typingStep = finishStep
 
     func testAnswerStreamsSmoothly() throws {
         try scenario("A streamed answer moves only up while it types and stays put when it is done") { nook, screen, app in
@@ -26,11 +31,13 @@ final class AnswerStreamsSmoothly: Scenario {
             }
 
             try nook.send(session, "Now write it all up", wait: false)
+            let sent = Date()
             let workspace = nook.app.workspace
             var frames: [Double] = []
             var downs: [String] = []
             var ups: [String] = []
             var finishJump = 0.0
+            var typingJump = 0.0
             var last: Double?
             var finishedAt: Date?
             var phase = "typing"
@@ -40,7 +47,11 @@ final class AnswerStreamsSmoothly: Scenario {
                 screen.refresh()
                 RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 60))
                 // The frame's whole time: the wait of a 60 Hz frame and whatever ran on the main thread meanwhile.
-                frames.append(Date().timeIntervalSince(start) - 1.0 / 60)
+                let took = Date().timeIntervalSince(start)
+                frames.append(took - 1.0 / 60)
+                // A move per 60 Hz frame of the screen: a glide moves by time, and a frame here may take longer. At most by
+                // half, or a jump in a slow frame (a busy machine) would hide in it.
+                let perFrame = max(0.5, min(1, (1.0 / 60) / max(took, 1.0 / 60)))
                 let active = workspace.run(session.id)?.status.isActive ?? false
                 if !active, finishedAt == nil {
                     finishedAt = Date()
@@ -52,9 +63,10 @@ final class AnswerStreamsSmoothly: Scenario {
                         downs.append(String(format: "%@: down %.0f pt", phase, last - y))
                     }
                     if let last, y > last + 24 {
-                        ups.append(String(format: "%@: up %.0f pt", phase, y - last))
+                        ups.append(String(format: "%@: up %.0f pt at %.1f s", phase, y - last, Date().timeIntervalSince(sent)))
                     }
-                    if let last, finishedAt != nil, y - last > finishJump { finishJump = y - last }
+                    if let last, finishedAt != nil, (y - last) * perFrame > finishJump { finishJump = (y - last) * perFrame }
+                    if let last, finishedAt == nil, (y - last) * perFrame > typingJump { typingJump = (y - last) * perFrame }
                     last = y
                 }
                 if let finishedAt, Date().timeIntervalSince(finishedAt) > 3 { break }
@@ -71,8 +83,12 @@ final class AnswerStreamsSmoothly: Scenario {
                        frames.count, p50, p95, (sorted.last ?? 0) * 1000, slow))
             log("moves down: \(downs.isEmpty ? "none" : downs.joined(separator: ", "))")
             log("big moves up: \(ups.isEmpty ? "none" : ups.joined(separator: ", "))")
+            log(String(format: "fastest move up per 60 Hz frame: %.0f pt typing, %.0f pt finishing", typingJump, finishJump))
             if finishJump > Self.finishStep {
-                throw ScenarioFailure.assertion(String(format: "when the agent was done the answer jumped %.0f pt up in one frame", finishJump))
+                throw ScenarioFailure.assertion(String(format: "when the agent was done the answer jumped %.0f pt up in a 60 Hz frame", finishJump))
+            }
+            if typingJump > Self.typingStep {
+                throw ScenarioFailure.assertion(String(format: "while the agent typed the answer jumped %.0f pt up in a 60 Hz frame", typingJump))
             }
             if !downs.isEmpty {
                 throw ScenarioFailure.assertion("the answer moved down while you watched: \(downs.prefix(6).joined(separator: ", "))")

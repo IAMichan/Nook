@@ -22,6 +22,20 @@ import Foundation
 final class TimelineReadingAnchor {
     /// Where each drawn row starts, in the stack of rows.
     private var tops: [AnyHashable: Double] = [:]
+    /// How tall each drawn row is, where it said so.
+    private var heights: [AnyHashable: Double] = [:]
+    /// The width of the stack of rows (`width(_:)`).
+    private var width: Double?
+    /// The view stood this far into the held row (from its top to the view's top), the row this tall, when the width
+    /// last changed: a tall row (a long answer) wraps anew at another width, and the line you read moves within it.
+    private var rewrap: (inside: Double, height: Double)?
+    /// When the width last changed: the held row's height changing well after that is it growing (an agent writing
+    /// into it), not wrapping anew.
+    private var widthChangedAt = Date.distantPast
+    /// Now; tests set the clock.
+    var now: () -> Date = { Date() }
+    /// How long after a change of the width the held row may still wrap anew.
+    static let rewrapTime = 0.5
     /// Where the stack of rows starts in the scroll view's content.
     private var stackTop = 0.0
     /// The row held, and where it starts in the content now.
@@ -59,18 +73,40 @@ final class TimelineReadingAnchor {
         return true
     }
 
-    /// Where a row starts in the stack, or nil once it is no longer drawn.
-    func place(_ id: AnyHashable, top: Double?) {
+    /// Where a row starts in the stack (and how tall it is, when known), or nil once it is no longer drawn.
+    func place(_ id: AnyHashable, top: Double?, height: Double? = nil) {
         guard let top else {
             tops[id] = nil
+            heights[id] = nil
             if id == held { holdRowAbove() }
             return
         }
         tops[id] = top
+        if let height { heights[id] = height }
         guard id == held else { return }
+        // The held row wrapped anew at another width: the line you read stays in view, as t3code holds the line of
+        // text at the top rather than the top of its row. As far into the row as before, in parts of its height: the
+        // text above that line wraps to as many more (or fewer) lines as the rest of it.
+        if rewrap != nil, now().timeIntervalSince(widthChangedAt) > Self.rewrapTime { rewrap = nil }
+        if let rewrap, let height, rewrap.height > 0, abs(height - rewrap.height) > 0.5 {
+            heldInView = insetTop - rewrap.inside * height / rewrap.height
+        }
         rowMoved += stackTop + top - heldTop
         heldTop = stackTop + top
         queueFlush()
+    }
+
+    /// The stack of rows is `width` wide now (the side panel or the window was resized): the held row may wrap anew.
+    func width(_ width: Double) {
+        defer { self.width = width }
+        guard let old = self.width, abs(old - width) > 0.5, holding, let held, let height = heights[held] else { return }
+        // Measured from where the view stood at the first change of a drag, not each step's: the steps add up.
+        if rewrap != nil, now().timeIntervalSince(widthChangedAt) > Self.rewrapTime { rewrap = nil }
+        widthChangedAt = now()
+        if rewrap == nil {
+            let inside = insetTop - heldInView
+            rewrap = inside > 0.5 && inside < height ? (inside, height) : nil
+        }
     }
 
     /// The stack of rows moved within the content (a row above it came or went).
@@ -86,6 +122,7 @@ final class TimelineReadingAnchor {
     /// A scroll-wheel or trackpad step of yours over the conversation, before the view moves by it: `deltaY` as AppKit
     /// gives it (above zero toward the start), `precise` when it is in points (a trackpad, a Magic Mouse).
     func userStep(deltaY: Double, precise: Bool) {
+        rewrap = nil
         if precise { steps -= deltaY } else { unmeasuredStep = true }
     }
 
@@ -108,6 +145,7 @@ final class TimelineReadingAnchor {
         self.holding = holding
         guard holding else {
             held = nil
+            rewrap = nil
             clearSteps()
             return
         }
@@ -208,6 +246,7 @@ final class TimelineReadingAnchor {
 
     /// Holds `row` where it stands in the view with the view at `base`.
     private func hold(_ row: (id: AnyHashable, top: Double)?, at base: Double) {
+        if row?.id != held { rewrap = nil }
         held = row?.id
         heldTop = row?.top ?? 0
         heldInView = heldTop - base

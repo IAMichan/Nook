@@ -156,6 +156,11 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
     var holdsSplit = false
     /// Learns where the part drawn in full starts (`RowsInView.blank`): the blank guard leaves that part alone.
     var drawn: DrawnRows? = nil
+    /// While you follow a working agent: what it writes grows into view in a glide (`GlidesGrowth`), not a line or a
+    /// whole step at once: the last row, the one it writes into.
+    var glidesGrowth = false
+    /// The agent works: a row that comes in grows in from nothing (`GlidesGrowth.growsIn`).
+    var working = false
     @ViewBuilder let row: (Item) -> Row
     /// The first row drawn in full while the split is held; not state any view draws from.
     @State private var firstEager = Unobserved<Item.ID?>(nil)
@@ -169,8 +174,11 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
             .scrollTargetLayout()
         }
         // Rows moving into the lazy part make the rows drawn in full shorter: that lets go too.
+        let last = items.last?.id
         HeldHeightStack(spacing: spacing, holds: holdsHeight, key: holdKey &* 31 &+ split) {
-            ForEach(items[split...]) { row($0) }
+            ForEach(items[split...]) { item in
+                row(item).modifier(GlidesGrowth(active: glidesGrowth && item.id == last, growsIn: working))
+            }
         }
         .onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.name)).minY } action: { drawn?.drawnFrom = $0 }
     }
@@ -182,6 +190,138 @@ struct ConversationRows<Item: Identifiable, Row: View>: View {
         let split = HistoryWindow.heldSplit(natural: natural, held: held)
         firstEager.value = split < items.count ? items[split].id : nil
         return split
+    }
+}
+
+/// After a jump to the end, as t3code's `settleListScroll`: the lazy rows learn their real height only as they are laid
+/// out, so one scroll from far up lands short of the end, and a few scrolls at set times (as before) still missed it when
+/// a pass took longer. Checks each frame instead, for up to a second, and scrolls again while the view is not at its
+/// end; done once it stood there for two frames with the content no longer changing, or once you scroll away
+/// (`following`).
+@MainActor
+final class EndSettle {
+    /// The most frames it checks.
+    static let frames = 60
+    private let following: () -> Bool
+    private let frame: () -> ScrollFrame?
+    private let scroll: () -> Void
+    private var left = EndSettle.frames
+    private var stable = 0
+    private var content: Double?
+    private var timer: Timer?
+
+    private init(following: @escaping () -> Bool, frame: @escaping () -> ScrollFrame?, scroll: @escaping () -> Void) {
+        self.following = following
+        self.frame = frame
+        self.scroll = scroll
+    }
+
+    /// Scrolls with `scroll` now and checks on each frame after, while `following`; `frame` is where the view stands.
+    static func run(following: @escaping () -> Bool, frame: @escaping () -> ScrollFrame?, scroll: @escaping () -> Void) {
+        let settle = EndSettle(following: following, frame: frame, scroll: scroll)
+        scroll()
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { _ in
+            MainActor.assumeIsolated { settle.check() }
+        }
+        settle.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func check() {
+        left -= 1
+        guard left > 0, following() else { return stop() }
+        guard let frame = frame() else { return scroll() }
+        let atEnd = frame.maxOffset - frame.offset <= 0.5
+        stable = atEnd && frame.content == content ? stable + 1 : 0
+        content = frame.content
+        if stable >= 2 { return stop() }
+        if !atEnd { scroll() }
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
+/// The last row of a conversation, growing to its new height in a glide while `active`, as t3code animates its scroll
+/// to the end while the agent works. The view holds its end as the row grows (`defaultScrollAnchor`), so each new line or
+/// part of the answer moved what you read up at once, 30 to 70 pt in a frame. Now the row keeps the height it had (what
+/// is new is cut off under it) and grows to the new one a part of the way each frame, and the view glides with it; a
+/// row that comes in while the agent works grows in from nothing. Stepped, not animated: an animated height is laid out
+/// at its end at once, and the view jumped there all the same. A row that gets shorter or wider does so at once, as
+/// does one that is no longer the last (it is all there by then, or nearly).
+private struct GlidesGrowth: ViewModifier {
+    let active: Bool
+    /// A row that comes in now grows in from nothing; not one that comes as the agent finishes (its card, its footer),
+    /// whose glide the glide to the end would cut short.
+    var growsIn = true
+    @State private var growth = GrowthSteps()
+
+    func body(content: Content) -> some View {
+        let height = active ? growth.shown.map { CGFloat($0) } : nil
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { growth.measured($0, gliding: active, growsIn: growsIn) }
+            .frame(height: height, alignment: .top)
+            .clipShape(GrowthClip(cuts: height != nil))
+    }
+}
+
+/// The height `GlidesGrowth` draws, a part of the way to the row's own height each frame.
+@MainActor
+@Observable
+private final class GrowthSteps {
+    /// The height drawn; 0 for a row that came in gliding, before it is measured.
+    private(set) var shown: Double?
+    @ObservationIgnored private var target = 0.0
+    @ObservationIgnored private var width: Double?
+    @ObservationIgnored private var timer: Timer?
+    /// The part of what is left that each frame grows by: most of the way in about a tenth of a second.
+    private static let part = 0.25
+    private static let stride = 24.0
+    private static let lag = 400.0
+
+    func measured(_ size: CGSize, gliding: Bool, growsIn: Bool) {
+        let height = Double(size.height)
+        let newWidth = Double(size.width)
+        let from = shown ?? (gliding && growsIn && width == nil ? 0 : nil)
+        defer { target = height; width = newWidth }
+        guard gliding, let from, width.map({ abs($0 - newWidth) < 0.5 }) ?? true, height > from + 0.5 else {
+            stop(at: height)
+            return
+        }
+        shown = from
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.step() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func step() {
+        guard let shown else { return stop(at: target) }
+        let left = target - shown
+        guard left > 1 else { return stop(at: target) }
+        // At most `stride` a frame, as a scroll would move; never further behind than `lag`, when the agent writes faster.
+        let step = min(max(1, (left * Self.part).rounded()), Self.stride)
+        self.shown = shown + max(step, left - Self.lag)
+    }
+
+    private func stop(at height: Double) {
+        timer?.invalidate()
+        timer = nil
+        if shown != height { shown = height }
+    }
+}
+
+/// Cuts off what is under the row's drawn height (`GlidesGrowth`), never what sticks out to its sides.
+private struct GrowthClip: Shape {
+    let cuts: Bool
+
+    func path(in rect: CGRect) -> Path {
+        Path(cuts ? rect.insetBy(dx: -1000, dy: 0) : rect.insetBy(dx: -1000, dy: -100_000))
     }
 }
 
@@ -248,6 +388,8 @@ final class DrawnRows {
     /// conversation counted as blank (and was made again) for good.
     private var copies: [AnyHashable: Int] = [:]
     fileprivate var changed: (() -> Void)?
+    /// The new turn held near the top learns where its message stands from here (`TurnPinRoom`).
+    weak var pin: TurnPinRoom?
     /// Where the rows drawn in full start (`ConversationRows`); everything from there down is always drawn.
     fileprivate var drawnFrom: Double? {
         didSet { if drawnFrom != oldValue { changed?() } }
@@ -267,6 +409,7 @@ final class DrawnRows {
     }
 
     fileprivate func placed(_ id: AnyHashable, _ span: RowsInView.Span) {
+        pin?.rowPlaced(id, top: span.top)
         pending.remove(id)
         known[id] = span
         guard spans[id] != span else { return }
@@ -295,10 +438,10 @@ extension View {
             return RowsInView.Span(top: frame.minY, bottom: frame.maxY)
         } action: {
             drawn.placed(key, $0)
-            reading?.place(key, top: $0.top)
+            reading?.place(key, top: $0.top, height: $0.bottom - $0.top)
         }
         .onAppear {
-            if let span = drawn.appeared(key) { reading?.place(key, top: span.top) }
+            if let span = drawn.appeared(key) { reading?.place(key, top: span.top, height: span.bottom - span.top) }
         }
         .onDisappear {
             drawn.disappeared(key)
@@ -307,9 +450,10 @@ extension View {
     }
 
     /// Tells `reading` where this stack of rows (the view in `TimelineSpace.name`) starts within the scroll view's
-    /// content (the view in `TimelineSpace.content`).
+    /// content (the view in `TimelineSpace.content`), and how wide it is (a tall row wraps anew at another width).
     func readingStackTop(_ reading: TimelineReadingAnchor) -> some View {
         onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.content)).minY } action: { reading.stack(at: $0) }
+            .onGeometryChange(for: Double.self) { $0.size.width } action: { reading.width($0) }
     }
 
     /// Lets `reading` scroll the conversation's scroll view; on a view inside its content. `wheel` gets each scroll-wheel
@@ -747,5 +891,97 @@ extension View {
                 }
             }
         }
+    }
+}
+
+/// The room under a new turn held near the top of the view while its reply grows (`ScrollModel.Mode.pinned`, as in
+/// t3code's anchored new turn): `TurnPin.room` of where the held message stands (its row's report to `DrawnRows`), where
+/// the rows end (`TurnPinRoomSpacer`) and the view's height. As the reply grows the room shrinks by as much, so the
+/// conversation keeps its height and nothing on screen moves. Only the spacer draws `room`; the timeline draws `holds`,
+/// which changes when the room comes or goes, not with every line of the reply.
+@MainActor
+@Observable
+final class TurnPinRoom {
+    /// The room under the rows, drawn by `TurnPinRoomSpacer`.
+    private(set) var room = 0.0
+    /// There is room under the rows: the view does not hold its end (it would move with the room), and stays put instead.
+    private(set) var holds = false
+    /// The row of the held message.
+    private(set) var pinned: AnyHashable?
+    /// The row of the newest message, held or not; the reply grows under it.
+    @ObservationIgnored private var turn: AnyHashable?
+    @ObservationIgnored private var messageTop: Double?
+    @ObservationIgnored private var rowsEnd: Double?
+    @ObservationIgnored private var container = 0.0
+
+    /// The newest message is the row `id`: the reply grows under it from now on.
+    func track(_ id: AnyHashable) {
+        guard id != turn else { return }
+        turn = id
+        messageTop = nil
+    }
+
+    /// Holds the row `id` near the top from now on; its room comes once it is laid out.
+    func pin(_ id: AnyHashable) {
+        track(id)
+        guard id != pinned else { return }
+        pinned = id
+        update()
+    }
+
+    /// Lets go: the rows end where they end, with no room under them.
+    func drop() {
+        guard pinned != nil || room > 0 else { return }
+        pinned = nil
+        set(room: 0)
+    }
+
+    /// Another conversation: nothing held or tracked.
+    func reset() {
+        drop()
+        turn = nil
+        messageTop = nil
+    }
+
+    func rowPlaced(_ id: AnyHashable, top: Double) {
+        guard id == turn, top != messageTop else { return }
+        messageTop = top
+        update()
+    }
+
+    fileprivate func rowsEnded(at y: Double) {
+        guard y != rowsEnd else { return }
+        rowsEnd = y
+        update()
+    }
+
+    /// The height of the view between its toolbar and composer (`ScrollFrame.container`).
+    func viewed(container: Double) {
+        guard abs(container - self.container) > 0.5 else { return }
+        self.container = container
+        update()
+    }
+
+    private func update() {
+        guard pinned != nil, let messageTop, let rowsEnd else { return }
+        set(room: TurnPin.room(container: container, messageTop: messageTop, rowsEnd: rowsEnd))
+    }
+
+    private func set(room new: Double) {
+        if abs(new - room) > 0.5 { room = new }
+        let holding = room > 0.5
+        if holding != holds { holds = holding }
+    }
+}
+
+/// Where a conversation's rows end, and the room under them for a new turn held near the top (`TurnPinRoom`): put it
+/// last in the rows, before the "bottom" mark, so scrolling to the end shows the held message near the top.
+struct TurnPinRoomSpacer: View {
+    let pin: TurnPinRoom
+
+    var body: some View {
+        Color.clear
+            .frame(height: pin.room)
+            .onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.name)).minY } action: { pin.rowsEnded(at: $0) }
     }
 }

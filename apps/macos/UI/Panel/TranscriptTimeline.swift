@@ -54,6 +54,10 @@ struct TranscriptConversation: View {
     @State private var finishGlide = FinishGlide()
     @State private var finishGlided = 0
     @State private var glidingEnd = false
+    /// Where the view stood when it last reported; not state any view draws from.
+    @State private var lastFrame = Unobserved<ScrollFrame?>(nil)
+    /// The room under a new turn held near the top while its reply grows (`TurnPinRoom`).
+    @State private var pinRoom = TurnPinRoom()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -172,7 +176,9 @@ struct TranscriptConversation: View {
                         ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
                                          holdsHeight: (working || settling) && !finding,
                                          holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start),
-                                         holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { row in
+                                         holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows,
+                                         glidesGrowth: (working || settling && !glidingEnd) && scroll.shouldFollowEnd && !finding,
+                                         working: working) { row in
                             if row.id == newSince {
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     TimelineNewDivider()
@@ -196,13 +202,15 @@ struct TranscriptConversation: View {
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.top, NookTheme.Spacing.xs)
                         }
+                        // Room under a new turn held near the top while its reply grows (`TurnPinRoom`).
+                        TurnPinRoomSpacer(pin: pinRoom)
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .scrollTargetLayout()
                     // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                     .coordinateSpace(name: TimelineSpace.name)
                     .readingStackTop(reading)
-                    .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && !glidingEnd && scrollPhase.value != .animating }) { deltaY in
+                    .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && !glidingEnd && !pinRoom.holds && scrollPhase.value != .animating }) { deltaY in
                         if scroll.releases(wheel: deltaY) {
                             scroll.userScrolled()
                         } else if scroll.returns(wheel: deltaY) {
@@ -221,13 +229,16 @@ struct TranscriptConversation: View {
                 .defaultScrollAnchor(.bottom, for: .alignment)
                 // Only while following does growth keep the end in place: reading higher up, a working agent's new
                 // output below leaves the text you read where it is instead of pushing it up.
-                .defaultScrollAnchor(scroll.shouldFollowEnd && !glidingEnd ? .bottom : nil, for: .sizeChanges)
+                // Not while a new turn is held near the top: its room shrinks as its reply grows, and the view stays put.
+                .defaultScrollAnchor(scroll.shouldFollowEnd && !glidingEnd && !pinRoom.holds ? .bottom : nil, for: .sizeChanges)
                 // An agent that just finished: from where the view stands to its new end, in one glide (`FinishGlide`).
                 .glidesToEnd(after: finishGlided, gliding: $glidingEnd, proxy: proxy)
                 .scrollIndicators(.never)
                 .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                     ScrollFrame(geometry)
                 } action: { old, frame in
+                    lastFrame.value = frame
+                    pinRoom.viewed(container: frame.container)
                     // Reading back: what you read stays put while the rows above it change height.
                     reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop,
                                   holding: !scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating)
@@ -300,12 +311,36 @@ struct TranscriptConversation: View {
                     }
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
+                // Not while it glides to its end (`glidesToEnd`): this took it there at once.
                 .onChange(of: shown) { _, _ in
-                    if scroll.shouldFollowEnd { scrollToEnd(proxy) }
+                    if scroll.shouldFollowEnd, !glidingEnd { scrollToEnd(proxy) }
                 }
+                // A new turn while you follow: up near the top in one glide, its reply growing under it (`TurnPinRoom`).
+                .onChange(of: allRows.last(where: Self.isPrompt)?.id) { _, id in
+                    guard let id, AnyHashable(id) != pinRoom.pinned else { return }
+                    pinRoom.track(id)
+                    guard scroll.pinsNewTurn(sentByYou: false) else { return }
+                    pinRoom.pin(id)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        guard scroll.isPinned, pinRoom.pinned == AnyHashable(id) else { return }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                    }
+                }
+                // The reply filled the view and the agent works with tools: on to the end, and following from there.
+                .onChange(of: PinRelease(holds: pinRoom.holds, work: workUnderPin(allRows))) { _, now in
+                    guard scroll.releasesPin(room: now.holds ? 1 : 0, workStarted: now.work) else { return }
+                    scroll.jumpedToEnd()
+                    pinRoom.drop()
+                    // Down to the end in one glide (`glidesToEnd`), holding no end meanwhile: what the reply wrote past its
+                    // room came in at once as the view took its end again.
+                    glidingEnd = true
+                    finishGlided += 1
+                }
+                .onChange(of: path) { _, _ in pinRoom.reset() }
                 // Always the end once it has loaded, with what is new since your last visit under its line.
                 .onChange(of: freshRead) { _, read in if read { land(proxy) } }
                 .onAppear {
+                    drawnRows.pin = pinRoom
                     visit = visitKey.flatMap { TimelineVisitStore.shared.visit(for: $0) }
                     if let visit { open = visit.open }
                     scrollToEnd(proxy)
@@ -454,12 +489,35 @@ struct TranscriptConversation: View {
     /// the lazy rows below measure taller after the first scroll, and the composer under it grows (a card, a draft),
     /// which changes the inset rather than the content. Either happens at the end without you, so the conversation stays
     /// there; only a step of yours (`readingScroller`: the wheel, the trackpad, a scroll key) scrolls away.
+    /// What decides whether a held new turn gives way to following (`ScrollModel.releasesPin`).
+    private struct PinRelease: Equatable {
+        let holds: Bool
+        let work: Bool
+    }
+
+    private static func isPrompt(_ row: TranscriptRow) -> Bool {
+        if case .user = row { return true }
+        return false
+    }
+
+    /// The agent works with tools or thinks under the held message.
+    private func workUnderPin(_ rows: [TranscriptRow]) -> Bool {
+        guard let pinned = pinRoom.pinned, let at = rows.lastIndex(where: { AnyHashable($0.id) == pinned }) else { return false }
+        return rows[(at + 1)...].contains { row in
+            switch row {
+            case .thinking, .step, .group, .fold, .continued, .superseded: return true
+            case .live(let step, let thought): return step != nil || thought != nil
+            case .user, .assistant, .notice, .working, .interrupted: return false
+            }
+        }
+    }
+
     private func keepEnd(_ old: ScrollFrame, _ new: ScrollFrame, _ proxy: ScrollViewProxy) {
         // Back to the end while following: a size change off the end, or the scroll view putting back an old offset by
         // itself, also while a scroll of yours toward the end runs out (`ScrollModel.keepsEnd`). At once
         // (`TimelineReadingAnchor.jump`), so no frame shows the conversation off its end. Only while following: once
         // you scrolled (a wheel step stops following before the view moves by it), nothing pulls the view back.
-        if !glidingEnd, scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) {
+        if !glidingEnd, !pinRoom.holds, scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) {
             if reading.jump(to: new.maxOffset) { return }
             var still = Transaction()
             still.disablesAnimations = true
@@ -478,12 +536,8 @@ struct TranscriptConversation: View {
         }
         newSince = visit.flatMap { TimelineLanding.firstNew(visitRows, since: $0.lastViewedAt) }
         scroll.jumpedToEnd()
-        scrollToEnd(proxy)
-        for delay in [0.0, 0.1, 0.3] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                if scroll.shouldFollowEnd { scrollToEnd(proxy) }
-            }
-        }
+        // Each frame until it stays there (`EndSettle`).
+        EndSettle.run(following: { scroll.shouldFollowEnd && !glidingEnd }, frame: { lastFrame.value }) { scrollToEnd(proxy) }
     }
 
     /// What you opened and when you left the conversation.

@@ -43,6 +43,8 @@ struct NookChatView: View {
     @State private var atEnd = true
     /// Read only by the handlers: as state, each start and stop of a scroll drew the whole chat again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
+    /// Where the view stood when it last reported; not state any view draws from.
+    @State private var lastFrame = Unobserved<ScrollFrame?>(nil)
     /// Where the conversation is scrolled, for the rail beside it that takes the place of a scroll bar.
     @State private var viewport = TimelineViewport()
     @State private var overflows = false
@@ -54,6 +56,8 @@ struct NookChatView: View {
     @State private var finishGlide = FinishGlide()
     @State private var finishGlided = 0
     @State private var glidingEnd = false
+    /// The room under a question held near the top while its answer grows (`TurnPinRoom`).
+    @State private var pinRoom = TurnPinRoom()
     @State private var marks = NookChatMarks()
     @State private var renaming = false
     @State private var titleDraft = ""
@@ -437,7 +441,9 @@ struct NookChatView: View {
                     // step folding away leaves room instead of bouncing the conversation down. A new message lets go.
                     ConversationRows(items: chat.messages, eager: HistoryWindow.eagerMinRows, spacing: NookTheme.Spacing.xxl,
                                      holdsHeight: chat.busy || settling, holdKey: chat.messages.count,
-                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { message in
+                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows,
+                                     glidesGrowth: (chat.busy || settling && !glidingEnd) && scroll.shouldFollowEnd,
+                                     working: chat.busy) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
                         // (and their Markdown) are not laid out again for every few words.
                         ChatMessageView(message: message, isLast: message.id == newest && !chat.busy && !settling, isNewest: message.id == newest, app: app)
@@ -446,6 +452,8 @@ struct NookChatView: View {
                             .id(message.id)
                             .transition(.opacity.combined(with: .offset(y: 6)))
                     }
+                    // Room under a question held near the top while its answer grows (`TurnPinRoom`).
+                    TurnPinRoomSpacer(pin: pinRoom)
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .scrollTargetLayout()
@@ -476,7 +484,8 @@ struct NookChatView: View {
             .defaultScrollAnchor(.bottom, for: .alignment)
             // Only while following does growth keep the end in place: reading higher up, the answer streaming in below
             // leaves the text you read where it is instead of pushing it up with every few words.
-            .defaultScrollAnchor(scroll.shouldFollowEnd && !glidingEnd ? .bottom : nil, for: .sizeChanges)
+            // Not while a question is held near the top: its room shrinks as the answer grows, and the view stays put.
+            .defaultScrollAnchor(scroll.shouldFollowEnd && !glidingEnd && !pinRoom.holds ? .bottom : nil, for: .sizeChanges)
             // An answer that just finished: from where the view stands to its new end, in one glide (`FinishGlide`).
             .glidesToEnd(after: finishGlided, gliding: $glidingEnd, proxy: proxy)
             // Scrolling away from the end stops the following until you come back, or jump back with the pill.
@@ -515,10 +524,13 @@ struct NookChatView: View {
                 ScrollFrame(geometry)
             } action: { old, frame in
                 viewport.frame = frame
+                lastFrame.value = frame
+                pinRoom.viewed(container: frame.container)
                 let resized = frame.content != old.content || frame.container != old.container || frame.insetBottom != old.insetBottom
                 if resized {
                     followEnd(proxy)
-                } else if ScrollModel.movedBySelf(from: old, to: frame), scroll.shouldFollowEnd, !glidingEnd, scrollPhase.value != .animating {
+                } else if ScrollModel.movedBySelf(from: old, to: frame), scroll.shouldFollowEnd, !glidingEnd, !pinRoom.holds,
+                          scrollPhase.value != .animating {
                     // The scroll view put back an old offset by itself, thousands of points up: back to the end.
                     var still = Transaction()
                     still.disablesAnimations = true
@@ -577,18 +589,55 @@ struct NookChatView: View {
                     .allowsHitTesting(false)
             }
             // Opening the chat or another conversation: start at its end and follow again.
-            .onAppear { settleAtEnd(proxy) }
-            .onChange(of: chat.activeID) { _, _ in settleAtEnd(proxy) }
-            // You asked something: it is the newest thing and the answer is followed again, also when you had scrolled up.
-            .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in settleAtEnd(proxy) }
+            .onAppear {
+                drawnRows.pin = pinRoom
+                settleAtEnd(proxy)
+            }
+            .onChange(of: chat.activeID) { _, _ in
+                pinRoom.reset()
+                settleAtEnd(proxy)
+            }
+            // You asked something: it is the newest thing and shows again, also when you had scrolled up. It glides up
+            // near the top and the answer grows under it (`TurnPinRoom`), as in an agent's conversation.
+            .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, id in
+                if let id { pinRoom.track(id) }
+                guard let id, scroll.pinsNewTurn(sentByYou: true) else { return settleAtEnd(proxy) }
+                pinRoom.pin(id)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    guard scroll.isPinned, pinRoom.pinned == AnyHashable(id) else { return }
+                    withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
+                }
+            }
+            // The answer filled the view and Nook works with tools: on to the end, and following from there.
+            .onChange(of: PinRelease(holds: pinRoom.holds, work: workUnderPin)) { _, now in
+                guard scroll.releasesPin(room: now.holds ? 1 : 0, workStarted: now.work) else { return }
+                scroll.jumpedToEnd()
+                pinRoom.drop()
+                // Down to the end in one glide (`glidesToEnd`), holding no end meanwhile: what the reply wrote past its
+                // room came in at once as the view took its end again.
+                glidingEnd = true
+                finishGlided += 1
+            }
             .onChange(of: scrollKey) { _, _ in followEnd(proxy) }
         }
+    }
+
+    /// What decides whether a held question gives way to following (`ScrollModel.releasesPin`).
+    private struct PinRelease: Equatable {
+        let holds: Bool
+        let work: Bool
+    }
+
+    /// Nook looks things up, plans or works through tasks in the answer under the held question.
+    private var workUnderPin: Bool {
+        guard let pinned = pinRoom.pinned, let at = chat.messages.lastIndex(where: { AnyHashable($0.id) == pinned }) else { return false }
+        return chat.messages[(at + 1)...].contains { !$0.retrieval.isEmpty || !$0.tasks.isEmpty || !$0.actions.isEmpty }
     }
 
     /// Keeps the end in view while following, but only when it is not already there and no scroll is under way, so a
     /// size change that leaves the end in place does not scroll again.
     private func followEnd(_ proxy: ScrollViewProxy) {
-        guard scroll.shouldFollowEnd, !glidingEnd, scrollPhase.value == .idle,
+        guard scroll.shouldFollowEnd, !glidingEnd, !pinRoom.holds, scrollPhase.value == .idle,
               viewport.frame.maxOffset - viewport.frame.offset > 0.5 else { return }
         var still = Transaction()
         still.disablesAnimations = true
@@ -599,11 +648,9 @@ struct NookChatView: View {
     /// scroll away in the meantime.
     private func settleAtEnd(_ proxy: ScrollViewProxy) {
         scroll.jumpedToEnd()
-        proxy.scrollTo("bottom", anchor: .bottom)
-        for delay in [0.0, 0.1, 0.3] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+        // Each frame until it stays there (`EndSettle`).
+        EndSettle.run(following: { scroll.shouldFollowEnd && !glidingEnd }, frame: { lastFrame.value }) {
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 

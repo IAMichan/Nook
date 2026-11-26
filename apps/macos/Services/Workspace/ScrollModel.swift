@@ -3,14 +3,21 @@ import Foundation
 // Timeline scroll behaviour as a state machine without UI. The view reports what
 // happened; it reads `shouldFollowEnd` and `cancelQueuedScrolls` back.
 //
-// A message you send lands at the end, under what came before, and the view follows the reply from there. It used to
-// be held near the top with room under it for the reply; the view jumped up when it was sent and again when the room
-// gave way, so it no longer is.
+// A new turn (a message you sent, or one that came in while you followed the end) glides up to near the top of the
+// view, with room under it for the reply (`TurnPinRoom`), as in t3code: while the agent writes, the reply grows into
+// that room and nothing on screen moves. The room is what the reply still needs to reach the bottom of the view, so the
+// conversation's height stays the same while it shrinks; once it is used up and the agent starts working with tools,
+// the view glides on to the end and follows it from there (`releasesPin`). An earlier version (until 2026-11-14) jumped
+// up when sending and again when its room gave way: its room was measured from estimated heights and let go while still
+// there.
 
 struct ScrollModel: Equatable, Sendable {
     enum Mode: Equatable, Sendable {
         /// Stick to the end while content grows.
         case following
+        /// A new turn stands near the top of the view and its reply grows under it, into the room held for it
+        /// (`TurnPinRoom`): nothing follows the end, nothing moves.
+        case pinned
         /// The reader moved on their own.
         case free
     }
@@ -99,7 +106,7 @@ struct ScrollModel: Equatable, Sendable {
     /// Whether a scroll-wheel or trackpad step down heads back to the end (`userScrolledDown`); nothing when it would
     /// change nothing.
     func returns(wheel deltaY: Double) -> Bool {
-        deltaY < -0.5 && mode == .free && !headingForEnd
+        deltaY < -0.5 && mode != .following && !headingForEnd
     }
 
     /// The end came into view or left it (the view reports each change). Coming back to it follows again only when
@@ -119,6 +126,27 @@ struct ScrollModel: Equatable, Sendable {
 
     mutating func findEnded() { isFinding = false }
 
+    /// A new turn came in while the view followed the end (or you sent it): it glides up near the top and its reply
+    /// grows under it (`TurnPinRoom`). Not while reading back or finding: what you read stays where it is.
+    @discardableResult
+    mutating func pinsNewTurn(sentByYou: Bool) -> Bool {
+        guard !isFinding, sentByYou || mode != .free else { return false }
+        mode = .pinned
+        headingForEnd = false
+        cancelQueuedScrolls = false
+        return true
+    }
+
+    var isPinned: Bool { mode == .pinned }
+
+    /// Whether the held turn gives way to following the end: the reply used up its room (`room`, what is left under it)
+    /// and the agent started working with tools or thinking under it. With room left, the view stays: letting go then
+    /// dropped the room and the conversation with it. A reply that only writes text past the bottom of the view is left
+    /// to read from its top, as in t3code: scroll down to it and following goes on.
+    func releasesPin(room: Double, workStarted: Bool) -> Bool {
+        mode == .pinned && workStarted && room <= 0.5
+    }
+
     mutating func jumpedToEnd() {
         mode = .following
         headingForEnd = false
@@ -127,7 +155,7 @@ struct ScrollModel: Equatable, Sendable {
 
     /// The reader is back at the end: following resumes, except while finding (the find owns the position).
     mutating func reachedEnd() {
-        guard mode == .free, !isFinding else { return }
+        guard mode != .following, !isFinding else { return }
         mode = .following
         headingForEnd = false
     }
@@ -313,5 +341,20 @@ extension ScrollMemory.Position: Codable {
             try c.encode(offset, forKey: .offset)
             try c.encodeIfPresent(anchor, forKey: .anchor)
         }
+    }
+}
+
+/// The room held under a new turn while its reply grows (`ScrollModel.Mode.pinned`), as in t3code's anchored new turn.
+enum TurnPin {
+    /// Room between the top of the view and the held message, as in t3code (`CHAT_TIMELINE_ANCHOR_OFFSET`).
+    static let topGap = 24.0
+
+    /// The room under the conversation's rows that lets the message at `messageTop` stand `topGap` under the top of a
+    /// view `container` high: what its reply (rows down to `rowsEnd`) does not fill yet. Both are measured in the
+    /// conversation's own space on rows that are drawn in full (the latest turns, `ConversationRows`), never from the
+    /// lazy stack's estimated height: a room worked out from an estimate left the conversation blank in 2026-11.
+    static func room(container: Double, messageTop: Double, rowsEnd: Double) -> Double {
+        guard container > 0 else { return 0 }
+        return max(0, (container - topGap - (rowsEnd - messageTop)).rounded())
     }
 }

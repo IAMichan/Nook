@@ -330,4 +330,37 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertEqual(held.height(natural: 300, width: 900, key: 1, holds: true), 300)
         XCTAssertEqual(held.height(natural: 450, width: 600, key: 1, holds: true), 500)
     }
+
+    func testANewTurnIsHeldNearTheTopWhileItsReplyFillsTheRoomUnderIt() {
+        // A view 600 pt high, the message at 1000: its reply reaches 1100, so 476 pt of room let the message stand 24 pt
+        // under the top. As the reply grows, the room shrinks by as much: the conversation's height stays the same.
+        XCTAssertEqual(TurnPin.room(container: 600, messageTop: 1000, rowsEnd: 1100), 476)
+        XCTAssertEqual(TurnPin.room(container: 600, messageTop: 1000, rowsEnd: 1300), 276)
+        XCTAssertEqual(TurnPin.room(container: 600, messageTop: 1000, rowsEnd: 1700), 0, "the reply fills the view")
+        XCTAssertEqual(TurnPin.room(container: 0, messageTop: 1000, rowsEnd: 1100), 0, "not measured yet")
+    }
+
+    func testAHeldTurnLetsGoOnlyOnceItsRoomIsUsedUpAndTheAgentWorks() {
+        var model = ScrollModel()
+        XCTAssertTrue(model.pinsNewTurn(sentByYou: false), "following: a new turn is held")
+        XCTAssertFalse(model.shouldFollowEnd)
+        XCTAssertFalse(model.showsToEndPill(atEnd: false))
+        XCTAssertFalse(model.releasesPin(room: 120, workStarted: true), "room left: letting go would drop it")
+        XCTAssertFalse(model.releasesPin(room: 0, workStarted: false), "only text: read it from its top")
+        XCTAssertTrue(model.releasesPin(room: 0, workStarted: true))
+        // Scrolling down to the end of a long text reply follows it again.
+        XCTAssertTrue(model.returns(wheel: -3))
+        model.userScrolledDown()
+        model.endInView(true)
+        XCTAssertTrue(model.shouldFollowEnd)
+    }
+
+    func testANewTurnIsNotHeldWhileYouReadBackUnlessYouSentIt() {
+        var model = ScrollModel()
+        model.userScrolled()
+        XCTAssertFalse(model.pinsNewTurn(sentByYou: false), "what you read stays where it is")
+        XCTAssertTrue(model.pinsNewTurn(sentByYou: true))
+        model.findStarted()
+        XCTAssertFalse(model.pinsNewTurn(sentByYou: true), "a find owns the position")
+    }
 }
