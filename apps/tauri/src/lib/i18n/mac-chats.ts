@@ -74,4 +74,6 @@ export const table: Table = {
   "New messages": { de: "Neue Nachrichten", fr: "Nouveaux messages", es: "Mensajes nuevos" },
   "Message {name} · @nook helps you write": { de: "Nachricht an {name} · @nook schreibt mit", fr: "Message à {name} · @nook vous aide à écrire", es: "Mensaje a {name} · @nook te ayuda a escribir" },
   "Add a source": { de: "Quelle hinzufügen", fr: "Ajouter une source", es: "Añadir una fuente" },
+  "Snooze chat": { de: "Chat zurückstellen", fr: "Reporter la discussion", es: "Posponer chat" },
+  "Bring it back now": { de: "Jetzt zurückholen", fr: "Le ramener maintenant", es: "Traerlo de vuelta ahora" },
 };

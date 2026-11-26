@@ -10,7 +10,17 @@
   import Menu from "../../components/ui/Menu.svelte";
   import ChatFace from "./ChatFace.svelte";
   import Ticks from "./Ticks.svelte";
-  import { chatMenu, isChatArchived, isChatMuted, isChatPinned, markReadInApp, markReadInNook, markUnread } from "./chat-actions.svelte";
+  import {
+    chatMenu,
+    chatSnoozedUntil,
+    formatSnoozeUntil,
+    isChatArchived,
+    isChatMuted,
+    isChatPinned,
+    markReadInApp,
+    markReadInNook,
+    markUnread,
+  } from "./chat-actions.svelte";
 
   let { entry, selected, now, onselect, onclosed }: { entry: ChatEntry; selected: boolean; now: Date; onselect: () => void; onclosed?: () => void } = $props();
   let hovering = $state(false);
@@ -21,6 +31,7 @@
   const pinned = $derived(isChatPinned(entry));
   const muted = $derived(isChatMuted(entry));
   const archived = $derived(isChatArchived(entry));
+  const snoozedUntil = $derived(chatSnoozedUntil(entry, now.getTime()));
   const badge = $derived(unread ? priorityBadge(entry.priority) : null);
   const typing = $derived(typingLine(entry.typing, entry.isGroup, entry.name));
   // Where the click takes it, respecting `ChatAbilities`: what is new read in Nook (WhatsApp reads in the app when
@@ -59,6 +70,7 @@
           {#if entry.ticks}<Ticks receipt={entry.ticks} size={12} />{/if}
           <span class="preview">{entry.preview || " "}</span>
         {/if}
+        {#if snoozedUntil !== null}<span class="flag" title={tr("Gesnoozed tot {time}", "Snoozed until {time}", { time: formatSnoozeUntil(snoozedUntil, now) })}><Ico name="alarm-clock" size={11} stroke={2.4} /></span>{/if}
         {#if pinned}<span class="flag" title={tr("Vastgezet", "Pinned")}><Ico name="pin" size={11} stroke={2.4} /></span>{/if}
         {#if muted}<span class="flag" title={tr("Gedempt", "Muted")}><Ico name="bell-off" size={11} stroke={2.4} /></span>{/if}
         {#if archived}<span class="flag" title={tr("Gearchiveerd", "Archived")}><Ico name="archive" size={11} stroke={2.4} /></span>{/if}

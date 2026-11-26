@@ -328,6 +328,7 @@ pub fn run() {
             chats::follow_up::chat_owed,
             chats::follow_up::chat_follow_up_wait,
             chats::follow_up::chat_snooze,
+            chats::follow_up::chat_snoozes,
             chats::follow_up::chat_schedule,
             chats::follow_up::chat_scheduled,
             chats::follow_up::chat_schedule_cancel,

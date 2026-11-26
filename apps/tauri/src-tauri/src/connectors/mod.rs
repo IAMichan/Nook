@@ -163,6 +163,10 @@ fn wire_whatsapp(app: &AppHandle, link: &Arc<whatsapp::WhatsAppLink>, accounts: 
             "WhatsApp",
             &format!("chat:{key}"),
         );
+        // A snoozed chat stays quiet until its time is up; notice history already recorded the message.
+        if crate::chats::follow_up::is_snoozed(&handle, &key) {
+            return;
+        }
         match crate::chats::notify::style(&handle, "whatsapp", false) {
             Some(nook_core::services::notice_rules::NoticeStyle::System) => {
                 crate::chats::notify::toast(&handle, &key, "whatsapp", &arrived.name, &arrived.preview, true)
