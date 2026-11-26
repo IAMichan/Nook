@@ -24,6 +24,8 @@ struct ChatAppSheet: View {
     private var ownWay: Bool { ChatAppsCatalog.ownWay.contains(app) }
     /// A login through the chat service of this app is under way.
     private var isLinking: Bool { linker.linking?.app == app && linker.session != nil }
+    /// The chat service on this Mac runs and can link this app: only then is it offered as the other way.
+    private var offeredByService: Bool { linker.serviceRuns && network?.canLink == true }
     /// Linked: the sheet manages it in parts instead of walking through the steps that link it.
     private var isLinked: Bool { ChatAppStates.state(app)?.linked == true }
 
@@ -96,8 +98,8 @@ struct ChatAppSheet: View {
                 .padding(.top, NookTheme.Spacing.sm)
             }
         }
-        // Nook links it in its own way; the chat service on this Mac is the other way.
-        if ownWay, linker.serviceRuns { serviceFold }
+        // Nook links it in its own way; the chat service on this Mac is the other way, only when it can link this app.
+        if ownWay, offeredByService { serviceFold }
     }
 
     /// The chat service on this Mac as the other way to link an app Nook links itself: its own steps under a title that
@@ -126,8 +128,11 @@ struct ChatAppSheet: View {
         }
         if linker.serviceRuns {
             if ownWay {
-                NookDivider()
-                serviceFold
+                // Another way only when the service can link this app: a fold that says it cannot only confuses.
+                if offeredByService {
+                    NookDivider()
+                    serviceFold
+                }
             } else {
                 serviceSteps
             }
@@ -258,6 +263,8 @@ struct ChatLinkSteps: View {
     let network: ChatLinkData.Network
     @ObservedObject private var linker = ChatLinker.shared
     @State private var values: [String: String] = [:]
+    /// The sign-in window closed before the sign-in was handed over.
+    @State private var closedEarly = false
 
     private var session: ChatLinkData.Session? { linker.linking?.id == network.id ? linker.session : nil }
 
@@ -314,14 +321,15 @@ struct ChatLinkSteps: View {
         case .browser(_, let instructions, let url, _, _, _, _):
             instructionsText(instructions.isEmpty ? tr("chats.link.browser.detail", network.name) : instructions)
             Button {
-                ChatSignInWindow.open(step: step, title: tr("chats.link.browser.title", network.name)) { collected, last in
-                    Task { await linker.submitBrowser(collected, lastURL: last) }
-                }
+                openSignIn(step)
             } label: {
                 Label(tr("chats.link.browser.open", url.host ?? network.name), icon: "person.badge.key")
             }
             .buttonStyle(.nookProminent)
             .controlSize(.large)
+            if closedEarly {
+                ChatSignInFeedbackRow(name: network.name, feedback: .closedEarly) { openSignIn(step) }
+            }
             SettingNote(tr("chats.link.browser.privacy", network.name))
         case .display(_, let instructions, let show):
             instructionsText(instructions)
@@ -364,6 +372,15 @@ struct ChatLinkSteps: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+        }
+    }
+
+    /// Opens the step's sign-in window; closing it before the sign-in was handed over says so under the button.
+    private func openSignIn(_ step: ChatLinkData.Step) {
+        closedEarly = false
+        ChatSignInWindow.open(step: step, title: tr("chats.link.browser.title", network.name),
+                              onClosed: { closedEarly = true }) { collected, last in
+            Task { await linker.submitBrowser(collected, lastURL: last) }
         }
     }
 
@@ -516,11 +533,18 @@ struct ChatOwnLinkSteps: View {
             } else {
                 SettingNote(tr("chats.link.risk", "Snapchat"), tone: .warning)
                 StepAction(detail: tr("chats.snapchat.signInDetail"), button: tr("chats.snapchat.signIn"),
-                           disabled: snapchat.isSigningIn) {
-                    snapchat.signIn(title: tr("chats.link.browser.title", "Snapchat")) { linked(app) }
+                           disabled: snapchat.isSigningIn) { signInSnapchat() }
+                if snapchat.isSigningIn {
+                    BusyLine(tr("chats.signIn.waiting", "Snapchat"))
+                } else if let feedback = snapchat.feedback {
+                    ChatSignInFeedbackRow(name: "Snapchat", feedback: feedback) { signInSnapchat() }
                 }
             }
         }
+    }
+
+    private func signInSnapchat() {
+        snapchat.signIn(title: tr("chats.link.browser.title", "Snapchat")) { linked(capture.snapchatBridge.app) }
     }
 
     // MARK: Mail

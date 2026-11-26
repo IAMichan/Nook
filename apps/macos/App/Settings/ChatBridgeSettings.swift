@@ -232,15 +232,18 @@ struct TeamsSettingsRows: View {
         if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
-        if let why = web.problem, !web.isSigningIn {
-            StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
-        }
         if web.accounts.isEmpty {
             StepAction(detail: tr("chats.teams.web.signInDetail"),
                        button: tr("chats.teams.signIn"), disabled: web.isSigningIn) { signInOnWeb() }
         } else {
             StepAction(detail: tr("chats.teams.web.addAccountDetail"), button: tr("chats.teams.addAccount"),
                        prominent: false, disabled: web.isSigningIn) { signInOnWeb() }
+        }
+        // Why the last sign-in added nothing, under the button that signs in, with a way to try again.
+        if web.isSigningIn {
+            BusyLine(tr("chats.signIn.waiting", "Teams"))
+        } else if let feedback = web.feedback {
+            ChatSignInFeedbackRow(name: "Teams", feedback: feedback) { signInOnWeb() }
         }
         // With Nook's own app in Microsoft Entra, accounts can also be added through Microsoft Graph with a code.
         if TeamsBridge.clientID != nil {
@@ -310,6 +313,11 @@ struct SlackSettingsRows: View {
             } else if SlackBridge.token == nil {
                 StepAction(detail: tr("chats.slack.web.signInDetail"),
                            button: tr("chats.slack.signIn"), disabled: web.isSigningIn) { signIn() }
+            }
+            if web.isSigningIn {
+                BusyLine(tr("chats.signIn.waiting", "Slack"))
+            } else if let feedback = web.feedback, web.auth == nil {
+                ChatSignInFeedbackRow(name: "Slack", feedback: feedback) { signIn() }
             }
             if web.auth == nil, showsToken {
                 DisclosureGroup(isExpanded: $usesToken) {

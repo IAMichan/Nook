@@ -1,0 +1,67 @@
+import Foundation
+
+// Texts for signing in to a chat app on its website in a window of Nook's own (Teams, Slack, Snapchat, and the chat
+// service's sign-in windows): what happens while the window is open, and why a sign-in did not link the app.
+
+let chatSignInTranslations: [AppLanguage: [String: String]] = [
+    .nl: [
+        "chats.signIn.waiting": "Log in in het venster van %@. Nook sluit het zelf zodra je chats er staan.",
+        "chats.signIn.retry": "Opnieuw proberen",
+        "chats.signIn.closedEarly": "Inloggen niet afgerond",
+        "chats.signIn.closedEarlyDetail": "Het venster ging dicht voordat je bij %@ was ingelogd. Probeer het opnieuw en laat het venster open; Nook sluit het zelf zodra je chats er staan.",
+        "chats.signIn.notTaken": "%@ niet gekoppeld",
+        "chats.signIn.notTakenDetail": "Je was ingelogd, maar Nook kon de login van %@ niet overnemen. Probeer het opnieuw en wacht tot je chats in het venster staan; sluit het niet zelf.",
+        "chats.signIn.personal": "Persoonlijk Microsoft-account",
+        "chats.signIn.personalDetail": "Dit is een persoonlijk account (Teams gratis). Nook leest Teams alleen met een werk- of schoolaccount; log in met zo'n account.",
+        "chats.signIn.alreadyLinked": "Dit account was al gekoppeld",
+        "chats.signIn.alreadyLinkedDetail": "Je logde in als %@, dat al gekoppeld is; er is niets toegevoegd. Wil je een ander account toevoegen, log dan in met dat andere account.",
+    ],
+    .en: [
+        "chats.signIn.waiting": "Sign in to %@ in the window. Nook closes it by itself once your chats show.",
+        "chats.signIn.retry": "Try again",
+        "chats.signIn.closedEarly": "Sign-in not finished",
+        "chats.signIn.closedEarlyDetail": "The window closed before you were signed in to %@. Try again and leave the window open; Nook closes it by itself once your chats show.",
+        "chats.signIn.notTaken": "%@ not linked",
+        "chats.signIn.notTakenDetail": "You were signed in, but Nook couldn’t take over the %@ sign-in. Try again and wait until your chats show in the window; don’t close it yourself.",
+        "chats.signIn.personal": "Personal Microsoft account",
+        "chats.signIn.personalDetail": "This is a personal account (Teams free). Nook reads Teams only with a work or school account; sign in with one of those.",
+        "chats.signIn.alreadyLinked": "This account was already linked",
+        "chats.signIn.alreadyLinkedDetail": "You signed in as %@, which is already linked, so nothing was added. To add another account, sign in with that other account.",
+    ],
+    .de: [
+        "chats.signIn.waiting": "Melde dich im Fenster bei %@ an. Nook schließt es selbst, sobald deine Chats dort stehen.",
+        "chats.signIn.retry": "Erneut versuchen",
+        "chats.signIn.closedEarly": "Anmeldung nicht abgeschlossen",
+        "chats.signIn.closedEarlyDetail": "Das Fenster wurde geschlossen, bevor du bei %@ angemeldet warst. Versuche es erneut und lass das Fenster offen; Nook schließt es selbst, sobald deine Chats dort stehen.",
+        "chats.signIn.notTaken": "%@ nicht verbunden",
+        "chats.signIn.notTakenDetail": "Du warst angemeldet, aber Nook konnte die Anmeldung bei %@ nicht übernehmen. Versuche es erneut und warte, bis deine Chats im Fenster stehen; schließe es nicht selbst.",
+        "chats.signIn.personal": "Persönliches Microsoft-Konto",
+        "chats.signIn.personalDetail": "Das ist ein persönliches Konto (Teams kostenlos). Nook liest Teams nur mit einem Geschäfts- oder Schulkonto; melde dich mit einem solchen Konto an.",
+        "chats.signIn.alreadyLinked": "Dieses Konto war schon verbunden",
+        "chats.signIn.alreadyLinkedDetail": "Du hast dich als %@ angemeldet, das schon verbunden ist; es wurde nichts hinzugefügt. Um ein anderes Konto hinzuzufügen, melde dich mit diesem anderen Konto an.",
+    ],
+    .fr: [
+        "chats.signIn.waiting": "Connectez-vous à %@ dans la fenêtre. Nook la ferme tout seul dès que vos discussions s’affichent.",
+        "chats.signIn.retry": "Réessayer",
+        "chats.signIn.closedEarly": "Connexion non terminée",
+        "chats.signIn.closedEarlyDetail": "La fenêtre s’est fermée avant que vous soyez connecté à %@. Réessayez et laissez la fenêtre ouverte ; Nook la ferme tout seul dès que vos discussions s’affichent.",
+        "chats.signIn.notTaken": "%@ non associé",
+        "chats.signIn.notTakenDetail": "Vous étiez connecté, mais Nook n’a pas pu reprendre la connexion à %@. Réessayez et attendez que vos discussions s’affichent dans la fenêtre ; ne la fermez pas vous-même.",
+        "chats.signIn.personal": "Compte Microsoft personnel",
+        "chats.signIn.personalDetail": "C’est un compte personnel (Teams gratuit). Nook lit Teams uniquement avec un compte professionnel ou scolaire ; connectez-vous avec un tel compte.",
+        "chats.signIn.alreadyLinked": "Ce compte était déjà associé",
+        "chats.signIn.alreadyLinkedDetail": "Vous vous êtes connecté en tant que %@, déjà associé ; rien n’a été ajouté. Pour ajouter un autre compte, connectez-vous avec cet autre compte.",
+    ],
+    .es: [
+        "chats.signIn.waiting": "Inicia sesión en %@ en la ventana. Nook la cierra solo en cuanto aparezcan tus chats.",
+        "chats.signIn.retry": "Reintentar",
+        "chats.signIn.closedEarly": "Inicio de sesión sin terminar",
+        "chats.signIn.closedEarlyDetail": "La ventana se cerró antes de que iniciaras sesión en %@. Vuelve a intentarlo y deja la ventana abierta; Nook la cierra solo en cuanto aparezcan tus chats.",
+        "chats.signIn.notTaken": "%@ no vinculado",
+        "chats.signIn.notTakenDetail": "Habías iniciado sesión, pero Nook no pudo tomar el inicio de sesión de %@. Vuelve a intentarlo y espera a que tus chats aparezcan en la ventana; no la cierres tú.",
+        "chats.signIn.personal": "Cuenta personal de Microsoft",
+        "chats.signIn.personalDetail": "Es una cuenta personal (Teams gratis). Nook lee Teams solo con una cuenta profesional o educativa; inicia sesión con una de esas.",
+        "chats.signIn.alreadyLinked": "Esta cuenta ya estaba vinculada",
+        "chats.signIn.alreadyLinkedDetail": "Iniciaste sesión como %@, que ya está vinculada; no se añadió nada. Para añadir otra cuenta, inicia sesión con esa otra cuenta.",
+    ],
+]
