@@ -76,7 +76,7 @@ extension NewSessionComposer {
                 projectMenuContent
             }
             Text("?").foregroundStyle(NookTheme.paper)
-            if inspecting {
+            if remoteMachine == nil, let inspectingPath, inspectingPath == config.projectPath {
                 ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
             }
         }
