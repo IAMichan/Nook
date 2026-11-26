@@ -50,6 +50,10 @@ struct TranscriptConversation: View {
     @State private var timelineBuild = 0
     /// The step that just ended, held on the live line a moment and kept out of the rows meanwhile.
     @State private var endedHold = EndedStepHold<String>()
+    /// The agent that just finished, as two steps: the fold, then the end's finished look in a glide (`FinishGlide`).
+    @State private var finishGlide = FinishGlide()
+    @State private var finishGlided = 0
+    @State private var glidingEnd = false
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
     /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
@@ -123,7 +127,10 @@ struct TranscriptConversation: View {
     var body: some View {
         // Only a conversation read from the transcript is kept for the next visit, not the fallback shown before it.
         let ended = working && !compacting ? TranscriptPresentation.endedStep(shown) : nil
-        let _ = derived.update(shown, working: working, held: endedHold.held(ended), directory: directory,
+        // Just finished: for one frame the end still looks as it did while working (`FinishGlide`).
+        let settling = finishGlided >= 0 && finishGlide.settling(path, active: working, following: scroll.shouldFollowEnd,
+                                                                 glided: $finishGlided, gliding: $glidingEnd)
+        let _ = derived.update(shown, working: working || settling, held: endedHold.held(ended), directory: directory,
                                path: transcriptMessages.isEmpty ? "" : path)
         let allRows = derived.rows
         // Only the latest turns of a long conversation are drawn, from the turn the window starts at.
@@ -163,7 +170,7 @@ struct TranscriptConversation: View {
                         // While the agent works, its last rows never get shorter: what folds away into "Ran 3 commands"
                         // leaves room instead of bouncing the conversation down, also once you scroll up (`AgentRunPanel`).
                         ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
-                                         holdsHeight: working && !finding,
+                                         holdsHeight: (working || settling) && !finding,
                                          holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start),
                                          holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows) { row in
                             if row.id == newSince {
@@ -195,7 +202,7 @@ struct TranscriptConversation: View {
                     // The conversation's own space, where its rows report where they stand (`countsAsDrawnRow`).
                     .coordinateSpace(name: TimelineSpace.name)
                     .readingStackTop(reading)
-                    .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating }) { deltaY in
+                    .readingScroller(reading, followsEnd: { scroll.shouldFollowEnd && !finding && !glidingEnd && scrollPhase.value != .animating }) { deltaY in
                         if scroll.releases(wheel: deltaY) {
                             scroll.userScrolled()
                         } else if scroll.returns(wheel: deltaY) {
@@ -214,7 +221,9 @@ struct TranscriptConversation: View {
                 .defaultScrollAnchor(.bottom, for: .alignment)
                 // Only while following does growth keep the end in place: reading higher up, a working agent's new
                 // output below leaves the text you read where it is instead of pushing it up.
-                .defaultScrollAnchor(scroll.shouldFollowEnd ? .bottom : nil, for: .sizeChanges)
+                .defaultScrollAnchor(scroll.shouldFollowEnd && !glidingEnd ? .bottom : nil, for: .sizeChanges)
+                // An agent that just finished: from where the view stands to its new end, in one glide (`FinishGlide`).
+                .glidesToEnd(after: finishGlided, gliding: $glidingEnd, proxy: proxy)
                 .scrollIndicators(.never)
                 .onScrollGeometryChange(for: ScrollFrame.self) { geometry in
                     ScrollFrame(geometry)
@@ -450,7 +459,7 @@ struct TranscriptConversation: View {
         // itself, also while a scroll of yours toward the end runs out (`ScrollModel.keepsEnd`). At once
         // (`TimelineReadingAnchor.jump`), so no frame shows the conversation off its end. Only while following: once
         // you scrolled (a wheel step stops following before the view moves by it), nothing pulls the view back.
-        if scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) {
+        if !glidingEnd, scroll.keepsEnd(movedFrom: old, to: new, animating: scrollPhase.value == .animating) {
             if reading.jump(to: new.maxOffset) { return }
             var still = Transaction()
             still.disablesAnimations = true

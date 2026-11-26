@@ -80,6 +80,9 @@ struct TimelineRowContext: Equatable {
     var shownFile: String?
     /// The lines git counted per turn and file.
     var counted: [String: TurnLines]
+    /// The run just finished and what comes under its final answer (its footer, its card) is still to glide in
+    /// (`FinishGlide`): the block is drawn again when it does.
+    var settling = false
 }
 
 extension TimelineRowContext {

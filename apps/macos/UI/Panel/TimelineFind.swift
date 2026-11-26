@@ -684,3 +684,68 @@ private struct ReadingAnchorScroller: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
+
+/// The moment a conversation's agent finishes, as two steps instead of one. While an agent works, the end of its
+/// conversation is its answer being written and the live line under it; once it is done, the work above the answer folds
+/// to "Worked for …" and under the answer come its footer and the card of what the turn changed, while the live line goes.
+/// All of that in one frame, at the end the view follows, threw the answer up by about 100 pt at once (measured in
+/// `AnswerStreamsSmoothly`): the view jumped the moment the agent stopped typing. Letting the end grow in an animation does
+/// not help: the scroll view takes its new end at once while the rows animate, so the answer went up, down and up again.
+///
+/// Now the fold comes first, in the frame the agent stops (above the answer: the view holds its end, so nothing you see
+/// moves), with the end still as it was while working (`settling`). In the next frame the end takes its finished look
+/// while the view stays where it is (`gliding`: the view does not hold its end meanwhile), and then the view scrolls down
+/// to the new end in one animation (`glidesToEnd`). Not state any view observes: the body asks it once per pass.
+@MainActor
+final class FinishGlide {
+    private var key: AnyHashable?
+    private var wasActive = false
+    private var settlingKey: AnyHashable?
+
+    /// Whether the conversation `key` (a run, a transcript, a chat) still shows its end as it did while working.
+    /// `glided` is bumped to draw the finished look, and `gliding` set while the view glides to its end (only when it
+    /// follows the end: read back, nothing under the answer moves what you read).
+    func settling(_ key: AnyHashable, active: Bool, following: Bool, glided: Binding<Int>, gliding: Binding<Bool>) -> Bool {
+        if key != self.key {
+            self.key = key
+            wasActive = active
+            settlingKey = nil
+            return false
+        }
+        if wasActive, !active {
+            wasActive = false
+            settlingKey = key
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.settlingKey == key else { return }
+                self.settlingKey = nil
+                var still = Transaction()
+                still.disablesAnimations = true
+                withTransaction(still) {
+                    if following { gliding.wrappedValue = true }
+                    glided.wrappedValue += 1
+                }
+            }
+            return true
+        }
+        wasActive = active
+        if active { settlingKey = nil }
+        return settlingKey == key
+    }
+}
+
+extension View {
+    /// After a finished agent's end took its finished look (`FinishGlide`): from where the view stands down to its new
+    /// end ("bottom"), in one animation, and `gliding` lets go when it gets there.
+    func glidesToEnd(after glided: Int, gliding: Binding<Bool>, proxy: ScrollViewProxy) -> some View {
+        onChange(of: glided) {
+            guard gliding.wrappedValue else { return }
+            DispatchQueue.main.async {
+                withAnimation(NookTheme.scroll, completionCriteria: .logicallyComplete) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                } completion: {
+                    gliding.wrappedValue = false
+                }
+            }
+        }
+    }
+}
