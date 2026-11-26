@@ -2539,7 +2539,8 @@ final class SlackBridge: ChatHistoryBridge, ChatSearchBridge {
     func markRead(name: String) async throws {
         let (auth, conversation) = try target(name)
         let latest = try await call("conversations.history", ["channel": conversation.id, "limit": "1"], auth: auth)
-        guard let ts = SlackData.newestTS(latest) else { return }
+        // No message Slack knows: saying it was read would be untrue.
+        guard let ts = SlackData.newestTS(latest) else { throw NookError(tr("chats.markReadInApp.nothing", "Slack", "Slack")) }
         _ = try await post("conversations.mark", ["channel": conversation.id, "ts": ts], auth: auth)
     }
 

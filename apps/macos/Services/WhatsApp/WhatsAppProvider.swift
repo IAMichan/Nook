@@ -489,7 +489,8 @@ actor GOWAProvider: WhatsAppProvider {
     }
 
     func markRead(chat: String, lastIncoming: String?) async throws {
-        guard let id = lastIncoming else { return }
+        // GOWA reads a chat by a message: without one nothing reaches WhatsApp, and saying it was read would be untrue.
+        guard let id = lastIncoming else { throw NookError(tr("chats.markReadInApp.nothing", "WhatsApp", "WhatsApp")) }
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(id))/read", json: ["phone": chat])
     }
 
