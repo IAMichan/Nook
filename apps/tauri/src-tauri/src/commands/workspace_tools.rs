@@ -42,17 +42,20 @@ pub fn terminal_open(
     directory: Option<String>,
     command: Option<String>,
     title: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
 ) -> Res<TerminalView> {
     #[cfg(desktop)]
     {
         let dir =
             directory.filter(|d| !d.trim().is_empty()).unwrap_or_else(|| nook_core::agents::home_dir().to_string_lossy().into_owned());
-        let info = state.terminals.open(&app, &dir, command.as_deref(), title.as_deref(), None)?;
+        let size = cols.zip(rows);
+        let info = state.terminals.open_with_size(&app, &dir, command.as_deref(), title.as_deref(), None, size)?;
         Ok(TerminalView { info })
     }
     #[cfg(not(desktop))]
     {
-        let _ = (app, state, directory, command, title);
+        let _ = (app, state, directory, command, title, cols, rows);
         Err(DESKTOP_ONLY.into())
     }
 }

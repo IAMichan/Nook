@@ -557,8 +557,12 @@ export interface BrowserState { open: boolean; url: string; title: string; loadi
 
 export const toolsApi = {
   terminals: () => invoke<TerminalInfo[]>("terminal_list"),
-  openTerminal: (directory: string | null, command: string | null = null, title: string | null = null) =>
-    invoke<TerminalInfo>("terminal_open", { directory, command, title }),
+  openTerminal: (
+    directory: string | null,
+    command: string | null = null,
+    title: string | null = null,
+    size?: { cols: number; rows: number } | null,
+  ) => invoke<TerminalInfo>("terminal_open", { directory, command, title, cols: size?.cols ?? null, rows: size?.rows ?? null }),
   write: (id: string, data: string) => invoke<void>("terminal_write", { id, data }),
   resize: (id: string, cols: number, rows: number) => invoke<void>("terminal_resize", { id, cols, rows }),
   replay: (id: string) => invoke<string>("terminal_replay", { id }),
