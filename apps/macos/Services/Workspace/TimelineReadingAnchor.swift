@@ -73,6 +73,33 @@ final class TimelineReadingAnchor {
         return true
     }
 
+    /// Until when the next growth of the content is all above what you read (`growsAbove`).
+    private var growsAboveUntil: Date?
+
+    /// The next growth of the content comes all above what you read: a page of older messages drawn above the oldest
+    /// one. Said right before that page is drawn; the scroll view's probe (`readingScroller`) then moves the view down by
+    /// the growth in the same pass of layout (`takesGrowthAbove`, `shifted(by:)`), so no frame shows the older messages
+    /// pushing what you read down. Putting it back a frame later (a `scrollTo` after the page was drawn) showed the chat
+    /// jumping down and up again each time a page came in. Holds for `seconds`: a page that drew nothing leaves no
+    /// promise behind for a picture that loads later.
+    func growsAbove(for seconds: Double = 0.5) {
+        growsAboveUntil = now().addingTimeInterval(seconds)
+    }
+
+    /// Whether the growth the content just made is the one `growsAbove` announced; it is taken, so the next is not.
+    func takesGrowthAbove() -> Bool {
+        guard let until = growsAboveUntil else { return false }
+        growsAboveUntil = nil
+        return now() <= until
+    }
+
+    /// The view was moved down by `delta` along with content that grew above everything in view (`growsAbove`), so
+    /// its report that follows is no move of yours. The held row tells where it went itself (`place`), before or after
+    /// this in the same pass: moving it here as well moved the view down twice as far.
+    func shifted(by delta: Double) {
+        offset += delta
+    }
+
     /// Where a row starts in the stack (and how tall it is, when known), or nil once it is no longer drawn.
     func place(_ id: AnyHashable, top: Double?, height: Double? = nil) {
         guard let top else {

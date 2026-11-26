@@ -337,7 +337,6 @@ targets:
       - path: Services/Messages/ChatActionSuggestion.swift
       - path: Services/Messages/ChatHistorySearch.swift
       - path: Services/Messages/ChatStore.swift
-      - path: Services/Messages/TranscriptReadingAnchor.swift
       - path: Services/Messages/ChatBackfill.swift
       - path: Services/Messages/ChatReconcile.swift
       - path: Services/Messages/ChatReceipts.swift
