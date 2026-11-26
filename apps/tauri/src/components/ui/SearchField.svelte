@@ -2,13 +2,35 @@
   // The search field (`NookSearchField`).
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "./Ico.svelte";
-  let { value = $bindable(""), placeholder }: { value: string; placeholder: string } = $props();
+  let { value = $bindable(""), placeholder, autofocus = false, onenter }: {
+    value: string;
+    placeholder: string;
+    autofocus?: boolean;
+    onenter?: () => void;
+  } = $props();
+
+  function focusIfWanted(node: HTMLInputElement) {
+    if (autofocus) node.focus();
+  }
 </script>
 
 <label class="search">
   <Ico name="search" size={13} stroke={2.2} />
-  <input bind:value {placeholder} aria-label={placeholder} autocapitalize="off" autocomplete="off" />
-  {#if value}<button class="clear" aria-label={tr("Wis", "Clear")} onclick={() => (value = "")}><Ico name="circle-x" size={13} /></button>{/if}
+  <input
+    use:focusIfWanted
+    bind:value
+    {placeholder}
+    aria-label={placeholder}
+    autocapitalize="off"
+    autocomplete="off"
+    onkeydown={(e) => {
+      if (e.key === "Enter" && onenter) {
+        e.preventDefault();
+        onenter();
+      }
+    }}
+  />
+  {#if value}<button type="button" class="clear" aria-label={tr("Wis", "Clear")} onclick={() => (value = "")}><Ico name="circle-x" size={13} /></button>{/if}
 </label>
 
 <style>

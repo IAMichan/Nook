@@ -14,8 +14,9 @@
   import { listen as listenEvent } from "@tauri-apps/api/event";
   import { chatsApi, connectorEvents, connectorsApi, type ChatThread } from "../../lib/connectors";
   import { noticeText } from "../../lib/chat-notice";
-  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, canForwardTo, dayAndClock, entryAbilities, fillReceipts, firstLink, bubbleOfWhatsApp, COMMON_EMOJI, dayLabel, frequentEmoji, insertTag, outgoingKindOfMedia, personTint, QUICK_REACTIONS, readReceiptSummary, typingLine, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
+  import { appName, bubbleOfInbox, callDetail, callOf, callTitle, canForwardTo, dayAndClock, entryAbilities, fillReceipts, firstLink, bubbleOfWhatsApp, dayLabel, insertTag, outgoingKindOfMedia, personTint, QUICK_REACTIONS, readReceiptSummary, typingLine, typingTag, usedEmoji, type Bubble, type ChatEntry } from "../../lib/chats-list";
   import Dialog from "../../components/ui/Dialog.svelte";
+  import EmojiBrowser from "../../components/ui/EmojiBrowser.svelte";
   import TimelineEarlierRow from "../../components/ui/TimelineEarlierRow.svelte";
   import ChatQuote from "./ChatQuote.svelte";
   import ChatForwardSheet from "./ChatForwardSheet.svelte";
@@ -523,11 +524,9 @@
   }
   let dragging = $state(false);
 
-  // The smiley beside the field (`ChatEmojiButton`): your most used emoji first, then a common set.
+  // The smiley beside the field (`ChatEmojiButton`): opens the full Unicode `EmojiBrowser` with frequent emoji first.
   let emojiOpen = $state(false);
-  const emojiList = $derived(emojiOpen ? [...new Set([...frequentEmoji(), ...COMMON_EMOJI])] : []);
   function putEmoji(e: string) {
-    usedEmoji(e);
     const at = field?.selectionStart ?? draft.length;
     draft = draft.slice(0, at) + e + draft.slice(field?.selectionEnd ?? at);
     emojiOpen = false;
@@ -1012,11 +1011,6 @@
     {:else if panel === "poll"}
       <ChatPollForm onsend={sendPoll} onclose={() => (panel = null)} />
     {/if}
-    {#if emojiOpen}
-      <div class="emoji-grid" role="listbox" aria-label={tr("Emoji", "Emoji")}>
-        {#each emojiList as e (e)}<button class="emoji" role="option" aria-selected="false" onclick={() => putEmoji(e)}>{e}</button>{/each}
-      </div>
-    {/if}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="box" class:dragging ondragover={(e) => { if (takesFiles && e.dataTransfer?.types.includes("Files")) { e.preventDefault(); dragging = true; } }}
       ondragleave={() => (dragging = false)} ondrop={(e) => { e.preventDefault(); dragging = false; addFiles(e.dataTransfer?.files); }}>
@@ -1048,7 +1042,14 @@
             </Dropdown>
             <input class="hidden" type="file" multiple accept={pickerAccept} bind:this={picker} onchange={(e) => { addFiles((e.currentTarget as HTMLInputElement).files); (e.currentTarget as HTMLInputElement).value = ""; }} />
           {/if}
-          <IconButton title={tr("Emoji", "Emoji")} size={28} onclick={() => (emojiOpen = !emojiOpen)}><Ico name="smile" size={15} stroke={2} /></IconButton>
+          <Dropdown bind:open={emojiOpen} width={326} label={tr("Emoji", "Emoji")}>
+            {#snippet trigger({ toggle })}
+              <IconButton title={tr("Emoji", "Emoji")} size={28} onclick={toggle}><Ico name="smile" size={15} stroke={2} /></IconButton>
+            {/snippet}
+            {#snippet children()}
+              <EmojiBrowser onchoose={putEmoji} />
+            {/snippet}
+          </Dropdown>
         </div>
       {/if}
       <textarea class:hidden={!!recording} bind:this={field} rows="1" bind:value={draft} onkeydown={keydown} onpaste={paste}
@@ -1298,9 +1299,6 @@
   .nook-mark { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--iris); background: color-mix(in srgb, var(--iris) 14%, transparent); }
   .tag-words { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .tag-detail { font: var(--text-caption); color: var(--text3); }
-  .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: var(--space-2); max-height: 160px; overflow-y: auto; padding: var(--space-6); border: 1px solid var(--field-stroke); border-radius: var(--radius-sheet); background: var(--composer-tray); }
-  .emoji { height: 32px; padding: 0; border: 0; border-radius: var(--radius-control); background: transparent; font: var(--text-heading); font-weight: 400; }
-  .emoji:hover:not(:disabled) { background: var(--row-hover); border: 0; }
   .leading { display: flex; align-items: center; gap: var(--space-2); align-self: flex-end; min-height: 32px; }
   .hidden { display: none; }
   .box.dragging { border-color: var(--iris); }

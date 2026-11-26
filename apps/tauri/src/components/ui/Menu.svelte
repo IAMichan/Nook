@@ -2,8 +2,11 @@
   // A menu: sections of rows with an icon, a checkmark on the chosen one and destructive rows in coral, opened near
   // what was clicked or tapped. On the desktop a compact Nook popover that Escape closes; inside the companion
   // (`.phone`) the iPhone's system menu over a dimmed screen.
+  import { tr } from "../../lib/i18n.svelte";
   import { onBack } from "../../lib/mobile";
+  import EmojiBrowser from "./EmojiBrowser.svelte";
   import Ico from "./Ico.svelte";
+  import { tip } from "./tip";
 
   export interface MenuItem {
     label: string;
@@ -15,49 +18,58 @@
     onselect?: () => void;
   }
 
-  /** A row of emoji above the rows (a message's quick reactions): the ones in `mine` are marked, a tap picks one. */
+  /** A row of emoji above the rows (a message's quick reactions): the ones in `mine` are marked, a tap picks one, and "+" opens EmojiBrowser. */
   export interface MenuReactions { emoji: string[]; mine: string[]; onpick: (emoji: string) => void }
 
   let { sections, anchor, title, reactions, onclose }: {
     sections: MenuItem[][]; anchor?: DOMRect | null; title?: string; reactions?: MenuReactions; onclose: () => void;
   } = $props();
+  let browsingEmoji = $state(false);
   $effect(() => onBack(() => (onclose(), true)));
   $effect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onclose(); } };
     window.addEventListener("keydown", esc, true);
     return () => window.removeEventListener("keydown", esc, true);
   });
+  const panelWidth = $derived(browsingEmoji ? 336 : 262);
   const below = $derived(!anchor || anchor.bottom < window.innerHeight * 0.55);
   const top = $derived(anchor ? (below ? anchor.bottom + 6 : undefined) : undefined);
   const bottom = $derived(anchor && !below ? window.innerHeight - anchor.top + 6 : undefined);
-  const left = $derived(anchor ? Math.min(Math.max(12, anchor.left), window.innerWidth - 262) : undefined);
+  const left = $derived(anchor ? Math.min(Math.max(12, anchor.left), Math.max(12, window.innerWidth - panelWidth)) : undefined);
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="scrim" onclick={onclose}>
-  <div class="menu" role="menu" tabindex="-1" style:top={top !== undefined ? `${top}px` : undefined} style:bottom={bottom !== undefined ? `${bottom}px` : anchor ? undefined : "calc(16px + var(--safe-bottom, 0px))"} style:left={left !== undefined ? `${left}px` : undefined} class:centered={!anchor} onclick={(e) => e.stopPropagation()}>
-    {#if title}<div class="title">{title}</div>{/if}
-    {#if reactions}
-      <div class="reactions">
-        {#each reactions.emoji as e (e)}
-          <button class="emoji" class:mine={reactions.mine.includes(e)} aria-label={e} aria-pressed={reactions.mine.includes(e)} onclick={() => { reactions.onpick(e); onclose(); }}>{e}</button>
-        {/each}
-      </div>
-    {/if}
-    {#each sections.filter((s) => s.length) as section, i (i)}
-      {#if i > 0 || title || reactions}<div class="gap"></div>{/if}
-      {#each section as item, j (j)}
-        {#if item.onselect}
-          <button role="menuitem" class="item" class:destructive={item.destructive} disabled={item.disabled} onclick={() => { item.onselect?.(); onclose(); }}>
-            <span class="check">{#if item.checked}<Ico name="check" size={14} stroke={2.6} />{/if}</span>
-            <span class="text"><span>{item.label}</span>{#if item.detail}<small>{item.detail}</small>{/if}</span>
-            {#if item.icon}<Ico name={item.icon} size={17} />{/if}
+  <div class="menu" class:browsing={browsingEmoji} role="menu" tabindex="-1" style:top={top !== undefined ? `${top}px` : undefined} style:bottom={bottom !== undefined ? `${bottom}px` : anchor ? undefined : "calc(16px + var(--safe-bottom, 0px))"} style:left={left !== undefined ? `${left}px` : undefined} class:centered={!anchor} onclick={(e) => e.stopPropagation()}>
+    {#if browsingEmoji && reactions}
+      <EmojiBrowser chosen={reactions.mine[0] ?? null} onchoose={(e) => { reactions.onpick(e); onclose(); }} />
+    {:else}
+      {#if title}<div class="title">{title}</div>{/if}
+      {#if reactions}
+        <div class="reactions">
+          {#each reactions.emoji as e (e)}
+            <button type="button" class="emoji" class:mine={reactions.mine.includes(e)} aria-label={e} aria-pressed={reactions.mine.includes(e)} onclick={() => { reactions.onpick(e); onclose(); }}>{e}</button>
+          {/each}
+          <button type="button" class="emoji more" aria-label={tr("Meer emoji", "More emoji")} use:tip={tr("Meer emoji", "More emoji")} onclick={() => (browsingEmoji = true)}>
+            <Ico name="plus" size={14} stroke={2.4} />
           </button>
-        {:else}
-          <div class="item static"><span class="check"></span><span class="text"><span>{item.label}</span>{#if item.detail}<small>{item.detail}</small>{/if}</span>{#if item.icon}<Ico name={item.icon} size={17} />{/if}</div>
-        {/if}
+        </div>
+      {/if}
+      {#each sections.filter((s) => s.length) as section, i (i)}
+        {#if i > 0 || title || reactions}<div class="gap"></div>{/if}
+        {#each section as item, j (j)}
+          {#if item.onselect}
+            <button role="menuitem" class="item" class:destructive={item.destructive} disabled={item.disabled} onclick={() => { item.onselect?.(); onclose(); }}>
+              <span class="check">{#if item.checked}<Ico name="check" size={14} stroke={2.6} />{/if}</span>
+              <span class="text"><span>{item.label}</span>{#if item.detail}<small>{item.detail}</small>{/if}</span>
+              {#if item.icon}<Ico name={item.icon} size={17} />{/if}
+            </button>
+          {:else}
+            <div class="item static"><span class="check"></span><span class="text"><span>{item.label}</span>{#if item.detail}<small>{item.detail}</small>{/if}</span>{#if item.icon}<Ico name={item.icon} size={17} />{/if}</div>
+          {/if}
+        {/each}
       {/each}
-    {/each}
+    {/if}
   </div>
 </div>
 
@@ -65,10 +77,14 @@
   /* The desktop: a compact popover. */
   .scrim { position: fixed; inset: 0; z-index: 50; animation: fade 120ms ease-out; }
   .menu { position: fixed; width: 240px; max-height: 70vh; overflow-y: auto; padding: var(--space-4); background: var(--menu); border: 1px solid var(--line2); border-radius: var(--radius-card); box-shadow: var(--shadow-popover); animation: pop 140ms cubic-bezier(0.2, 0.9, 0.3, 1.1); transform-origin: top left; box-sizing: border-box; }
+  .menu.browsing { width: auto; max-width: calc(100vw - 24px); overflow: hidden; padding: 0; }
   .menu.centered { left: 50%; top: 50%; bottom: auto !important; transform: translate(-50%, -50%); animation: fade 120ms ease-out; }
-  .reactions { display: flex; justify-content: space-between; padding: var(--space-4); }
+  .reactions { display: flex; justify-content: space-between; align-items: center; padding: var(--space-4); }
   .emoji { width: 30px; height: 30px; padding: 0; border: none; background: none; border-radius: 50%; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; }
+  .emoji:hover { background: var(--smoke); }
   .emoji.mine { background: var(--row-selected) !important; }
+  .emoji.more { color: var(--text2); }
+  .emoji.more:hover { color: var(--paper); }
   .title { padding: var(--space-6) var(--space-8) var(--space-4); font: var(--pt-caption, var(--text-caption)); color: var(--text3); }
   .gap { height: 1px; margin: var(--space-4) var(--space-6); background: var(--separator); }
   /* A row as a Mac system menu's: 13 pt on a short row, the accent behind the row under the pointer. */
