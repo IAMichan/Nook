@@ -12,6 +12,16 @@ function viewSource(file: string): string {
   return content;
 }
 
+/**
+ * True when `source` contains the save binding. A binding ending in `:` (for example `saveSettings({ showBar:`)
+ * also matches the shorthand forms `saveSettings({ showBar })` and `saveSettings({ showBar, ... })`.
+ */
+function hasBinding(source: string, binding: string): boolean {
+  if (!binding.endsWith(":")) return source.includes(binding);
+  const escaped = binding.slice(0, -1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${escaped}\\s*[:,}]`).test(source);
+}
+
 /** Parses `pub const ENTRIES: &[Entry] = &[ ... ];` from `core/src/settings_catalog.rs`. */
 function parseCatalogEntries(): { id: string; section: string }[] {
   const start = catalogSource.indexOf("pub const ENTRIES: &[Entry] = &[");
@@ -84,7 +94,7 @@ describe("Settings catalog UI parity (UI-12)", () => {
       expect(ui, `missing UI binding for ${entry.id}`).toBeDefined();
       expect(entry.section, `${entry.id} section`).toBe(ui.section);
       expect(settingsSections).toContain(entry.section);
-      expect(viewSource(ui.view), `${entry.id} in ${ui.view}`).toContain(ui.binding);
+      expect(hasBinding(viewSource(ui.view), ui.binding), `${entry.id} in ${ui.view}: ${ui.binding}`).toBe(true);
     }
 
     // Energy.svelte is embedded inside Maintenance.svelte, which renders the `maintenance` section.
