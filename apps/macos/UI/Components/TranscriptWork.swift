@@ -471,7 +471,8 @@ struct TranscriptSupersededFold<Rows: View>: View {
     }
 }
 
-/// A centered label between two hairlines, as the timeline marks something that happened to the session itself.
+/// A centered label between two hairlines, as the timeline marks something that happened to the session itself. An
+/// empty label leaves only the symbol and the detail.
 struct TimelineSystemDivider<Detail: View>: View {
     let label: String
     var symbol: String? = nil
@@ -482,7 +483,7 @@ struct TimelineSystemDivider<Detail: View>: View {
             NookDivider()
             HStack(spacing: NookTheme.Spacing.sm) {
                 if let symbol { Image(icon: symbol) }
-                Text(label).fontWeight(.medium)
+                if !label.isEmpty { Text(label).fontWeight(.medium) }
                 detail()
             }
             .lineLimit(1)
@@ -498,8 +499,8 @@ struct TimelineSystemDivider<Detail: View>: View {
 }
 
 /// Where the session went on with another agent, account, model or effort: "⇄ Context handoff  [logo] Sonnet 5.5 →
-/// [logo] GPT-5 High" between the turns when the agent changed, "Sonnet 5.5 → Opus 5.5 High" when only the model or
-/// effort did. Each logo carries its account's badge (initials, or the color you gave it) when the agent has
+/// [logo] GPT-5 High" between the turns when the agent changed, "[logo] Sonnet 5.5 → [logo] Opus 5.5" when only the
+/// model or effort did (just what changed, so an effort switch reads "[logo] High → [logo] Medium"). Each logo carries its account's badge (initials, or the color you gave it) when the agent has
 /// several accounts, so a switch to another account reads "[logo·WO] Sonnet 5.5 → [logo·PE] Sonnet 5.5", the logo a
 /// step dimmer behind its badge, the model in the agent's color, and "account · model" under the pointer.
 struct ModelSwitchDivider: View {
@@ -517,12 +518,12 @@ struct ModelSwitchDivider: View {
                 endpoint(change.to, model: true, effort: true)
             }
         } else {
-            TimelineSystemDivider(label: words(change.from) + " → " + words(change.to)) { EmptyView() }
+            TimelineSystemDivider(label: "") {
+                endpoint(change.from, model: change.modelChanged, effort: change.effortChanged)
+                Image(icon: "arrow.right").font(NookTheme.font(9, .semibold))
+                endpoint(change.to, model: change.modelChanged, effort: change.effortChanged)
+            }
         }
-    }
-
-    private func words(_ endpoint: ModelSwitch.Endpoint) -> String {
-        Self.words(endpoint, model: change.modelChanged, effort: change.effortChanged)
     }
 
     /// "Sonnet 5.5 High": the model (or the agent's default) and the effort, each only when asked for.
@@ -556,10 +557,12 @@ struct ModelSwitchDivider: View {
         let account = badge(endpoint)
         // To another agent with no model named: the agent's own name beside its logo, not a "default model" that
         // reads like a model of the one you left.
+        // Within one agent and account only what changed shows, the default effort included ("High → Default").
+        let sameAgent = !change.handoff && !change.accountChanged
         let text = model && endpoint.model == nil && change.handoff && change.from.agent != change.to.agent
             ? [endpoint.agent, Self.words(endpoint, model: false, effort: effort && endpoint.effort != nil)]
                 .filter { !$0.isEmpty }.joined(separator: " ")
-            : Self.words(endpoint, model: model, effort: effort && endpoint.effort != nil)
+            : Self.words(endpoint, model: model, effort: effort && (sameAgent || endpoint.effort != nil))
         let brand = BrandLogo.forName(endpoint.agent)
         return HStack(spacing: NookTheme.Spacing.xs) {
             AgentLogo(agent: endpoint.agent, size: 13)
