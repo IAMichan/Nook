@@ -368,15 +368,18 @@ extension NewSessionComposer {
         error = nil
         if let cached = workspace.cachedProject(path) {
             applyInspectedProject(cached, for: path)
-            inspecting = false
+            inspectingPath = nil
+        } else if let project, WorkspacePathPolicy.normalize(project.path) == WorkspacePathPolicy.normalize(path) {
+            // Already shown (a parked draft): looked at again quietly, without a spinner beside a loaded folder.
+            inspectingPath = nil
         } else {
-            inspecting = true
+            inspectingPath = path
         }
         Task {
             let info = await workspace.inspectProject(path)
+            if inspectingPath == path { inspectingPath = nil }
             guard config.projectPath == path, remoteMachine == nil else { return }
             applyInspectedProject(info, for: path)
-            inspecting = false
         }
     }
 

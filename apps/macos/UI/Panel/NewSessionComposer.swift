@@ -31,7 +31,9 @@ struct NewSessionComposer: View {
     @State var hasTask = false
     @State var images: [ImageAttachment] = []
     @State var project: ProjectInfo?
-    @State var inspecting = false
+    /// The folder whose first look is still running, while nothing about it is known yet. A path, not a flag: a look that
+    /// another folder, machine or draft took over can never leave the spinner on.
+    @State var inspectingPath: String?
     @State var starting = false
     @State var error: String?
     @State var allowShared = false
