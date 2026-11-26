@@ -105,12 +105,8 @@ pub async fn suggest_actions(app: AppHandle, request: SuggestRequest) -> Res<Opt
         }
         let mut looks = lock(&LOOKS);
         looks.retain(|l| (now - *l).num_seconds() < 3600);
-        let pace = rules::Pace {
-            last_look: past.last_look,
-            waiting: request.waiting,
-            looks_this_hour: looks.len(),
-            dismissed: request.dismissed,
-        };
+        let pace =
+            rules::Pace { last_look: past.last_look, waiting: request.waiting, looks_this_hour: looks.len(), dismissed: request.dismissed };
         // Not now: these lines stay new, so the next look still reads them.
         if !pace.allows(now) {
             return Ok(None);
