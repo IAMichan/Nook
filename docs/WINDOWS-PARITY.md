@@ -488,7 +488,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-47** Active usage polling and reset credits (`ClaudeUsage`, `CodexUsage`, `CodexRateLimits`, `QuotaService`) in `core/src/agents/usage.rs` · M
 
-- [ ] **AG-48** Antigravity quota and CLIProxyAPI hubs (`AntigravityUsage`, `CLIProxyUsage`, `CLIProxyHub`) · M Partly done (2026-11-21): Antigravity quota and CLIProxyAPI hub parsing in `core/src/agents/usage.rs` and `src-tauri/src/agents/usage.rs`. Open: CLIProxyAPI hub management UI in Settings.
+- [x] **AG-48** Antigravity quota and CLIProxyAPI hubs (`AntigravityUsage`, `CLIProxyUsage`, `CLIProxyHub`) · M
+  - Done: Antigravity quota and CLIProxyAPI hub store, no-redirect `/v0/management/auth-files` polling, secret-store management keys, and settled windows (`core/src/agents/usage.rs`, `src-tauri/src/agents/usage.rs`), with editable hub management in Settings › Coding agents › Usage & costs (`CliProxyHubs.svelte`, `AgentsUsage.svelte`) and read-only hub display in the Usage modal Limits tab (`UsageModal.svelte`).
 
 - [x] **AG-49** Usage modal like the Mac (`LimitPool`, `UsageLedger`, `PriceTable`, `UsageLimitCard`: pooling by plan, cost and token tabs, costliest chats, agent filter, Manage usage) · M
 
@@ -593,7 +594,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-105** Browser element snippets into the composer (#1570) · S Done (2026-11-23): interactive browser element picker (`src-tauri/src/workspace/browser.rs`, `views/workspace/Browser.svelte`) inserts picked element snippets into the composer.
 
-- [ ] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
+- [x] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
 
 ### 4.7 Agents list
 
@@ -617,7 +618,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-122** Commit style, removing agent credits from commits, PR body check against the template (`CommitStyle`, `PullRequestBodyCheck`, #1561) · S Done: added `core/src/workspace/commit_style.rs` (`CommitStyle`, `strip_agent_credits`, `launch_instructions`, `pr_body_problems`, `pr_body_refusal`, `find_pr_template`), persisted settings on `WorkspaceSettings`, wired template validation and credit stripping into `pull_request_create`, `workspace_start`, and `workspace_commit_all`, and added the Settings › Pull requests controls.
 
-- [ ] **AG-123** Skip approval for a PR the user asked for (#1602), PR news as a new turn (#1601), PR mentions · S
+- [x] **AG-123** Skip approval for a PR the user asked for (#1602), PR news as a new turn (#1601), PR mentions · S Done (2026-11-26): `pr_links` (`asked_in_events`, `mentions_in_command`, `mentions_in_message`, `mentions_in_events`) in `nook-core`, skip-approval wired into `pull_request_create`, `tool: "prwatch"` emitted on PR watch news in `bridge/pulls.rs` with `lastTurn` turn-splitting tests, and session PR mentions group in `PullRequests.svelte`.
 
 - [ ] **AG-124** Other forges for session PRs: GitLab, Gitea, Bitbucket, Azure DevOps (`ForgeSettings`) · L
 

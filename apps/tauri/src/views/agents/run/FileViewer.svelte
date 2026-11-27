@@ -18,7 +18,9 @@
   import { fileName, lineLabel } from "../../../lib/workspace/file-links";
   import { renderMermaid } from "../../../lib/rich";
   import { historyOf, recordVersion, unifiedDiff } from "../../../lib/workspace/artifact-history";
+  import { isPdfPath } from "../../../lib/workspace/pdf-point";
   import UnifiedDiffView from "../UnifiedDiffView.svelte";
+  import PdfPointViewer from "./PdfPointViewer.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import Markdown from "../../../components/Markdown.svelte";
   import Ico from "../../../components/ui/Ico.svelte";
@@ -65,8 +67,8 @@
     if (quiet) updating = true;
     try {
       const next = await readFile(path);
-      // Only a change in the text redraws: a read that finds the same file leaves the view (and its scroll) alone.
-      if (!view || view.kind !== next.kind || view.file?.text !== next.file?.text || view.file?.modified !== next.file?.modified) view = next;
+      // Only a change in the file redraws: a read that finds the same file leaves the view (and its scroll) alone.
+      if (!view || view.kind !== next.kind || view.size !== next.size || view.file?.text !== next.file?.text || view.file?.modified !== next.file?.modified) view = next;
       if (next.kind === "text" && next.file && recordVersion(path, next.file.text)) versionTick += 1;
       failed = null;
     } catch (e) {
@@ -220,54 +222,58 @@
     </div>
   {/if}
 
-  <div class="body" bind:this={scroller}>
-    {#if failed}
-      <p class="note">{failed}</p>
-    {:else if !view}
-      <div class="center"><Spinner /></div>
-    {:else if view.kind === "missing"}
-      <p class="note">{tr("Dit bestand bestaat niet (meer).", "This file no longer exists.")}</p>
-    {:else if view.kind === "folder"}
-      <p class="note">{tr("Dit is een map.", "This is a folder.")}</p>
-      <div class="center"><button class="ghost" onclick={reveal}>{tr("Toon in map", "Show in folder")}</button></div>
-    {:else if view.kind === "preview"}
-      <p class="note">{tr("Nook kan dit bestand niet als tekst tonen.", "Nook can't show this file as text.")}</p>
-      <div class="center">
-        {#if previewable(path)}<button class="primary" onclick={() => previewFile(path)}>{tr("Voorbeeld", "Preview")}</button>{/if}
-        <button class="ghost" onclick={openInEditor}>{tr("Open in app", "Open in app")}</button>
-      </div>
-    {:else if versionDiff !== null}
-      {#if versionDiff}<UnifiedDiffView diff={versionDiff} />{:else}<p class="note">{tr("Geen wijzigingen ten opzichte van de vorige versie", "No changes from the previous version")}</p>{/if}
-    {:else if editor.editing}
-      <textarea class="edit" bind:value={editor.draft} spellcheck="false" wrap="off" aria-label={fileName(path)}></textarea>
-    {:else if previewing && kind === "markdown"}
-      <div class="doc"><Markdown {text} baseFolder={folder ?? path.replace(/[\\/][^\\/]*$/, "")} /></div>
-    {:else if previewing && kind === "diagram"}
-      <div class="doc">{#if diagram}{@html diagram}{:else}<p class="note">{tr("Dit diagram kon niet worden getekend.", "This diagram could not be drawn.")}</p>{/if}</div>
-    {:else if page}
-      <iframe class="page" sandbox="" srcdoc={page} title={fileName(path)}></iframe>
-    {:else}
-      <div class="code" style:--digits="{digits}ch">
-        {#each html as row, i (i)}
-          {@const n = i + 1}
-          <div class="row" class:marked={marked !== null && markedEnd !== null && n >= marked && n <= markedEnd} data-line={n}>
-            <button class="num" title={tr("Opmerking bij deze regel", "Comment on this line")} aria-label={tr("Opmerking bij deze regel", "Comment on this line")} onclick={() => { commentLine = n; note = ""; }}>{n}</button>
-            <span class="text">{@html row || " "}</span>
-          </div>
-          {#if commentLine === n}
-            <div class="comment">
-              <span class="faint">{tr("regel {line}", "line {line}", { line: n })}</span>
-              <!-- svelte-ignore a11y_autofocus -->
-              <input bind:value={note} autofocus placeholder={tr("Wat moet hier anders?", "What should change here?")}
-                onkeydown={(e) => { if (e.key === "Enter") send(); if (e.key === "Escape") commentLine = null; }} />
-              <IconButton title={tr("Aan de composer toevoegen", "Add to the composer")} onclick={send} disabled={!note.trim()}><Ico name="arrow-up" size={14} /></IconButton>
-              <IconButton title={tr("Annuleer", "Cancel")} onclick={() => (commentLine = null)}><Ico name="x" size={14} /></IconButton>
+  {#if !failed && view?.kind === "preview" && isPdfPath(path)}
+    <PdfPointViewer {runId} {path} version={`${opened}:${view.size}`} />
+  {:else}
+    <div class="body" bind:this={scroller}>
+      {#if failed}
+        <p class="note">{failed}</p>
+      {:else if !view}
+        <div class="center"><Spinner /></div>
+      {:else if view.kind === "missing"}
+        <p class="note">{tr("Dit bestand bestaat niet (meer).", "This file no longer exists.")}</p>
+      {:else if view.kind === "folder"}
+        <p class="note">{tr("Dit is een map.", "This is a folder.")}</p>
+        <div class="center"><button class="ghost" onclick={reveal}>{tr("Toon in map", "Show in folder")}</button></div>
+      {:else if view.kind === "preview"}
+        <p class="note">{tr("Nook kan dit bestand niet als tekst tonen.", "Nook can't show this file as text.")}</p>
+        <div class="center">
+          {#if previewable(path)}<button class="primary" onclick={() => previewFile(path)}>{tr("Voorbeeld", "Preview")}</button>{/if}
+          <button class="ghost" onclick={openInEditor}>{tr("Open in app", "Open in app")}</button>
+        </div>
+      {:else if versionDiff !== null}
+        {#if versionDiff}<UnifiedDiffView diff={versionDiff} />{:else}<p class="note">{tr("Geen wijzigingen ten opzichte van de vorige versie", "No changes from the previous version")}</p>{/if}
+      {:else if editor.editing}
+        <textarea class="edit" bind:value={editor.draft} spellcheck="false" wrap="off" aria-label={fileName(path)}></textarea>
+      {:else if previewing && kind === "markdown"}
+        <div class="doc"><Markdown {text} baseFolder={folder ?? path.replace(/[\\/][^\\/]*$/, "")} /></div>
+      {:else if previewing && kind === "diagram"}
+        <div class="doc">{#if diagram}{@html diagram}{:else}<p class="note">{tr("Dit diagram kon niet worden getekend.", "This diagram could not be drawn.")}</p>{/if}</div>
+      {:else if page}
+        <iframe class="page" sandbox="" srcdoc={page} title={fileName(path)}></iframe>
+      {:else}
+        <div class="code" style:--digits="{digits}ch">
+          {#each html as row, i (i)}
+            {@const n = i + 1}
+            <div class="row" class:marked={marked !== null && markedEnd !== null && n >= marked && n <= markedEnd} data-line={n}>
+              <button class="num" title={tr("Opmerking bij deze regel", "Comment on this line")} aria-label={tr("Opmerking bij deze regel", "Comment on this line")} onclick={() => { commentLine = n; note = ""; }}>{n}</button>
+              <span class="text">{@html row || " "}</span>
             </div>
-          {/if}
-        {/each}
-      </div>
-    {/if}
-  </div>
+            {#if commentLine === n}
+              <div class="comment">
+                <span class="faint">{tr("regel {line}", "line {line}", { line: n })}</span>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input bind:value={note} autofocus placeholder={tr("Wat moet hier anders?", "What should change here?")}
+                  onkeydown={(e) => { if (e.key === "Enter") send(); if (e.key === "Escape") commentLine = null; }} />
+                <IconButton title={tr("Aan de composer toevoegen", "Add to the composer")} onclick={send} disabled={!note.trim()}><Ico name="arrow-up" size={14} /></IconButton>
+                <IconButton title={tr("Annuleer", "Cancel")} onclick={() => (commentLine = null)}><Ico name="x" size={14} /></IconButton>
+              </div>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>

@@ -1051,7 +1051,139 @@ pub struct CliProxyAccount {
     pub signals_observed_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CliProxyProblem {
+    NoKey,
+    BadAddress,
+    InsecureAddress,
+    RejectedKey,
+    Unreachable,
+    NotAHub,
+}
+
+impl From<CliProxyAddressError> for CliProxyProblem {
+    fn from(value: CliProxyAddressError) -> Self {
+        match value {
+            CliProxyAddressError::Invalid => Self::BadAddress,
+            CliProxyAddressError::Insecure => Self::InsecureAddress,
+        }
+    }
+}
+
+/// Persisted list of CLIProxyAPI hubs (`cliproxy-hubs.json` in Nook's support directory).
+#[derive(Debug, Default)]
+pub struct CliProxyHubStore {
+    path: Option<PathBuf>,
+    hubs: Vec<CliProxyHub>,
+}
+
+impl CliProxyHubStore {
+    pub fn load(path: Option<PathBuf>) -> Self {
+        let hubs = path
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| serde_json::from_str::<Vec<CliProxyHub>>(&s).ok())
+            .unwrap_or_default();
+        Self { path, hubs }
+    }
+
+    pub fn all(&self) -> Vec<CliProxyHub> {
+        self.hubs.clone()
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.hubs.iter().any(|h| h.id == id)
+    }
+
+    pub fn add(&mut self, hub: CliProxyHub) -> CliProxyHub {
+        self.hubs.push(hub.clone());
+        self.save();
+        hub
+    }
+
+    pub fn remove(&mut self, id: &str) -> Option<CliProxyHub> {
+        let idx = self.hubs.iter().position(|h| h.id == id)?;
+        let removed = self.hubs.remove(idx);
+        self.save();
+        Some(removed)
+    }
+
+    fn save(&self) {
+        let Some(path) = &self.path else { return };
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(text) = serde_json::to_string_pretty(&self.hubs) {
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, text).is_ok() {
+                let _ = std::fs::rename(&tmp, path);
+            }
+        }
+    }
+}
+
+/// Settled view of one CLIProxyAPI pooled account for the UI (`CLIProxyAccountRow` on the Mac).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliProxyAccountView {
+    pub id: String,
+    pub provider: String,
+    pub agent_kind: Option<super::AgentKind>,
+    pub name: String,
+    pub email: Option<String>,
+    pub label: String,
+    pub disabled: bool,
+    pub status: String,
+    pub status_message: Option<String>,
+    pub unavailable: bool,
+    pub available: bool,
+    pub retry_at: Option<DateTime<Utc>>,
+    pub succeeded: i64,
+    pub failed: i64,
+    pub windows: Vec<CliProxyWindow>,
+}
+
+/// One configured CLIProxyAPI hub together with its latest fetched snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliProxyHubSnapshot {
+    pub hub: CliProxyHub,
+    pub name: String,
+    pub accounts: Vec<CliProxyAccountView>,
+    pub read_at: Option<DateTime<Utc>>,
+    pub problem: Option<CliProxyProblem>,
+}
+
 impl CliProxyAccount {
+    /// Display name: email when known, else the hub's label.
+    pub fn display_name(&self) -> &str {
+        self.email.as_deref().unwrap_or(&self.label)
+    }
+
+    /// Coding agent kind corresponding to the hub's provider string.
+    pub fn agent_kind(&self) -> Option<super::AgentKind> {
+        match self.provider.as_str() {
+            "claude" => Some(super::AgentKind::Claude),
+            "codex" => Some(super::AgentKind::Codex),
+            "antigravity" => Some(super::AgentKind::Antigravity),
+            "gemini" | "gemini-cli" => Some(super::AgentKind::Gemini),
+            "xai" | "grok" => Some(super::AgentKind::Grok),
+            _ => None,
+        }
+    }
+
+    /// Whether the hub can route requests to this account right now.
+    pub fn is_available(&self, now: DateTime<Utc>) -> bool {
+        if self.disabled {
+            return false;
+        }
+        if self.unavailable {
+            return self.retry_at.is_some_and(|r| r <= now);
+        }
+        true
+    }
+
     pub fn windows(&self, now: DateTime<Utc>) -> Vec<CliProxyWindow> {
         let num = |k: &str| self.signals.get(k).and_then(|s| s.trim().parse::<f64>().ok());
         let base = self.signals_observed_at.unwrap_or(now);
@@ -1082,6 +1214,40 @@ impl CliProxyAccount {
             }
         }
         out
+    }
+
+    /// Windows settled against `now`: a window whose reset has already passed resets to 0% idle.
+    pub fn settled_windows(&self, now: DateTime<Utc>) -> Vec<CliProxyWindow> {
+        self.windows(now)
+            .into_iter()
+            .map(|mut w| {
+                if w.resets_at.is_some_and(|r| r <= now) {
+                    w.used_percent = 0.0;
+                    w.resets_at = None;
+                }
+                w
+            })
+            .collect()
+    }
+
+    pub fn to_view(&self, now: DateTime<Utc>) -> CliProxyAccountView {
+        CliProxyAccountView {
+            id: self.id.clone(),
+            provider: self.provider.clone(),
+            agent_kind: self.agent_kind(),
+            name: self.display_name().to_string(),
+            email: self.email.clone(),
+            label: self.label.clone(),
+            disabled: self.disabled,
+            status: self.status.clone(),
+            status_message: self.status_message.clone(),
+            unavailable: self.unavailable,
+            available: self.is_available(now),
+            retry_at: self.retry_at,
+            succeeded: self.succeeded,
+            failed: self.failed,
+            windows: self.settled_windows(now),
+        }
     }
 }
 
@@ -1280,6 +1446,36 @@ mod tests {
         assert_eq!(wins.len(), 1);
         assert_eq!(wins[0].key, "five_hour");
         assert!((wins[0].used_percent - 42.0).abs() < 0.01);
+        assert_eq!(accounts[0].agent_kind(), Some(super::super::AgentKind::Claude));
+
+        // Expired window settles back to 0% with no reset timestamp.
+        let past_now = Utc.timestamp_opt(1_800_000_100, 0).unwrap();
+        let settled = accounts[0].settled_windows(past_now);
+        assert_eq!(settled.len(), 1);
+        assert_eq!(settled[0].used_percent, 0.0);
+        assert!(settled[0].resets_at.is_none());
+    }
+
+    #[test]
+    fn cliproxy_hub_store_persists_add_and_remove() {
+        let dir = std::env::temp_dir().join(format!("nook-cliproxy-store-{}", uuid::Uuid::new_v4()));
+        let path = dir.join("cliproxy-hubs.json");
+        let mut store = CliProxyHubStore::load(Some(path.clone()));
+        assert!(store.all().is_empty());
+
+        let hub = CliProxyHub { id: "h1".into(), label: "Local".into(), url: "http://127.0.0.1:8317".into() };
+        store.add(hub.clone());
+        assert_eq!(store.all(), vec![hub.clone()]);
+        assert_eq!(hub.name(), "Local");
+
+        let reloaded = CliProxyHubStore::load(Some(path.clone()));
+        assert_eq!(reloaded.all(), vec![hub.clone()]);
+
+        let mut reloaded = reloaded;
+        assert_eq!(reloaded.remove("h1"), Some(hub));
+        assert!(reloaded.all().is_empty());
+        assert!(CliProxyHubStore::load(Some(path)).all().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[cfg(unix)]

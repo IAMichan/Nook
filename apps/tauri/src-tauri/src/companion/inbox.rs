@@ -1,7 +1,8 @@
 //! The companion's `inbox` area on Windows and Linux: the phone's Chats tab, as the Mac's `CompanionServer+Chats.swift`
 //! answers it, from the chats this app has. That is WhatsApp through the linked gateway (`Connectors::whatsapp`), the
-//! one chat app the Windows and Linux app reads; the Mac's other chat apps come from macOS notifications, which these
-//! systems do not offer (docs/INTEGRATIONS.md). The shapes are `nook_core::companion::inbox_digest`.
+//! one chat app this area reads; the chats Windows' notifications bring to the computer's own Chats tab
+//! (`crate::chats::system_notices`) do not reach the phone yet (docs/INTEGRATIONS.md). The shapes are
+//! `nook_core::companion::inbox_digest`.
 //!
 //! `inbox` and `inboxChat` are asked again and again by the live connection, so they only read what Nook holds (one
 //! chat's history is fetched once, the first time it opens). Sending is the phone's own tap, as the Chats tab's send

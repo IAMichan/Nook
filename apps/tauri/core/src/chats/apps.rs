@@ -25,6 +25,10 @@ pub struct NoticeLayout {
     /// The app titles a group's message with who wrote it and puts the group in the subtitle, or writes it as
     /// "Anna @ Family" (the WhatsApp app; its website does not swap).
     pub sender_in_title: bool,
+    /// The app titles a channel's or group's message "Anna (#general, Server)": who wrote it, then the chat in
+    /// parentheses (Discord).
+    #[serde(default)]
+    pub chat_in_parentheses: bool,
 }
 
 /// A connection of its own that Nook links an app with, beyond notifications and its bridge.
@@ -51,7 +55,8 @@ pub struct MessagingApp {
     pub own_link: Option<OwnLink>,
 }
 
-const PLAIN: NoticeLayout = NoticeLayout { slack_markup: false, speaker_in_text: SpeakerInText::Never, sender_in_title: false };
+const PLAIN: NoticeLayout =
+    NoticeLayout { slack_markup: false, speaker_in_text: SpeakerInText::Never, sender_in_title: false, chat_in_parentheses: false };
 
 const fn app(id: &'static str, name: &'static str, domains: &'static [&'static str], site: Option<&'static str>) -> MessagingApp {
     MessagingApp { id, name, domains, site, notice_layout: PLAIN, notifies_by_default: false, calls_are_facetime: false, own_link: None }
@@ -66,9 +71,11 @@ pub fn built_in() -> Vec<MessagingApp> {
     let mut messages = app("messages", "Messages", &[], None);
     messages.calls_are_facetime = true;
     let mut slack = app("slack", "Slack", &["app.slack.com"], Some("slack.com"));
-    slack.notice_layout = NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, sender_in_title: false };
+    slack.notice_layout = NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, ..PLAIN };
     let mut teams = app("teams", "Teams", &["teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com"], Some("teams.microsoft.com"));
     teams.notice_layout = NoticeLayout { speaker_in_text: SpeakerInText::Always, ..PLAIN };
+    let mut discord = app("discord", "Discord", &["discord.com"], Some("discord.com"));
+    discord.notice_layout = NoticeLayout { chat_in_parentheses: true, ..PLAIN };
     vec![
         whatsapp,
         app("telegram", "Telegram", &["web.telegram.org"], Some("telegram.org")),
@@ -77,7 +84,7 @@ pub fn built_in() -> Vec<MessagingApp> {
         app("signal", "Signal", &[], Some("signal.org")),
         messages,
         slack,
-        app("discord", "Discord", &["discord.com"], Some("discord.com")),
+        discord,
         teams,
         app("googlechat", "Google Chat", &["chat.google.com"], Some("chat.google.com")),
         app("snapchat", "Snapchat", &["snapchat.com"], Some("snapchat.com")),
@@ -172,6 +179,14 @@ pub fn clean_slack(text: &str) -> String {
     out.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 }
 
+/// "Anna (#general, Server)" as ("Anna", "#general, Server"); `None` without a name before the parentheses.
+fn in_parentheses(title: &str) -> Option<(String, String)> {
+    let inner = title.strip_suffix(')')?;
+    let open = inner.rfind(" (")?;
+    let (sender, chat) = (inner[..open].trim(), inner[open + 2..].trim());
+    (!sender.is_empty() && !chat.is_empty()).then(|| (sender.to_string(), chat.to_string()))
+}
+
 /// Reads a notification's title, subtitle and body by the app's layout into the chat, the sender and the text.
 pub fn parse_notice(app: &str, title: &str, subtitle: &str, body: &str, from_browser: bool) -> ChatNotice {
     let layout = known(app).map(|app| app.notice_layout).unwrap_or_default();
@@ -202,6 +217,12 @@ pub fn parse_notice(app: &str, title: &str, subtitle: &str, body: &str, from_bro
             title = chat.to_string();
         }
     }
+    if subtitle.is_empty() && layout.chat_in_parentheses {
+        if let Some((sender, chat)) = in_parentheses(&title) {
+            subtitle = sender;
+            title = chat;
+        }
+    }
     if subtitle.to_lowercase() == title.to_lowercase() {
         subtitle.clear();
     }
@@ -216,7 +237,7 @@ mod tests {
     fn the_apps_say_what_sets_them_apart() {
         assert_eq!(
             known("slack").unwrap().notice_layout,
-            NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, sender_in_title: false }
+            NoticeLayout { slack_markup: true, speaker_in_text: SpeakerInText::InChannels, ..PLAIN }
         );
         assert_eq!(known("teams").unwrap().notice_layout.speaker_in_text, SpeakerInText::Always);
         assert!(known("whatsapp").unwrap().notice_layout.sender_in_title);
@@ -246,6 +267,16 @@ mod tests {
         assert_eq!((web.chat.as_str(), web.sender.as_str()), ("Anna", "Family"));
         let at = parse_notice("whatsapp", "Anna @ Family", "", "hi", false);
         assert_eq!((at.chat.as_str(), at.sender.as_str()), ("Family", "Anna"));
+    }
+
+    #[test]
+    fn discord_names_the_channel_in_parentheses_and_a_direct_message_by_the_person() {
+        let channel = parse_notice("discord", "Anna (#general, Nook)", "", "hi", false);
+        assert_eq!((channel.chat.as_str(), channel.sender.as_str()), ("#general, Nook", "Anna"));
+        let direct = parse_notice("discord", "Anna", "", "hi", false);
+        assert_eq!((direct.chat.as_str(), direct.sender.as_str()), ("Anna", ""));
+        let plain = parse_notice("telegram", "Anna (work)", "", "hi", false);
+        assert_eq!(plain.chat, "Anna (work)");
     }
 
     #[test]

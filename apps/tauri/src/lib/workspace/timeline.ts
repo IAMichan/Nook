@@ -487,6 +487,12 @@ export function split(events: RunEvent[]): RunEvent[][] {
   return turns;
 }
 
+/// The last turn of `split` (resolves across PR news turns that start after a finished turn, #1601).
+export function lastTurn(events: RunEvent[]): RunEvent[] {
+  const turns = split(events);
+  return turns[turns.length - 1] ?? [];
+}
+
 /// Groepeert de events van een sessie tot blokken. `active`: de laatste beurt loopt nog en vouwt nooit.
 export function blocks(events: RunEvent[], active: boolean): TimelineBlock[] {
   const turns = split(events);

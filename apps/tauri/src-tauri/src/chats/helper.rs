@@ -341,7 +341,9 @@ pub fn setup(app: &AppHandle, chats: Arc<InboxStore>) -> Arc<ChatHelper> {
     let handle = app.clone();
     helper.run(chats, move |before, store| {
         let _ = handle.emit("chats-changed", ());
-        store.read(|now| super::notify::arrived(&handle, before, now));
+        // On a copy: nothing may wait for the inbox while the notices go out.
+        let now = store.read(Clone::clone);
+        super::notify::arrived(&handle, before, &now);
     });
     helper
 }

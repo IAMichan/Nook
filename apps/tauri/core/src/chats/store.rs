@@ -52,7 +52,8 @@ impl InboxStore {
         result
     }
 
-    /// Looks at the inbox without changing it.
+    /// Looks at the inbox without changing it. `f` (as in [`Self::with`]) must not ask a chat app's link anything: a
+    /// link takes this lock while holding its own, so the other order deadlocks.
     pub fn read<T>(&self, f: impl FnOnce(&ChatInbox) -> T) -> T {
         let inbox = self.inbox.lock().unwrap_or_else(|e| e.into_inner());
         f(&inbox)

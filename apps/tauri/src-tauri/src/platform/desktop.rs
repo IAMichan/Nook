@@ -346,32 +346,38 @@ pub fn sync_mirrors(app: &AppHandle) {
         let area = monitor.work_area();
         let x = area.position.x as f64 / scale + (area.size.width as f64 / scale - COLLAPSED.0) / 2.0;
         let y = area.position.y as f64 / scale;
-        let window = match app.get_webview_window(&label) {
-            Some(window) => window,
-            None => match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html#mirror".into()))
-                .title("Nook")
-                .inner_size(COLLAPSED.0, COLLAPSED.1)
-                .decorations(false)
-                .transparent(true)
-                .shadow(false)
-                .resizable(false)
-                .always_on_top(true)
-                .skip_taskbar(true)
-                .focused(false)
-                .visible(false)
-                .build()
-            {
-                Ok(window) => window,
-                Err(e) => {
-                    log::warn!("Bar on another screen: {e}");
-                    continue;
-                }
-            },
+        let Some(window) = app.get_webview_window(&label) else {
+            build_mirror(app, label);
+            continue;
         };
         let _ = window.set_ignore_cursor_events(true);
         let _ = window.set_position(LogicalPosition::new(x, y));
         let _ = window.show();
     }
+}
+
+/// Builds a resting bar on a thread of its own: `sync_mirrors` also runs inside commands and tray clicks, and creating
+/// a window there deadlocks the UI thread on Windows. Syncs again once it is there, which places and shows it.
+fn build_mirror(app: &AppHandle, label: String) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let built = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html#mirror".into()))
+            .title("Nook")
+            .inner_size(COLLAPSED.0, COLLAPSED.1)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .resizable(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .visible(false)
+            .build();
+        match built {
+            Ok(_) => sync_mirrors(&app),
+            Err(e) => log::warn!("Bar on another screen: {e}"),
+        }
+    });
 }
 
 /// With the bar on every screen, Nook moves to the screen the pointer is on while the panel is closed
