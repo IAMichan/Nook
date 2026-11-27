@@ -29,6 +29,8 @@ use nook_core::companion::client::{CompanionClient, HostResolver};
 use tauri::{AppHandle, Manager};
 
 #[cfg(desktop)]
+use nook_core::companion::cloudflare_relay::{self, DeployOptions, RelaySetupState};
+#[cfg(desktop)]
 use nook_core::companion::keep_awake::{self as policy, Decision};
 #[cfg(desktop)]
 use nook_core::companion::relay::RelayHost;
@@ -50,6 +52,12 @@ pub struct Companion {
     /// The rooms on the relay, so the phone reaches this computer away from home.
     #[cfg(desktop)]
     pub relay: Arc<RelayHost>,
+    /// Live state while deploying the user's own relay on Cloudflare (CO-08).
+    #[cfg(desktop)]
+    pub relay_setup: std::sync::Mutex<RelaySetupState>,
+    /// Checked once per launch whether a Nook-managed Cloudflare relay needs a newer Worker build.
+    #[cfg(desktop)]
+    relay_update_checked: std::sync::atomic::AtomicBool,
     /// Keeping this computer awake for the phone: the block held now, and why.
     #[cfg(desktop)]
     pub keep: std::sync::Mutex<KeepAwake>,
@@ -137,6 +145,38 @@ pub fn apply_relay(companion: &Companion) {
     companion.server.set_reach(reach);
 }
 
+/// A relay Nook deployed on the user's Cloudflare account receives this build's Worker code once a launch, quietly.
+#[cfg(desktop)]
+fn maybe_update_own_relay(companion: &Companion) {
+    use std::sync::atomic::Ordering;
+    let store = companion.server.store();
+    let settings = store.relay();
+    if !settings.enabled || !store.own_relay_is_managed() {
+        return;
+    }
+    if matches!(*companion.relay_setup.lock().unwrap_or_else(|e| e.into_inner()), RelaySetupState::Working { .. }) {
+        return;
+    }
+    let Some(token) = store.relay_cloudflare_token() else { return };
+    if companion.relay_update_checked.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let current = settings.address;
+    let version = cloudflare_relay::bundled_version();
+    if store.relay_deployed().as_deref() == Some(&format!("{version} {current}")) {
+        return;
+    }
+    let account = store.relay_cloudflare_account();
+    let store = store.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Ok(deployed) = cloudflare_relay::deploy(&token, account.as_deref(), &DeployOptions::default(), |_| {}).await {
+            if deployed.address == current {
+                store.set_relay_deployed(&deployed.version, &current);
+            }
+        }
+    });
+}
+
 /// One look: where this computer can be reached (a new network opens the relay rooms again), the relay rooms, and
 /// whether to keep the computer awake.
 #[cfg(desktop)]
@@ -146,6 +186,7 @@ async fn tick(companion: &Companion, slept: bool) {
     let moved = server.reach().hosts != hosts;
     server.set_reach(nook_core::companion::server::Reach { hosts, relay: server.reach().relay });
     apply_relay(companion);
+    maybe_update_own_relay(companion);
     // After sleep or on another network the relay sockets are dead without knowing it: connect again at once.
     if (moved || slept) && !server.reach().relay.is_empty() {
         companion.relay.reconnect();
@@ -196,6 +237,10 @@ pub fn setup(app: &AppHandle) {
         pairing_host: Default::default(),
         #[cfg(desktop)]
         relay,
+        #[cfg(desktop)]
+        relay_setup: Default::default(),
+        #[cfg(desktop)]
+        relay_update_checked: std::sync::atomic::AtomicBool::new(false),
         #[cfg(desktop)]
         keep: Default::default(),
         client,

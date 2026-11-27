@@ -138,6 +138,22 @@ export type RelayStatus =
   | { state: "connected" }
   | { state: "failed"; message: string };
 
+export type DeployStep = "account" | "uploading" | "starting";
+
+export type DeployError =
+  | { kind: "badToken" }
+  | { kind: "noAccount" }
+  | { kind: "severalAccounts" }
+  | { kind: "noSubdomain" }
+  | { kind: "noAnswer" }
+  | { kind: "cloudflare"; detail: string }
+  | { kind: "network"; detail: string };
+
+export type RelaySetupState =
+  | { state: "idle" }
+  | { state: "working"; step: DeployStep }
+  | { state: "failed"; error: DeployError };
+
 export type KeepAwakeMode = "off" | "whileWorking" | "always";
 
 export interface AwayInfo {
@@ -145,6 +161,10 @@ export interface AwayInfo {
   /** Nook's own relay in this build; null when only your own relay can be used. */
   nookRelay: string | null;
   relayStatus: RelayStatus;
+  /** Live progress or failure while deploying the user's own relay on Cloudflare (CO-08). */
+  relaySetup: RelaySetupState;
+  /** Whether the current own relay was deployed by Nook (so Nook keeps its Worker up to date). */
+  ownRelayManaged: boolean;
   keepAwake: KeepAwakeMode;
   /** What is held now and why; null while nothing is. */
   keepAwakeDecision: { hold: "none" | "idle" | "system"; reason: "working" | "phone" | "always" | null } | null;
@@ -196,9 +216,13 @@ export const companion = {
   removeApnsKey: () => invoke<CompanionInfo>("companion_remove_apns_key"),
   pushTest: () => invoke<string>("companion_push_test"),
   setRelay: (enabled: boolean, own: boolean, address: string) => invoke<CompanionInfo>("companion_set_relay", { enabled, own, address }),
+  cloudflareTokenUrl: () => invoke<string>("companion_cloudflare_token_url"),
+  setupOwnRelay: (token: string) => invoke<CompanionInfo>("companion_setup_own_relay", { token }),
+  forgetOwnRelay: () => invoke<CompanionInfo>("companion_forget_own_relay"),
   testRelay: () => invoke<number>("companion_test_relay"),
   setKeepAwake: (mode: KeepAwakeMode) => invoke<CompanionInfo>("companion_set_keep_awake", { mode }),
   setBackground: (on: boolean) => invoke<CompanionInfo>("companion_set_background", { on }),
+  onChanged: (cb: () => void): Promise<UnlistenFn> => listen<void>("companion-changed", () => cb()),
 
   client: () => invoke<ClientView>("companion_client"),
   pair: (link: string, name: string) => invoke<ClientView>("companion_client_pair", { link, name }),

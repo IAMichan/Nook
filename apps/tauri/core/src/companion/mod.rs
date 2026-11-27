@@ -11,6 +11,7 @@ pub mod apns;
 pub mod backend;
 pub mod chat_digest;
 pub mod client;
+pub mod cloudflare_relay;
 pub mod device_key;
 #[cfg(test)]
 mod fixtures;

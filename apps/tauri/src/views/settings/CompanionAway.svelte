@@ -1,22 +1,50 @@
 <script lang="ts">
   // Always reachable: the phone reaches this computer away from home (the relay, or Tailscale), the computer stays
   // awake for it, and Nook keeps running (Task Scheduler on Windows, a systemd user service on Linux). As on the Mac
-  // (Settings › iPhone › Away from home); the background task follows how t3code runs its server as a service.
+  // (Settings › iPhone › Away from home), including one-click Cloudflare relay setup (`OwnRelaySheet`, CO-08).
   import { companion, type CompanionInfo, type KeepAwakeMode } from "../../lib/companion";
   import { tr } from "../../lib/i18n.svelte";
+  import OwnRelaySheet from "./OwnRelaySheet.svelte";
 
   let { info, onchange }: { info: CompanionInfo; onchange: (info: CompanionInfo) => void } = $props();
 
   const away = $derived(info.away!);
-  let address = $state("");
   let error = $state<string | null>(null);
   let testing = $state(false);
   let testResult = $state<string | null>(null);
-  $effect(() => {
-    address = away.relay.address;
-  });
+  let settingUpRelay = $state(false);
+
   // Your own relay is the only choice in a build without Nook's.
   const own = $derived(away.relay.own || !away.nookRelay);
+
+  async function refresh() {
+    try {
+      onchange(await companion.info());
+    } catch {
+      // Ignore transient refresh errors while polling.
+    }
+  }
+
+  $effect(() => {
+    const unlisten = companion.onChanged(() => {
+      void refresh();
+    });
+    return () => {
+      unlisten.then((f) => f()).catch(() => {});
+    };
+  });
+
+  // While the setup sheet is open and connecting to a newly deployed relay, poll status until it settles.
+  $effect(() => {
+    const active =
+      settingUpRelay &&
+      (away.relaySetup.state === "working" || (!!away.relay.address && away.relayStatus.state === "connecting"));
+    if (!active) return;
+    const timer = setInterval(() => {
+      void refresh();
+    }, 1500);
+    return () => clearInterval(timer);
+  });
 
   async function run(f: () => Promise<CompanionInfo>) {
     error = null;
@@ -27,7 +55,12 @@
     }
   }
 
-  const setRelay = (enabled: boolean, useOwn: boolean) => run(() => companion.setRelay(enabled, useOwn, address));
+  const setRelay = (enabled: boolean, useOwn: boolean) => run(() => companion.setRelay(enabled, useOwn, away.relay.address));
+
+  async function resetOwnRelay() {
+    await run(() => companion.forgetOwnRelay());
+    settingUpRelay = true;
+  }
 
   async function test() {
     testing = true;
@@ -71,9 +104,27 @@
     </label>
   {/if}
   {#if own}
-    <div class="row sub">
-      <input class="address" placeholder="https://nook-relay.you.workers.dev" bind:value={address} onchange={() => setRelay(true, true)} />
-    </div>
+    {#if !away.relay.address}
+      <div class="row sub own-row">
+        <span class="own-copy">
+          <span>{tr("Je eigen relay", "Your own relay")}</span>
+          <span class="faint own-detail">{tr(
+            "Je eigen relay draait op een gratis Cloudflare-account. Nook zet hem daar voor je op met één Cloudflare-sleutel.",
+            "Your own relay runs on a free Cloudflare account. Nook puts it there for you with one Cloudflare token.",
+          )}</span>
+        </span>
+        <button type="button" class="small" onclick={() => (settingUpRelay = true)}>
+          {tr("Instellen", "Set up")}
+        </button>
+      </div>
+    {:else}
+      <div class="row sub own-row">
+        <span class="faint own-address">{tr("Je relay: {address}", "Your relay: {address}", { address: away.relay.address })}</span>
+        <button type="button" class="small" onclick={resetOwnRelay}>
+          {tr("Opnieuw instellen", "Set up again")}
+        </button>
+      </div>
+    {/if}
   {/if}
   <div class="row sub status">
     {#if away.relayStatus.state === "connected"}
@@ -82,21 +133,21 @@
       <span class="faint">{tr("Verbinden met de relay…", "Connecting to the relay…")}</span>
     {:else if away.relayStatus.state === "failed"}
       <span class="err">{tr("De relay is niet bereikbaar: {message}", "The relay can't be reached: {message}", { message: away.relayStatus.message })}</span>
-    {:else if away.relayStatus.state === "invalid"}
+    {:else if away.relayStatus.state === "invalid" && (!own || !!away.relay.address)}
       <span class="faint">{tr("Vul het https-adres van je relay in.", "Fill in your relay's https address.")}</span>
     {:else}
       <span class="faint">{tr("Gaat aan zodra er een telefoon gekoppeld is.", "Turns on once a phone is paired.")}</span>
     {/if}
     {#if away.relayStatus.state === "connected" && info.devices.length > 0}
-      <button class="small" disabled={testing} onclick={test}>{testing ? tr("Testen…", "Testing…") : tr("Test relay", "Test relay")}</button>
+      <button type="button" class="small" disabled={testing} onclick={test}>{testing ? tr("Testen…", "Testing…") : tr("Test relay", "Test relay")}</button>
     {/if}
   </div>
   {#if testResult}<p class="faint note">{testResult}</p>{/if}
 {/if}
 <p class="faint note">
   {tr(
-    "Zonder Tailscale en zonder poort open te zetten in je router: deze computer belt zelf naar de relay en je telefoon ontmoet hem daar. Alles blijft versleuteld met de koppelsleutel; de relay ziet alleen wanneer en hoeveel er gaat. Je eigen relay zet je op met apps/relay op je eigen Cloudflare-account.",
-    "No Tailscale and no port opened on your router: this computer calls out to the relay and your phone meets it there. Everything stays encrypted with the pairing key; the relay only sees when and how much goes through. Set up your own relay with apps/relay on your own Cloudflare account.",
+    "Zonder Tailscale en zonder poort open te zetten in je router: deze computer belt zelf naar de relay en je telefoon ontmoet hem daar. Alles blijft versleuteld met de koppelsleutel; de relay ziet alleen wanneer en hoeveel er gaat.",
+    "No Tailscale and no port opened on your router: this computer calls out to the relay and your phone meets it there. Everything stays encrypted with the pairing key; the relay only sees when and how much goes through.",
   )}
   {#if away.tailscale}
     {tr("Je telefoon kent ook het Tailscale-adres van deze computer.", "Your phone also knows this computer's Tailscale address.")}
@@ -133,9 +184,16 @@
 {/if}
 {#if error}<p class="err">{error}</p>{/if}
 
+{#if settingUpRelay}
+  <OwnRelaySheet {away} {onchange} onclose={() => (settingUpRelay = false)} />
+{/if}
+
 <style>
-  .status { justify-content: space-between; gap: 12px; }
-  .address { flex: 1; min-width: 0; }
+  .status { justify-content: space-between; gap: var(--space-12); }
+  .own-row { justify-content: space-between; gap: var(--space-12); }
+  .own-copy { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .own-detail { font: var(--text-detail); }
+  .own-address { font: var(--text-detail); overflow-wrap: anywhere; }
   .ok { color: var(--mint); }
-  .sub { padding-left: 14px; }
+  .sub { padding-left: var(--space-14); }
 </style>

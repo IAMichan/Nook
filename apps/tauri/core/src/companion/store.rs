@@ -29,6 +29,10 @@ struct Stored {
     apns_team_id: Option<String>,
     /// Reaching this computer away from home through a relay (Settings › Companion › Away from home).
     relay: RelaySettings,
+    /// The relay code version (`cloudflare_relay::version`) deployed by Nook to `relay.address` (`"<version> <address>"`).
+    relay_deployed: Option<String>,
+    /// The Cloudflare account id used when Nook deployed the relay, so updates target the same account.
+    relay_cloudflare_account: Option<String>,
     keep_awake: KeepAwakeMode,
     /// How pushes reach the phones; none until chosen (`relay_push::PushRoute::default_for`).
     push_route: Option<PushRoute>,
@@ -118,6 +122,55 @@ impl CompanionStore {
 
     pub fn set_relay(&self, relay: RelaySettings) {
         self.with(|s| s.relay = relay, true);
+    }
+
+    pub fn relay_cloudflare_token(&self) -> Option<String> {
+        self.secrets.read(super::cloudflare_relay::TOKEN_ACCOUNT)
+    }
+
+    pub fn set_relay_cloudflare_token(&self, token: &str) {
+        let _ = self.secrets.write(super::cloudflare_relay::TOKEN_ACCOUNT, token);
+    }
+
+    pub fn relay_deployed(&self) -> Option<String> {
+        self.with(|s| s.relay_deployed.clone(), false)
+    }
+
+    pub fn set_relay_deployed(&self, version: &str, address: &str) {
+        self.with(|s| s.relay_deployed = Some(format!("{version} {address}")), true);
+    }
+
+    pub fn relay_cloudflare_account(&self) -> Option<String> {
+        self.with(|s| s.relay_cloudflare_account.clone(), false)
+    }
+
+    pub fn set_relay_cloudflare_account(&self, account: Option<String>) {
+        self.with(|s| s.relay_cloudflare_account = account, true);
+    }
+
+    /// Whether the current own relay was set up by Nook (so Nook keeps its Worker up to date).
+    pub fn own_relay_is_managed(&self) -> bool {
+        self.with(
+            |s| {
+                s.relay.own
+                    && !s.relay.address.is_empty()
+                    && s.relay_deployed.as_deref().is_some_and(|d| d.ends_with(&format!(" {}", s.relay.address)))
+            },
+            false,
+        )
+    }
+
+    /// Forgets the user's own relay locally (the Worker stays on Cloudflare until deleted there).
+    pub fn forget_own_relay(&self) {
+        let _ = self.secrets.remove(super::cloudflare_relay::TOKEN_ACCOUNT);
+        self.with(
+            |s| {
+                s.relay_deployed = None;
+                s.relay_cloudflare_account = None;
+                s.relay.address.clear();
+            },
+            true,
+        );
     }
 
     pub fn keep_awake(&self) -> KeepAwakeMode {
