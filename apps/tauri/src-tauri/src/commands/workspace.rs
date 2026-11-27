@@ -142,9 +142,10 @@ pub struct ProjectSettingsView {
 }
 
 #[tauri::command]
-pub fn workspace_project_settings(state: State<'_, WorkspaceState>, path: String) -> ProjectSettingsView {
+pub fn workspace_project_settings(app: AppHandle, state: State<'_, WorkspaceState>, path: String) -> ProjectSettingsView {
+    let worktrees = app.state::<crate::state::AppState>().settings().worktrees;
     let s = lock(&state.settings);
-    ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for(&path), path }
+    ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for_with_worktrees(&path, &worktrees), path }
 }
 
 /// Saves what one project sets for itself; every field left empty follows the setting for all projects.
@@ -155,10 +156,11 @@ pub fn workspace_set_project_settings(
     path: String,
     value: nook_core::workspace::settings::ProjectOverride,
 ) -> ProjectSettingsView {
+    let worktrees = app.state::<crate::state::AppState>().settings().worktrees;
     let mut s = lock(&state.settings);
     s.set_project(&path, value);
     s.save_to(&WorkspaceSettings::file());
-    let view = ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for(&path), path };
+    let view = ProjectSettingsView { own: s.project(&path), defaults: s.defaults_for_with_worktrees(&path, &worktrees), path };
     drop(s);
     let _ = app.emit("workspace-changed", ());
     view
@@ -810,20 +812,119 @@ pub async fn workspace_remove_worktree(state: State<'_, WorkspaceState>, repo: S
     blocking(move || m.remove_worktree_at(&repo, &path, force)).await?
 }
 
-/// Kloont een repository naast het gekozen project (of in `~/Developer`). Pas na jouw klik op Kloon.
+/// Kloont een repository naast het gekozen project (of in `~/Developer`, of `<root>/<host>/<owner>/<repo>` bij
+/// host-indeling). Pas na jouw klik op Kloon.
 #[tauri::command]
 pub async fn workspace_clone(app: AppHandle, state: State<'_, WorkspaceState>, url: String, near: Option<String>) -> Res<String> {
-    if !git::is_clone_url(&url) {
+    use nook_core::workspace::source_control_rules::CloneLayout;
+
+    let clean = CloneLayout::repository_url_from_page(&url);
+    if !git::is_clone_url(&clean) {
         return Err(tr("Dat is geen adres van een repository.", "That is not the address of a repository.").into());
     }
+    let host_layout = app.state::<crate::state::AppState>().settings().worktrees.clone_host_layout;
     let m = state.manager.clone();
     blocking(move || {
         let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
-        let parent = near
-            .and_then(|p| std::path::Path::new(&p).parent().map(|p| p.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| nook_core::agents::home_dir().join("Developer").to_string_lossy().into_owned());
+        let developer = nook_core::agents::home_dir().join("Developer");
+        let parent = CloneLayout::clone_parent(near.as_deref().map(std::path::Path::new), host_layout, &developer);
+        let parent_str = parent.to_string_lossy().into_owned();
         // With its progress in the main window's clone notices, Hide and Cancel (`CloneCenter` on the Mac).
-        crate::workspace::clones::clone(&app, git, &url, &parent)
+        crate::workspace::clones::clone(&app, git, &clean, &parent_str, host_layout)
+    })
+    .await?
+}
+
+/// What publishing a local folder to GitHub would do, shown before confirmation (`PublishPlan` on macOS).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishPlan {
+    pub folder: String,
+    pub name: String,
+    pub needs_repository: bool,
+    pub needs_first_commit: bool,
+}
+
+/// Returns a `PublishPlan` for `folder` when it has no remote yet, or `None` when already published or git is unavailable.
+#[tauri::command]
+pub async fn workspace_publish_plan(state: State<'_, WorkspaceState>, folder: String) -> Res<Option<PublishPlan>> {
+    use nook_core::workspace::source_control_rules::RepositoryPublish;
+
+    let m = state.manager.clone();
+    blocking(move || {
+        let git = m.git()?;
+        let root = git.repository_root(&folder).map(|r| git.main_checkout(&r).unwrap_or(r));
+        let remotes = root.as_deref().map(|r| git.remotes(r)).unwrap_or_default();
+        if !RepositoryPublish::can_publish(root.is_some(), &remotes) {
+            return None;
+        }
+        let path = root.clone().unwrap_or(folder);
+        let leaf = std::path::Path::new(&path).file_name().and_then(|n| n.to_str()).unwrap_or("project");
+        Some(PublishPlan {
+            name: RepositoryPublish::suggested_name(leaf),
+            needs_repository: root.is_none(),
+            needs_first_commit: !git.has_commits(&path),
+            folder: path,
+        })
+    })
+    .await
+}
+
+/// Publishes a local project to a new GitHub repository, adds `origin`, and pushes the current branch.
+/// Returns the created repository's GitHub web URL.
+#[tauri::command]
+pub async fn workspace_publish_repository(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    folder: String,
+    name: String,
+    owner: Option<String>,
+    is_private: bool,
+) -> Res<String> {
+    use nook_core::workspace::source_control_rules::create_github_repository;
+
+    let m = state.manager.clone();
+    let prep_folder = folder.clone();
+    let branch = blocking(move || -> Res<String> {
+        let git = m.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        git.prepare_publish(&prep_folder).map_err(|e| e.0)
+    })
+    .await??;
+
+    let clean_owner = owner.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
+    let token_hint = clean_owner.as_deref().unwrap_or("");
+    let tokens = crate::workspace::github_tokens(&app, token_hint);
+    let made = create_github_repository(&tokens, &name, clean_owner.as_deref(), is_private).await?;
+
+    let m2 = state.manager.clone();
+    let push_folder = folder.clone();
+    let clone_url = made.clone_url.clone();
+    let token = made.token.clone();
+    blocking(move || -> Res<()> {
+        let git = m2.git().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        git.publish(&push_folder, &clone_url, &branch, Some(&token)).map_err(|e| e.0)
+    })
+    .await??;
+
+    let norm = nook_core::workspace::paths::normalize(&folder);
+    for run in state.manager.runs() {
+        let matches = run.repo_root.as_deref().map(nook_core::workspace::paths::normalize).as_deref() == Some(norm.as_str())
+            || nook_core::workspace::paths::normalize(&run.project_path) == norm;
+        if matches {
+            state.manager.refresh_git(run.id);
+        }
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(made.html_url)
+}
+
+/// Copies an image file (<4 MB) into Nook's `project-icons` directory so a project's icon survives moves (`ProjectIconStore`).
+#[tauri::command]
+pub async fn workspace_project_icon_save(source_path: String) -> Res<String> {
+    blocking(move || {
+        let dir = nook_core::paths::support_directory().join("project-icons");
+        nook_core::workspace::source_control_rules::store_project_icon(std::path::Path::new(&source_path), &dir)
+            .map(|p| p.to_string_lossy().into_owned())
     })
     .await?
 }

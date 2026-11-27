@@ -612,7 +612,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.8 Git and source control
 
-- [ ] **AG-120** Auto-pull, publish, project archive, Settings › Source control (`SourceControl`, `SourceControlSettings`) · M
+- [x] **AG-120** Auto-pull, publish, project archive, Settings › Source control (`SourceControl`, `SourceControlSettings`) · M Done (2026-11-27): added `core/src/workspace/source_control_rules.rs` (`AutoPull`, `CloneLayout`, `RepositoryPublish`, `CommitReference`, `store_project_icon`, `Git::auto_pull`, `Git::clone_with_layout`, `Git::prepare_publish`, `Git::publish`, `create_github_repository`), background auto-pull loop in `src-tauri/src/workspace/mod.rs`, host-layout & SSH→HTTPS clone fallback in `clones.rs`, `workspace_publish_plan` / `workspace_publish_repository` / `workspace_project_icon_save` commands, per-project source control controls (`autoPull`, `submodules`, `agentsOff`, `icon`, Publish to GitHub) in `Projects.svelte`, and `PublishRepositoryModal.svelte`.
 
 - [x] **AG-121** Worktree cleanup with report, archive, move, build leftovers (#1616), disk usage warning (`WorktreeCleanup`, `WorktreeCleanupReportView`, `WorktreeArchive`, `WorktreeMove`, `BuildLeftovers`) · M Done (2026-11-23): `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/settings/Worktrees.svelte` add cleanup report, `.scratch` archive, worktree move detection, build leftovers sweep, and low-disk warning.
 
