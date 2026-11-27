@@ -1055,19 +1055,35 @@ pub async fn workspace_quick(app: AppHandle, run: String) -> Res<QuickView> {
     .await?
     .ok_or(tr("Git kon de stand van deze map niet lezen.", "Git could not read the state of this folder."))?;
     let tokens = repository.as_ref().map(|r| crate::workspace::github_tokens(&app, &r.display_name())).unwrap_or_default();
+    let connectors = app.try_state::<crate::connectors::Connectors>();
     let mut pull_request = None;
     if let (Some(repo), Some(branch)) = (&repository, &state.branch) {
         if repo.host == SourceControlHost::Github && !tokens.is_empty() {
             let (open, landed) = source_control::github_branch_pull_requests(&tokens, &repo.display_name(), branch).await;
             pull_request = open;
             state.pull_request_landed = landed;
+        } else if repo.host != SourceControlHost::Github {
+            if let Some(c) = connectors.as_ref() {
+                if let Some(summary) =
+                    nook_core::connectors::forge::branch_pull_requests(&c.env.http, c.env.secrets.as_ref(), repo, branch).await
+                {
+                    pull_request = summary.open.map(|pr| pr.url);
+                    state.pull_request_landed = summary.landed;
+                }
+            }
         }
     }
     state.has_open_pull_request = pull_request.is_some();
     let resolved = source_control::resolve(&state);
     let destination = resolved.ok().and_then(|a| source_control::destination(&state, a));
     let alternatives = source_control::alternatives(&state);
-    let can_create_here = repository.as_ref().is_some_and(|r| r.host == SourceControlHost::Github) && !tokens.is_empty();
+    let can_create_here = repository.as_ref().is_some_and(|r| {
+        if r.host == SourceControlHost::Github {
+            !tokens.is_empty()
+        } else {
+            connectors.as_ref().is_some_and(|c| nook_core::connectors::forge::can_create_pull_request(c.env.secrets.as_ref(), r))
+        }
+    });
     Ok(QuickView {
         action: resolved.ok(),
         label: resolved.ok().map(QuickAction::label),
@@ -1208,6 +1224,30 @@ pub async fn workspace_create_pull_request(
             source_control::create_github_pull_request(&tokens, &repository.display_name(), &title, &body, &head, &base, draft).await?;
         m.note(run, &trf("Pull request geopend: {url}", "Pull request opened: {url}", &[("url", &url)]));
         return Ok(PullRequestResult { url, created: true });
+    }
+    if repository.host != SourceControlHost::Github {
+        if let Some(c) = app.try_state::<crate::connectors::Connectors>() {
+            if nook_core::connectors::forge::can_create_pull_request(c.env.secrets.as_ref(), &repository) {
+                let url = nook_core::connectors::forge::create_pull_request(
+                    &c.env.http,
+                    c.env.secrets.as_ref(),
+                    &repository,
+                    &title,
+                    &body,
+                    &head,
+                    &base,
+                    draft,
+                )
+                .await?;
+                let note = if repository.host.uses_merge_requests() {
+                    trf("Merge request geopend: {url}", "Merge request opened: {url}", &[("url", &url)])
+                } else {
+                    trf("Pull request geopend: {url}", "Pull request opened: {url}", &[("url", &url)])
+                };
+                m.note(run, &note);
+                return Ok(PullRequestResult { url, created: true });
+            }
+        }
     }
     let url = repository.new_pull_request_url(&base, &head, Some(&title), Some(&body), draft).ok_or(tr(
         "Deze repository heeft geen remote die Nook herkent. Push de branch en open de pull request bij je eigen host.",

@@ -613,9 +613,13 @@ impl Git {
 
 /// De pull-request-sjabloon van de repository, als die er is.
 pub fn pull_request_template(root: &str) -> Option<String> {
-    const CANDIDATES: [&str; 6] = [
+    const CANDIDATES: [&str; 10] = [
         ".github/pull_request_template.md",
         ".github/PULL_REQUEST_TEMPLATE.md",
+        ".gitlab/merge_request_templates/Default.md",
+        ".gitlab/merge_request_templates/default.md",
+        ".gitea/pull_request_template.md",
+        ".forgejo/pull_request_template.md",
         "PULL_REQUEST_TEMPLATE.md",
         "pull_request_template.md",
         "docs/PULL_REQUEST_TEMPLATE.md",

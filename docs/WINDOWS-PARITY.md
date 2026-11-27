@@ -632,7 +632,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-123** Skip approval for a PR the user asked for (#1602), PR news as a new turn (#1601), PR mentions · S Done (2026-11-26): `pr_links` (`asked_in_events`, `mentions_in_command`, `mentions_in_message`, `mentions_in_events`) in `nook-core`, skip-approval wired into `pull_request_create`, `tool: "prwatch"` emitted on PR watch news in `bridge/pulls.rs` with `lastTurn` turn-splitting tests, and session PR mentions group in `PullRequests.svelte`.
 
-- [ ] **AG-124** Other forges for session PRs: GitLab, Gitea, Bitbucket, Azure DevOps (`ForgeSettings`) · L
+- [x] **AG-124** Other forges for session PRs: GitLab, Gitea, Bitbucket, Azure DevOps (`ForgeSettings`) · L
 
 - [x] **AG-125** "Work on this PR" (`AppModel+PullRequestCheckout`) in `PullRequestView.svelte` · S Done (2026-11-23): "Work on this PR" checkout in a new worktree or local clone wired in `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/agents/pulls/PullRequestView.svelte`.
 

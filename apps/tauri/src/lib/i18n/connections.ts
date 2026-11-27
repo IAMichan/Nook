@@ -430,4 +430,90 @@ export const table: Table = {
   "Ready to add": { de: "Bereit zum Hinzufügen", fr: "Prêt à ajouter", es: "Listo para añadir" },
   "Ready to add. Nook starts and checks the server once you click Add.": { de: "Bereit zum Hinzufügen. Nook startet und prüft den Server, sobald du auf Hinzufügen klickst.", fr: "Prêt à ajouter. Nook démarre et vérifie le serveur dès que tu cliques sur Ajouter.", es: "Listo para añadir. Nook inicia y comprueba el servidor en cuanto haces clic en Añadir." },
   "Sign in in step 1 first.": { de: "Melde dich zuerst in Schritt 1 an.", fr: "Connecte-toi d'abord à l'étape 1.", es: "Inicia sesión primero en el paso 1." },
+  "Make a personal access token with the api scope.": {
+    de: "Erstelle ein persönliches Zugriffstoken mit dem Scope api.",
+    fr: "Créez un jeton d'accès personnel avec le scope api.",
+    es: "Crea un token de acceso personal con el scope api.",
+  },
+  "Gitea, Forgejo or Codeberg": {
+    de: "Gitea, Forgejo oder Codeberg",
+    fr: "Gitea, Forgejo ou Codeberg",
+    es: "Gitea, Forgejo o Codeberg",
+  },
+  "Type the address of your server, then generate a token under Settings › Applications that may read and write repositories and issues.": {
+    de: "Gib die Adresse deines Servers ein und erstelle dann unter Einstellungen › Anwendungen ein Token, das Repositories und Issues lesen und schreiben darf.",
+    fr: "Saisissez l'adresse de votre serveur, puis créez sous Paramètres › Applications un jeton qui peut lire et écrire les dépôts et les tickets.",
+    es: "Escribe la dirección de tu servidor y luego crea en Ajustes › Aplicaciones un token que pueda leer y escribir repositorios e issues.",
+  },
+  "Make a personal access token in your GitCafe settings.": {
+    de: "Erstelle ein persönliches Zugriffstoken in deinen GitCafe-Einstellungen.",
+    fr: "Créez un jeton d'accès personnel dans vos paramètres GitCafe.",
+    es: "Crea un token de acceso personal en tus ajustes de GitCafe.",
+  },
+  "Make an API token with scopes for Bitbucket on your Atlassian account (read and write pull requests). Paste it as email:token.": {
+    de: "Erstelle in deinem Atlassian-Konto ein API-Token mit Scopes für Bitbucket (Pull Requests lesen und schreiben). Füge es als E-Mail:Token ein.",
+    fr: "Créez dans votre compte Atlassian un jeton d'API avec portées pour Bitbucket (lire et écrire les pull requests). Collez-le sous la forme e-mail:jeton.",
+    es: "Crea en tu cuenta de Atlassian un token de API con ámbitos para Bitbucket (leer y escribir pull requests). Pégalo como correo:token.",
+  },
+  "Make a personal access token with Code (read & write). Paste it as :token, or username:token.": {
+    de: "Erstelle ein persönliches Zugriffstoken mit Code (Lesen und Schreiben). Füge es als :token oder benutzername:token ein.",
+    fr: "Créez un jeton d'accès personnel avec Code (lecture et écriture). Collez-le sous la forme :jeton, ou utilisateur:jeton.",
+    es: "Crea un token de acceso personal con Code (lectura y escritura). Pégalo como :token, o usuario:token.",
+  },
+  "Token saved": { de: "Token gespeichert", fr: "Jeton enregistré", es: "Token guardado" },
+  "Token rejected": { de: "Token abgelehnt", fr: "Jeton refusé", es: "Token rechazado" },
+  "Click to manage {host}": {
+    de: "Klicken, um {host} zu verwalten",
+    fr: "Cliquez pour gérer {host}",
+    es: "Haz clic para gestionar {host}",
+  },
+  "Code hosts": { de: "Code-Hosts", fr: "Hébergeurs de code", es: "Servidores de código" },
+  "Add code host": { de: "Code-Host hinzufügen", fr: "Ajouter un hébergeur", es: "Añadir servidor de código" },
+  "With a token for GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket or Azure DevOps, a pull request there opens in Nook like one on GitHub.": {
+    de: "Mit einem Token für GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket oder Azure DevOps öffnet sich ein Pull Request dort in Nook wie einer auf GitHub.",
+    fr: "Avec un jeton pour GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket ou Azure DevOps, une pull request de là-bas s'ouvre dans Nook comme une de GitHub.",
+    es: "Con un token de GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket o Azure DevOps, un pull request de allí se abre en Nook como uno de GitHub.",
+  },
+  "No code host added yet": {
+    de: "Noch kein Code-Host hinzugefügt",
+    fr: "Aucun hébergeur de code ajouté",
+    es: "Aún no hay ningún servidor de código",
+  },
+  "Add GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket or Azure DevOps to read and review their pull requests in Nook.": {
+    de: "Füge GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket oder Azure DevOps hinzu, um ihre Pull Requests in Nook zu lesen und zu prüfen.",
+    fr: "Ajoutez GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket ou Azure DevOps pour lire et relire leurs pull requests dans Nook.",
+    es: "Añade GitLab, Gitea, Forgejo, Codeberg, GitCafe, Bitbucket o Azure DevOps para leer y revisar sus pull requests en Nook.",
+  },
+  "Connected as @{user} on {host}.": {
+    de: "Verbunden als @{user} auf {host}.",
+    fr: "Connecté en tant que @{user} sur {host}.",
+    es: "Conectado como @{user} en {host}.",
+  },
+  "Token accepted by {host}.": {
+    de: "Token von {host} akzeptiert.",
+    fr: "Jeton accepté par {host}.",
+    es: "Token aceptado por {host}.",
+  },
+  "The code host rejected this token. Check that it has the right scopes and has not expired.": {
+    de: "Der Code-Host hat dieses Token abgelehnt. Prüfe, ob es die richtigen Berechtigungen hat und nicht abgelaufen ist.",
+    fr: "L'hébergeur de code a refusé ce jeton. Vérifiez qu'il dispose des bonnes autorisations et qu'il n'est pas expiré.",
+    es: "El servidor de código rechazó este token. Comprueba que tenga los permisos adecuados y que no haya caducado.",
+  },
+  "The token stays in your Keychain and goes only to that host, over https.": {
+    de: "Das Token bleibt in deinem Schlüsselbund und geht nur an diesen Host, über https.",
+    fr: "Le jeton reste dans votre trousseau et n'est envoyé qu'à cet hébergeur, en https.",
+    es: "El token se queda en tu llavero y solo va a ese servidor, por https.",
+  },
+  "Make a token": { de: "Erstelle ein Token", fr: "Créez un jeton", es: "Crea un token" },
+  "Host (e.g. codeberg.org)": {
+    de: "Host (z. B. codeberg.org)",
+    fr: "Hôte (par ex. codeberg.org)",
+    es: "Host (p. ej. codeberg.org)",
+  },
+  "Nook saves this token and uses it as soon as you open a pull request for {name}.": {
+    de: "Nook speichert dieses Token und nutzt es, sobald du einen Pull Request für {name} öffnest.",
+    fr: "Nook enregistre ce jeton et l'utilise dès que vous ouvrez une pull request pour {name}.",
+    es: "Nook guarda este token y lo usa en cuanto abres un pull request para {name}.",
+  },
+  "Open {host}": { de: "{host} öffnen", fr: "Ouvrir {host}", es: "Abrir {host}" },
 };

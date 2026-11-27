@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { gitlabDetail, gitlabHealth, health, inCategory, matchesQuery, type ConnectorInfo } from "./connectors";
+import {
+  classifyCodeHost,
+  codeHostTokenPage,
+  forgeDetail,
+  forgeHealth,
+  gitlabDetail,
+  gitlabHealth,
+  health,
+  inCategory,
+  matchesQuery,
+  normalizeCodeHost,
+  type ConnectorInfo,
+} from "./connectors";
 
 function info(partial: Partial<ConnectorInfo["status"]>): ConnectorInfo {
   return {
@@ -45,5 +57,33 @@ describe("GitLab status", () => {
     expect(gitlabHealth({ kind: "unreachable" })).toBe("broken");
     expect(gitlabDetail("gitlab.com", { kind: "valid", username: "michan" })).toBe("gitlab.com · @michan");
     expect(gitlabDetail("git.example.com", { kind: "unreachable" })).toContain("git.example.com");
+  });
+});
+
+describe("code host helpers (AG-124)", () => {
+  it("classifies hosts and normalizes URLs", () => {
+    expect(classifyCodeHost("gitlab.com")).toBe("gitlab");
+    expect(classifyCodeHost("codeberg.org")).toBe("gitea");
+    expect(classifyCodeHost("git.example.com:8443")).toBe("gitea");
+    expect(classifyCodeHost("git.cafe")).toBe("gitcafe");
+    expect(classifyCodeHost("bitbucket.org")).toBe("bitbucket");
+    expect(classifyCodeHost("dev.azure.com")).toBe("azureDevOps");
+
+    expect(normalizeCodeHost("https://Codeberg.org/org/repo")).toBe("codeberg.org");
+    expect(normalizeCodeHost("user@codeberg.org")).toBeNull();
+    expect(normalizeCodeHost("intranet")).toBeNull();
+
+    expect(codeHostTokenPage("gitea", "codeberg.org")).toBe("https://codeberg.org/user/settings/applications");
+    expect(codeHostTokenPage("bitbucket", "bitbucket.org")).toBe("https://id.atlassian.com/manage-profile/security/api-tokens");
+    expect(codeHostTokenPage("azureDevOps", "dev.azure.com")).toBe("https://dev.azure.com/_usersSettings/tokens");
+  });
+
+  it("reports forge health and detail", () => {
+    expect(forgeHealth("azureDevOps", null)).toBe("working");
+    expect(forgeHealth("gitea", null)).toBe("busy");
+    expect(forgeHealth("gitea", { kind: "valid", account: "michan" })).toBe("working");
+    expect(forgeHealth("bitbucket", { kind: "rejected" })).toBe("needsYou");
+    expect(forgeDetail("codeberg.org", "gitea", { kind: "valid", account: "michan" })).toBe("codeberg.org · @michan");
+    expect(forgeDetail("dev.azure.com", "azureDevOps", null)).toContain("dev.azure.com");
   });
 });

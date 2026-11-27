@@ -15,7 +15,8 @@ use nook_core::connectors::pull_batch_close;
 use nook_core::connectors::pulls::{self, CiLog, PullRequestDetail, PullRequestList};
 use nook_core::connectors::whatsapp::{link::LinkView, Conversation, WhatsAppSettings};
 use nook_core::connectors::ConnectorError;
-use nook_core::connectors::{brand, gitlab};
+use nook_core::connectors::{brand, forge, gitlab};
+use nook_core::i18n::tr;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_opener::OpenerExt;
@@ -99,6 +100,7 @@ pub struct Overview {
     remote: Vec<RemoteView>,
     mcp: Vec<McpView>,
     gitlab: Vec<String>,
+    forges: Vec<String>,
     local: Vec<LocalSource>,
     caps: Caps,
 }
@@ -211,6 +213,7 @@ pub async fn connectors_overview(c: State<'_, Connectors>) -> Res<Overview> {
             .collect(),
         mcp: mcp_views(&c),
         gitlab: gitlab::hosts(&c.env.store, &*c.env.secrets),
+        forges: forge::hosts(&c.env.store, &*c.env.secrets),
         local: LOCAL.into_iter().collect(),
         caps: caps(),
     })
@@ -828,6 +831,38 @@ pub async fn gitlab_check(c: State<'_, Connectors>, host: String) -> Res<gitlab:
 pub async fn gitlab_remove(c: State<'_, Connectors>, host: String) -> Res<Vec<String>> {
     gitlab::remove(&c.env.store, &*c.env.secrets, &host);
     Ok(gitlab::hosts(&c.env.store, &*c.env.secrets))
+}
+
+// Other code hosts (Gitea / Forgejo / Codeberg, GitCafe, Bitbucket, Azure DevOps)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgeSaved {
+    host: String,
+    hosts: Vec<String>,
+    check: Option<forge::ForgeTokenCheck>,
+}
+
+/// Verifies a code-host token where supported (Gitea, Bitbucket) and stores it in the keychain.
+#[tauri::command]
+pub async fn forge_save(c: State<'_, Connectors>, kind: forge::CodeHostKind, host: String, token: String) -> Res<ForgeSaved> {
+    let (host, check) = forge::verify_and_save(&c.env.http, &c.env.store, &*c.env.secrets, kind, &host, &token).await?;
+    Ok(ForgeSaved { host, hosts: forge::hosts(&c.env.store, &*c.env.secrets), check })
+}
+
+/// Checks a stored code-host token against its host's `/user` endpoint.
+#[tauri::command]
+pub async fn forge_check(c: State<'_, Connectors>, kind: forge::CodeHostKind, host: String) -> Res<forge::ForgeTokenCheck> {
+    let token = forge::token(&*c.env.secrets, &host).ok_or_else(|| {
+        tr("Voor deze host staat geen token in je kluis.", "No token is stored in your keychain for this host.").to_string()
+    })?;
+    Ok(forge::check_token(&c.env.http, kind, &host, &token).await)
+}
+
+#[tauri::command]
+pub async fn forge_remove(c: State<'_, Connectors>, host: String) -> Res<Vec<String>> {
+    forge::remove(&c.env.store, &*c.env.secrets, &host);
+    Ok(forge::hosts(&c.env.store, &*c.env.secrets))
 }
 
 // WhatsApp live

@@ -909,7 +909,11 @@ async fn pull_request_create(
         return Err(format!("You are on {branch} itself. Work on a separate branch, then propose the pull request."));
     }
     let tokens = super::github_tokens(app, &repo.display_name());
-    let via_connector = repo.host == SourceControlHost::Github && !tokens.is_empty();
+    let connectors = app.try_state::<crate::connectors::Connectors>();
+    let via_github = repo.host == SourceControlHost::Github && !tokens.is_empty();
+    let via_forge = repo.host != SourceControlHost::Github
+        && connectors.as_ref().is_some_and(|c| nook_core::connectors::forge::can_create_pull_request(c.env.secrets.as_ref(), &repo));
+    let via_connector = via_github || via_forge;
     let word = if repo.host.uses_merge_requests() { "merge request" } else { "pull request" };
     let mut detail =
         format!("{} · {branch} → {base}{}\n\n{title}", repo.display_name(), if draft && via_connector { " · draft" } else { "" });
@@ -971,16 +975,22 @@ async fn pull_request_create(
             repo.host_name
         )));
     }
-    let link = nook_core::workspace::source_control::create_github_pull_request(
-        &tokens,
-        &repo.display_name(),
-        &title,
-        &body,
-        &branch,
-        &base,
-        draft,
-    )
-    .await?;
+    let link = if via_github {
+        nook_core::workspace::source_control::create_github_pull_request(
+            &tokens,
+            &repo.display_name(),
+            &title,
+            &body,
+            &branch,
+            &base,
+            draft,
+        )
+        .await?
+    } else {
+        let c = connectors.as_ref().ok_or("Connectors are not ready.")?;
+        nook_core::connectors::forge::create_pull_request(&c.env.http, c.env.secrets.as_ref(), &repo, &title, &body, &branch, &base, draft)
+            .await?
+    };
     audit(app, BridgeTool::PullRequestCreate, caller, &summary, &link);
     if let Some(id) = run {
         ws.manager.note(id, &format!("Pull request geopend: {link}"));
