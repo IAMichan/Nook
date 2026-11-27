@@ -248,6 +248,11 @@ type TelemetryProvider = Arc<dyn Fn() -> crate::services::telemetry::OtlpConfig 
 /// the terminal is still running (`runScript` on macOS, AG-94).
 pub type ScriptRunner = Arc<dyn Fn(&str, &str, &str) -> Option<Box<dyn Fn() -> bool + Send + Sync>> + Send + Sync>;
 
+/// Resolves a per-account executable override (`accountExecutable` on the Mac, CH-98).
+pub type AccountExecutable = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+/// Resolves extra arguments appended to every launch under an account (`accountArguments` on the Mac, CH-98).
+pub type AccountArguments = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
+
 pub struct Manager {
     inner: Mutex<Inner>,
     store: RunStore,
@@ -261,6 +266,10 @@ pub struct Manager {
     telemetry_provider: Mutex<Option<TelemetryProvider>>,
     /// Optional runner that opens a visible terminal for `nook.json` `runOnWorktreeCreate` scripts (AG-94).
     script_runner: Mutex<Option<ScriptRunner>>,
+    /// Optional per-account executable override (`accountExecutable` on the Mac, CH-98).
+    account_executable: Mutex<Option<AccountExecutable>>,
+    /// Optional per-account extra arguments (`accountArguments` on the Mac, CH-98).
+    account_arguments: Mutex<Option<AccountArguments>>,
 }
 
 /// Verzamelt events en stuurt ze pas als de mutex los is.
@@ -293,6 +302,8 @@ impl Manager {
             recap: RecapSink::default(),
             telemetry_provider: Mutex::new(None),
             script_runner: Mutex::new(None),
+            account_executable: Mutex::new(None),
+            account_arguments: Mutex::new(None),
         });
         manager.restore_waiting();
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
@@ -301,6 +312,34 @@ impl Manager {
             manager.arm_limit_resume(id);
         }
         manager
+    }
+
+    /// Registers a per-account executable override resolver (`accountExecutable` on the Mac, CH-98).
+    pub fn set_account_executable(&self, resolver: impl Fn(&str) -> Option<String> + Send + Sync + 'static) {
+        *self.account_executable.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(resolver));
+    }
+
+    /// Registers a per-account extra launch arguments resolver (`accountArguments` on the Mac, CH-98).
+    pub fn set_account_arguments(&self, resolver: impl Fn(&str) -> Vec<String> + Send + Sync + 'static) {
+        *self.account_arguments.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(resolver));
+    }
+
+    fn resolve_executable(&self, provider: RunProvider, profile_id: &str) -> Option<String> {
+        if !profile_id.is_empty() {
+            if let Some(resolver) = self.account_executable.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                if let Some(own) = resolver(profile_id) {
+                    return Some(own);
+                }
+            }
+        }
+        (self.hooks.executable)(provider)
+    }
+
+    fn resolve_account_arguments(&self, profile_id: &str) -> Vec<String> {
+        if profile_id.is_empty() {
+            return Vec::new();
+        }
+        self.account_arguments.lock().unwrap_or_else(|e| e.into_inner()).clone().map(|r| r(profile_id)).unwrap_or_default()
     }
 
     /// Registers the host app's terminal launcher for `runOnWorktreeCreate` project scripts (AG-94).
@@ -747,7 +786,7 @@ impl Manager {
             return Err(verdict.message(&project));
         }
         self.check_supported(config.provider)?;
-        let executable = (self.hooks.executable)(config.provider).ok_or_else(|| {
+        let executable = self.resolve_executable(config.provider, &config.profile_id).ok_or_else(|| {
             trf("{agent} staat niet op deze computer.", "{agent} is not on this computer.", &[("agent", &config.provider.display_name())])
         })?;
         let id = Uuid::new_v4();
@@ -1169,7 +1208,7 @@ impl Manager {
             return Err(verdict.message(&project));
         }
         self.check_supported(provider)?;
-        if (self.hooks.executable)(provider).is_none() {
+        if self.resolve_executable(provider, profile_id).is_none() {
             return Err(trf(
                 "{agent} staat niet op deze computer.",
                 "{agent} is not on this computer.",
@@ -1339,7 +1378,7 @@ impl Manager {
             self.enqueue(id, &clean);
             return Ok(());
         }
-        let executable = (self.hooks.executable)(run.provider).ok_or_else(|| {
+        let executable = self.resolve_executable(run.provider, &run.profile_id).ok_or_else(|| {
             trf("{agent} staat niet op deze computer.", "{agent} is not on this computer.", &[("agent", &run.provider.display_name())])
         })?;
         if paths::verdict(&run.working_directory) != Verdict::Ok {
@@ -1612,7 +1651,9 @@ impl Manager {
                             );
                         }
                     }
-                    let spec = command::apply_telemetry(run.provider, &telemetry, planned.spec);
+                    let mut spec = planned.spec;
+                    spec.arguments.extend(self.resolve_account_arguments(&run.profile_id));
+                    let spec = command::apply_telemetry(run.provider, &telemetry, spec);
                     (spec, planned.driver, used_claude_rollback)
                 }
                 Err(message) => {
@@ -2762,7 +2803,7 @@ impl Manager {
             self.emit(out);
             (run, prompt, carried)
         };
-        let Some(executable) = (self.hooks.executable)(run.provider) else {
+        let Some(executable) = self.resolve_executable(run.provider, &run.profile_id) else {
             self.lock().recovering.remove(&id);
             return false;
         };
