@@ -21,6 +21,7 @@
   import ContextBreakdown from "./ContextBreakdown.svelte";
   import GoalStrip from "./GoalStrip.svelte";
   import GuestStrip from "./GuestStrip.svelte";
+  import ResourceWaitStrip from "./ResourceWaitStrip.svelte";
   import TaskChecklist from "../../../components/TaskChecklist.svelte";
   import RunComposer from "./RunComposer.svelte";
   import SessionSidePanel from "./SessionSidePanel.svelte";
@@ -605,6 +606,7 @@
               <!-- The agent's own task list with the step it is on (`TaskChecklistCard`, `RunTasks.progress`). -->
               <TaskChecklist steps={run.tasks} live={isActive(run.status)} phase />
             {/if}
+            <ResourceWaitStrip runId={run.id} />
             <SideChatStrip items={sideChats} ondismiss={dismissSideChat} />
             <GuestStrip runId={run.id} />
             <RunComposer bind:this={composer} {run} onsidechat={askSideChat} />

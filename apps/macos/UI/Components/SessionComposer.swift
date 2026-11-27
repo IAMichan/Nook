@@ -1192,7 +1192,7 @@ private struct ComposerDensityFit<Content: View>: View {
 
 /// Lays out its one view as is, but asks its size only once per proposal until the view changes: SwiftUI resets the
 /// cache (`updateCache`) whenever something inside it needs a new layout, such as a menu showing another model.
-private struct MeasuredOnce: Layout {
+struct MeasuredOnce: Layout {
     struct Cache {
         var sizes: [ProposalKey: CGSize] = [:]
     }

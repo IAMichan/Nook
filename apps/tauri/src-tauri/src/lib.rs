@@ -686,6 +686,8 @@ pub fn run() {
             commands::workspace::workspace_guest_stop,
             commands::workspace::workspace_guest_send_held,
             commands::workspace::workspace_guest_dismiss_held,
+            commands::workspace::workspace_governor_status,
+            commands::workspace::workspace_governor_let_go_on,
             commands::workspace_tools::browser_pick_element,
             commands::workspace_tools::browser_cancel_pick,
             commands::workspace_tools::browser_clear_picks,

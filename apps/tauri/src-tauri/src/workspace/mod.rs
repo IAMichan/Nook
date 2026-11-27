@@ -36,6 +36,7 @@ use crate::state::AppState;
 pub struct WorkspaceState {
     pub manager: Arc<Manager>,
     pub guest_shares: Arc<GuestShares>,
+    pub governor: Arc<nook_core::workspace::governor::AgentGovernor>,
     pub settings: Arc<Mutex<WorkspaceSettings>>,
     #[cfg(desktop)]
     pub terminals: terminals::Terminals,
@@ -84,7 +85,26 @@ pub fn setup(app: &AppHandle) {
     let auto_pull_settings = settings.clone();
     let support_dir = nook_core::paths::support_directory();
     let directory = support_dir.join("workspace");
+    let governor_record = directory.join("paused-groups.json");
     let manager = Manager::new(directory, hooks, runtime.clone(), move |event| on_event(&handle, event));
+    let hot_app = app.clone();
+    let emit_app = app.clone();
+    let governor = nook_core::workspace::governor::AgentGovernor::new(
+        manager.clone(),
+        runtime.clone(),
+        governor_record,
+        Box::new(move || {
+            hot_app.try_state::<crate::services::Services>().is_some_and(|_| crate::services::energy::view(&hot_app).signals.hot)
+        }),
+        Box::new(move |throttles| {
+            let _ = emit_app.emit("agent-governor-changed", &throttles);
+        }),
+    );
+    let release_gov = governor.clone();
+    manager.set_before_stop(move |pid| release_gov.release_agent(pid));
+    if desktop {
+        governor.start();
+    }
     let exe_app = app.clone();
     manager.set_account_executable(move |profile_id| {
         let agents = exe_app.try_state::<AgentsState>()?;
@@ -142,6 +162,7 @@ pub fn setup(app: &AppHandle) {
     app.manage(WorkspaceState {
         manager: manager.clone(),
         guest_shares: guest_shares.clone(),
+        governor,
         settings,
         #[cfg(desktop)]
         terminals: Default::default(),
@@ -275,6 +296,7 @@ pub fn bridge_script() -> std::path::PathBuf {
 pub fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<WorkspaceState>() {
         state.guest_shares.suspend();
+        state.governor.release_all();
         state.manager.shutdown();
         #[cfg(desktop)]
         state.terminals.close_all();
