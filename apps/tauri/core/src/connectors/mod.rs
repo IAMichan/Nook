@@ -23,6 +23,7 @@ pub mod mail;
 pub mod mcp;
 pub mod oauth;
 pub mod openrouter;
+pub mod pull_batch_close;
 pub mod pull_batch_merge;
 pub mod pulls;
 pub mod rate_budget;

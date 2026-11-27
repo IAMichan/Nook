@@ -42,6 +42,7 @@ pub mod pr_links;
 pub mod project_files;
 pub mod prompts;
 pub mod queue;
+pub mod readiness;
 pub mod recovery;
 pub mod resources;
 pub mod restart;

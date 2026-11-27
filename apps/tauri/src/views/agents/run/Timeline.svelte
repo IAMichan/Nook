@@ -8,7 +8,9 @@
   import { PAGE_TOOL, SUGGESTION_TOOL } from "../../../lib/workspace/session-cards";
   import { workspace } from "../../../lib/workspace/store.svelte";
   import { needsSignIn, updatable, updatesApi, versionRejected } from "../../../lib/workspace/agent-updates";
-  import { agentApi } from "../../../lib/agents";
+  import { agentApi, agentNames, type AgentKind } from "../../../lib/agents";
+  import { limitPicks, limitState } from "../../../lib/workspace/limit-advisor";
+  import { accountLimitsToPoolLimits } from "../../../lib/workspace/limit-pool";
   import { ask } from "../../../lib/confirm.svelte";
   import { toast } from "../../../lib/toast.svelte";
   import * as T from "../../../lib/workspace/timeline";
@@ -20,6 +22,9 @@
   import PlanCard from "./PlanCard.svelte";
   import { sessionFind } from "../../../lib/session-find.svelte";
   import { EndFollow } from "../../../lib/end-follow.svelte";
+  import { firstNew, loadVisit, saveVisit } from "../../../lib/workspace/timeline-visits";
+  import TimelineNewDivider from "../../../components/ui/TimelineNewDivider.svelte";
+  import { untrack } from "svelte";
 
   let {
     run,
@@ -65,6 +70,40 @@
   // the blocks leave out the steps it hides; while the find bar is open every event shows, so every match can be reached.
   const detail = $derived(timelineDetail(workspace.settings?.timelineDetail));
   const list = $derived(T.blocks(finding ? shown : filterTimeline(shown, detail), active));
+
+  // Coming back to a conversation (`TimelineVisits`): the folds you had open are open again, and a line sits above
+  // what came in since you last looked. The conversation still opens at its end. Kept when you leave it.
+  const visitId = $derived(run.id);
+  let newSince: number | null = null;
+  let landed = false;
+  let newFrom = $state<string | null>(null);
+  $effect(() => {
+    const id = visitId;
+    const visit = loadVisit(id);
+    newSince = visit?.lastViewedAt ?? null;
+    landed = false;
+    newFrom = null;
+    if (visit?.open.length) {
+      open = new Set(visit.open.filter((k) => !k.startsWith("event:")));
+      expanded = new Set(visit.open.filter((k) => k.startsWith("event:")).map((k) => k.slice(6)));
+    }
+    return () => saveVisit(id, { open: [...untrack(() => open), ...[...untrack(() => expanded)].map((e) => "event:" + e)], lastViewedAt: Date.now() });
+  });
+  function blockDate(b: T.TimelineBlock): number | null {
+    if (b.type === "event") return Date.parse(b.event.date) || null;
+    if (b.type === "tools") return b.events.length ? Date.parse(b.events[0].date) || null : null;
+    for (const inner of b.blocks) {
+      const d = blockDate(inner);
+      if (d !== null) return d;
+    }
+    return null;
+  }
+  $effect(() => {
+    const blocks = list;
+    if (landed || !blocks.length) return;
+    landed = true;
+    newFrom = newSince === null ? null : firstNew(blocks.map((b) => ({ id: b.id, date: blockDate(b) })), newSince);
+  });
   const found = $derived(finding ? T.search(shown, query) : ({ state: "idle", matches: [] } as T.SearchResult));
   const current = $derived(findIndex !== null && found.matches[findIndex] ? found.matches[findIndex].eventId : null);
   const liveLine = $derived(T.live(shown));
@@ -78,9 +117,11 @@
 
   // Een gebruikslimiet beëindigde de beurt: een eigen kaart op de plek van "Je hebt deze beurt gestopt".
   const limited = $derived(!!run.limitedAt && !active);
-  let otherProfiles = $state<Array<{ id: string; label: string }>>([]);
+  let otherProfiles = $state<Array<{ id: string; provider: string; label: string; used: number | null; sameAgent: boolean }>>([]);
   let switchingAccount = $state(false);
 
+  // The accounts to go on with (`LimitAdvisor`): the ones with room left, the same agent first, then the least used of
+  // the other agents; with none roomy, the least used that are not full yet.
   $effect(() => {
     if (!limited) {
       otherProfiles = [];
@@ -89,12 +130,25 @@
     now = Date.now();
     const t = setInterval(() => (now = Date.now()), 30_000);
     const currentId = run.profileId ?? `${run.provider}-default`;
-    agentApi
-      .profiles()
-      .then((list) => {
-        otherProfiles = list
-          .filter((p) => p.kind === run.provider && p.id !== currentId)
-          .map((p) => ({ id: p.id, label: p.label }));
+    const provider = run.provider;
+    Promise.all([agentApi.profiles(), agentApi.limits().catch(() => [])])
+      .then(([list, limits]) => {
+        const labels = { fiveHours: "5h", week: "week", startsFirst: "" };
+        const byId = new Map(limits.map((l) => [l.profileId, l] as const));
+        const known = new Map(list.map((p) => [p.id, p] as const));
+        // Other agents only when they are signed in (they report limits); this agent's accounts always.
+        const states = list
+          .filter((p) => p.kind === provider || byId.has(p.id))
+          .map((p) => {
+            const acc = byId.get(p.id);
+            return limitState(p.kind, p.id, acc ? accountLimitsToPoolLimits(acc, labels, new Date()) : []);
+          });
+        otherProfiles = limitPicks(states, { provider, profileId: currentId }, new Date()).flatMap((pick) => {
+          const profile = known.get(pick.profileId);
+          if (!profile) return [];
+          const label = pick.sameAgent ? profile.label : `${agentNames[pick.provider as AgentKind] ?? pick.provider} · ${profile.label}`;
+          return [{ id: pick.profileId, provider: pick.provider, label, used: pick.usedFraction, sameAgent: pick.sameAgent }];
+        });
       })
       .catch(() => {
         otherProfiles = [];
@@ -102,12 +156,12 @@
     return () => clearInterval(t);
   });
 
-  async function switchAccountAndRetry(profileId: string) {
+  async function switchAccountAndRetry(profileId: string, provider: string = run.provider) {
     if (switchingAccount) return;
     switchingAccount = true;
     try {
       const { automationApi } = await import("../../../lib/workspace/automation");
-      await workspace.act(() => automationApi.handOff(run.id, run.provider, profileId, run.model));
+      await workspace.act(() => automationApi.handOff(run.id, provider as typeof run.provider, profileId, provider === run.provider ? run.model : ""));
       onretry();
     } catch (e) {
       toast.error(tr("Kon niet van account wisselen", "Could not switch account"), e);
@@ -329,7 +383,7 @@
       {/if}
     {/snippet}
 
-    {#each list as b (b.id)}{@render blockView(b)}{/each}
+    {#each list as b (b.id)}{#if b.id === newFrom}<TimelineNewDivider />{/if}{@render blockView(b)}{/each}
 
     {#if active}
       {@const waiting = run.status === "waitingApproval" || asking}
@@ -357,8 +411,10 @@
           <button
             class="primary"
             disabled={switchingAccount}
-            title={tr("Wissel deze sessie naar {account} en ga meteen verder.", "Switch this session to {account} and continue immediately.", { account: alt.label })}
-            onclick={() => switchAccountAndRetry(alt.id)}>
+            title={alt.used !== null
+              ? tr("Wissel deze sessie naar {account} ({used}% gebruikt) en ga meteen verder.", "Switch this session to {account} ({used}% used) and continue immediately.", { account: alt.label, used: Math.round(alt.used * 100) })
+              : tr("Wissel deze sessie naar {account} en ga meteen verder.", "Switch this session to {account} and continue immediately.", { account: alt.label })}
+            onclick={() => switchAccountAndRetry(alt.id, alt.provider)}>
             {tr("Verder met {account}", "Continue with {account}", { account: alt.label })}
           </button>
         {/each}

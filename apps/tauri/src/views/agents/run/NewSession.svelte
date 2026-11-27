@@ -22,6 +22,11 @@
     effortLevels, isActive, isScratch, projectName, workspaceApi, type ProjectOverride, type NewRunConfig, type PermissionPolicy, type ProjectInfo, type RunProvider,
   } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
+  import { catalog } from "../../../lib/workspace/models.svelte";
+  import { continued as continuedList } from "../../../lib/workspace/composer-lists";
+  import {
+    MAX_MODELS, configs as comparisonConfigs, retrySelection, targets as comparisonTargets, toggling, type ComparisonTarget, type Outcome,
+  } from "../../../lib/workspace/model-comparison";
 
   let { onstarted }: { onstarted: (id: string) => void } = $props();
 
@@ -103,6 +108,24 @@
     if (!clean) return;
     workspaceApi.toggleFavoriteProject(clean).catch(() => {});
   }
+
+  // Comparing models (`ModelComparison`): the same prompt to more models, each in a worktree of its own.
+  let extras = $state<ComparisonTarget[]>([]);
+  const primaryTarget = $derived<ComparisonTarget>({ provider: config.provider, profileId: config.profileId, model: config.model });
+  const comparing = $derived(extras.length > 0 && !noProject);
+  function targetName(t: ComparisonTarget): string {
+    const agent = workspace.provider(t.provider)?.name ?? t.provider;
+    const model = t.model ? catalog.find(t.provider, t.model)?.name ?? t.model : tr("standaard", "default");
+    return `${agent} ${model}`;
+  }
+  /** Every agent's current models, under the account it would run with. */
+  const compareChoices = $derived<ComparisonTarget[]>(runnable.filter((p) => p.executable).flatMap((p) => {
+    const own = profiles.filter((x) => x.kind === p.provider);
+    const profileId = p.provider === config.provider ? config.profileId : (own.find((x) => x.preferred) ?? own[0])?.id ?? p.provider;
+    const models = (catalog.byAgent[p.provider] ?? []).filter((m) => m.current);
+    return models.length ? models.map((m) => ({ provider: p.provider, profileId, model: m.id })) : [{ provider: p.provider, profileId, model: "" }];
+  }));
+  const isExtra = (t: ComparisonTarget) => extras.some((e) => e.provider === t.provider && e.profileId === t.profileId && e.model === t.model);
 
   const worktreeAllowed = $derived(!!project && project.verdict === "ok" && !!project.repoRoot && project.hasCommits && !!workspace.overview?.gitAvailable);
   const worktreeBlocked = $derived(
@@ -336,10 +359,54 @@
     cloning = false;
   }
 
+  /** One session per chosen model, each in a worktree; what failed stays chosen with the prompt, to try again. */
+  async function startComparison(task: string, background: boolean) {
+    const list = comparisonTargets(primaryTarget, extras);
+    const titleFrom = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean).join(" ").slice(0, 60);
+    const all = comparisonConfigs({ ...config, task }, list, targetName, (p) => workspace.provider(p)?.capabilities.policies ?? [], () => titleFrom(config.task));
+    const outcome: Outcome = { started: [], failed: [] };
+    for (let i = 0; i < all.length; i++) {
+      try {
+        outcome.started.push({ target: list[i], id: await workspaceApi.start(all[i], false) });
+      } catch (e) {
+        outcome.failed.push({ target: list[i], message: String(e) });
+      }
+    }
+    await workspace.refresh();
+    const retry = retrySelection(outcome);
+    if (retry) {
+      config.provider = retry.primary.provider;
+      config.profileId = retry.primary.profileId;
+      config.model = retry.primary.model;
+      extras = retry.extras;
+      error = outcome.failed.map((f) => `${targetName(f.target)}: ${f.message}`).join("\n");
+    } else {
+      extras = [];
+      attached = [];
+      pictures = [];
+      mentions = [];
+      try { localStorage.removeItem(draftKey(config.projectPath)); } catch { /* nothing kept */ }
+      config.task = "";
+    }
+    if (outcome.started.length) {
+      toast.success(tr("{n} sessies gestart", "{n} sessions started", { n: outcome.started.length }));
+      if (!background && !retry) onstarted(outcome.started[0].id);
+    }
+  }
+
   async function start(background = false) {
     if (starting || blockingReason) return;
     starting = true;
     error = null;
+    if (comparing) {
+      try {
+        await startComparison(project_(compose(config.task, attached, mentions), pictures), background);
+      } catch (e) {
+        error = String(e);
+      }
+      starting = false;
+      return;
+    }
     try {
       const task = project_(compose(config.task, attached, mentions), pictures);
       const id = await workspaceApi.start({ ...config, task, projectPath: noProject ? "" : config.projectPath, branchName: "" }, allowShared);
@@ -402,6 +469,18 @@
 
   const stop = (e: Event) => e.stopPropagation();
   const startLabel = $derived(starting ? (config.isolation === "worktree" ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
+
+  // Markdown lists keep going (`ComposerLists`): a new line after "- item" or "7." starts the next item; one after an
+  // empty item ends the list.
+  function listInput(e: Event) {
+    const field = e.currentTarget as HTMLTextAreaElement;
+    if ((e as InputEvent).inputType !== "insertLineBreak" && !((e as InputEvent).inputType === "insertText" && (e as InputEvent).data === "\n")) return;
+    const next = continuedList(field.value, field.selectionStart ?? field.value.length);
+    if (!next) return;
+    config.task = next.text;
+    field.value = next.text;
+    field.setSelectionRange(next.caret, next.caret);
+  }
 </script>
 
 <svelte:window onclick={() => (menu = "")} />
@@ -497,7 +576,7 @@
   <PromptTools bind:this={promptTools} bind:draft={config.task} {textarea} />
   <div class="box">
     <ComposerContext bind:this={context} {textarea} bind:draft={config.task} root={noProject ? null : (project?.path ?? null)} provider={config.provider} bind:attached bind:pictures bind:mentions />
-    <textarea bind:this={textarea} bind:value={config.task} rows="2" placeholder={tr("Beschrijf wat de agent moet doen. Enter start de sessie.", "Describe what the agent should do. Return starts the session.")} onkeydown={keydown}></textarea>
+    <textarea bind:this={textarea} bind:value={config.task} rows="2" placeholder={tr("Beschrijf wat de agent moet doen. Enter start de sessie.", "Describe what the agent should do. Return starts the session.")} onkeydown={keydown} oninput={listInput}></textarea>
     <div class="bar">
       <Dropdown width={260} label={tr("Meer opties", "More options")}>
         {#snippet trigger({ toggle, open })}
@@ -525,6 +604,29 @@
         onmode={(m) => { config.mode = m; remember(); }}
         onpermission={(p) => { config.permission = p; remember(); }}
         oneffort={(l) => { config.effort = l; remember(); }} />
+      {#if !noProject}
+        <!-- "Compare": the same prompt to more models at once, each in a worktree of its own (`ModelComparison`). -->
+        <Dropdown width={280} label={tr("Vergelijk modellen", "Compare models")}>
+          {#snippet trigger({ toggle, open })}
+            <button class="pill" class:lit={open || comparing} onclick={toggle} aria-expanded={open}
+              title={worktreeAllowed ? tr("Stuur dezelfde prompt naar meer modellen, elk in een eigen worktree", "Send the same prompt to more models, each in a worktree of its own") : worktreeBlocked}>
+              <Ico name="columns-2" size={14} />{#if comparing}<span>{tr("{n} modellen", "{n} models", { n: extras.length + 1 })}</span>{/if}
+            </button>
+          {/snippet}
+          {#snippet children()}
+            <div class="dd-header">{tr("Ook naar (max. {n} samen)", "Also send to (at most {n} together)", { n: MAX_MODELS })}</div>
+            {#each compareChoices as t (`${t.provider}/${t.profileId}/${t.model}`)}
+              {@const isPrimary = t.provider === primaryTarget.provider && t.model === primaryTarget.model}
+              <DropdownRow brand={workspace.provider(t.provider)?.name} title={targetName(t)} chosen={isPrimary || isExtra(t)}
+                disabledReason={!worktreeAllowed ? worktreeBlocked : isPrimary ? tr("Dit model is al gekozen.", "This model is already chosen.") : !isExtra(t) && extras.length + 1 >= MAX_MODELS ? tr("Hooguit {n} modellen tegelijk.", "At most {n} models at once.", { n: MAX_MODELS }) : undefined}
+                onclick={() => (extras = toggling(t, extras, primaryTarget))} />
+            {/each}
+            {#if extras.length}
+              <DropdownRow symbol="x" title={tr("Niet vergelijken", "Don't compare")} onclick={() => (extras = [])} />
+            {/if}
+          {/snippet}
+        </Dropdown>
+      {/if}
       {#if config.mode === "plan"}
         <!-- Plan mode stays in sight as its own pill (`ModeToggle`), a click back to Agent. -->
         <span class="divider"></span>
