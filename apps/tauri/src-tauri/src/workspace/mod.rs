@@ -22,6 +22,7 @@ use std::time::Duration;
 use nook_core::agents::models::{AgentApproval, AgentSession, AgentStatus, ApprovalDecision, QuestionRequest};
 use nook_core::agents::profiles::AgentProfile;
 use nook_core::workspace::bridge::BridgeLaunch;
+use nook_core::workspace::guest_shares::{GuestShares, GuestSharesCallbacks};
 use nook_core::workspace::manager::{Hooks, Manager, ManagerEvent};
 use nook_core::workspace::models::{RunStatus, WorkspaceRun};
 use nook_core::workspace::settings::WorkspaceSettings;
@@ -34,6 +35,7 @@ use crate::state::AppState;
 
 pub struct WorkspaceState {
     pub manager: Arc<Manager>,
+    pub guest_shares: Arc<GuestShares>,
     pub governor: Arc<nook_core::workspace::governor::AgentGovernor>,
     pub settings: Arc<Mutex<WorkspaceSettings>>,
     #[cfg(desktop)]
@@ -81,14 +83,15 @@ pub fn setup(app: &AppHandle) {
     let archive_settings = settings.clone();
     let auto_pull_app = app.clone();
     let auto_pull_settings = settings.clone();
-    let directory = nook_core::paths::support_directory().join("workspace");
+    let support_dir = nook_core::paths::support_directory();
+    let directory = support_dir.join("workspace");
     let governor_record = directory.join("paused-groups.json");
     let manager = Manager::new(directory, hooks, runtime.clone(), move |event| on_event(&handle, event));
     let hot_app = app.clone();
     let emit_app = app.clone();
     let governor = nook_core::workspace::governor::AgentGovernor::new(
         manager.clone(),
-        runtime,
+        runtime.clone(),
         governor_record,
         Box::new(move || {
             hot_app.try_state::<crate::services::Services>().is_some_and(|_| crate::services::energy::view(&hot_app).signals.hot)
@@ -117,8 +120,48 @@ pub fn setup(app: &AppHandle) {
     if let Some(services) = app.try_state::<crate::services::Services>() {
         manager.recap.set(services.recap.clone());
     }
+    let guest_relay_app = app.clone();
+    let guest_read_app = app.clone();
+    let guest_write_app = app.clone();
+    let guest_remove_app = app.clone();
+    let guest_emit_app = app.clone();
+    let guest_shares = GuestShares::new(
+        manager.clone(),
+        runtime,
+        support_dir.join("guest-files"),
+        GuestSharesCallbacks {
+            relay_url: Box::new(move || {
+                #[cfg(desktop)]
+                {
+                    guest_relay_app
+                        .try_state::<crate::companion::Companion>()
+                        .and_then(|c| crate::companion::current_relay(c.server.store()))
+                }
+                #[cfg(not(desktop))]
+                {
+                    let _ = &guest_relay_app;
+                    None
+                }
+            }),
+            read_secret: Box::new(move |account| guest_read_app.try_state::<AppState>().and_then(|s| s.secrets.read(account))),
+            write_secret: Box::new(move |account, value| {
+                if let Some(s) = guest_write_app.try_state::<AppState>() {
+                    let _ = s.secrets.write(account, value);
+                }
+            }),
+            remove_secret: Box::new(move |account| {
+                if let Some(s) = guest_remove_app.try_state::<AppState>() {
+                    let _ = s.secrets.remove(account);
+                }
+            }),
+            on_change: Box::new(move || {
+                let _ = guest_emit_app.emit("guest-shares-changed", ());
+            }),
+        },
+    );
     app.manage(WorkspaceState {
         manager: manager.clone(),
+        guest_shares: guest_shares.clone(),
         governor,
         settings,
         #[cfg(desktop)]
@@ -128,6 +171,7 @@ pub fn setup(app: &AppHandle) {
         #[cfg(desktop)]
         bridge: Default::default(),
     });
+    guest_shares.start();
     #[cfg(desktop)]
     if desktop {
         let script_app = app.clone();
@@ -251,6 +295,7 @@ pub fn bridge_script() -> std::path::PathBuf {
 /// Bij afsluiten: alles wegschrijven en lopende agents netjes stoppen.
 pub fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<WorkspaceState>() {
+        state.guest_shares.suspend();
         state.governor.release_all();
         state.manager.shutdown();
         #[cfg(desktop)]
@@ -273,10 +318,16 @@ fn on_event(app: &AppHandle, event: ManagerEvent) {
     crate::companion::backend::on_workspace_event(app, &event);
     match event {
         ManagerEvent::Changed => {
+            if let Some(ws) = app.try_state::<WorkspaceState>() {
+                ws.guest_shares.notify_changed();
+            }
             let _ = app.emit("workspace-changed", ());
             let _ = app.emit("agents-changed", ());
         }
         ManagerEvent::Timeline(id) => {
+            if let Some(ws) = app.try_state::<WorkspaceState>() {
+                ws.guest_shares.notify_timeline(id);
+            }
             let _ = app.emit("workspace-timeline", id.to_string());
         }
         ManagerEvent::Approval(approval) => {

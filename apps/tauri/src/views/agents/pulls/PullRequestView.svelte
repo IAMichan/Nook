@@ -23,6 +23,7 @@
   import { tr } from "../../../lib/i18n.svelte";
   import CheckLog from "./CheckLog.svelte";
   import PullGlyph from "./PullGlyph.svelte";
+  import { orderedFiles } from "../../../lib/pr-file-order";
 
   let { accountId, item, onback, session }: { accountId: string; item: PullRequestItem; onback: () => void; session?: string } = $props();
   type Tab = "conversation" | "commits" | "files";
@@ -110,9 +111,11 @@
 
   const method = $derived(chosenMethod(savedMethod, detail?.methods ?? []));
   const ready = $derived(!!detail && detail.canMerge && detail.mergeNote === null);
-  const file = $derived(detail?.files.find((f) => f.path === openFile) ?? null);
+  // In reading order (`PullRequestFileOrder`): each source file with its tests, then docs, then generated files.
+  const files = $derived(detail ? orderedFiles(detail.files) : []);
+  const file = $derived(files.find((f) => f.path === openFile) ?? null);
   const shownCheck = $derived(openCheck && (detail?.checks.find((c) => c.name === openCheck!.name && c.url === openCheck!.url) ?? openCheck));
-  const fileIndex = $derived(detail && file ? detail.files.indexOf(file) : -1);
+  const fileIndex = $derived(file ? files.indexOf(file) : -1);
 
   function readMethod(): string | null {
     try {
@@ -371,8 +374,8 @@
             {#if file.previousPath}<span class="mono faint small path">{file.previousPath} →</span>{/if}
           </span>
           <span class="good small">+{file.additions}</span><span class="bad small">−{file.deletions}</span>
-          <button class="ghost icon" title={tr("Vorig bestand", "Previous file")} aria-label={tr("Vorig bestand", "Previous file")} disabled={fileIndex <= 0} onclick={() => (openFile = detail!.files[fileIndex - 1].path)}>↑</button>
-          <button class="ghost icon" title={tr("Volgend bestand", "Next file")} aria-label={tr("Volgend bestand", "Next file")} disabled={fileIndex + 1 >= detail.files.length} onclick={() => (openFile = detail!.files[fileIndex + 1].path)}>↓</button>
+          <button class="ghost icon" title={tr("Vorig bestand", "Previous file")} aria-label={tr("Vorig bestand", "Previous file")} disabled={fileIndex <= 0} onclick={() => (openFile = files[fileIndex - 1].path)}>↑</button>
+          <button class="ghost icon" title={tr("Volgend bestand", "Next file")} aria-label={tr("Volgend bestand", "Next file")} disabled={fileIndex + 1 >= files.length} onclick={() => (openFile = files[fileIndex + 1].path)}>↓</button>
         </div>
         {#if file.patch}
           <pre class="diff">{#each diffLines(file.patch) as line, i (i)}<span class={line.kind}>{line.text}</span>
@@ -384,7 +387,7 @@
           </div>
         {/if}
       {:else}
-        {#each detail.files as f (f.path)}
+        {#each files as f (f.path)}
           <button class="row" onclick={() => (openFile = f.path)}>
             {@render letter(f)}
             <span class="mono path" title={f.path}>{f.path}</span>
