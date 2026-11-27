@@ -9,6 +9,7 @@ export const table: Table = {
   "Started “{title}” as a new session": { de: "„{title}“ als neue Sitzung gestartet", fr: "« {title} » démarrée comme nouvelle session", es: "«{title}» iniciada como nueva sesión" },
   "“{title}” went to this session": { de: "„{title}“ ging an diese Sitzung", fr: "« {title} » est allée à cette session", es: "«{title}» fue a esta sesión" },
   "Dismissed “{title}”": { de: "„{title}“ verworfen", fr: "« {title} » ignorée", es: "«{title}» descartada" },
+  "Couldn’t start the session": { de: "Sitzung konnte nicht gestartet werden", fr: "Impossible de démarrer la session", es: "No se pudo iniciar la sesión" },
   "Page": { de: "Seite", fr: "Page", es: "Página" },
   "This page is no longer there.": { de: "Diese Seite gibt es nicht mehr.", fr: "Cette page n’existe plus.", es: "Esta página ya no está." },
 };
