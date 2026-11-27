@@ -225,6 +225,8 @@ export interface WorkspaceSettings {
   suggestNextPrompt?: boolean;
   /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
   textGenerators?: Record<string, string>;
+  /// MCP connector server names hidden from the sign-in banner above the composer (AG-31).
+  dismissedConnectorSignIns?: string[];
   /// Summarize long idle Claude Code sessions shortly before their prompt cache expires (`ws.idleCompaction`, AG-32).
   idleCompaction?: boolean;
   /// Summarize a session once its context crosses this size in tokens (`ws.autoCompactTokens`, 0 = off, AG-32).
@@ -232,6 +234,14 @@ export interface WorkspaceSettings {
 }
 
 export type CommitStyle = "standard" | "conventional" | "repository" | "custom";
+
+/// An MCP connector (server) a session's agent cannot use until the user signs in (`ConnectorSignIn` on the Mac, AG-31).
+export interface ConnectorSignIn {
+  name: string;
+  title: string;
+  iconDomain: string | null;
+  waiting: boolean;
+}
 
 /// Answer to a quick side question (`/btw`, `/side`, AG-61) asked while a session keeps running.
 export interface SideChatReply {
@@ -315,6 +325,7 @@ export interface WorkspaceOverview {
   providers: ProviderInfo[];
   settings: WorkspaceSettings;
   worktreeSetups?: Record<string, WorktreeSetupProgress>;
+  connectorSignIns?: Record<string, ConnectorSignIn[]>;
 }
 
 export type PathVerdict = "ok" | "missing" | "notDirectory" | "unreadable" | "forbidden";
@@ -524,6 +535,10 @@ export const workspaceApi = {
   setGoal: (id: string, goal: string | null) => invoke<string | null>("workspace_set_goal", { run: run(id), goal }),
   /** Context window breakdown and compaction pressure for a session (AG-65 & AG-66). */
   contextUsage: (id: string) => invoke<ContextUsage | null>("workspace_context_usage", { run: run(id) }),
+  /** Start browser sign-in for an MCP connector reported by this session's agent (AG-31). */
+  signInConnector: (id: string, name: string) => invoke<void>("workspace_connector_sign_in", { run: run(id), name }),
+  /** Hide MCP connectors from the sign-in banner above the composer and stop any active wait (AG-31). */
+  hideConnectorSignIns: (id: string, names: string[]) => invoke<void>("workspace_connector_hide", { run: run(id), names }),
   /** Quick side question (`/btw`, `/side`, AG-61) answered with recent timeline context while the main agent keeps running. */
   sideChat: (id: string, question: string) => invoke<SideChatReply>("workspace_side_chat", { run: run(id), question }),
   /** "Turn into project": a session's folder without a project becomes a favorite project. */

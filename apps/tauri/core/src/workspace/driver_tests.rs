@@ -98,6 +98,8 @@ echo '{"id":2,"result":{"thread":{"id":"th-1"},"model":"gpt-fake"}}'
 read turn
 echo "$turn" >> "$here/codex.log"
 echo '{"id":3,"result":{"turn":{"id":"t-1"}}}'
+read mcp_status
+echo '{"id":4,"result":{"data":[]}}'
 echo '{"method":"turn/started","params":{"turn":{"id":"t-1"}}}'
 case "$thread" in
 *thread/resume*)
