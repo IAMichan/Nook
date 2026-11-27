@@ -214,6 +214,24 @@ test('a broken activity list never keeps a result from Nook', async () => {
   assert.equal(result.ok, true);
 });
 
+test('opening the address the user already has open uses their tab, not a new one', async () => {
+  const tabs = [{ id: 7, windowId: 1, url: 'http://localhost:3000/', title: 'My app', status: 'complete', active: true, groupId: -1 }];
+  const { chrome, ports } = await startWorker({ host: answerHello, tabs });
+  let navigated = false;
+  const update = chrome.tabs.update;
+  chrome.tabs.update = async (id, props) => { if (props.url) navigated = true; return update(id, props); };
+  ports[0].onMessage.fire({ kind: 'command', id: 1, method: 'open', params: { url: 'localhost:3000' } });
+  await settle();
+  await wait(300);
+  await settle();
+  const result = ports[0].sent.find((m) => m.kind === 'result' && m.id === 1);
+  assert.equal(result?.ok, true, JSON.stringify(result));
+  assert.match(result.text, /already open in tab 7/);
+  assert.deepEqual(chrome.tabs.list.map((t) => t.id), [7]);
+  assert.equal(navigated, false);
+  assert.equal(chrome.storage.session.data.current, 7);
+});
+
 test('two tabs opened at once land in one Nook group, so Nook can close both', async () => {
   const { chrome, ports } = await startWorker({ host: answerHello, tabs: [] });
   ports[0].onMessage.fire({ kind: 'command', id: 1, method: 'open', params: { url: 'https://a.example' } });

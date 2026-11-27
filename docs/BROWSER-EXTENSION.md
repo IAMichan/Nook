@@ -42,7 +42,7 @@ while it shows, the extension asks Nook for its `look` (`BrowserExtensionLook`).
 both palettes of the chosen themes (an imported VS Code theme too), the colors set one by one in Settings › Appearance ›
 Colors, the accent as drawn, the diff colors and the density. The panel sets these as CSS variables, so a theme change
 in Nook shows in the browser within seconds. The extension keeps the last look, so the panel draws Nook's colors at once,
-also while Nook is not running. The strip on a page while Nook acts takes the same theme's menu color and violet.
+also while Nook is not running. The strip on a page while Nook acts takes the same theme's menu color and accent.
 
 Only `#RRGGBB` values are taken (`cleanLook` in `lib/core.js`), so a value can never become other CSS. A Nook that does
 not know `look` yet leaves the panel in Nook's own theme.
@@ -58,7 +58,7 @@ not know `look` yet leaves the panel in Nook's own theme.
 | `chrome_wait` | Waits for text or a selector to appear or disappear | no |
 | `chrome_console` | The page's console errors and warnings (it starts listening on the first call) | no |
 | `chrome_scroll` | Scrolls the page, or brings an element into view | no |
-| `chrome_open` | Opens an address in a new tab in Nook's tab group (or in a given tab); back, forward, reload | yes |
+| `chrome_open` | Opens an address in a new tab in Nook's tab group (or in a given tab); a tab that already shows the address is used as it is instead; back, forward, reload | yes |
 | `chrome_click` | Clicks an element by ref, CSS selector or visible text | yes |
 | `chrome_type` | Types into a field (or picks an option); `submit` sends the form | yes, with the exact text |
 | `chrome_key` | Presses a key (Enter, Escape, Tab, arrows…) | yes |
@@ -231,7 +231,7 @@ Nook does, and every step lands in the audit log.
   shows at the bottom. When a coding agent drives the page (`nook_use`, or `browser_*` with `in: "user"`), the glow
   breathes in the colors of that agent's logo, the cursor that shows its clicks and typing takes the first of them,
   and the strip names it, as in Nook's own browser (`command.by`, from
-  `BrowserExtensionConnector.driver`); Nook's own steps glow in Nook's violet. Stop pauses Nook in that browser.
+  `BrowserExtensionConnector.driver`); Nook's own steps glow in Nook's accent. Nook's tab group is grey. Stop pauses Nook in that browser.
 - **Pages the browser keeps to itself.** `chrome://` and the other browsers' own pages, `file://`, and the web stores
   are refused (`isRestricted` in `lib/core.js`).
 - **No passwords.** The extension never types into a password field. Snapshots show only that a password field has a
