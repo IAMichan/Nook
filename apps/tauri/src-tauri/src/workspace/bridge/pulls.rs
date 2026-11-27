@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use nook_core::connectors::gitlab;
+use nook_core::connectors::forge;
 use nook_core::connectors::pulls::{self, CheckOutcome, DetailState, EventKind as PrEventKind, PullRequestDetail};
 use nook_core::workspace::bridge::{
     diff_pr_snapshots, parse_pr_target, render_pr_status, BridgeCaller, BridgeTool, PrCheckSummary, PrHost, PrReviewSummary,
@@ -41,34 +41,34 @@ fn stop_watch(run_id: Uuid) -> Option<PullRequestRef> {
     Some(removed.reference)
 }
 
+fn pr_ref_for_repo(repo: &RemoteRepository, number: i64, fallback_url: Option<String>) -> Result<PullRequestRef, String> {
+    let url = fallback_url.or_else(|| repo.pull_request_url(number as u64)).unwrap_or_default();
+    let (host, repo_key) = match &repo.host {
+        SourceControlHost::Github => (PrHost::Github, repo.display_name()),
+        SourceControlHost::Gitlab => (PrHost::GitLab(repo.host_name.clone()), repo.path.clone()),
+        SourceControlHost::Gitea | SourceControlHost::Forgejo | SourceControlHost::Unknown(_) => {
+            (PrHost::Gitea(repo.host_name.clone()), repo.path.clone())
+        }
+        SourceControlHost::Gitcafe => (PrHost::GitCafe(repo.host_name.clone()), repo.path.clone()),
+        SourceControlHost::Bitbucket => (PrHost::Bitbucket(repo.host_name.clone()), repo.path.clone()),
+        SourceControlHost::AzureDevOps => (PrHost::AzureDevOps(repo.host_name.clone()), repo.path.clone()),
+    };
+    Ok(PullRequestRef { host, repo: repo_key, number, url })
+}
+
 async fn resolve_target(app: &AppHandle, target: PullRequestTarget, caller: &BridgeCaller) -> Result<PullRequestRef, String> {
     match target {
         PullRequestTarget::Ref(r) => Ok(r),
         PullRequestTarget::Number(number) => {
             let repo = detect_remote(app, &caller.directory).await?;
-            match repo.host {
-                SourceControlHost::Github => Ok(PullRequestRef {
-                    host: PrHost::Github,
-                    url: format!("https://github.com/{}/pull/{number}", repo.display_name()),
-                    repo: repo.display_name(),
-                    number,
-                }),
-                SourceControlHost::Gitlab => Ok(PullRequestRef {
-                    host: PrHost::GitLab(repo.host_name.clone()),
-                    url: format!("https://{}/{}/-/merge_requests/{number}", repo.host_name, repo.display_name()),
-                    repo: repo.display_name(),
-                    number,
-                }),
-                _ => Err(format!("Unsupported host {} for pull request status (GitHub and GitLab are supported).", repo.host.name())),
-            }
+            pr_ref_for_repo(&repo, number, None)
         }
         PullRequestTarget::Current => {
             let (repo, branch) = detect_remote_and_branch(app, &caller.directory).await?;
             let branch = branch.ok_or("This folder is not on a branch (detached HEAD). Pass url or number.")?;
             match repo.host {
                 SourceControlHost::Github => find_github_branch_pr(app, &repo.display_name(), &branch).await,
-                SourceControlHost::Gitlab => find_gitlab_branch_mr(app, &repo.host_name, &repo.display_name(), &branch).await,
-                _ => Err(format!("Unsupported host {} for pull request status (GitHub and GitLab are supported).", repo.host.name())),
+                _ => find_forge_branch_pr(app, &repo, &branch).await,
             }
         }
     }
@@ -132,29 +132,28 @@ async fn find_github_branch_pr(app: &AppHandle, repo: &str, branch: &str) -> Res
     Err(last_err.unwrap_or_else(|| format!("Could not query pull requests for {repo}.")))
 }
 
-async fn find_gitlab_branch_mr(app: &AppHandle, host: &str, repo: &str, branch: &str) -> Result<PullRequestRef, String> {
+async fn find_forge_branch_pr(app: &AppHandle, repo: &RemoteRepository, branch: &str) -> Result<PullRequestRef, String> {
     let connectors = app.try_state::<Connectors>().ok_or("Connectors are not ready.")?;
-    let token = gitlab::token(connectors.env.secrets.as_ref(), host)
-        .ok_or_else(|| format!("No GitLab token is connected for {host} (Settings › Accounts & connections)."))?;
-    let project: String = url::form_urlencoded::byte_serialize(repo.as_bytes()).collect();
-    let source: String = url::form_urlencoded::byte_serialize(branch.as_bytes()).collect();
-    let api_url = format!("https://{host}/api/v4/projects/{project}/merge_requests?source_branch={source}&per_page=10");
-    let headers = [("PRIVATE-TOKEN", token)];
-    let body = connectors.env.http.json("GET", &api_url, &headers, None, "GitLab").await.map_err(|e| e.message)?;
-    let list = body.as_array().map(Vec::as_slice).unwrap_or(&[]);
-    let picked = list.iter().find(|mr| mr["state"].as_str() == Some("opened")).or_else(|| list.first());
-    let Some(mr) = picked else {
-        return Err(format!("No merge request found on {host}/{repo} for branch \"{branch}\"."));
-    };
-    let number = mr["iid"].as_i64().ok_or("GitLab returned a merge request without an iid.")?;
-    let web_url = mr["web_url"].as_str().map(str::to_string).unwrap_or_else(|| format!("https://{host}/{repo}/-/merge_requests/{number}"));
-    Ok(PullRequestRef { host: PrHost::GitLab(host.to_string()), repo: repo.to_string(), number, url: web_url })
+    if forge::token_for_repo(connectors.env.secrets.as_ref(), repo).is_none() {
+        return Err(format!("No token is connected for {} (Settings › Pull requests › Code hosts).", repo.host_name));
+    }
+    let summary = forge::branch_pull_requests(&connectors.env.http, connectors.env.secrets.as_ref(), repo, branch)
+        .await
+        .ok_or_else(|| format!("Could not query {} for pull requests on branch \"{branch}\".", repo.host_name))?;
+    let picked = summary.open.or_else(|| summary.all.into_iter().next()).ok_or_else(|| {
+        let kind = if repo.host.uses_merge_requests() { "merge request" } else { "pull request" };
+        format!("No {kind} found on {}/{} for branch \"{branch}\".", repo.host_name, repo.display_name())
+    })?;
+    pr_ref_for_repo(repo, picked.number, Some(picked.url))
 }
 
 async fn fetch_snapshot(app: &AppHandle, reference: &PullRequestRef) -> Result<PullRequestSnapshot, String> {
     match &reference.host {
         PrHost::Github => fetch_github_snapshot(app, reference).await,
-        PrHost::GitLab(host) => fetch_gitlab_snapshot(app, host, reference).await,
+        _ => {
+            let connectors = app.try_state::<Connectors>().ok_or("Connectors are not ready.")?;
+            forge::fetch_snapshot(&connectors.env.http, connectors.env.secrets.as_ref(), reference).await
+        }
     }
 }
 
@@ -247,69 +246,6 @@ fn snapshot_from_github(detail: PullRequestDetail, fallback_url: &str) -> PullRe
         reviews,
         comment_ids,
     }
-}
-
-async fn fetch_gitlab_snapshot(app: &AppHandle, host: &str, reference: &PullRequestRef) -> Result<PullRequestSnapshot, String> {
-    let connectors = app.try_state::<Connectors>().ok_or("Connectors are not ready.")?;
-    let token = gitlab::token(connectors.env.secrets.as_ref(), host)
-        .ok_or_else(|| format!("No GitLab token is connected for {host} (Settings › Accounts & connections)."))?;
-    let project: String = url::form_urlencoded::byte_serialize(reference.repo.as_bytes()).collect();
-    let base = format!("https://{host}/api/v4/projects/{project}/merge_requests/{}", reference.number);
-    let headers = [("PRIVATE-TOKEN", token)];
-    let mr = connectors.env.http.json("GET", &base, &headers, None, "GitLab").await.map_err(|e| e.message)?;
-    let notes =
-        connectors.env.http.json("GET", &format!("{base}/notes?per_page=50"), &headers, None, "GitLab").await.unwrap_or(Value::Null);
-
-    let draft = mr["draft"].as_bool().or_else(|| mr["work_in_progress"].as_bool()).unwrap_or(false);
-    let state = match mr["state"].as_str().unwrap_or("opened") {
-        "merged" => "merged",
-        "closed" => "closed",
-        _ if draft => "draft",
-        _ => "open",
-    }
-    .to_string();
-    let conflicted = mr["has_conflicts"].as_bool().unwrap_or(false);
-    let merge_state = mr["detailed_merge_status"].as_str().or_else(|| mr["merge_status"].as_str()).unwrap_or("unknown").to_string();
-
-    let mut checks = Vec::new();
-    if let Some(pipeline) = mr.get("head_pipeline").filter(|v| v.is_object()) {
-        let p_status = pipeline["status"].as_str().unwrap_or("unknown");
-        let outcome = match p_status {
-            "success" => "passing",
-            "failed" | "canceled" => "failing",
-            "skipped" => "skipped",
-            _ => "pending",
-        };
-        checks.push(PrCheckSummary { name: "GitLab pipeline".into(), outcome: outcome.into(), detail: p_status.into() });
-    }
-
-    let mut comment_ids = Vec::new();
-    if let Some(arr) = notes.as_array() {
-        for note in arr {
-            if note["system"].as_bool().unwrap_or(false) {
-                continue;
-            }
-            if let Some(id) = note["id"].as_i64() {
-                comment_ids.push(format!("gl-note-{id}"));
-            }
-        }
-    }
-
-    Ok(PullRequestSnapshot {
-        repo: reference.repo.clone(),
-        number: reference.number,
-        title: mr["title"].as_str().unwrap_or("Untitled").to_string(),
-        url: mr["web_url"].as_str().map(str::to_string).unwrap_or_else(|| reference.url.clone()),
-        state,
-        head_branch: mr["source_branch"].as_str().unwrap_or("").to_string(),
-        base_branch: mr["target_branch"].as_str().unwrap_or("").to_string(),
-        head_sha: mr["sha"].as_str().unwrap_or("").to_string(),
-        conflicted,
-        merge_state,
-        checks,
-        reviews: vec![],
-        comment_ids,
-    })
 }
 
 pub(super) async fn get_pull_request_status(app: &AppHandle, a: &Map<String, Value>, caller: &BridgeCaller) -> Result<ToolResult, String> {

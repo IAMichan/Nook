@@ -11,6 +11,7 @@
   import { workspaceApi, type CommitStyle, type WorkspaceSettings } from "../../lib/workspace/api";
   import { workspace } from "../../lib/workspace/store.svelte";
   import Ico from "../../components/ui/Ico.svelte";
+  import ForgeHostsSection from "../connectors/ForgeHostsSection.svelte";
 
   const LIMIT = 20;
   let overview = $state<Overview | null>(null);
@@ -20,13 +21,16 @@
   let error = $state<string | null>(null);
   let field = $state<HTMLInputElement | null>(null);
 
+  function loadOverview() {
+    connectorsApi.overview().then((o) => (overview = o)).catch(() => {});
+  }
+
   $effect(() => {
-    const load = () => connectorsApi.overview().then((o) => (overview = o)).catch(() => {});
-    load();
+    loadOverview();
     workspace.start().then(() => {
       ws = workspace.settings ? { ...workspace.settings } : null;
     });
-    const un = connectorEvents.onChanged(load);
+    const un = connectorEvents.onChanged(loadOverview);
     return () => {
       un.then((f) => f());
     };
@@ -122,6 +126,12 @@
   {/each}
   {#if error}<p class="note err">{error}</p>{:else if entries.length >= LIMIT}<p class="note">{tr("Je kunt tot {n} organisaties en repositories volgen.", "You can watch up to {n} organizations and repositories.", { n: LIMIT })}</p>{/if}
 </div>
+
+<ForgeHostsSection
+  gitlabHosts={overview?.gitlab ?? []}
+  forgeHosts={overview?.forges ?? []}
+  onchange={loadOverview}
+/>
 
 {#if ws}
   <h3>{tr("Commits & pull requests", "Commits & pull requests")}</h3>

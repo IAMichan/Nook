@@ -1309,13 +1309,17 @@ pub fn render_scheduled_tasks(tasks: &[ScheduledTask], scheduled_tasks_enabled: 
 pub enum PrHost {
     Github,
     GitLab(String),
+    Gitea(String),
+    GitCafe(String),
+    Bitbucket(String),
+    AzureDevOps(String),
 }
 
 /// Resolved pull request / merge request reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequestRef {
     pub host: PrHost,
-    /// `owner/repo` on GitHub or `group/project` (possibly nested) on GitLab.
+    /// `owner/repo` on GitHub/Gitea/Bitbucket/GitCafe, `group/project` on GitLab, or `org/project/_git/repo` on Azure DevOps.
     pub repo: String,
     pub number: i64,
     pub url: String,
@@ -1332,14 +1336,17 @@ pub enum PullRequestTarget {
     Number(i64),
 }
 
-/// Parses a GitHub PR URL (`https://github.com/owner/repo/pull/42`) or GitLab MR URL
-/// (`https://gitlab.example.com/group/proj/-/merge_requests/42`).
+/// Parses a pull / merge request URL for GitHub, GitLab, Gitea/Forgejo/Codeberg, GitCafe, Bitbucket, or Azure DevOps.
 pub fn parse_pr_url(raw: &str) -> Option<PullRequestRef> {
     let url = url::Url::parse(raw.trim()).ok()?;
     if !matches!(url.scheme(), "https" | "http") {
         return None;
     }
     let host = url.host_str()?.to_ascii_lowercase();
+    let authority = match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.clone(),
+    };
     let segments: Vec<&str> = url.path_segments()?.filter(|s| !s.is_empty()).collect();
     if host == "github.com" || host == "www.github.com" {
         if segments.len() >= 4 && segments[2] == "pull" {
@@ -1361,12 +1368,66 @@ pub fn parse_pr_url(raw: &str) -> Option<PullRequestRef> {
             }
             let repo = segments[..dash].join("/");
             return Some(PullRequestRef {
-                host: PrHost::GitLab(host.clone()),
-                url: format!("https://{host}/{repo}/-/merge_requests/{number}"),
+                host: PrHost::GitLab(authority.clone()),
+                url: format!("https://{authority}/{repo}/-/merge_requests/{number}"),
                 repo,
                 number,
             });
         }
+    }
+    // Bitbucket Cloud: /<workspace>/<repo>/pull-requests/<id>
+    if (host == "bitbucket.org" || host == "www.bitbucket.org") && segments.len() >= 4 && segments[2] == "pull-requests" {
+        let number: i64 = segments[3].parse().ok()?;
+        if number <= 0 {
+            return None;
+        }
+        let repo = format!("{}/{}", segments[0], segments[1]);
+        return Some(PullRequestRef {
+            host: PrHost::Bitbucket("bitbucket.org".into()),
+            url: format!("https://bitbucket.org/{repo}/pull-requests/{number}"),
+            repo,
+            number,
+        });
+    }
+    // Azure DevOps: dev.azure.com/<org>/<project>/_git/<repo>/pullrequest/<id>
+    // or <org>.visualstudio.com/<project>/_git/<repo>/pullrequest/<id>
+    if let Some(git_idx) = segments.iter().position(|s| *s == "_git") {
+        if segments.get(git_idx + 2) == Some(&"pullrequest") {
+            let number: i64 = segments.get(git_idx + 3)?.parse().ok()?;
+            if number <= 0 {
+                return None;
+            }
+            let repo_name = segments.get(git_idx + 1)?;
+            let (org, project) = if host == "dev.azure.com" && git_idx >= 2 {
+                (segments[0], segments[1])
+            } else if let Some(org) = host.strip_suffix(".visualstudio.com") {
+                if git_idx >= 1 && !org.is_empty() {
+                    (org, segments[git_idx - 1])
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            };
+            let repo = format!("{org}/{project}/_git/{repo_name}");
+            return Some(PullRequestRef {
+                host: PrHost::AzureDevOps("dev.azure.com".into()),
+                url: format!("https://dev.azure.com/{repo}/pullrequest/{number}"),
+                repo,
+                number,
+            });
+        }
+    }
+    // GitCafe or Gitea/Forgejo/Codeberg: /<owner>/<repo>/pulls/<number>
+    if segments.len() >= 4 && segments[2] == "pulls" {
+        let number: i64 = segments[3].parse().ok()?;
+        if number <= 0 {
+            return None;
+        }
+        let repo = format!("{}/{}", segments[0], segments[1]);
+        let pr_host =
+            if host == "git.cafe" || host == "staging.git.cafe" { PrHost::GitCafe(host.clone()) } else { PrHost::Gitea(authority.clone()) };
+        return Some(PullRequestRef { host: pr_host, url: format!("https://{authority}/{repo}/pulls/{number}"), repo, number });
     }
     None
 }
@@ -1374,8 +1435,9 @@ pub fn parse_pr_url(raw: &str) -> Option<PullRequestRef> {
 /// Parses `watch_pull_request` / `get_pull_request_status` target arguments.
 pub fn parse_pr_target(a: &Map<String, Value>) -> Result<PullRequestTarget, String> {
     if let Some(raw_url) = a.get("url").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) {
-        let parsed = parse_pr_url(raw_url)
-            .ok_or_else(|| format!("Unrecognised pull/merge request URL: \"{raw_url}\". Pass a GitHub PR or GitLab MR URL."))?;
+        let parsed = parse_pr_url(raw_url).ok_or_else(|| {
+            format!("Unrecognised pull/merge request URL: \"{raw_url}\". Pass a GitHub, GitLab, Gitea, GitCafe, Bitbucket, or Azure DevOps pull request URL.")
+        })?;
         return Ok(PullRequestTarget::Ref(parsed));
     }
     let number = a.get("number").and_then(Value::as_i64);
@@ -1842,6 +1904,31 @@ mod tests {
         assert_eq!(gl.host, PrHost::GitLab("gitlab.example.com".into()));
         assert_eq!(gl.repo, "team/sub/app");
         assert_eq!(gl.number, 19);
+
+        let gt = parse_pr_url("https://codeberg.org/acme/app/pulls/9").unwrap();
+        assert_eq!(gt.host, PrHost::Gitea("codeberg.org".into()));
+        assert_eq!(gt.repo, "acme/app");
+        assert_eq!(gt.number, 9);
+
+        let gc = parse_pr_url("https://git.cafe/acme/app/pulls/5").unwrap();
+        assert_eq!(gc.host, PrHost::GitCafe("git.cafe".into()));
+        assert_eq!(gc.repo, "acme/app");
+        assert_eq!(gc.number, 5);
+
+        let bb = parse_pr_url("https://bitbucket.org/team/web/pull-requests/15").unwrap();
+        assert_eq!(bb.host, PrHost::Bitbucket("bitbucket.org".into()));
+        assert_eq!(bb.repo, "team/web");
+        assert_eq!(bb.number, 15);
+
+        let az = parse_pr_url("https://dev.azure.com/org/proj/_git/web/pullrequest/42").unwrap();
+        assert_eq!(az.host, PrHost::AzureDevOps("dev.azure.com".into()));
+        assert_eq!(az.repo, "org/proj/_git/web");
+        assert_eq!(az.number, 42);
+
+        let az_old = parse_pr_url("https://org.visualstudio.com/proj/_git/web/pullrequest/43").unwrap();
+        assert_eq!(az_old.host, PrHost::AzureDevOps("dev.azure.com".into()));
+        assert_eq!(az_old.repo, "org/proj/_git/web");
+        assert_eq!(az_old.number, 43);
 
         assert!(parse_pr_url("https://example.com/not-a-pr").is_none());
         assert_eq!(parse_pr_target(&Map::new()).unwrap(), PullRequestTarget::Current);

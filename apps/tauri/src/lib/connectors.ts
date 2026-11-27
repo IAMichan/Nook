@@ -127,6 +127,7 @@ export interface Overview {
   remote: RemoteView[];
   mcp: McpView[];
   gitlab: string[];
+  forges: string[];
   local: LocalSource[];
   caps: Caps;
 }
@@ -138,6 +139,18 @@ export interface GitLabSaved {
   host: string;
   hosts: string[];
   check: GitLabCheck;
+}
+
+export type CodeHostKind = "gitlab" | "gitea" | "gitcafe" | "bitbucket" | "azureDevOps";
+
+export const CODE_HOST_KINDS: CodeHostKind[] = ["gitlab", "gitea", "gitcafe", "bitbucket", "azureDevOps"];
+
+export type ForgeTokenCheck = { kind: "valid"; account: string | null } | { kind: "rejected" } | { kind: "unreachable" };
+
+export interface ForgeSaved {
+  host: string;
+  hosts: string[];
+  check: ForgeTokenCheck | null;
 }
 
 export interface Pasted {
@@ -375,6 +388,10 @@ export const connectorsApi = {
   gitlabSave: (host: string, token: string) => invoke<GitLabSaved>("gitlab_save", { host, token }),
   gitlabCheck: (host: string) => invoke<GitLabCheck>("gitlab_check", { host }),
   gitlabRemove: (host: string) => invoke<string[]>("gitlab_remove", { host }),
+
+  forgeSave: (kind: CodeHostKind, host: string, token: string) => invoke<ForgeSaved>("forge_save", { kind, host, token }),
+  forgeCheck: (kind: CodeHostKind, host: string) => invoke<ForgeTokenCheck>("forge_check", { kind, host }),
+  forgeRemove: (host: string) => invoke<string[]>("forge_remove", { host }),
 
   whatsapp: () => invoke<WhatsAppView>("whatsapp_view"),
   whatsappSave: (settings: WhatsAppSettings) => invoke<void>("whatsapp_save", { settings }),
@@ -624,4 +641,153 @@ export function gitlabDetail(host: string, check: GitLabCheck | null): string {
   if (check.kind === "valid") return `${host} · @${check.username}`;
   if (check.kind === "rejected") return tr("GitLab weigert dit token. Controleer of het scope api heeft en niet verlopen is.", "GitLab rejects this token. Check that it has the api scope and hasn't expired.");
   return tr("Nook kon {host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.", "Nook couldn't reach {host}. The token is saved; Nook tries again as soon as it's needed.", { host });
+}
+
+/** Classifies a stored host name into its code host kind, matching `SourceControlHost::classify` in Rust and macOS. */
+export function classifyCodeHost(host: string): CodeHostKind {
+  const bare = host.trim().toLowerCase().split(":")[0];
+  if (bare === "git.cafe" || bare === "staging.git.cafe") return "gitcafe";
+  if (bare === "gitlab.com" || bare.includes("gitlab")) return "gitlab";
+  if (bare === "dev.azure.com" || bare.endsWith(".dev.azure.com") || bare.endsWith(".visualstudio.com")) return "azureDevOps";
+  if (bare === "bitbucket.org" || bare.includes("bitbucket")) return "bitbucket";
+  return "gitea";
+}
+
+export function normalizeCodeHost(raw: string): string | null {
+  let text = raw.trim().toLowerCase();
+  if (text.startsWith("https://")) text = text.slice("https://".length);
+  else if (text.startsWith("http://")) text = text.slice("http://".length);
+  text = text.split("/")[0] ?? "";
+  if (!text || text.includes("@")) return null;
+  if (!/^[\p{L}\p{N}.:-]+$/u.test(text)) return null;
+  if (!text.includes(".") && !text.startsWith("localhost")) return null;
+  return text;
+}
+
+export interface CodeHostMeta {
+  kind: CodeHostKind;
+  name: string;
+  menuName: string;
+  fixedHost: string | null;
+  domain: string;
+  tokenPrompt: string;
+  tokenDetail: string;
+  canCheckToken: boolean;
+}
+
+export function codeHostMeta(kind: CodeHostKind): CodeHostMeta {
+  switch (kind) {
+    case "gitlab":
+      return {
+        kind,
+        name: "GitLab",
+        menuName: "GitLab",
+        fixedHost: "gitlab.com",
+        domain: "gitlab.com",
+        tokenPrompt: "glpat-…",
+        tokenDetail: tr(
+          "Maak een persoonlijk toegangstoken met scope api.",
+          "Make a personal access token with the api scope.",
+        ),
+        canCheckToken: true,
+      };
+    case "gitea":
+      return {
+        kind,
+        name: "Gitea",
+        menuName: tr("Gitea, Forgejo of Codeberg", "Gitea, Forgejo or Codeberg"),
+        fixedHost: null,
+        domain: "gitea.com",
+        tokenPrompt: "token",
+        tokenDetail: tr(
+          "Typ het adres van je server en maak dan onder Instellingen › Applicaties een token dat repositories en issues mag lezen en schrijven.",
+          "Type the address of your server, then generate a token under Settings › Applications that may read and write repositories and issues.",
+        ),
+        canCheckToken: true,
+      };
+    case "gitcafe":
+      return {
+        kind,
+        name: "GitCafe",
+        menuName: "GitCafe",
+        fixedHost: "git.cafe",
+        domain: "git.cafe",
+        tokenPrompt: "token",
+        tokenDetail: tr(
+          "Maak een persoonlijk toegangstoken in je GitCafe-instellingen.",
+          "Make a personal access token in your GitCafe settings.",
+        ),
+        canCheckToken: false,
+      };
+    case "bitbucket":
+      return {
+        kind,
+        name: "Bitbucket",
+        menuName: "Bitbucket",
+        fixedHost: "bitbucket.org",
+        domain: "bitbucket.org",
+        tokenPrompt: "username:token",
+        tokenDetail: tr(
+          "Maak bij je Atlassian-account een API-token met scopes voor Bitbucket (pull requests lezen en schrijven). Plak het als e-mailadres:token.",
+          "Make an API token with scopes for Bitbucket on your Atlassian account (read and write pull requests). Paste it as email:token.",
+        ),
+        canCheckToken: true,
+      };
+    case "azureDevOps":
+      return {
+        kind,
+        name: "Azure DevOps",
+        menuName: "Azure DevOps",
+        fixedHost: "dev.azure.com",
+        domain: "dev.azure.com",
+        tokenPrompt: ":token",
+        tokenDetail: tr(
+          "Maak een persoonlijk toegangstoken met Code (lezen en schrijven). Plak het als :token, of gebruikersnaam:token.",
+          "Make a personal access token with Code (read & write). Paste it as :token, or username:token.",
+        ),
+        canCheckToken: false,
+      };
+  }
+}
+
+export function codeHostTokenPage(kind: CodeHostKind, host: string): string | null {
+  const clean = normalizeCodeHost(host);
+  if (!clean) return null;
+  switch (kind) {
+    case "gitlab":
+      return `https://${clean}/-/user_settings/personal_access_tokens`;
+    case "gitea":
+      return `https://${clean}/user/settings/applications`;
+    case "gitcafe":
+      return `https://${clean}`;
+    case "bitbucket":
+      return "https://id.atlassian.com/manage-profile/security/api-tokens";
+    case "azureDevOps":
+      return "https://dev.azure.com/_usersSettings/tokens";
+  }
+}
+
+export function forgeHealth(kind: CodeHostKind, check: ForgeTokenCheck | null): Health {
+  if (!codeHostMeta(kind).canCheckToken) return "working";
+  if (!check) return "busy";
+  return check.kind === "valid" ? "working" : check.kind === "rejected" ? "needsYou" : "broken";
+}
+
+export function forgeDetail(host: string, kind: CodeHostKind, check: ForgeTokenCheck | null): string {
+  const meta = codeHostMeta(kind);
+  if (!meta.canCheckToken) {
+    return `${host} · ${tr("Token bewaard", "Token saved")}`;
+  }
+  if (!check) return `${host} · ${tr("Controleren…", "Checking…")}`;
+  if (check.kind === "valid") {
+    return check.account ? `${host} · @${check.account}` : `${host} · ${tr("Token bewaard", "Token saved")}`;
+  }
+  if (check.kind === "rejected") {
+    return tr("Token geweigerd", "Token rejected");
+  }
+  return tr(
+    "Nook kon {host} niet bereiken. Het token is bewaard; Nook probeert het opnieuw zodra het nodig is.",
+    "Nook couldn't reach {host}. The token is saved; Nook tries again as soon as it's needed.",
+    { host },
+  );
 }

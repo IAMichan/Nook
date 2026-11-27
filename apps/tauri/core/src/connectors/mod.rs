@@ -14,6 +14,7 @@ pub mod cloud;
 pub mod custom;
 pub mod dates;
 pub mod feeds;
+pub mod forge;
 pub mod github;
 pub mod github_markdown;
 pub mod gitlab;

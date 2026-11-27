@@ -25,6 +25,9 @@ pub struct ConnectorConfig {
     pub mail_accounts: Vec<MailAccount>,
     /// GitLab-hosts met een token in de kluis.
     pub gitlab_hosts: Vec<String>,
+    /// Other code hosts (Gitea, Forgejo, Codeberg, GitCafe, Bitbucket, Azure DevOps) with a token in the keychain.
+    #[serde(default)]
+    pub forge_hosts: Vec<String>,
     pub mcp_servers: Vec<McpServerConfig>,
     pub whatsapp: WhatsAppSettings,
     /// Per Nook (chat-id) de accounts die die chat niet mag gebruiken ("github.werk").
