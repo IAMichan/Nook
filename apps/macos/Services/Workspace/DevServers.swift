@@ -8,7 +8,7 @@ struct DevServer: Equatable, Identifiable, Sendable {
     var pid: Int32
     var command: String
     var port: Int
-    /// Started by Nook: from one of its terminals or by an agent it runs. Only such a server gets a Stop button.
+    /// Started by Nook: from one of its terminals or by an agent it runs. Any other server asks first before it stops.
     var startedByNook = false
     var id: Int { port }
     /// Always opened on localhost: a server listening on all addresses answers there too.
@@ -73,6 +73,12 @@ enum DevServerScanner {
         return result
     }
 
+    /// `pid` still listens on `port`: checked right before a stop, so a pid the system gave to another program is never hit.
+    static func listens(pid: Int32, port: Int) -> Bool {
+        guard pid > 1, port > 0, let listing = run(["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-F", "p"]) else { return false }
+        return listing.split(separator: "\n").contains { $0 == "p\(pid)" }
+    }
+
     private static func run(_ arguments: [String]) -> String? {
         // lsof can hang on an unreachable network volume: the deadline keeps the caller from waiting on it forever.
         // Its exit status is 1 when it finds nothing, so the output counts either way.
@@ -81,9 +87,10 @@ enum DevServerScanner {
     }
 }
 
-/// Whether Nook may stop a dev server: only one it started itself, from one of its terminals or through an agent it runs.
-/// A server you started in another terminal app is yours to stop there. Matched by pid and process group only, never by
-/// name, and checked again right before the stop, so a pid the system gave to another program meanwhile is never hit.
+/// Whether Nook started a dev server itself, from one of its terminals or through an agent it runs, and how to stop one.
+/// A server Nook started stops with one tap; one you started in another terminal app stops too, after you confirm it.
+/// Matched by pid and process group only, never by name, and checked again right before the stop, so a pid the system
+/// gave to another program meanwhile is never hit.
 enum DevServerOwnership {
     /// What Nook started: its own process, the shells of its terminals, and the process groups its agents run in.
     struct Roots: Equatable, Sendable {
@@ -116,15 +123,18 @@ enum DevServerOwnership {
         }
     }
 
-    /// Stops a server Nook started, with the processes in its group (a wrapper's workers). When that group must live on
-    /// (Nook's own, an agent's, a terminal's shell), the server and the processes it started stop instead. False when it is
-    /// not (or no longer) Nook's.
+    /// Stops a server. One Nook started stops with the processes in its group (a wrapper's workers); when that group must
+    /// live on (Nook's own, an agent's, a terminal's shell), the server and the processes it started stop instead. One
+    /// started elsewhere stops only itself and what it started, never its group: that group may hold the rest of what
+    /// you run in that terminal. False when the server no longer listens on its port, or is Nook or one of its shells.
     @discardableResult
     static func stop(_ server: DevServer, roots: Roots) -> Bool {
+        guard server.pid > 1, !roots.processes.contains(server.pid),
+              DevServerScanner.listens(pid: server.pid, port: server.port) else { return false }
         let group = ProcessTree.group(of: server.pid)
-        guard startedByNook(pid: server.pid, group: group, roots: roots, parent: ProcessTree.parent(of:)) else { return false }
-        let protected = protectedGroups(roots)
-        let target = ProcessTree.stopTarget(pid: server.pid, group: group, protectedGroups: protected)
+        let ours = startedByNook(pid: server.pid, group: group, roots: roots, parent: ProcessTree.parent(of:))
+        let target = ours ? ProcessTree.stopTarget(pid: server.pid, group: group, protectedGroups: protectedGroups(roots))
+                          : .process(server.pid)
         if case .process = target {
             for child in ProcessTree.descendants(of: server.pid, children: ProcessTree.children(of:)).reversed() {
                 ProcessTree.stop(.process(child))

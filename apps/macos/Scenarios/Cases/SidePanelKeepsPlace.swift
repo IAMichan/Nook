@@ -1,11 +1,10 @@
 import AppKit
 import Foundation
-import OSLog
 
 /// Opening, closing and dragging the side panel beside a long agent conversation: every row gets narrower or wider at
 /// once and is laid out again. At its end the conversation stays at its end; read back, what you read stays where it
-/// is on screen; and the blank-conversation guard never steps in (it used to take the rows' reflow for a blank view
-/// and scrolled the conversation up to its last row and back down).
+/// is on screen. (A blank-conversation guard once took the rows' reflow for a blank view and scrolled the conversation
+/// up and back down; the rows are all drawn in full now and the guard is gone.)
 final class SidePanelKeepsPlace: Scenario {
     func testSidePanelKeepsPlace() throws {
         try scenario("Opening and dragging the side panel moves nothing in the conversation") { nook, screen, app in
@@ -20,7 +19,6 @@ final class SidePanelKeepsPlace: Scenario {
                 throw ScenarioFailure.couldNotRun("the conversation's scroll view was not found")
             }
             let model = nook.app.viewModel
-            let started = Date()
             var problems: [String] = []
 
             // At the end: open, drag wider and narrower, close. It stays at its end each time.
@@ -59,8 +57,6 @@ final class SidePanelKeepsPlace: Scenario {
             }
             try app.screenshot("reading")
 
-            let recoveries = try Self.blankRecoveries(since: started)
-            if !recoveries.isEmpty { problems.append("the conversation counted as blank \(recoveries.count) time(s); first: \(recoveries[0])") }
             if !problems.isEmpty { throw ScenarioFailure.assertion(problems.joined(separator: "; ")) }
         }
     }
@@ -101,15 +97,5 @@ final class SidePanelKeepsPlace: Scenario {
         }
         root.map(visit)
         return best
-    }
-
-    /// The blank guard's "recovering" lines this process logged since `date`, checked per line (see `ScrollBackStaysPut`).
-    private static func blankRecoveries(since date: Date) throws -> [String] {
-        let store = try OSLogStore(scope: .currentProcessIdentifier)
-        return try store.getEntries(at: store.position(date: date))
-            .compactMap { $0 as? OSLogEntryLog }
-            .filter { $0.date >= date && $0.subsystem == "nl.imdigital.nook"
-                      && $0.composedMessage.contains("Blank conversation, recovering") }
-            .map(\.composedMessage)
     }
 }

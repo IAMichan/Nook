@@ -34,8 +34,9 @@ struct AgentRunPanel: View {
     @State var renaming = false
     @State var titleDraft = ""
     @FocusState var titleFocused: Bool
-    /// The older branches of a session that worked on many, shown in the tray above the composer.
-    @State var showsOlderBranches = false
+    /// The older branches of a session that worked on many, shown in the tray above the composer. Remembered with the
+    /// visit, so the fold is as you left it when you come back to the session.
+    @State var showsOlderBranches: Bool
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
     @State var repository: String?
     /// The agent's skills for `$`, read from its skill folders.
@@ -49,12 +50,12 @@ struct AgentRunPanel: View {
     @State var scrollPhase = Unobserved(ScrollPhase.idle)
     /// The last frame the scroll view reported, for `settleAtEnd`; read only by handlers, so nothing redraws with it.
     @State var lastFrame = Unobserved<ScrollFrame?>(nil)
-    /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
+    /// Where the drawn blocks stand, for the new turn held near the top (`TurnPinRoom`); nothing draws from it.
     @State var drawnRows = DrawnRows()
+    /// Which blocks are drawn: the last ones, more as you scroll up (`ConversationRows`).
+    @State var rowWindow = RowWindow()
     /// Holds the block you read in place while you read back and what is above it changes height (`TimelineReadingAnchor`).
     @State var reading = TimelineReadingAnchor()
-    /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
-    @State var timelineBuild = 0
     /// The step that just ended, held on the live line a moment and kept out of the rows meanwhile (`EndedStepHold`).
     @State var endedHold = EndedStepHold<UUID>()
     /// The run that just finished, for the frame before what comes under its answer glides in (`FinishGlide`).
@@ -126,6 +127,7 @@ struct AgentRunPanel: View {
         self.headerAccessory = headerAccessory
         _derived = State(initialValue: .forRun(runID))
         _countedLines = State(initialValue: CountedTurnLines.forRun(runID))
+        _showsOlderBranches = State(initialValue: TimelineVisitStore.shared.visit(for: Self.visitKey(runID))?.olderBranchesOpen ?? false)
     }
 
     var draft: String {

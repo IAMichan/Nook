@@ -136,26 +136,21 @@ enum TimelineSpace {
     static let content = "timeline.content"
 }
 
-/// A conversation's rows in its scroll view, inside a plain stack: the older ones lazily, the last `eager` drawn in full
-/// (`HistoryWindow.eagerRows`). A lazy stack can come to rest drawing none of its rows where the view stands, also at
-/// its end and also after its scroll view was made again; rows drawn in full cannot, so the end of a conversation always
-/// shows, and `recoversBlankRows` scrolling there always lands on rows. Each row keeps its `.id`, so a scroll to it works
-/// in either part.
+/// A conversation's rows in its scroll view, all drawn in full and none in a lazy stack (`HistoryWindow.drawnStart`): a
+/// lazy stack guesses the height of rows it has not laid out and corrects the guess as they come into view, which moved
+/// everything above what you read by hundreds of points at once, and the conversation bounced up and down while you
+/// read or scrolled. Only the rows from `from` are drawn (`RowWindow.start`): the last ones, and a page more above each
+/// time you scroll near their top (`RowWindow.scrolled`). Each row keeps its `.id`, so a scroll to it works once it is
+/// drawn (`RowWindow.reveal`).
 struct ConversationRows<Item: Identifiable, Row: View, Footer: View>: View {
     let items: [Item]
-    let eager: Int
-    /// The gap between rows in the lazy part; the plain stack around it should use the same.
+    /// The first row drawn (`RowWindow.start`).
+    let from: Int
     var spacing: CGFloat = NookTheme.Spacing.sm
-    /// While you follow a working agent: the rows drawn in full never get shorter (`HeldHeight`), so its output folding
-    /// away at the end does not bounce the conversation. `holdKey` lets go (a new turn, a block opened or closed).
+    /// While an agent works: the rows never get shorter (`HeldHeight`), so its output folding away at the end does not
+    /// bounce the conversation. `holdKey` lets go (a new turn, a block opened or closed).
     var holdsHeight = false
     var holdKey = 0
-    /// While you read back (not following the end): no row moves from the part drawn in full into the lazy part
-    /// (`HistoryWindow.heldSplit`). A row that moves is made again and its height guessed, so every move of the split
-    /// changed the height of everything above what you read, by thousands of points at once in a long session.
-    var holdsSplit = false
-    /// Learns where the part drawn in full starts (`RowsInView.blank`): the blank guard leaves that part alone.
-    var drawn: DrawnRows? = nil
     /// While you follow a working agent: what it writes grows into view in a glide (`GlidesGrowth`), not a line or a
     /// whole step at once: the last row, the one it writes into.
     var glidesGrowth = false
@@ -165,45 +160,103 @@ struct ConversationRows<Item: Identifiable, Row: View, Footer: View>: View {
     /// What stands right under the rows (the live line, a card): laid out with them, so the room a fold leaves is under
     /// it rather than between the last row and it, where it read as a stray gap in the conversation.
     @ViewBuilder var footer: () -> Footer
-    /// The first row drawn in full while the split is held; not state any view draws from.
-    @State private var firstEager = Unobserved<Item.ID?>(nil)
 
     var body: some View {
-        let split = lazyRows()
-        if split > 0 {
-            LazyVStack(alignment: .leading, spacing: spacing) {
-                ForEach(items[..<split]) { row($0) }
-            }
-            .scrollTargetLayout()
-        }
-        // Rows moving into the lazy part make the rows drawn in full shorter: that lets go too.
+        let start = min(max(0, from), items.count)
         let last = items.last?.id
-        HeldHeightStack(spacing: spacing, holds: holdsHeight, key: holdKey &* 31 &+ split) {
-            ForEach(items[split...]) { item in
+        HeldHeightStack(spacing: spacing, holds: holdsHeight, key: holdKey, top: start) {
+            ForEach(items[start...]) { item in
                 row(item).modifier(GlidesGrowth(active: glidesGrowth && item.id == last, growsIn: working))
             }
             footer()
         }
-        .onGeometryChange(for: Double.self) { $0.frame(in: .named(TimelineSpace.name)).minY } action: { drawn?.drawnFrom = $0 }
-    }
-
-    /// How many of the rows go into the lazy stack, held while you read back (`holdsSplit`).
-    private func lazyRows() -> Int {
-        let natural = HistoryWindow.lazyRows(count: items.count, eager: eager)
-        let held = holdsSplit ? firstEager.value.flatMap { id in items.firstIndex { $0.id == id } } : nil
-        let split = HistoryWindow.heldSplit(natural: natural, held: held)
-        firstEager.value = split < items.count ? items[split].id : nil
-        return split
     }
 }
 
 extension ConversationRows where Footer == EmptyView {
-    init(items: [Item], eager: Int, spacing: CGFloat = NookTheme.Spacing.sm, holdsHeight: Bool = false, holdKey: Int = 0,
-         holdsSplit: Bool = false, drawn: DrawnRows? = nil, glidesGrowth: Bool = false, working: Bool = false,
+    init(items: [Item], from: Int, spacing: CGFloat = NookTheme.Spacing.sm, holdsHeight: Bool = false,
+         holdKey: Int = 0, glidesGrowth: Bool = false, working: Bool = false,
          @ViewBuilder row: @escaping (Item) -> Row) {
-        self.init(items: items, eager: eager, spacing: spacing, holdsHeight: holdsHeight, holdKey: holdKey,
-                  holdsSplit: holdsSplit, drawn: drawn, glidesGrowth: glidesGrowth, working: working, row: row,
-                  footer: { EmptyView() })
+        self.init(items: items, from: from, spacing: spacing, holdsHeight: holdsHeight, holdKey: holdKey,
+                  glidesGrowth: glidesGrowth, working: working, row: row, footer: { EmptyView() })
+    }
+}
+
+/// Which of a conversation's rows `ConversationRows` draws: from its first drawn row to the end. New rows at the end
+/// leave the first where it is; scrolling near its top draws a page more above (`scrolled`), put in above what you read
+/// in the same pass of layout (`TimelineReadingAnchor.growsAbove`); a find or a jump to a row draws down from it
+/// (`reveal`). Held by the conversation in `@State`; only the first drawn row is observed.
+@MainActor
+@Observable
+final class RowWindow {
+    /// The first drawn row when it was last chosen (a page drawn above, a reveal): what draws the rows again.
+    private(set) var first: AnyHashable?
+    /// The first drawn row as last drawn, the rows, and how far from the end that row stood: not observed.
+    @ObservationIgnored private var anchor: AnyHashable?
+    @ObservationIgnored private var ids: [AnyHashable] = []
+    @ObservationIgnored private var fromEnd: Int?
+    @ObservationIgnored private var drawnStart = 0
+    /// A page was just drawn above: the next waits until it is laid out.
+    @ObservationIgnored private var growing = false
+    /// A row to draw down from once it is among the rows (a find in a turn the conversation did not show yet).
+    @ObservationIgnored private var revealing: AnyHashable?
+    /// The conversation the rows are of: another one starts again from its last rows.
+    @ObservationIgnored private var key: AnyHashable?
+    /// Moves the view down by what is drawn above, in the same pass, so what you read stays put.
+    @ObservationIgnored weak var reading: TimelineReadingAnchor?
+
+    /// The index of the first drawn row of `ids`; never later than the last `minimum`. The same row as before while
+    /// rows come in at the end; as far from the end as before once that row is gone. Asked once per draw of the
+    /// conversation, by its body. `key` names the conversation: another one starts from its last rows.
+    func start(_ ids: [AnyHashable], minimum: Int, key: AnyHashable) -> Int {
+        if key != self.key {
+            self.key = key
+            anchor = nil
+            fromEnd = nil
+            revealing = nil
+        }
+        self.ids = ids
+        let index = (anchor ?? first).flatMap { ids.firstIndex(of: $0) }
+        var start = HistoryWindow.drawnStart(count: ids.count, first: index, fromEnd: fromEnd, minimum: minimum)
+        if let revealing, let wanted = ids.firstIndex(of: revealing) {
+            self.revealing = nil
+            start = min(start, max(0, wanted - 3))
+        }
+        drawnStart = start
+        fromEnd = ids.count - start
+        anchor = start < ids.count ? ids[start] : nil
+        return start
+    }
+
+    /// The view stands where `frame` says: near the top of what is drawn, a page more is drawn above it.
+    func scrolled(_ frame: ScrollFrame) {
+        guard !growing, drawnStart > 0, drawnStart < ids.count,
+              HistoryWindow.nearDrawnTop(fromTop: frame.offset - frame.minOffset, container: frame.container) else { return }
+        growing = true
+        reading?.growsAbove()
+        set(first: ids[HistoryWindow.earlierDrawn(from: drawnStart)])
+        // Laid out in the next pass; the view reports where it stands after that.
+        DispatchQueue.main.async { [weak self] in self?.growing = false }
+    }
+
+    /// Draws down from the row `id` (and a few above it), for a scroll to it; nothing when it is drawn already. Unknown
+    /// rows (in turns the conversation does not show yet) are left to the turn window.
+    /// True when it had to draw more: a scroll to the row waits for the next pass then.
+    @discardableResult
+    func reveal(_ id: AnyHashable) -> Bool {
+        guard let index = ids.firstIndex(of: id) else {
+            // Not among the rows yet: the turn window widens for it, and the rows are drawn down from it then.
+            revealing = id
+            return true
+        }
+        guard index < drawnStart else { return false }
+        set(first: ids[max(0, index - 3)])
+        return true
+    }
+
+    private func set(first id: AnyHashable) {
+        anchor = id
+        first = id
     }
 }
 
@@ -346,6 +399,8 @@ struct HeldHeightStack: Layout {
     var spacing: CGFloat
     var holds: Bool
     var key: Int
+    /// The first row drawn: rows drawn above keep the room held under the rows (`HeldHeight`).
+    var top = 0
 
     func makeCache(subviews: Subviews) -> HeldHeight { HeldHeight() }
     /// Kept when the rows change: holding across those changes is the point.
@@ -353,7 +408,7 @@ struct HeldHeightStack: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout HeldHeight) -> CGSize {
         let natural = stacked(proposal, subviews)
-        let height = cache.height(natural: natural.height, width: proposal.width ?? -1, key: key, holds: holds)
+        let height = cache.height(natural: natural.height, width: proposal.width ?? -1, key: key, top: top, holds: holds)
         return CGSize(width: natural.width, height: height)
     }
 
@@ -382,85 +437,28 @@ struct HeldHeightStack: Layout {
     }
 }
 
-/// The rows of a lazy conversation drawn now, with where each stands in the conversation's own space
-/// (`TimelineSpace.name`), kept by `countsAsDrawnRow`. Neither of a lazy stack's own reports tells a blank view:
-/// `onScrollTargetVisibilityChange` reports nothing after a jump to a stretch where nothing is drawn (the rows it last
-/// reported still count as in view), and a row the stack keeps drawn just outside the view counts as drawn. Where the
-/// drawn rows stand, held against what the scroll view shows (`RowsInView`), is what the user sees.
+/// Where the rows of a conversation stand in its own space (`TimelineSpace.name`), as `countsAsDrawnRow` reports them:
+/// the new turn held near the top learns where its message stands from here (`TurnPinRoom`).
 @MainActor
 final class DrawnRows {
-    fileprivate private(set) var spans: [AnyHashable: RowsInView.Span] = [:]
-    /// Rows that appeared but were not laid out yet: drawn, but not known to be anywhere.
-    fileprivate private(set) var pending: Set<AnyHashable> = []
-    /// Where each row last said it stands, also once it is no longer drawn. A row that scrolls back into view is often
-    /// the lazy stack's own row again, and its `onGeometryChange` only reports a place that differs from the one it
-    /// reported last: without this, a row you scrolled back to stayed "not known to be anywhere", the view counted as
-    /// blank with rows on screen, and the guard pulled it to the end while you read.
-    private var known: [AnyHashable: RowsInView.Span] = [:]
-    /// How many copies of each row are drawn. A scroll view made again (`RowsInView.rebuilds`) draws its rows before the
-    /// old one lets go of the same rows; without the count, the old row's `onDisappear` struck the new one off, and the
-    /// conversation counted as blank (and was made again) for good.
-    private var copies: [AnyHashable: Int] = [:]
-    fileprivate var changed: (() -> Void)?
-    /// The new turn held near the top learns where its message stands from here (`TurnPinRoom`).
     weak var pin: TurnPinRoom?
-    /// Where the rows drawn in full start (`ConversationRows`); everything from there down is always drawn.
-    fileprivate var drawnFrom: Double? {
-        didSet { if drawnFrom != oldValue { changed?() } }
-    }
 
-    var count: Int { spans.count + pending.count }
-
-    /// The row is drawn; returns where it stands when that is known already (it was laid out before and did not move).
-    @discardableResult
-    fileprivate func appeared(_ id: AnyHashable) -> RowsInView.Span? {
-        copies[id, default: 0] += 1
-        if spans[id] == nil {
-            if let span = known[id] { spans[id] = span } else { pending.insert(id) }
-        }
-        changed?()
-        return spans[id]
-    }
-
-    fileprivate func placed(_ id: AnyHashable, _ span: RowsInView.Span) {
-        pin?.rowPlaced(id, top: span.top)
-        pending.remove(id)
-        known[id] = span
-        guard spans[id] != span else { return }
-        spans[id] = span
-        changed?()
-    }
-
-    fileprivate func disappeared(_ id: AnyHashable) {
-        let left = (copies[id] ?? 1) - 1
-        copies[id] = left > 0 ? left : nil
-        guard left <= 0 else { return }
-        pending.remove(id)
-        spans[id] = nil
-        changed?()
+    fileprivate func placed(_ id: AnyHashable, top: Double) {
+        pin?.rowPlaced(id, top: top)
     }
 }
 
 extension View {
-    /// Keeps this row of a lazy conversation in `drawn` while the lazy stack draws it, with where it stands. Its place in
-    /// the conversation's own space only changes when the rows do, not on every frame of a scroll.
-    /// `reading`, when given, learns where the row starts too, to hold what you read in place (`TimelineReadingAnchor`).
+    /// Reports where this row of a conversation stands to `drawn`, and to `reading` when given, which holds what you read
+    /// in place (`TimelineReadingAnchor`). Its place in the conversation's own space only changes when the rows do, not
+    /// on every frame of a scroll.
     func countsAsDrawnRow<ID: Hashable>(_ drawn: DrawnRows, id: ID, reading: TimelineReadingAnchor? = nil) -> some View {
         let key = AnyHashable(id)
-        return onGeometryChange(for: RowsInView.Span.self) { proxy in
-            let frame = proxy.frame(in: .named(TimelineSpace.name))
-            return RowsInView.Span(top: frame.minY, bottom: frame.maxY)
-        } action: {
-            drawn.placed(key, $0)
-            reading?.place(key, top: $0.top, height: $0.bottom - $0.top)
+        return onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TimelineSpace.name)) } action: { frame in
+            drawn.placed(key, top: frame.minY)
+            reading?.place(key, top: frame.minY, height: frame.height)
         }
-        .onAppear {
-            if let span = drawn.appeared(key) { reading?.place(key, top: span.top, height: span.bottom - span.top) }
-        }
-        .onDisappear {
-            drawn.disappeared(key)
-            reading?.place(key, top: nil)
-        }
+        .onDisappear { reading?.place(key, top: nil) }
     }
 
     /// Tells `reading` where this stack of rows (the view in `TimelineSpace.name`) starts within the scroll view's
@@ -480,140 +478,6 @@ extension View {
     func readingScroller(_ reading: TimelineReadingAnchor?, followsEnd: @escaping () -> Bool = { false },
                          wheel: @escaping (Double) -> Void = { _ in }) -> some View {
         background(ReadingAnchorScroller(reading: reading, followsEnd: followsEnd, wheel: wheel).frame(width: 0, height: 0))
-    }
-
-    /// Brings a lazy conversation back when it stands still with none of its rows in view. A lazy stack places rows it
-    /// has not measured yet by estimate; after a resize (a side panel opening narrows every row), a jump, a finished turn
-    /// that folds (or a turn that opens again) or rows that turned out shorter than guessed, the scroll view could rest
-    /// on a stretch where it drew no row at all, and the conversation stayed black until you scrolled. Blank is: none of
-    /// the drawn rows (`drawn`, which every row reports to with `countsAsDrawnRow`) reaches into what the scroll view
-    /// shows. `recover` gets the last row that was in view (nil if none was, or on a later try) and the number of the try
-    /// (0 first): from the second try on it should go to the end the hard way (drop the room held under a sent message,
-    /// scroll to the last row itself), and on the tries `RowsInView.rebuilds` names make the scroll view again (a new
-    /// `.id`), since a stuck lazy stack draws nothing wherever it scrolls. It keeps trying for as long as the view stays blank: a guard that gave up after a
-    /// few tries left the conversation black for good. Every try is logged with where the rows and the view stood.
-    func recoversBlankRows<ID: Hashable>(_ type: ID.Type, rows: Int, drawn: DrawnRows, idle: @escaping () -> Bool,
-                                         recover: @escaping (_ last: ID?, _ attempt: Int) -> Void) -> some View {
-        modifier(BlankRowsGuard(rows: rows, drawn: drawn, idle: idle, recover: recover))
-    }
-}
-
-/// What `BlankRowsGuard` saw; not state any view draws from.
-@MainActor
-private final class BlankRowsWatch<ID: Hashable> {
-    /// Whether the last report of rows in view named any; only for the log, the lazy stack's reports go stale.
-    var reportedInView = true
-    var last: ID?
-    var check: Task<Void, Never>?
-    /// The newest values from the view: a check that runs for a while must not scroll with rows of an older draw.
-    var rows = 0
-    var drawn: DrawnRows?
-    /// The part of the conversation in view, in its own coordinates; zero height until the scroll view reported it.
-    var top = 0.0
-    var height = 0.0
-    var content = 0.0
-    var idle: () -> Bool = { true }
-    var recover: (ID?, Int) -> Void = { _, _ in }
-
-    /// Checks of 250 ms a blank view waits for the scroll to come to rest before it recovers anyway.
-    private let restWait = 8
-
-    var blank: Bool {
-        guard let drawn else { return false }
-        return RowsInView.blank(rows: rows, drawn: drawn.spans.values, top: top, height: height, drawnFrom: drawn.drawnFrom)
-    }
-
-    func reported(_ ids: [ID]) {
-        reportedInView = !ids.isEmpty
-        if let first = ids.first { last = first }
-        settle()
-    }
-
-    func viewed(_ view: BlankRowsView) {
-        top = view.top
-        height = view.height
-        content = view.content
-        settle()
-    }
-
-    /// Stops a check once a row shows again, starts one when the view went blank.
-    func settle() {
-        guard blank else {
-            check?.cancel()
-            check = nil
-            return
-        }
-        guard check == nil else { return }
-        check = Task { @MainActor [weak self] in
-            var attempt = 0
-            var waited = 0
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(attempt < 3 ? 250 : 1000))
-                guard let self, !Task.isCancelled else { return }
-                guard self.blank else {
-                    self.check = nil
-                    return
-                }
-                waited += 1
-                // A fast scroll can pass a moment with no row in view: only a view at rest that stays blank is broken.
-                // A scroll cut short can leave the phase on "animating" for good, so after two seconds of blank it
-                // recovers whatever the phase says.
-                guard self.idle() || waited >= self.restWait else { continue }
-                self.log(attempt)
-                self.recover(attempt == 0 ? self.last : nil, attempt)
-                attempt += 1
-                waited = 0
-            }
-        }
-    }
-
-    /// Where the rows and the view stood, so a blank conversation leaves something to go on. Numbers only.
-    private func log(_ attempt: Int) {
-        guard attempt < 5 || attempt % 10 == 0 else { return }
-        let spans = Array(drawn?.spans.values ?? [AnyHashable: RowsInView.Span]().values)
-        let nearest = spans.min { abs($0.top - top) < abs($1.top - top) }
-        Log.app.notice("""
-            Blank conversation, recovering (try \(attempt)): rows \(self.rows), drawn \(spans.count) + \(self.drawn?.pending.count ?? 0) unplaced, \
-            view \(Int(self.top))–\(Int(self.top + self.height)) of \(Int(self.content)), drawn in full from \(Int(self.drawn?.drawnFrom ?? -1)), nearest row \(Int(nearest?.top ?? -1))–\(Int(nearest?.bottom ?? -1)), \
-            reported in view \(self.reportedInView), idle \(self.idle()), rebuilds \(RowsInView.rebuilds(attempt: attempt))
-            """)
-    }
-
-    func stop() {
-        check?.cancel()
-        check = nil
-    }
-}
-
-/// The part of a conversation a scroll view shows, in the conversation's coordinates (as `ScrollFrame` measures it).
-private struct BlankRowsView: Equatable {
-    var top: Double
-    var height: Double
-    var content: Double
-}
-
-private struct BlankRowsGuard<ID: Hashable>: ViewModifier {
-    let rows: Int
-    let drawn: DrawnRows
-    let idle: () -> Bool
-    let recover: (ID?, Int) -> Void
-    @State private var watch = BlankRowsWatch<ID>()
-
-    func body(content: Content) -> some View {
-        let watch = watch
-        watch.rows = rows
-        watch.drawn = drawn
-        watch.idle = idle
-        watch.recover = recover
-        drawn.changed = { [weak watch] in watch?.settle() }
-        return content
-            .onScrollTargetVisibilityChange(idType: ID.self, threshold: 0) { watch.reported($0) }
-            .onScrollGeometryChange(for: BlankRowsView.self) { geometry in
-                // From under the toolbar: `containerSize` is the height between the insets (`ScrollFrame.maxOffset`).
-                BlankRowsView(top: geometry.contentOffset.y + geometry.contentInsets.top, height: geometry.containerSize.height,
-                              content: geometry.contentSize.height)
-            } action: { _, view in watch.viewed(view) }
-            .onDisappear { watch.stop() }
     }
 }
 

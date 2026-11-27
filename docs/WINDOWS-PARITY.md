@@ -598,7 +598,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-103** Review comments on a diff line into the composer; stage or discard a hunk (`ReviewComments`, `HunkPatch`) · M Done (2026-11-23): `core/src/workspace/hunk.rs` (`workspace_apply_hunk`) parses unified diff hunks and builds single-hunk patches to stage (`git apply --cached --unidiff-zero`) or discard (`git apply --reverse --unidiff-zero`) a hunk from `views/agents/run/Changes.svelte` and `views/agents/UnifiedDiffView.svelte`, while `lib/workspace/review-comments.svelte.ts` collects inline diff review comments and sends them to the agent.
 
-- [ ] **AG-104** Linked pull requests, branch tray, PR badges and hover cards in rows (`LinkedPullRequests`, `RunBranchTray`, `PullRequestSync`) · M
+- [x] **AG-104** Linked pull requests, branch tray, PR badges and hover cards in rows (`LinkedPullRequests`, `RunBranchTray`, `PullRequestSync`) · M
 
 - [x] **AG-135** Forge rate-limit budget with AG-104: read `X-RateLimit-*` from every answer, slow background reads as a limit runs low and stop them under the last 10%, answer requests to a used-up limit locally until the reset, and read pull request status through GraphQL once REST runs low (`ForgeRateBudget`, `ForgeRateGate`, `GitHubPullRequestSnapshotQuery`) · S
 

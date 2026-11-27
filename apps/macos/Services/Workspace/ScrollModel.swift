@@ -202,55 +202,36 @@ enum ScrollKey {
 struct HeldHeight: Equatable, Sendable {
     private var key: Int?
     private var tallest: [Double: Double] = [:]
+    /// The rows' own height at each width when last asked.
+    private var naturals: [Double: Double] = [:]
+    /// Which row the stack starts at (`height(natural:width:key:top:holds:)`).
+    private var top: Int?
 
-    /// The height to take for rows `natural` high at `width`.
-    mutating func height(natural: Double, width: Double, key: Int, holds: Bool) -> Double {
+    /// The height to take for rows `natural` high at `width`. `top` is the first row: when more rows are drawn above
+    /// (or fewer), the room held under the rows stays as it is and only the rows' own height changes, so the content
+    /// grows by exactly what came in above, which is what the view moves down by to keep what you read in place.
+    mutating func height(natural: Double, width: Double, key: Int, top: Int = 0, holds: Bool) -> Double {
         if !holds || key != self.key {
             self.key = key
             tallest = [:]
+            naturals = [:]
+        } else if top != self.top {
+            // Rows above came or went: the same room under them, at this width; the other widths are asked anew.
+            let room = (tallest[width] ?? natural) - (naturals[width] ?? natural)
+            tallest = [width: natural + max(0, room)]
+            naturals = [:]
         }
+        self.top = top
+        naturals[width] = natural
         guard holds else { return natural }
         // A layout asks at a few widths (its ideal, zero, the real one); more than that is a resize.
-        if tallest[width] == nil, tallest.count >= 8 { tallest = [:] }
+        if tallest[width] == nil, tallest.count >= 8 {
+            tallest = [:]
+            naturals = [width: natural]
+        }
         let held = max(natural, tallest[width] ?? 0)
         tallest[width] = held
         return held
-    }
-}
-
-/// Whether a lazy conversation shows any of its rows, from where the drawn rows stand and what the scroll view shows,
-/// both in the conversation's own coordinates. A lazy stack's own reports are not enough for this: the rows it reports
-/// in view go stale after a jump, and a row it keeps drawn just outside the view counts as drawn. Where the rows and
-/// the view really stand is what the user sees.
-enum RowsInView {
-    /// The top and bottom of a drawn row.
-    struct Span: Equatable, Sendable {
-        var top: Double
-        var bottom: Double
-    }
-
-    /// How far a row must reach into the view to count: a hairline at the edge does not make a conversation readable.
-    static let margin = 8.0
-
-    /// `rows` is how many rows the conversation has, `drawn` where the drawn ones stand, `top` and `height` the part
-    /// of the conversation in view. Blank: rows to show, and none of them reaches into the view.
-    /// `drawnFrom` is where the part drawn in full starts (`ConversationRows`): from there down nothing can be blank, and
-    /// what stands under the rows (the live line and its task list, a card, the room held under rows that folded) is
-    /// something to see as well. Without it, a view resting on that part counted as blank, and the guard scrolled the
-    /// conversation up to its last row and back down (and made it again) while nothing happened.
-    static func blank(rows: Int, drawn: some Collection<Span>, top: Double, height: Double, drawnFrom: Double? = nil) -> Bool {
-        guard rows > 0, height > margin * 2 else { return false }
-        let bottom = top + height
-        if let drawnFrom, bottom - margin > drawnFrom { return false }
-        return !drawn.contains { $0.bottom - $0.top > 1 && $0.bottom > top + margin && $0.top < bottom - margin }
-    }
-
-    /// Whether try `attempt` (0 first) of a blank conversation's recovery makes its scroll view again instead of only
-    /// scrolling: from the third try on, every fourth. A lazy stack can get stuck drawing no row at all, even at the end
-    /// it was scrolled to (seen on 2026-11-13: 45 rows, none drawn, for minutes of tries); a new scroll view lays its
-    /// rows out from scratch, as when the conversation opens.
-    static func rebuilds(attempt: Int) -> Bool {
-        attempt >= 2 && (attempt - 2) % 4 == 0
     }
 }
 

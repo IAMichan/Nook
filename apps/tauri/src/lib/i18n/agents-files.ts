@@ -60,4 +60,16 @@ export const table: Table = {
     fr: "{command} sur le port {port} n’a pas été lancé par Nook ni par l’une de ses sessions. Arrête-le là où tu l’as lancé, pour que rien de ce que tu exécutes ailleurs ne disparaisse dans ton dos.",
     es: "{command} en el puerto {port} no lo inició Nook ni una de sus sesiones. Detenlo donde lo iniciaste, para que nada de lo que ejecutas en otro lugar desaparezca a tus espaldas.",
   },
+  "Stop {command} on port {port}?": { de: "{command} auf Port {port} stoppen?", fr: "Arrêter {command} sur le port {port} ?", es: "¿Detener {command} en el puerto {port}?" },
+  "Nook did not start this server. It also stops in the terminal or app you started it from.": {
+    de: "Nook hat diesen Server nicht gestartet. Er stoppt auch im Terminal oder in der App, in der du ihn gestartet hast.",
+    fr: "Nook n’a pas lancé ce serveur. Il s’arrête aussi dans le terminal ou l’app où tu l’as lancé.",
+    es: "Nook no inició este servidor. También se detiene en la terminal o app donde lo iniciaste.",
+  },
+  "Stop server": { de: "Server stoppen", fr: "Arrêter le serveur", es: "Detener servidor" },
+  "{command} on port {port} could not be stopped. It no longer listens on that port, or it belongs to Nook itself.": {
+    de: "{command} auf Port {port} konnte nicht gestoppt werden. Er lauscht nicht mehr auf diesem Port oder gehört zu Nook selbst.",
+    fr: "{command} sur le port {port} n’a pas pu être arrêté. Il n’écoute plus sur ce port, ou il appartient à Nook lui-même.",
+    es: "No se pudo detener {command} en el puerto {port}. Ya no escucha en ese puerto o pertenece al propio Nook.",
+  },
 };

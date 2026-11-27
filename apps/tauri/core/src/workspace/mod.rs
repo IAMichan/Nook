@@ -47,6 +47,7 @@ pub mod pr_checkout;
 pub mod pr_links;
 pub mod project_files;
 pub mod prompts;
+pub mod pull_requests;
 pub mod queue;
 pub mod readiness;
 pub mod recovery;

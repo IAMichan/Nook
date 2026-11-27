@@ -207,8 +207,10 @@ alone. The plan is pure and tested (`SettleActions`, `SettleActionsTests`); `App
 The bar of servers above a session (`DevServerStrip`) lists what listens on a port from the session's folder. A server
 Nook started (below one of its terminal shells, or in the process group of an agent it runs, `DevServerOwnership`) has a
 **Stop** button: it stops the server's process group, or only the server and what it started when that group is Nook's,
-an agent's or a terminal shell's. A server you started in another terminal app gets no stop; a click on its greyed button
-says why. Ownership is decided by pid and process group only (never by name) and checked again right before the signal.
+an agent's or a terminal shell's. A server you started in another terminal app can be stopped too, after a confirmation
+that says it also ends there; only the server and what it started stop, never its process group. Ownership is decided by
+pid and process group only (never by name), and right before the signal Nook checks that the same pid still listens on
+the port, so a reused pid is never hit.
 
 ### Scheduled tasks
 
