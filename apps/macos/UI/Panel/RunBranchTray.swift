@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// The session's branches in the tray, oldest first and the current one last, their names in one column so the pull
-/// requests line up. A chat with many keeps the newest ones open and folds the older ones behind one row.
-struct RunBranchTray: View {
+/// requests line up. A chat with many keeps the newest ones open and folds the older ones behind one row. That row heads
+/// the pull request section: `leading` (the other pull requests the session works on) comes right under it, so no pull
+/// request sits above the fold.
+struct RunBranchTray<Leading: View>: View {
     let rows: [SessionBranches.Row]
     let watches: [PullRequestWatch]
     /// The current branch's pull request can still change (a merged or closed one is only shown).
@@ -11,6 +13,7 @@ struct RunBranchTray: View {
     let workspace: WorkspaceManager
     @ObservedObject var pullRequestSync: PullRequestSync
     @Binding var showsOlderBranches: Bool
+    @ViewBuilder var leading: Leading
 
     var body: some View {
         let aliases = PullRequestStatusStore.shared.repoAliases
@@ -35,6 +38,7 @@ struct RunBranchTray: View {
             .padding(.leading, NookTheme.Spacing.xs)
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
+        leading
         ForEach(folded.shown) { row in
             branchRow(row,
                       watch: row.pullRequest.flatMap { SessionBranches.watch(for: $0.absoluteString, in: watches, aliases: aliases) },
