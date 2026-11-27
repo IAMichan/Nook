@@ -109,6 +109,15 @@
     void whatsapp.card;
     if (entry.app === "whatsapp") loadThread();
   });
+  // Tell WhatsApp's gateway which chat is open so it stays online and watches typing in private chats.
+  $effect(() => {
+    if (entry.app !== "whatsapp") return;
+    const chatId = entry.id;
+    connectorsApi.whatsappPresence(chatId).catch(() => {});
+    return () => {
+      connectorsApi.whatsappPresence(null).catch(() => {});
+    };
+  });
 
   const conversation = $derived(whatsapp.card?.conversation.id === entry.id ? whatsapp.card.conversation : null);
   const rawBubbles = $derived<Bubble[]>(
@@ -779,7 +788,7 @@
     }
   }
   const isSound = (m: Bubble) => m.media.kind === "voice" || m.media.kind === "audio";
-  const photo = (m: Bubble) => (isWhatsApp && m.media.kind === "image" ? whatsapp.card?.previews[m.id]?.image ?? null : null);
+  const photo = (m: Bubble) => (isWhatsApp && (m.media.kind === "image" || m.media.kind === "sticker") ? whatsapp.card?.previews[m.id]?.image ?? null : null);
   const textOf = (m: Bubble) => bubbleText({ ...m, chat: entry.id, senderName: m.sender, media: m.media });
 
   // The "…" menu: Nook's answer where Nook can write it, then the chat's own steps respecting ChatAbilities.

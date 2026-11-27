@@ -107,12 +107,12 @@ pub enum ChatMedia {
 impl ChatMedia {
     /// A file Nook can fetch from the app and open on this computer.
     pub fn is_openable(&self) -> bool {
-        matches!(self, Self::Image | Self::Video | Self::Audio | Self::Voice | Self::Document { .. })
+        matches!(self, Self::Image | Self::Video | Self::Audio | Self::Voice | Self::Document { .. } | Self::Sticker)
     }
 
-    /// A file the card fetches by itself to show: a photo, a video or a document (a voice note stays a button).
+    /// A file the card fetches by itself to show: a photo, a sticker, a video or a document (a voice note stays a button).
     pub fn is_previewed(&self) -> bool {
-        matches!(self, Self::Image | Self::Video | Self::Document { .. })
+        matches!(self, Self::Image | Self::Sticker | Self::Video | Self::Document { .. })
     }
 
     pub fn is_none(&self) -> bool {

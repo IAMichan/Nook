@@ -79,6 +79,17 @@ impl TypingState {
         self.typists(chat, now).into_iter().map(|t| t.name).collect()
     }
 
+    /// Snapshot of all chats that currently have active typists at `now`.
+    pub fn all_names(&self, now: DateTime<Utc>) -> HashMap<String, Vec<String>> {
+        self.chats
+            .iter()
+            .filter_map(|(key, list)| {
+                let names: Vec<String> = list.iter().filter(|t| t.until > now).map(|t| t.name.clone()).collect();
+                (!names.is_empty()).then(|| (key.clone(), names))
+            })
+            .collect()
+    }
+
     /// Clamps an app-supplied duration in seconds to a sensible hold window (1..=15s).
     pub fn hold_duration(seconds: f64) -> Duration {
         let secs = if seconds.is_finite() && seconds > 0.0 {

@@ -84,8 +84,12 @@ const AVATAR_RETRY: Duration = Duration::from_secs(6 * 3600);
 pub const PREVIEW_COUNT: usize = 6;
 /// How many fetched files stay at most; the oldest go first, from memory and from disk.
 pub const PREVIEW_LIMIT: usize = 48;
-/// How long a preview that failed waits before it is tried again.
-const PREVIEW_RETRY: Duration = Duration::from_secs(60);
+/// How long a preview that failed waits before it is tried again (matches Mac `previewRetry`).
+const PREVIEW_RETRY: Duration = Duration::from_secs(3);
+/// How many messages are fetched when catching up a chat that moved behind the inbox (`WhatsAppLink.lineFetch`).
+const LINE_FETCH: usize = 5;
+/// Waits (seconds) between arrival-fetch retries: the gateway may not have stored a message yet when its webhook fires.
+const ARRIVAL_WAITS: &[u64] = &[0, 1, 3, 8];
 
 /// Hoe het ervoor staat, voor de instellingen.
 #[derive(Debug, Clone, Serialize)]
@@ -115,6 +119,10 @@ struct Inner {
     known: Vec<ChatInfo>,
     generation: u64,
     backfilled: bool,
+    /// When this link began taking messages live (its backfill): a quiet chat that moved after it should be caught up.
+    live_since: Option<DateTime<Utc>>,
+    /// The newest `ChatInfo::last` already asked for per chat, so a behind move is fetched at most once.
+    caught_up: HashMap<String, DateTime<Utc>>,
     last_webhook: Option<DateTime<Utc>>,
     last_poll: Option<DateTime<Utc>>,
     last_chat_list: Option<DateTime<Utc>>,
@@ -124,6 +132,10 @@ struct Inner {
     tick: u64,
     refreshing: bool,
     polling: bool,
+    /// The chat currently open in Nook (so the gateway stays online and watches its typing).
+    online_chat: Option<String>,
+    /// Live typists per inbox thread key (`app#id`), ephemeral in memory only.
+    typing: crate::chats::typing::TypingState,
     /// Chats whose older messages were fetched for the card: once per chat while linked.
     /// How many extra pages of older messages each chat asked for (`load_history`).
     history_pages: HashMap<String, usize>,
@@ -143,6 +155,7 @@ type Found = (String, String, Vec<Message>);
 type ArrivedFn = Arc<dyn Fn(Arrived) + Send + Sync>;
 type ChangedFn = Arc<dyn Fn() + Send + Sync>;
 type ReceiptFn = Arc<dyn Fn(String) + Send + Sync>;
+type TypingFn = Arc<dyn Fn(String, Vec<String>) + Send + Sync>;
 
 pub struct WhatsAppLink {
     env: Arc<Env>,
@@ -156,6 +169,7 @@ pub struct WhatsAppLink {
     on_arrived: Mutex<Option<ArrivedFn>>,
     on_changed: Mutex<Option<ChangedFn>>,
     on_receipt: Mutex<Option<ReceiptFn>>,
+    on_typing: Mutex<Option<TypingFn>>,
     /// Where fetched files wait for the app that shows them: a folder of Nook's own in its data directory, emptied
     /// when Nook starts, when WhatsApp stops and when Nook quits.
     files_dir: Mutex<PathBuf>,
@@ -187,6 +201,7 @@ impl WhatsAppLink {
             on_arrived: Mutex::default(),
             on_changed: Mutex::default(),
             on_receipt: Mutex::default(),
+            on_typing: Mutex::default(),
             files_dir: Mutex::new(crate::paths::support_directory().join(files)),
         })
     }
@@ -238,6 +253,54 @@ impl WhatsAppLink {
     /// Your own messages in a chat got new ticks (delivered, read).
     pub fn on_receipt(&self, f: impl Fn(String) + Send + Sync + 'static) {
         *self.on_receipt.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+    }
+
+    /// Live typing state changed for a chat (`inbox_key`, active typist names).
+    pub fn on_typing(&self, f: impl Fn(String, Vec<String>) + Send + Sync + 'static) {
+        *self.on_typing.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+    }
+
+    fn emit_typing(&self, key: String, names: Vec<String>) {
+        let f = self.on_typing.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(f) = f {
+            f(key, names);
+        }
+    }
+
+    /// Names of people currently typing in the inbox thread `key` (`whatsapp#chat`).
+    pub fn typing_in(&self, key: &str) -> Vec<String> {
+        self.with(|i| i.typing.names(key, Utc::now()))
+    }
+
+    /// Snapshot of all WhatsApp chats that currently have active typists, keyed by inbox key.
+    pub fn all_typing(&self) -> HashMap<String, Vec<String>> {
+        self.with(|i| i.typing.all_names(Utc::now()))
+    }
+
+    /// A WhatsApp chat opened in Nook (its JID), or none is open any more (`None`). Tells the gateway to stay online
+    /// and subscribe to the open private chat's presence so typing reaches this device.
+    pub fn set_online(self: &Arc<Self>, chat: Option<&str>) {
+        let key = chat.map(jid::normalized);
+        let Some(provider) = self.with(|i| {
+            if i.online_chat == key || i.link != Some(Link::Connected) {
+                return None;
+            }
+            i.online_chat = key.clone();
+            i.provider.clone()
+        }) else {
+            return;
+        };
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            rt.spawn(async move {
+                provider.set_online(key.is_some(), key.as_deref()).await;
+            });
+        }
+    }
+
+    /// Whether a message's file is fetched the moment it comes in: a photo, a sticker or a voice message (small and
+    /// shown as itself). A video or document is fetched lazily when its bubble comes into view or is opened.
+    pub fn fetches_on_arrival(media: &super::Media) -> bool {
+        matches!(media, super::Media::Image | super::Media::Sticker | super::Media::Voice)
     }
 
     /// Another folder for fetched files (tests).
@@ -374,7 +437,8 @@ impl WhatsAppLink {
         for task in self.tasks.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
             task.abort();
         }
-        self.with(|i| {
+        let offline = self.with(|i| {
+            let offline = i.online_chat.take().and_then(|_| i.provider.clone());
             i.generation += 1;
             i.refreshing = false;
             i.polling = false;
@@ -386,9 +450,12 @@ impl WhatsAppLink {
             i.qr = None;
             i.me = None;
             i.backfilled = false;
+            i.live_since = None;
+            i.caught_up.clear();
             i.last_webhook = None;
             i.naming.clear();
             i.failures = 0;
+            i.typing.clear();
             i.history_pages.clear();
             i.previews.clear();
             i.preview_order.clear();
@@ -398,7 +465,15 @@ impl WhatsAppLink {
                 i.inbox.clear();
                 i.known.clear();
             }
+            offline
         });
+        if let Some(provider) = offline {
+            if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                rt.spawn(async move {
+                    provider.set_online(false, None).await;
+                });
+            }
+        }
         self.clear_files();
         if !self.settings().enabled && self.account.is_empty() {
             self.stop_gowa();
@@ -748,6 +823,71 @@ impl WhatsAppLink {
                 let ballot = crate::chats::poll::Ballot { name, mine: from_me, choice };
                 self.env.chats.with(|inbox| inbox.ballot(&key, &poll, &id, ballot));
             }
+            Some(WebhookEvent::Typing { chat, people }) => {
+                let normalized = jid::normalized(&chat);
+                let inbox_key = super::Inbox::key_in(&self.account, &normalized);
+                let group = jid::is_group(&normalized);
+                let me_norm = me.as_deref().map(jid::normalized);
+                let now = Utc::now();
+                let until = now + chrono::Duration::seconds(crate::chats::typing::TypingState::DEFAULT_HOLD_SECS);
+                let mut any_active = false;
+                let mut touched = false;
+                for typing in people {
+                    let person = if group { jid::normalized(&typing.from) } else { normalized.clone() };
+                    if me_norm.as_deref().is_some_and(|m| jid::same_user(&person, m)) {
+                        continue;
+                    }
+                    if typing.active {
+                        let name = if !group {
+                            String::new()
+                        } else if !typing.name.is_empty() {
+                            typing.name
+                        } else {
+                            self.person_name(&normalized, &typing.from)
+                        };
+                        self.with(|i| i.typing.typing(&inbox_key, &person, &name, until));
+                        any_active = true;
+                        touched = true;
+                    } else if self.with(|i| i.typing.stopped(&inbox_key, &person)) {
+                        touched = true;
+                    }
+                }
+                if touched {
+                    let names = self.typing_in(&inbox_key);
+                    self.emit_typing(inbox_key, names);
+                }
+                if any_active {
+                    let weak = Arc::downgrade(self);
+                    let gen = self.with(|i| i.generation);
+                    if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                        rt.spawn(async move {
+                            tokio::time::sleep(Duration::from_millis(
+                                (crate::chats::typing::TypingState::DEFAULT_HOLD_SECS as u64) * 1000 + 250,
+                            ))
+                            .await;
+                            let Some(link) = weak.upgrade() else { return };
+                            let expired = link.with(|i| {
+                                if i.generation != gen {
+                                    return vec![];
+                                }
+                                let now = Utc::now();
+                                i.typing
+                                    .expire_keys(now)
+                                    .into_iter()
+                                    .map(|k| {
+                                        let names = i.typing.names(&k, now);
+                                        (k, names)
+                                    })
+                                    .collect::<Vec<_>>()
+                            });
+                            for (k, names) in expired {
+                                link.emit_typing(k, names);
+                            }
+                        });
+                    }
+                }
+                return;
+            }
             _ => {}
         }
         self.changed();
@@ -787,6 +927,7 @@ impl WhatsAppLink {
     async fn backfill(self: &Arc<Self>, provider: &Provider, gen: u64) {
         let me_id = self.with(|i| {
             i.backfilled = true;
+            i.live_since = Some(Utc::now());
             i.me.clone()
         });
         let since = Utc::now() - chrono::Duration::hours(12);
@@ -843,6 +984,23 @@ impl WhatsAppLink {
                 });
             }
         }
+        // The list moved a chat on past the newest message Nook holds of it (or a quiet chat moved after the link began
+        // listening): fetch its newest messages so it shows up without waiting for someone else to write.
+        let behind = self.with(|i| {
+            if i.generation != gen {
+                return vec![];
+            }
+            i.inbox.behind(&i.known, &i.caught_up, i.live_since, Utc::now())
+        });
+        for chat in behind {
+            if self.with(|i| i.generation != gen) || !self.is_connected() {
+                return;
+            }
+            self.with(|i| {
+                i.caught_up.insert(chat.jid.clone(), chat.last);
+            });
+            let _ = self.messages_of(&chat.jid, LINE_FETCH).await;
+        }
     }
 
     fn poll(self: &Arc<Self>) {
@@ -863,11 +1021,17 @@ impl WhatsAppLink {
         let me = self.clone();
         tokio::spawn(async move {
             let started = Utc::now();
-            if let Ok(messages) = provider.recent_messages(since, me_id.as_deref()).await {
-                if me.with(|i| i.generation == gen) {
-                    me.with(|i| i.last_poll = Some(started));
-                    me.ingest(messages, true);
-                    me.changed();
+            match provider.recent_messages(since, me_id.as_deref()).await {
+                Ok(messages) => {
+                    if me.with(|i| i.generation == gen) {
+                        me.with(|i| i.last_poll = Some(started));
+                        me.ingest(messages, true);
+                        me.changed();
+                    }
+                }
+                Err(e) => {
+                    // The safety net for what the webhook missed (your own message from the phone too): its failing is said.
+                    log::warn!("WhatsApp: poll failed: {e:?}");
                 }
             }
             me.with(|i| {
@@ -882,17 +1046,39 @@ impl WhatsAppLink {
         let filters = self.settings().filters();
         let mut fresh = None;
         let mut chats = vec![];
+        let mut files: HashMap<String, Vec<String>> = HashMap::new();
+        let mut stopped_typing: Vec<(String, Vec<String>)> = vec![];
         self.with(|i| {
+            let now = Utc::now();
             for m in messages {
                 let key = jid::normalized(&m.chat);
                 let from_me = m.from_me;
+                // Their message is here: they stopped typing it.
+                if !from_me {
+                    let inbox_key = super::Inbox::key_in(&self.account, &key);
+                    let person = if jid::is_group(&key) { jid::normalized(&m.sender) } else { key.clone() };
+                    if i.typing.stopped(&inbox_key, &person) {
+                        stopped_typing.push((inbox_key.clone(), i.typing.names(&inbox_key, now)));
+                    }
+                }
+                let id = m.id.clone();
+                let media = m.media.clone();
                 let outcome = i.inbox.add(m, &filters, None, false);
                 chats.push(key.clone());
                 if outcome == Outcome::Notify && !from_me {
-                    fresh = Some(key);
+                    fresh = Some(key.clone());
+                }
+                if matches!(outcome, Outcome::Notify | Outcome::Quiet)
+                    && Self::fetches_on_arrival(&media)
+                    && jid::kind(&key) != ChatKind::Status
+                {
+                    files.entry(key).or_default().push(id);
                 }
             }
         });
+        for (inbox_key, names) in stopped_typing {
+            self.emit_typing(inbox_key, names);
+        }
         for chat in chats {
             self.name_group(&chat);
         }
@@ -911,6 +1097,42 @@ impl WhatsAppLink {
                 f(a);
             }
         }
+        for (chat, ids) in files {
+            self.fetch_on_arrival(ids, chat);
+        }
+    }
+
+    /// Fetches these new messages' files now, so the chat (and its card) shows the photo, sticker or voice note with the
+    /// message rather than a placeholder until its bubble asks for it.
+    fn fetch_on_arrival(self: &Arc<Self>, ids: Vec<String>, chat: String) {
+        let gen = self.with(|i| i.generation);
+        let weak = Arc::downgrade(self);
+        let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+        rt.spawn(async move {
+            for &wait in ARRIVAL_WAITS {
+                if wait > 0 {
+                    tokio::time::sleep(Duration::from_secs(wait)).await;
+                }
+                let Some(link) = weak.upgrade() else { return };
+                let missing: Vec<String> = link.with(|i| {
+                    if i.generation != gen {
+                        return vec![];
+                    }
+                    let missing: Vec<String> = ids.iter().filter(|id| !i.previews.contains_key(*id)).cloned().collect();
+                    // A refusal a moment ago does not hold these back: they are new, and the gateway may just have stored them.
+                    for id in &missing {
+                        i.preview_failed.remove(id);
+                    }
+                    missing
+                });
+                if missing.is_empty() {
+                    return;
+                }
+                if link.load_preview_ids(&missing, &chat).await {
+                    link.changed();
+                }
+            }
+        });
     }
 
     /// Groepen komen binnen onder hun id (de webhook van GOWA noemt de naam niet): één keer gevraagd.
@@ -1221,15 +1443,22 @@ impl WhatsAppLink {
         })
     }
 
-    /// Fetches the card's newest files that are not here yet. One that failed is tried again after a minute. True when
-    /// at least one came in while the link stayed the same.
+    /// Fetches the card's newest files that are not here yet. One that failed is tried again after [`PREVIEW_RETRY`].
+    /// True when at least one came in while the link stayed the same.
     pub async fn load_previews(&self, chat: &str) -> bool {
+        let ids = self.preview_ids(chat);
+        self.load_preview_ids(&ids, chat).await
+    }
+
+    /// Fetches the requested message files for `chat` that are not here yet, skipping ones already fetched, in flight,
+    /// or recently failed (within [`PREVIEW_RETRY`]). True when at least one file loaded under the current generation.
+    pub async fn load_preview_ids(&self, ids: &[String], chat: &str) -> bool {
         let gen = self.with(|i| i.generation);
         let mut loaded = false;
-        for id in self.preview_ids(chat) {
+        for id in ids {
             let wanted = self.with(|i| {
-                let failed_recently = i.preview_failed.get(&id).is_some_and(|t| t.elapsed() < PREVIEW_RETRY);
-                let wanted = !i.previews.contains_key(&id) && !i.previews_loading.contains(&id) && !failed_recently;
+                let failed_recently = i.preview_failed.get(id).is_some_and(|t| t.elapsed() < PREVIEW_RETRY);
+                let wanted = !i.previews.contains_key(id) && !i.previews_loading.contains(id) && !failed_recently;
                 if wanted {
                     i.previews_loading.insert(id.clone());
                 }
@@ -1238,9 +1467,9 @@ impl WhatsAppLink {
             if !wanted {
                 continue;
             }
-            let fetched = self.fetch_file(&id, chat).await;
+            let fetched = self.fetch_file(id, chat).await;
             let current = self.with(|i| {
-                i.previews_loading.remove(&id);
+                i.previews_loading.remove(id);
                 i.generation == gen
             });
             if !current {
@@ -1251,7 +1480,7 @@ impl WhatsAppLink {
             }
             match fetched {
                 Ok(path) => {
-                    self.keep_preview(&id, path);
+                    self.keep_preview(id, path);
                     loaded = true;
                 }
                 Err(_) => self.with(|i| {
@@ -1986,5 +2215,85 @@ mod tests {
         let (text, tagged) = super::tag_members("Hi @Anna Bakker and @Anna, mail me@home", &members);
         assert_eq!(text, "Hi @31622222222 and @31611111111, mail me@home");
         assert_eq!(tagged, vec!["31622222222@s.whatsapp.net".to_string(), "31611111111@s.whatsapp.net".to_string()]);
+    }
+
+    #[test]
+    fn fetches_only_small_inline_media_on_arrival() {
+        use super::super::Media;
+        assert!(WhatsAppLink::fetches_on_arrival(&Media::Image));
+        assert!(WhatsAppLink::fetches_on_arrival(&Media::Sticker));
+        assert!(WhatsAppLink::fetches_on_arrival(&Media::Voice));
+        assert!(!WhatsAppLink::fetches_on_arrival(&Media::Video));
+        assert!(!WhatsAppLink::fetches_on_arrival(&Media::Audio));
+        assert!(!WhatsAppLink::fetches_on_arrival(&Media::Document { name: Some("report.pdf".into()) }));
+        assert!(!WhatsAppLink::fetches_on_arrival(&Media::None));
+        assert!(!WhatsAppLink::fetches_on_arrival(&Media::Location));
+    }
+
+    #[tokio::test]
+    async fn fetches_photo_and_clears_typing_on_message_arrival() {
+        let server = TestServer::start(vec![
+            ("GET /devices", 200, r#"{"results":[{"id":"nook","state":"logged_in","jid":"31611111111@s.whatsapp.net"}]}"#.into()),
+            ("PATCH /devices/nook/webhook", 200, "{}".into()),
+            (
+                "GET /chats",
+                200,
+                r#"{"results":{"data":[{"jid":"31622222222@s.whatsapp.net","name":"Jan","last_message_time":"2026-10-18T12:00:00Z"}]}}"#
+                    .into(),
+            ),
+            ("GET /chat/*", 200, r#"{"results":{"data":[]}}"#.into()),
+            ("GET /message/*", 200, r#"{"results":{"file_path":"statics/media/photo.jpg","media_type":"image/jpeg"}}"#.into()),
+            ("GET /statics/*", 200, "\u{FF}\u{D8}\u{FF}\u{E0}fakejpg".into()),
+        ])
+        .await;
+        let env = Env::new(Arc::new(MemorySecrets::default()), Arc::new(ConnectorStore::in_memory()));
+        env.store.update(|c| {
+            c.whatsapp.enabled = true;
+            c.whatsapp.url = server.url("");
+            c.whatsapp.port = 0;
+        });
+        let link = WhatsAppLink::new(env, false);
+        let files_dir = std::env::temp_dir().join(format!("nook-wa-arrival-test-{}", uuid::Uuid::new_v4()));
+        link.set_files_dir(files_dir.clone());
+        let typing_events = Arc::new(Mutex::new(vec![]));
+        let log = typing_events.clone();
+        link.on_typing(move |key, names| log.lock().unwrap().push((key, names)));
+        link.start();
+        for _ in 0..50 {
+            if link.is_connected() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(link.is_connected());
+
+        // GOWA private chat typing arrives with @lid chat_id and phone `from`: mapped to the phone chat.
+        let typing_body = br#"{"event":"chat_presence","payload":{"chat_id":"269119252840836@lid","from":"31622222222@s.whatsapp.net","state":"composing","media":""}}"#;
+        link.received(typing_body, super::super::GatewayKind::Gowa);
+        let inbox_key = "whatsapp#31622222222@s.whatsapp.net";
+        assert_eq!(link.typing_in(inbox_key), vec![""]);
+        assert_eq!(typing_events.lock().unwrap().last(), Some(&(inbox_key.to_string(), vec!["".to_string()])));
+
+        // Incoming photo message clears typing and fetches the image automatically on arrival.
+        let photo_body = br#"{"event":"message","payload":{"id":"IMG1","chat_id":"31622222222@s.whatsapp.net","from":"31622222222@s.whatsapp.net","from_name":"Jan","timestamp":"2026-10-18T13:00:00Z","image":{"caption":"Kijk!"}}}"#;
+        link.received(photo_body, super::super::GatewayKind::Gowa);
+        assert!(link.typing_in(inbox_key).is_empty(), "typing clears when their message arrives");
+        assert_eq!(typing_events.lock().unwrap().last(), Some(&(inbox_key.to_string(), vec![])));
+
+        for _ in 0..40 {
+            if link.preview("IMG1").is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(link.preview("IMG1").is_some(), "photo fetched automatically on arrival");
+
+        // Incoming video stays lazy (not fetched automatically on arrival).
+        let video_body = br#"{"event":"message","payload":{"id":"VID1","chat_id":"31622222222@s.whatsapp.net","from":"31622222222@s.whatsapp.net","from_name":"Jan","timestamp":"2026-10-18T13:01:00Z","video":{"caption":"Film"}}}"#;
+        link.received(video_body, super::super::GatewayKind::Gowa);
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(link.preview("VID1").is_none(), "video stays lazy until opened or previewed");
+
+        link.stop(true);
     }
 }

@@ -817,7 +817,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [x] **CH-71** Install GOWA from Settings (`WhatsAppGOWA`, `WhatsAppSettingsSection`) · M (`core/src/connectors/whatsapp/gowa_install.rs`, `commands/whatsapp.rs`, `WhatsApp.svelte`)
 
-- [ ] **CH-72** Recent WhatsApp fixes: re-read quiet chats that moved, fetch media on arrival, typing and group unread counts (15fab7633, bfd3f0639, a8c5b8907) · S
+- [x] **CH-72** Recent WhatsApp fixes: re-read quiet chats that moved, fetch media on arrival, typing and group unread counts (15fab7633, bfef83c4c, a8c5b8907) · S (`core/src/connectors/whatsapp/{mod,provider,link}.rs`, `commands/whatsapp.rs`, `chats/inbox.rs`, `whatsapp.svelte.ts`, `ChatDetail.svelte`)
 
 - [ ] **CH-73** WhatsApp Web inside Nook and `@chat` / `@open` (`EmbeddedApps`, `WhatsAppWeb`, `WhatsAppWebSender`) through WebView2; TAURI.md's "—" is wrong · M
 

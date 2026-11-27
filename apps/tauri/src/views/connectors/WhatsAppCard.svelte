@@ -52,7 +52,7 @@
   const isSound = (m: WhatsAppMessage) => m.media.kind === "voice" || m.media.kind === "audio";
 
   function photo(m: WhatsAppMessage): string | null {
-    return m.media.kind === "image" ? card?.previews[m.id]?.image ?? null : null;
+    return m.media.kind === "image" || m.media.kind === "sticker" ? card?.previews[m.id]?.image ?? null : null;
   }
 
   async function nook() {

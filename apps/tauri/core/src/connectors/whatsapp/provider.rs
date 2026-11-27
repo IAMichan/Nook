@@ -446,8 +446,15 @@ pub mod gowa {
         }
     }
 
-    /// `whatsapp rest` voor "GOWA automatisch starten": alleen op deze computer, op de poort uit het adres, en
-    /// media nooit gedownload (Nook toont een label), zodat GOWA geen foto of spraakbericht bewaart.
+    /// The webhook events Nook asks GOWA for: messages, their ticks and emoji, who is typing, edits, deletions, and
+    /// group changes. `WEBHOOK_EVENTS_BEFORE` is the fallback for an older GOWA that refuses one of the newer names.
+    pub const WEBHOOK_EVENTS: &str =
+        "message,message.ack,message.reaction,chat_presence,message.edited,message.revoked,message.deleted,group.participants";
+    pub const WEBHOOK_EVENTS_BEFORE: &str = "message,message.ack,message.reaction,chat_presence";
+
+    /// `whatsapp rest` for "Start GOWA automatically": on this computer only, on the URL's port, and media not
+    /// downloaded automatically by GOWA itself — Nook asks for the files it shows (a new photo, sticker or voice
+    /// message at once via `WhatsAppLink::fetches_on_arrival`; a video or document when its bubble is viewed or opened).
     pub fn launch_arguments(url: &url::Url) -> Vec<String> {
         vec![
             "rest".into(),
@@ -462,6 +469,34 @@ pub mod gowa {
 
 pub mod openwa {
     use super::*;
+
+    /// The webhook events Nook asks OpenWA for, including `presence.update` for typing. `WEBHOOK_EVENTS_BEFORE` is the
+    /// fallback when an older OpenWA refuses one of the newer names.
+    pub const WEBHOOK_EVENTS: &[&str] = &[
+        "message.received",
+        "message.sent",
+        "message.ack",
+        "message.receipt",
+        "message.failed",
+        "message.edited",
+        "message.revoked",
+        "message.reaction",
+        "presence.update",
+        "group.join",
+        "group.leave",
+        "group.update",
+    ];
+    pub const WEBHOOK_EVENTS_BEFORE: &[&str] = &[
+        "message.received",
+        "message.sent",
+        "message.ack",
+        "message.receipt",
+        "message.reaction",
+        "presence.update",
+        "group.join",
+        "group.leave",
+        "group.update",
+    ];
 
     pub fn session(v: &Value) -> Option<(String, String, Option<String>)> {
         Some((non_empty(&v["id"])?, v["status"].as_str().unwrap_or("").to_string(), non_empty(&v["phone"])))
@@ -751,22 +786,34 @@ impl Provider {
         let id = self.scope_id().await?;
         match self.kind {
             GatewayKind::Gowa => {
-                self.call(
-                    "PATCH",
-                    &format!("/devices/{}/webhook", path_component(&id)),
-                    &[],
-                    Some(json!({"webhook_url": url, "webhook_secret": secret, "webhook_events": "message,message.ack"})),
-                )
-                .await?;
+                let path = format!("/devices/{}/webhook", path_component(&id));
+                for events in [gowa::WEBHOOK_EVENTS, gowa::WEBHOOK_EVENTS_BEFORE] {
+                    let body = json!({"webhook_url": url, "webhook_secret": secret, "webhook_events": events});
+                    let (data, code) = self.http.call("PATCH", &path, &[], Some(body), 10).await?;
+                    if matches!(code, 400 | 422) && events != gowa::WEBHOOK_EVENTS_BEFORE {
+                        continue;
+                    }
+                    self.check(&data, code)?;
+                    return Ok(());
+                }
             }
             GatewayKind::Openwa => {
-                let body = json!({"url": url, "events": ["message.received", "message.sent", "message.ack"], "secret": secret});
                 let list = self.call("GET", &format!("/api/sessions/{id}/webhooks"), &[], None).await?;
                 let hooks = parse(&list);
-                match crate::connectors::list(&hooks).iter().find(|h| h["url"] == url).and_then(|h| non_empty(&h["id"])) {
-                    Some(hook) => self.call("PUT", &format!("/api/sessions/{id}/webhooks/{hook}"), &[], Some(body)).await?,
-                    None => self.call("POST", &format!("/api/sessions/{id}/webhooks"), &[], Some(body)).await?,
+                let hook = crate::connectors::list(&hooks).iter().find(|h| h["url"] == url).and_then(|h| non_empty(&h["id"]));
+                let (method, path) = match hook {
+                    Some(hook) => ("PUT", format!("/api/sessions/{id}/webhooks/{hook}")),
+                    None => ("POST", format!("/api/sessions/{id}/webhooks")),
                 };
+                for events in [openwa::WEBHOOK_EVENTS, openwa::WEBHOOK_EVENTS_BEFORE] {
+                    let body = json!({"url": url, "events": events, "secret": secret});
+                    let (data, code) = self.http.call(method, &path, &[], Some(body), 10).await?;
+                    if matches!(code, 400 | 422) && events != openwa::WEBHOOK_EVENTS_BEFORE {
+                        continue;
+                    }
+                    self.check(&data, code)?;
+                    return Ok(());
+                }
             }
         }
         Ok(())
@@ -999,6 +1046,26 @@ impl Provider {
             }
         }
         Ok(())
+    }
+
+    /// Online while a chat is open; in a private chat GOWA watches the person too (`/user/presence/subscribe`, as
+    /// WhatsApp Web does when a chat opens), so their typing reaches this device. A group needs no watch.
+    pub async fn set_online(&self, online: bool, chat: Option<&str>) {
+        match self.kind {
+            GatewayKind::Gowa => {
+                let state = if online { "available" } else { "unavailable" };
+                let _ = self.gowa_scoped("POST", "/send/presence", &[], Some(json!({"type": state}))).await;
+                if let Some(chat) = chat.filter(|c| online && jid::kind(c) == super::ChatKind::Person && !c.ends_with("@lid")) {
+                    let _ = self.gowa_scoped("POST", "/user/presence/subscribe", &[], Some(json!({"phone": chat}))).await;
+                }
+            }
+            GatewayKind::Openwa => {
+                let _ = self.openwa_scoped("PUT", "/presence", &[], Some(json!({"available": online}))).await;
+                if let Some(chat) = chat.filter(|_| online) {
+                    let _ = self.openwa_scoped("POST", "/presence/subscribe", &[], Some(json!({"chatId": openwa::id(chat)}))).await;
+                }
+            }
+        }
     }
 
     /// A group's members without you, as (JID, name): GOWA's `/group/info` (`Participants`), OpenWA's `/groups/{id}`.
@@ -1305,5 +1372,31 @@ mod tests {
         assert_eq!(members(&gowa), vec![("316111@s.whatsapp.net".to_string(), "Ann".to_string()), ("2@lid".to_string(), String::new())]);
         let openwa = serde_json::json!([{"id": {"_serialized": "316222@c.us"}, "pushname": "Bo"}, {"id": "x", "isSelf": true}]);
         assert_eq!(members(&openwa), vec![("316222@c.us".to_string(), "Bo".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn gowa_presence_subscribes_for_open_private_chat() {
+        let server = TestServer::start(vec![
+            ("GET /devices", 200, r#"{"results":[{"id":"nook","state":"logged_in"}]}"#.into()),
+            ("POST /send/presence", 200, r#"{"code":"SUCCESS"}"#.into()),
+            ("POST /user/presence/subscribe", 200, r#"{"code":"SUCCESS"}"#.into()),
+        ])
+        .await;
+        let provider = Provider::new(GatewayKind::Gowa, &server.url(""), None).unwrap();
+        // Private chat: available + subscribe.
+        provider.set_online(true, Some("31611111111@s.whatsapp.net")).await;
+        // Group chat: available only, no subscribe.
+        provider.set_online(true, Some("120363000000000001@g.us")).await;
+        // @lid chat: available only, no subscribe.
+        provider.set_online(true, Some("98765432109876@lid")).await;
+        // Going offline: unavailable only.
+        provider.set_online(false, None).await;
+        let requests = server.requests();
+        let subscribes: Vec<_> = requests.iter().filter(|r| r.path.starts_with("/user/presence/subscribe")).collect();
+        assert_eq!(subscribes.len(), 1);
+        assert!(subscribes[0].body.contains("31611111111@s.whatsapp.net"));
+        let presences: Vec<_> = requests.iter().filter(|r| r.path.starts_with("/send/presence")).collect();
+        assert_eq!(presences.len(), 4);
+        assert!(presences[3].body.contains("\"unavailable\""));
     }
 }

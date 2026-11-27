@@ -234,7 +234,7 @@
     }
   }
   const isSound = (m: Bubble) => m.media.kind === "voice" || m.media.kind === "audio";
-  const photo = (m: Bubble) => (isWhatsApp && m.media.kind === "image" ? waCard?.previews[m.id]?.image ?? null : null);
+  const photo = (m: Bubble) => (isWhatsApp && (m.media.kind === "image" || m.media.kind === "sticker") ? waCard?.previews[m.id]?.image ?? null : null);
   const textOf = (m: Bubble) => bubbleText({ ...m, chat: chatId, senderName: m.sender, media: m.media });
 
   // Unified draft / sending / notice accessors.

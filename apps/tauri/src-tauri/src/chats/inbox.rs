@@ -108,16 +108,41 @@ pub(crate) struct Links {
     helper: bool,
     /// Per WhatsApp account (the first one's id is empty), whether its gateway can vote on a poll.
     votes: Vec<(String, bool)>,
+    /// Live WhatsApp typists snapshotted before acquiring `InboxStore::read`, keyed by inbox key.
+    wa_typing: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl Links {
     pub(crate) fn now(c: &Connectors) -> Self {
         let accounts = c.whatsapp_accounts.links();
+        let mut wa_typing = std::collections::HashMap::new();
+        for link in &accounts {
+            for (k, v) in link.all_typing() {
+                wa_typing.entry(k).or_insert_with(Vec::new).extend(v);
+            }
+        }
         Self {
             whatsapp: accounts.iter().any(|l| l.is_connected()),
             helper: c.chat_helper.bridge.client().is_some(),
             votes: accounts.iter().map(|l| (l.account().to_string(), l.can_vote())).collect(),
+            wa_typing,
         }
+    }
+
+    fn typing_for(&self, c: &Connectors, key: &str) -> Vec<String> {
+        let mut out = c.chat_helper.typing_in(key);
+        if let Some(wa) = self.wa_typing.get(key) {
+            for who in wa {
+                if who.is_empty() {
+                    if out.is_empty() {
+                        out.push(String::new());
+                    }
+                } else if !out.iter().any(|existing| existing.eq_ignore_ascii_case(who)) {
+                    out.push(who.clone());
+                }
+            }
+        }
+        out
     }
 
     /// Whether Nook can write in this app's chats.
@@ -176,7 +201,7 @@ pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
             .into_iter()
             // A chat Nook knows only from disk, without a message, shows once its app lists it or brings one again.
             .filter(|t| !t.messages.is_empty() || ChatInbox::is_listed(t, now))
-            .map(|t| summary(t, &links, c.chat_helper.typing_in(&t.id)))
+            .map(|t| summary(t, &links, links.typing_for(&c, &t.id)))
             .collect()
     })
 }
@@ -185,7 +210,7 @@ pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
 #[tauri::command]
 pub fn chat_inbox_thread(c: State<'_, Connectors>, key: String) -> Option<ChatThread> {
     let links = Links::now(&c);
-    let typing = c.chat_helper.typing_in(&key);
+    let typing = links.typing_for(&c, &key);
     c.env.chats.read(|inbox| {
         inbox.threads.get(&key).map(|t| ChatThread {
             summary: summary(t, &links, typing),

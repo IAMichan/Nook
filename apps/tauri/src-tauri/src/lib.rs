@@ -346,6 +346,7 @@ pub fn run() {
             chats::call::chat_call_open_app,
             commands::whatsapp::whatsapp_card,
             commands::whatsapp::whatsapp_card_load,
+            commands::whatsapp::whatsapp_presence,
             commands::whatsapp::whatsapp_avatars,
             commands::whatsapp::whatsapp_accounts,
             commands::whatsapp::whatsapp_account_add,

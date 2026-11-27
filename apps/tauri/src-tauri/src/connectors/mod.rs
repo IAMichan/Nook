@@ -178,4 +178,8 @@ fn wire_whatsapp(app: &AppHandle, link: &Arc<whatsapp::WhatsAppLink>, accounts: 
     link.on_receipt(move |chat| {
         let _ = handle.emit("whatsapp-receipt", &chat);
     });
+    let handle = app.clone();
+    link.on_typing(move |key, typing| {
+        let _ = handle.emit("chat-typing", crate::chats::helper::TypingUpdate { key, typing });
+    });
 }
