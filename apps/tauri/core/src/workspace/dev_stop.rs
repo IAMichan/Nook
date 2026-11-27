@@ -1,7 +1,7 @@
-//! Stopping a dev server (`DevServerOwnership` on the Mac, AG-134): only a server Nook started itself, from one of its
-//! terminals or through an agent it runs, gets a Stop. A server you started in another terminal app is yours to stop there.
-//! Matched by process ancestry only, never by name, and checked again right before the stop, so a pid the system gave to
-//! another program meanwhile is never hit. The Mac also follows the agents' process groups; Windows has none, so a server
+//! Stopping a dev server (`DevServerOwnership` on the Mac, AG-134): a server Nook started itself, from one of its
+//! terminals or through an agent it runs, stops with one tap; one you started in another terminal app stops after the app
+//! asks first. Ownership is matched by process ancestry only, never by name, and right before the stop the same pid must
+//! still listen on the port in the folder, so a pid the system gave to another program meanwhile is never hit. The Mac also follows the agents' process groups; Windows has none, so a server
 //! whose parent shell already ended cannot be traced back and is left alone (the safe side).
 
 use std::collections::{HashMap, HashSet};
@@ -81,7 +81,7 @@ pub fn stop_order(root: u32, parents: &[(u32, u32)]) -> Vec<u32> {
 pub struct DevServerView {
     #[serde(flatten)]
     pub server: DevServer,
-    /// Started by Nook: only such a server gets a working Stop.
+    /// Started by Nook: such a server stops at once, any other after a confirmation.
     pub started_by_nook: bool,
 }
 
@@ -127,16 +127,17 @@ pub fn mark(servers: Vec<DevServer>, shells: &[u32], agents: &[u32]) -> Vec<DevS
         .collect()
 }
 
-/// Stops a server Nook started, with the processes it started. False when it is not (or no longer) Nook's, still
-/// listening in `folder`, or is a process Nook itself needs.
+/// Stops a server with the processes it started, whether Nook started it or not (the page asks first for one it did not).
+/// False when it no longer listens on `port` in `folder`, or is a process Nook itself needs (Nook, a terminal shell, an
+/// agent).
 pub fn stop(folder: &str, pid: u32, port: u16, shells: &[u32], agents: &[u32]) -> bool {
     // Checked again right now: the same process still listens on that port in this folder.
-    if !super::terminal::scan_dev_servers(folder).iter().any(|s| s.pid == pid && s.port == port) {
+    if pid <= 1 || !super::terminal::scan_dev_servers(folder).iter().any(|s| s.pid == pid && s.port == port) {
         return false;
     }
     let Some(system) = snapshot() else { return false };
     let roots = full_roots(shells, agents);
-    if roots.processes.contains_key(&pid) || !started_by_nook(pid, &roots, &table_of(&system)) {
+    if roots.processes.contains_key(&pid) {
         return false;
     }
     let parents: Vec<(u32, u32)> =
