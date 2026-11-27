@@ -254,6 +254,10 @@ struct Inner {
     control_replies: HashMap<String, ControlReplySender>,
     /// Sessions currently running an automatic idle/size `/compact` turn (`idleCompacting` on macOS, AG-32).
     idle_compacting: HashSet<Uuid>,
+    /// `$HOME` per remote machine where Nook's MCP server (`nook-mcp`) has been installed in this run.
+    pub(super) remote_homes: HashMap<String, String>,
+    /// Per-session token proving that an incoming remote bridge connection belongs to that session.
+    pub(super) bridge_tokens: HashMap<Uuid, String>,
 }
 
 type ControlReplySender = tokio::sync::oneshot::Sender<(Option<Value>, Option<String>)>;
@@ -387,6 +391,15 @@ impl Manager {
             }
         }
         (self.hooks.executable)(provider)
+    }
+
+    /// Git for this session's folder: here, or for a session on another machine over ssh there
+    /// (`sessionGit(for:)` on the Mac).
+    pub fn git_for(&self, run: &WorkspaceRun) -> Option<Git> {
+        match &run.remote {
+            Some(target) => Some(Git::on(target.clone())),
+            None => self.git.clone(),
+        }
     }
 
     /// The program a turn of `run` starts: on another machine the agent's own command there, else the one found here.
@@ -1692,6 +1705,21 @@ impl Manager {
             } else {
                 super::tuning::AppliedTuning::default()
             };
+            let local_bridge = (self.hooks.bridge)();
+            let remote_bridge = match &run.remote {
+                Some(target) if local_bridge.is_some() => match Self::remote_bridge_for_locked(&mut s, id, target) {
+                    Some(b) => Some(b),
+                    None => {
+                        self.prepare_remote_bridge_async(target.clone());
+                        None
+                    }
+                },
+                _ => None,
+            };
+            let bridge = match &run.remote {
+                Some(_) => remote_bridge.as_ref().map(|(b, _, _)| b.clone()),
+                None => local_bridge,
+            };
             let input = CommandInput {
                 provider: run.provider,
                 executable: executable.clone(),
@@ -1708,8 +1736,7 @@ impl Manager {
                 account_environment,
                 run_id: id.to_string(),
                 profile_id: run.profile_id.clone(),
-                // Nook's tools reach an agent on another machine only on the Mac so far (`RemoteBridge`, AG-132).
-                bridge: if run.remote.is_none() { (self.hooks.bridge)() } else { None },
+                bridge,
                 effort: run.effort.clone(),
                 tool_search,
                 tuning,
@@ -1755,7 +1782,10 @@ impl Manager {
                     // On another machine: the same agent through ssh, under that machine's own login of the agent. No
                     // telemetry receiver there: an endpoint on this computer is usually not reachable from it.
                     let spec = match &run.remote {
-                        Some(target) => super::remote::wrap(spec, target, &executable, &Default::default()),
+                        Some(target) => {
+                            let (forward, token) = remote_bridge.map(|(_, f, t)| (f, Some(t))).unwrap_or_else(|| (Vec::new(), None));
+                            super::remote::wrap_with_bridge(spec, target, &executable, &Default::default(), &forward, token)
+                        }
                         None => command::apply_telemetry(run.provider, &telemetry, spec),
                     };
                     (spec, planned.driver, used_claude_rollback)
@@ -1831,7 +1861,13 @@ impl Manager {
             let generation = s.generation;
             s.processes.insert(
                 id,
-                Proc { generation, pid, input: spec.keeps_input_open.then(|| tx.clone()), kill: Some(kill_tx), driver: turn_driver.take() },
+                Proc {
+                    generation,
+                    pid,
+                    input: (spec.keeps_input_open && !spec.closes_input_after_start).then(|| tx.clone()),
+                    kill: Some(kill_tx),
+                    driver: turn_driver.take(),
+                },
             );
             s.fork_next.remove(&id);
             s.turns.insert(id, TurnState { started: Some(Utc::now()), ..Default::default() });
@@ -1873,9 +1909,17 @@ impl Manager {
         let traffic = super::traffic::Recorder::open(&id.to_string(), pid).map(Arc::new);
         // Schrijven naar stdin: eerst de eerste regels, dan wat Nook later stuurt (antwoorden, onderbreken).
         if let Some(mut stdin) = stdin {
+            let secret = spec.secret_input.clone();
             let initial = spec.initial_input.clone();
+            let close_after = spec.closes_input_after_start;
             let traffic = traffic.clone();
             self.runtime.spawn(async move {
+                // The remote bridge token goes first and never enters the traffic recorder.
+                if let Some(line) = secret {
+                    if stdin.write_all(line.as_bytes()).await.is_err() || stdin.flush().await.is_err() {
+                        return;
+                    }
+                }
                 for line in initial {
                     if let Some(t) = &traffic {
                         t.line(true, &line);
@@ -1885,6 +1929,9 @@ impl Manager {
                     }
                 }
                 let _ = stdin.flush().await;
+                if close_after {
+                    return;
+                }
                 while let Some(msg) = rx.recv().await {
                     match msg {
                         Input::Line(l) => {
@@ -2868,8 +2915,11 @@ impl Manager {
         self.start_waiting_turns();
         self.maybe_compact_for_size(id, turn_compacted);
         let mark = Self::conversation_mark(&run);
-        if run.isolation == IsolationMode::Worktree && run.worktree_path.as_deref().is_some_and(|p| Path::new(p).exists()) {
-            if let Some(git) = self.git.clone() {
+        // A worktree on another machine is not on this computer to look at; git there says whether it is still there.
+        if run.isolation == IsolationMode::Worktree
+            && run.worktree_path.as_deref().is_some_and(|p| run.remote.is_some() || Path::new(p).exists())
+        {
+            if let Some(git) = self.git_for(&run) {
                 let index = run.checkpoints.len();
                 let dir = run.working_directory.clone();
                 let manager = self.clone();
@@ -3587,13 +3637,14 @@ impl Manager {
                 handle.abort();
             }
             Self::forget_connector_sign_ins_locked(&mut s, id);
+            s.bridge_tokens.remove(&id);
             s.git.remove(&id);
             s.dirty_runs = true;
             s.dirty_queues = true;
             run
         };
         self.store.delete_events(id);
-        if let (Some(root), Some(git)) = (&run.repo_root, &self.git) {
+        if let (Some(root), Some(git)) = (&run.repo_root, self.git_for(&run)) {
             if !run.checkpoints.is_empty() {
                 git.remove_checkpoints(root, &id.to_string());
             }
@@ -3628,8 +3679,8 @@ impl Manager {
     }
 
     pub fn refresh_git(self: &Arc<Self>, id: Uuid) {
-        let Some(git) = self.git.clone() else { return };
         let Some(run) = self.run(id).filter(|r| r.repo_root.is_some()) else { return };
+        let Some(git) = self.git_for(&run) else { return };
         {
             let mut s = self.lock();
             s.git.entry(id).or_default().loading = true;
@@ -3673,7 +3724,7 @@ impl Manager {
 
     pub fn diff(&self, id: Uuid, file: &git::FileChange) -> Result<String, String> {
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.diff(&run.working_directory, file).map_err(|e| e.0)
     }
 
@@ -3682,7 +3733,7 @@ impl Manager {
         if run.status.is_active() {
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let sha = git.commit(&run.working_directory, message, paths).map_err(|e| e.0)?;
         let mut out = Out::default();
         {
@@ -3702,7 +3753,7 @@ impl Manager {
 
     pub fn push(self: &Arc<Self>, id: Uuid) -> Result<String, String> {
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let branch = git.current_branch(dir).ok_or(tr("Er is geen branch uitgecheckt.", "No branch is checked out."))?;
         let remotes = git.remotes(dir);
@@ -3726,7 +3777,7 @@ impl Manager {
         if run.status.is_active() {
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let name = super::models::branch_name(topic, Uuid::new_v4());
         let cut = git.start_branch(dir, &name, &Self::push_remote(git, dir)).map_err(|e| e.0)?;
@@ -3756,7 +3807,7 @@ impl Manager {
     /// Alleen het nieuwe werk in de nieuwe pull request: de commits na `cut` op de basis van de sessie.
     pub fn move_onto_base(self: &Arc<Self>, id: Uuid, cut: &str) -> Result<bool, String> {
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let remote = Self::push_remote(git, dir);
         let base = git
@@ -3783,7 +3834,7 @@ impl Manager {
         if run.status.is_active() {
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.pull_fast_forward(&run.working_directory).map_err(|e| e.0)?;
         self.note(id, tr("Gepulld (alleen fast-forward)", "Pulled (fast-forward only)"));
         self.refresh_git(id);
@@ -4740,7 +4791,7 @@ impl Manager {
             .find(|(_, c)| c.date <= before && !c.r#ref.is_empty())
             .map(|(i, c)| (i, c.clone()))
             .ok_or(tr("Geen eerder punt gevonden.", "No earlier point found."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.restore(&run.working_directory, &checkpoint.r#ref).map_err(|e| e.0)?;
         let mut out = Out::default();
         let removed_refs = {
@@ -4801,7 +4852,7 @@ impl Manager {
             removed_refs
         };
         if !removed_refs.is_empty() {
-            if let Some(git) = &self.git {
+            if let Some(git) = self.git_for(&run) {
                 git.remove_checkpoint_refs(&run.working_directory, &removed_refs);
             }
         }

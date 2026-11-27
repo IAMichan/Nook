@@ -6,6 +6,7 @@ use nook_core::agents::AgentKind;
 use nook_core::workspace::balance::{self, BalanceLevel, Candidate};
 use nook_core::workspace::models::RunProvider;
 use nook_core::workspace::remote::{self, RemoteMachine, RemoteMachines, RemoteTarget};
+use nook_core::workspace::remote_passwords::RemotePasswords;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -32,10 +33,16 @@ pub fn machines_save(
     host: String,
     port: Option<u16>,
     identity_file: Option<String>,
+    password_login: Option<bool>,
 ) -> Res<RemoteMachine> {
-    let machine = RemoteMachine::from_input(id, &name, &host, port, identity_file.as_deref().unwrap_or(""))?;
+    let mut machine = RemoteMachine::from_input(id, &name, &host, port, identity_file.as_deref().unwrap_or(""))?;
     let file = RemoteMachines::file();
     let mut list = RemoteMachines::load(&file);
+    // Not given: as it was.
+    machine.password_login = password_login.unwrap_or_else(|| list.find(&machine.id).is_some_and(|m| m.password_login));
+    if !machine.password_login {
+        let _ = RemotePasswords::shared().set(&machine.id, None, false);
+    }
     list.upsert(machine.clone());
     list.save_to(&file).map_err(|e| e.to_string())?;
     changed(&app);
@@ -44,6 +51,7 @@ pub fn machines_save(
 
 #[tauri::command]
 pub fn machines_remove(app: AppHandle, id: String) -> Res<()> {
+    let _ = RemotePasswords::shared().set(&id, None, false);
     let file = RemoteMachines::file();
     let mut list = RemoteMachines::load(&file);
     list.remove(&id);
@@ -68,7 +76,7 @@ pub async fn machines_test(app: AppHandle, id: String) -> Res<MachineCheck> {
         let machine = list.find(&id).cloned().ok_or_else(|| "Unknown machine.".to_string())?;
         let commands: Vec<&str> = AgentKind::ALL.iter().map(|k| k.command()).collect();
         let target = RemoteTarget::new(&machine, "~");
-        let output = remote::run_ssh(&remote::check_arguments(&target, &commands), std::time::Duration::from_secs(25))?;
+        let output = remote::run_ssh(&target, &remote::check_arguments(&target, &commands), std::time::Duration::from_secs(25))?;
         list.mark_used(&machine.id, chrono::Utc::now());
         let _ = list.save_to(&file);
         let found = remote::found_agents(&output, &commands);
@@ -168,7 +176,7 @@ pub async fn machines_pick(
                     let commands = &commands;
                     scope.spawn(move || {
                         let target = RemoteTarget::new(m, "~");
-                        remote::run_ssh(&remote::check_arguments(&target, commands), std::time::Duration::from_secs(25))
+                        remote::run_ssh(&target, &remote::check_arguments(&target, commands), std::time::Duration::from_secs(25))
                             .map(|out| remote::found_agents(&out, commands).iter().any(|c| c == command))
                             .unwrap_or(false)
                     })
@@ -199,4 +207,69 @@ pub async fn machines_pick(
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// Machines this computer probably reaches (`~/.ssh/config`, `known_hosts`, the tailnet), without the ones added.
+/// Nothing is contacted.
+#[tauri::command]
+pub async fn machines_discover() -> Res<Vec<nook_core::workspace::remote_discovery::Suggestion>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let existing = RemoteMachines::load(&RemoteMachines::file()).machines;
+        nook_core::workspace::remote_discovery::discover(&existing)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordState {
+    /// Nook has the password now (typed in this run, or kept).
+    unlocked: bool,
+    /// It is in the system's secret store.
+    kept: bool,
+}
+
+/// Whether Nook has each password machine's password: the composer and Settings ask for it while it has not.
+#[tauri::command]
+pub fn machines_passwords() -> std::collections::BTreeMap<String, PasswordState> {
+    let passwords = RemotePasswords::shared();
+    RemoteMachines::load(&RemoteMachines::file())
+        .machines
+        .into_iter()
+        .filter(|m| m.password_login)
+        .map(|m| {
+            let unlocked = passwords.password(&m.id).is_some();
+            (m.id.clone(), PasswordState { unlocked, kept: unlocked && passwords.is_kept(&m.id) })
+        })
+        .collect()
+}
+
+/// Logs in once with `password` (and finds the agents there) before Nook keeps it: in memory, and in the system's
+/// secret store when `keep`. A password that does not get in is forgotten again.
+#[tauri::command]
+pub async fn machines_unlock(app: AppHandle, id: String, password: String, keep: bool) -> Res<MachineCheck> {
+    let passwords = RemotePasswords::shared();
+    passwords.set(&id, Some(&password), false)?;
+    match machines_test(app.clone(), id.clone()).await {
+        Ok(check) => {
+            if keep {
+                passwords.set(&id, Some(&password), true)?;
+            }
+            Ok(check)
+        }
+        Err(e) => {
+            let _ = passwords.set(&id, None, false);
+            changed(&app);
+            Err(e)
+        }
+    }
+}
+
+/// Forgets a machine's password, in memory and in the secret store.
+#[tauri::command]
+pub fn machines_lock(app: AppHandle, id: String) -> Res<()> {
+    RemotePasswords::shared().set(&id, None, false)?;
+    changed(&app);
+    Ok(())
 }

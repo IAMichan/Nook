@@ -53,6 +53,7 @@ pub fn launch(input: &CommandInput) -> Result<(LaunchSpec, AcpDriver), String> {
         working_directory: input.working_directory.clone(),
         initial_input: vec![first],
         keeps_input_open: true,
+        ..Default::default()
     };
     Ok((spec, driver))
 }
@@ -352,7 +353,7 @@ pub fn attachments(paths: &[String], images: bool, read: impl Fn(&str) -> Option
 impl AcpDriver {
     pub fn new(input: &CommandInput) -> Self {
         let bridge = input.bridge.as_ref().map(|b| {
-            json!({"name": SERVER_NAME, "command": b.script, "args": ["--agent", input.provider.id()], "env": [{"name": "NOOK_RUN_ID", "value": input.run_id}]})
+            json!({"name": SERVER_NAME, "command": b.script, "args": ["--agent", input.provider.id()], "env": b.server_env(&input.run_id).into_iter().map(|(name, value)| json!({"name": name, "value": value})).collect::<Vec<_>>()})
         });
         Self {
             provider: input.provider,

@@ -567,7 +567,15 @@ mod tests {
     use crate::workspace::settings::FolderChoices;
 
     fn caller(mode: Option<ExecutionMode>, permission: Option<PermissionPolicy>) -> BridgeCaller {
-        BridgeCaller { run: Some("r".into()), agent: "Codex".into(), title: "Fix".into(), directory: "/w".into(), mode, permission }
+        BridgeCaller {
+            run: Some("r".into()),
+            agent: "Codex".into(),
+            title: "Fix".into(),
+            directory: "/w".into(),
+            mode,
+            permission,
+            remote: false,
+        }
     }
 
     #[test]

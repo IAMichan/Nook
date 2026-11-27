@@ -17,6 +17,23 @@ export interface RemoteMachine {
   balance?: BalanceLevel | null;
   /** Project path on this computer → its folder on the machine: the projects shared with it. */
   projectFolders?: Record<string, string>;
+  /** Logs in with a password, which Nook asks for once per run (or keeps in the system's secret store). */
+  passwordLogin?: boolean;
+}
+
+/** Whether Nook has a password machine's password now, and whether it is kept in the secret store. */
+export interface PasswordState {
+  unlocked: boolean;
+  kept: boolean;
+}
+
+/** A machine this computer probably reaches, found in `~/.ssh/config`, `known_hosts` or the tailnet. */
+export interface MachineSuggestion {
+  name: string;
+  host: string;
+  port: number | null;
+  source: "sshConfig" | "knownHosts" | "tailscale";
+  detail: string | null;
 }
 
 export interface PickedPlace {
@@ -41,11 +58,16 @@ export interface MachineCheck {
 
 export const machinesApi = {
   list: () => invoke<RemoteMachine[]>("machines_list"),
-  save: (m: { id?: string | null; name: string; host: string; port?: number | null; identityFile?: string | null }) =>
-    invoke<RemoteMachine>("machines_save", { id: m.id ?? null, name: m.name, host: m.host, port: m.port ?? null, identityFile: m.identityFile ?? null }),
+  save: (m: { id?: string | null; name: string; host: string; port?: number | null; identityFile?: string | null; passwordLogin?: boolean | null }) =>
+    invoke<RemoteMachine>("machines_save", { id: m.id ?? null, name: m.name, host: m.host, port: m.port ?? null, identityFile: m.identityFile ?? null, passwordLogin: m.passwordLogin ?? null }),
+  passwords: () => invoke<Record<string, PasswordState>>("machines_passwords"),
+  /** Logs in once with the password before Nook keeps it; a password that does not get in is forgotten. */
+  unlock: (id: string, password: string, keep: boolean) => invoke<MachineCheck>("machines_unlock", { id, password, keep }),
+  lock: (id: string) => invoke<void>("machines_lock", { id }),
   remove: (id: string) => invoke<void>("machines_remove", { id }),
   test: (id: string) => invoke<MachineCheck>("machines_test", { id }),
   onChanged: (f: () => void): Promise<UnlistenFn> => listen("machines-changed", () => f()),
+  discover: () => invoke<MachineSuggestion[]>("machines_discover"),
   setBalance: (id: string, level: BalanceLevel) => invoke<void>("machines_set_balance", { id, level }),
   localBalance: () => invoke<BalanceLevel>("machines_local_balance"),
   setLocalBalance: (level: BalanceLevel) => invoke<void>("machines_set_local_balance", { level }),
