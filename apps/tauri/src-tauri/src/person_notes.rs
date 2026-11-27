@@ -41,11 +41,29 @@ pub struct Birthday {
 /// Today's birthdays among the people you gave one, with their chat's name and app.
 #[tauri::command]
 pub fn birthdays_today(app: AppHandle) -> Vec<Birthday> {
-    let keys = with(|n| n.birthdays_on(chrono::Local::now().date_naive()));
     let Some(connectors) = app.try_state::<crate::connectors::Connectors>() else { return vec![] };
+    let people = connectors.env.chats.read(|inbox| nook_core::chats::ChatPeople::people(inbox.threads.values()));
+    let keys = with(|n| {
+        if n.has_name_keys() && n.carry_over(&people) {
+            let _ = n.save();
+        }
+        n.birthdays_on(chrono::Local::now().date_naive())
+    });
     connectors.env.chats.read(|inbox| {
+        let mut seen = std::collections::HashSet::new();
         keys.iter()
-            .filter_map(|k| inbox.threads.get(k).map(|t| Birthday { key: k.clone(), name: t.name.clone(), app: t.app.clone() }))
+            .filter_map(|k| {
+                if let Some(t) = inbox.threads.get(k) {
+                    return seen.insert(t.id.clone()).then(|| Birthday { key: t.id.clone(), name: t.name.clone(), app: t.app.clone() });
+                }
+                let person = people.iter().find(|p| p.id == *k)?;
+                let chat = person.chats.first()?;
+                seen.insert(chat.chat.clone()).then(|| Birthday {
+                    key: chat.chat.clone(),
+                    name: person.name.clone(),
+                    app: chat.app.clone(),
+                })
+            })
             .collect()
     })
 }

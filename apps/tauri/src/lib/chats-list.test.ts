@@ -208,6 +208,26 @@ describe("the Chats list", () => {
     expect(formatBirthday("02-29", "en-GB")).toMatch(/29/);
   });
 
+  it("matches people across apps by phone key, WhatsApp JID, and email regardless of display name (CH-08)", () => {
+    const entries: ChatEntry[] = [
+      { ...entry("wa-1", at(0, 14), 1), name: "Anna de Vries", app: "whatsapp", key: "whatsapp#31612345678@s.whatsapp.net", handle: "31612345678:3@s.whatsapp.net" },
+      { ...entry("tg-1", at(1, 10), 2), name: "Anna", app: "telegram", key: "telegram#1", handle: "0612345678" },
+      { ...entry("sl-1", at(0, 12), 0), name: "Anna V.", app: "slack", key: "slack#1", handle: "Anna@Contoso.com" },
+      { ...entry("tm-1", at(2, 9), 0), name: "Anna (Contoso)", app: "teams", key: "teams#1", handle: "anna@contoso.com" },
+      { ...entry("sig-1", at(3, 8), 0), name: "Ｊｏｓé", app: "signal", key: "signal#1" },
+    ];
+    expect(foldPersonName("Anna-Marie  (Work)")).toBe("anna marie work");
+    expect(foldPersonName("Ｊｏｓé")).toBe("jose");
+    const people = aggregatePeople(entries);
+    expect(people).toHaveLength(3);
+    const byTel = people.find((p) => p.id === "tel:612345678");
+    expect(byTel?.apps.sort()).toEqual(["telegram", "whatsapp"]);
+    expect(byTel?.unread).toBe(3);
+    const byMail = people.find((p) => p.id === "mail:anna@contoso.com");
+    expect(byMail?.apps.sort()).toEqual(["slack", "teams"]);
+    expect(people.find((p) => p.id === "name:jose")?.name).toBe("Ｊｏｓé");
+  });
+
   it("derives per-app ChatAbilities and respects pinned/archived flags (CH-58)", () => {
     const wa = abilitiesForApp("whatsapp", true, { pinned: true });
     expect(wa.send).toBe(true);

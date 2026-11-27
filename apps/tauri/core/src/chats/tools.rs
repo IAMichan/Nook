@@ -180,31 +180,47 @@ pub enum Pick<'a> {
     None,
 }
 
-/// The chat `name` means among `threads` (its name exactly, then the chats whose name holds it; or its key), in `app`
-/// when given. Two chats that fit are never guessed between.
+/// The chat `name` means among `threads` (`ChatRecipients.pick` on the Mac): by its id, by a phone number
+/// (last nine digits), else by name (exact, whole word, part >= 3 chars, typo), in `app` when given.
+/// Two chats that fit equally well are never guessed between.
 pub fn pick<'a>(threads: &[&'a InboxThread], name: &str, app: Option<&str>) -> Pick<'a> {
-    let wanted = fold(name.trim());
-    if wanted.is_empty() {
-        return Pick::None;
-    }
-    let pool: Vec<&InboxThread> = threads.iter().copied().filter(|t| app.is_none_or(|a| t.app == a)).collect();
-    if let Some(t) = pool.iter().find(|t| t.id == name.trim() || t.chat_id.as_deref() == Some(name.trim())) {
-        return Pick::One(t);
-    }
-    let exact: Vec<&InboxThread> =
-        pool.iter().copied().filter(|t| fold(&t.name) == wanted || t.handle.as_deref().is_some_and(|h| fold(h) == wanted)).collect();
-    let list = if exact.is_empty() { pool.iter().copied().filter(|t| fold(&t.name).contains(&wanted)).collect() } else { exact };
-    match list.len() {
-        0 => Pick::None,
-        1 => Pick::One(list[0]),
-        _ => Pick::Several(list),
+    let pool: Vec<&'a InboxThread> = threads.iter().copied().filter(|t| app.is_none_or(|a| t.app == a)).collect();
+    match super::ChatRecipients::pick(
+        name,
+        &pool,
+        |t| t.id.as_str(),
+        |t| t.name.as_str(),
+        |t| t.phone(),
+        |wanted, t| t.id == wanted || t.chat_id.as_deref() == Some(wanted),
+    ) {
+        super::ChatPick::One(t) => Pick::One(t),
+        super::ChatPick::Several(list) => Pick::Several(list.into_iter().copied().collect()),
+        super::ChatPick::None => Pick::None,
     }
 }
 
-/// The question back when a name fits several chats.
+/// The question back when a name fits several chats (`ChatInbox.which` on the Mac): each with its app, phone number,
+/// newest message and id, so two chats with the same name in the same app can still be told apart, and the next call
+/// names one by its id.
 pub fn which(name: &str, threads: &[&InboxThread]) -> String {
-    let list = threads.iter().take(8).map(|t| format!("- {} · {} (id {})", app_name(&t.app), t.name, t.id)).collect::<Vec<_>>().join("\n");
-    format!("\"{name}\" fits several chats. Name the app or give the id:\n{list}")
+    let list = threads
+        .iter()
+        .take(8)
+        .map(|t| {
+            let mut facts = vec![app_name(&t.app)];
+            if let Some(phone) = t.phone() {
+                facts.push(phone.to_string());
+            }
+            if let Some(last) = t.messages.last() {
+                facts.push(format!("newest {} · {}: {}", when(last.date), who(t, last), clip(&message_text(last), 120)));
+            }
+            format!("- {} ({}) id: {}", t.name, facts.join(" · "), t.id)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "\"{name}\" fits more than one chat:\n{list}\nPick the one the conversation points to (for a reply: the chat the person wrote from), else ask the user. Then pass that chat's id exactly as given in place of its name."
+    )
 }
 
 /// The chats a call may see, newest first: not those of an app kept on this device for this caller (`withheld`).
@@ -242,7 +258,8 @@ mod tests {
         assert!(matches!(pick(&all, "anna", Some("whatsapp")), Pick::One(t) if t.id == "whatsapp#2"));
         assert!(matches!(pick(&all, "slack#3", None), Pick::One(_)));
         assert!(matches!(pick(&all, "nobody", None), Pick::None));
-        assert!(which("anna", &[&a, &b]).contains("Telegram · Anna de Vries"));
+        let answer = which("anna", &[&a, &b]);
+        assert!(answer.contains("Anna de Vries") && answer.contains("Telegram") && answer.contains("id: telegram#1"));
     }
 
     #[test]

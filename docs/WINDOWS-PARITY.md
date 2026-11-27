@@ -670,7 +670,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **CH-07** Chat history in Search everything (`ChatHistorySearch`, `NookSearch`, `SearchCenter`) · M
 
-- [ ] **CH-08** People and names across apps, no guessing between equal matches (`ChatIdentity`, `ChatHandle`, `ChatNames`, `ChatRecipients.pick`) · M
+- [x] **CH-08** People and names across apps, no guessing between equal matches (`ChatIdentity`, `ChatHandle`, `ChatNames`, `ChatRecipients.pick`) · M
 
 ### 5.2 Each chat app
 

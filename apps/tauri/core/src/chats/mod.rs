@@ -13,6 +13,7 @@ pub mod draft;
 pub mod follow_up;
 pub mod forward;
 pub mod giphy;
+pub mod identity;
 pub mod inbox;
 pub mod link;
 pub mod link_preview;
@@ -32,6 +33,9 @@ use serde::{Deserialize, Serialize};
 pub use abilities::{ChatAbilities, ChatAction, ChatActionRefusal, OutgoingKind};
 pub use bridge::ChatBridge;
 pub use forward::{ChatForward, ForwardAttachment, ForwardParts};
+pub use identity::{
+    ChatHandle, ChatIdentity, ChatNames, ChatPeople, ChatPerson, ChatPersonChat, ChatPick, ChatRecipients, ChatText, Fuzzy, NamedChat,
+};
 pub use inbox::{BridgedChat, ChatInbox, ChatReadState, FilledMessage, InboxMessage, InboxThread, MessageReadDetail, MessageReader};
 pub use membership::{ChatGroupChange, ChatMembership, GroupChangeKind, MembershipChange};
 pub use priority::{ChatNoticeMode, NoticePriorityLevel, NoticeScore, PriorityReason};
