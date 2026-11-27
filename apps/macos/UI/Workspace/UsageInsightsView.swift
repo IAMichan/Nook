@@ -12,7 +12,7 @@ enum UsageMetric: String, CaseIterable, Identifiable {
 /// 7, 30 or 90 days. Shown in Settings › Coding agents (`UsageOverviewBlocks`).
 struct UsageInsightsView: View {
     @EnvironmentObject private var app: AppModel
-    @ObservedObject var history: AgentHistory
+    let history: AgentHistory
     @AppStorage("usage.metric") private var metricRaw = UsageMetric.cost.rawValue
     @AppStorage("usage.window") private var windowRaw = UsageWindow.week.rawValue
     @State private var byDay = false
@@ -730,7 +730,7 @@ struct UsageModelSheet: View {
 /// Cost and Tokens in the usage modal (`UsageLimitsModal`): the same blocks as Settings › Coding agents, with a model's
 /// details in a sheet of their own.
 struct UsageInsightsPanel: View {
-    @ObservedObject var history: AgentHistory
+    let history: AgentHistory
     let metric: UsageMetric
     let window: UsageWindow
     /// The agents the modal's filter hides.
