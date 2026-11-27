@@ -1223,7 +1223,7 @@ pub async fn workspace_pr_sync_refresh(
             if !tokens.is_empty() {
                 let fetched = source_control::github_branch_pull_request_links(&tokens, &repo.display_name(), branch_name).await;
                 let mut store = lock(&ws.pr_sync);
-                if let Some(ref run_id) = run.as_deref().filter(|s| !s.is_empty()) {
+                if let Some(run_id) = run.as_deref().filter(|s| !s.is_empty()) {
                     store.record_run_links(run_id, fetched, now);
                 } else {
                     store.record_folder_links(&dir, branch_name, fetched, now);
