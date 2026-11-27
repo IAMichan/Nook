@@ -1,10 +1,8 @@
 //! Sessions on another machine, over SSH (`RemoteMachines`, `RemoteLaunch` and `RemoteShell` on the Mac). The agent
 //! runs there and speaks over the SSH connection exactly as it does here: Claude Code's stream-json, Codex's app-server
 //! and ACP all use stdin and stdout. Only how to reach a machine is kept (`machines.json` in Nook's folder); keys stay
-//! in `~/.ssh` and your ssh agent. Nothing here runs a process: it builds the command lines and checks the input.
-//!
-//! Not yet on Windows and Linux (the Mac has them, AG-132): machines that log in with a password, git over ssh (the
-//! diff, snapshots per turn and worktrees there), and Nook's tools for the agent there (`RemoteBridge`).
+//! in `~/.ssh` and your ssh agent, optional passwords live in `remote_passwords`, git runs over ssh (`Git::on`), and
+//! Nook's browser/page tools reach the agent through `remote_bridge`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -338,11 +336,41 @@ fn exports(environment: &BTreeMap<String, String>) -> String {
         .collect()
 }
 
+/// A per-session bridge token written to `file` (0600) on the remote machine from stdin before the agent starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteBridgeToken {
+    pub value: String,
+    pub file: String,
+}
+
+/// Reads one line from stdin (the token) and writes it to `file`, 0600 in a 0700 folder, replaced in one step. Runs in
+/// `/bin/sh` regardless of the user's login shell so the token is never an argument and is always consumed before the
+/// agent reads stdin.
+fn token_writer_shell(file: &str) -> String {
+    let script = r#"IFS= read -r t; umask 077; d=${1%/*}; mkdir -p "$d" && chmod 700 "$d" && printf '%s\n' "$t" > "$1.$$" && mv -f "$1.$$" "$1"; t=; true"#;
+    format!("/bin/sh -c {} nook-token {}", quote(script), quote(file))
+}
+
 /// The command line the remote side runs: its login shell, so the agent is found the way your terminal there finds it,
 /// in the folder, with the agent's own name in place of a path on this computer.
 pub fn command(program: &str, arguments: &[String], directory: &str, environment: &BTreeMap<String, String>) -> String {
-    let agent = std::iter::once(program.to_string()).chain(arguments.iter().cloned()).map(|w| quote(&w)).collect::<Vec<_>>().join(" ");
-    let inner = format!("{}cd {} && exec {agent}", exports(environment), quoted_directory(directory));
+    command_with_token(program, arguments, directory, environment, None, false)
+}
+
+pub fn command_with_token(
+    program: &str,
+    arguments: &[String],
+    directory: &str,
+    environment: &BTreeMap<String, String>,
+    token_file: Option<&str>,
+    input_from_null: bool,
+) -> String {
+    let mut agent = std::iter::once(program.to_string()).chain(arguments.iter().cloned()).map(|w| quote(&w)).collect::<Vec<_>>().join(" ");
+    if input_from_null {
+        agent.push_str(" </dev/null");
+    }
+    let writer = token_file.map(|f| format!("{}; ", token_writer_shell(f))).unwrap_or_default();
+    let inner = format!("{writer}{}cd {} && exec {agent}", exports(environment), quoted_directory(directory));
     format!(r#"exec "${{SHELL:-/bin/sh}}" -lc {}"#, quote(&inner))
 }
 
@@ -350,10 +378,37 @@ pub fn command(program: &str, arguments: &[String], directory: &str, environment
 /// `ssh -T … -- host 'exec "$SHELL" -lc "cd … && exec agent …"'`. `program` is the agent's command there (`claude`);
 /// `environment` is what goes along (an account folder on this computer means nothing over there, so it stays here).
 pub fn wrap(spec: LaunchSpec, target: &RemoteTarget, program: &str, environment: &BTreeMap<String, String>) -> LaunchSpec {
+    wrap_with_bridge(spec, target, program, environment, &[], None)
+}
+
+/// Same as [`wrap`], with optional ssh forwarding arguments (`-R`) and a bridge token delivered on the first line of
+/// stdin so it never appears on the command line.
+pub fn wrap_with_bridge(
+    spec: LaunchSpec,
+    target: &RemoteTarget,
+    program: &str,
+    environment: &BTreeMap<String, String>,
+    forward: &[String],
+    token: Option<RemoteBridgeToken>,
+) -> LaunchSpec {
     let password = password_for(target);
     let mut arguments = options(target, password.as_deref());
     arguments.extend(["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"].map(String::from));
-    arguments.extend(["--".into(), target.host.clone(), command(program, &spec.arguments, &target.directory, environment)]);
+    arguments.extend(forward.iter().cloned());
+    let orig_keeps_input = spec.keeps_input_open;
+    let remote_cmd = command_with_token(
+        program,
+        &spec.arguments,
+        &target.directory,
+        environment,
+        token.as_ref().map(|t| t.file.as_str()),
+        token.is_some() && !orig_keeps_input,
+    );
+    arguments.extend(["--".into(), target.host.clone(), remote_cmd]);
+    let (secret_input, keeps_input_open, closes_input_after_start) = match token {
+        Some(t) => (Some(format!("{}\n", t.value)), true, !orig_keeps_input),
+        None => (None, orig_keeps_input, false),
+    };
     LaunchSpec {
         executable: ssh_program(),
         arguments,
@@ -361,7 +416,9 @@ pub fn wrap(spec: LaunchSpec, target: &RemoteTarget, program: &str, environment:
         extra_environment: super::remote_passwords::askpass_environment(password.as_deref()),
         working_directory: dirs::home_dir().unwrap_or_else(std::env::temp_dir).to_string_lossy().into_owned(),
         initial_input: spec.initial_input,
-        keeps_input_open: spec.keeps_input_open,
+        keeps_input_open,
+        secret_input,
+        closes_input_after_start,
     }
 }
 
@@ -567,6 +624,7 @@ mod tests {
             working_directory: r"C:\code\app".into(),
             initial_input: vec!["{}\n".into()],
             keeps_input_open: true,
+            ..Default::default()
         };
         let wrapped = wrap(spec, &target, "claude", &BTreeMap::new());
         assert!(wrapped.executable.ends_with("ssh") || wrapped.executable.ends_with("ssh.exe"));
@@ -584,6 +642,29 @@ mod tests {
         assert!(line.starts_with(r#"exec "${SHELL:-/bin/sh}" -lc '"#));
         assert!(line.contains("cd ~/code/app && exec claude -p --output-format stream-json"));
         assert!(!line.contains("claude.cmd"));
+    }
+
+    #[test]
+    fn wraps_with_remote_bridge_token_and_forward() {
+        let target = RemoteTarget::new(&machine(), "~/code/app");
+        let spec = LaunchSpec {
+            executable: "codex".into(),
+            arguments: vec!["exec".into()],
+            working_directory: "/tmp".into(),
+            keeps_input_open: false,
+            ..Default::default()
+        };
+        let forward = super::super::remote_bridge::forward("/h/.nook/b-1.sock", 4321);
+        let token = RemoteBridgeToken { value: "super-secret-token".into(), file: "/h/.nook/bridge-tokens/run1".into() };
+        let wrapped = wrap_with_bridge(spec, &target, "codex", &BTreeMap::new(), &forward, Some(token));
+        assert!(wrapped.keeps_input_open);
+        assert!(wrapped.closes_input_after_start);
+        assert_eq!(wrapped.secret_input.as_deref(), Some("super-secret-token\n"));
+        assert!(wrapped.arguments.windows(2).any(|w| w == ["-R", "/h/.nook/b-1.sock:127.0.0.1:4321"]));
+        let cmd = wrapped.arguments.last().unwrap();
+        assert!(!cmd.contains("super-secret-token"), "token must never appear on the command line");
+        assert!(cmd.contains("nook-token"));
+        assert!(cmd.contains("</dev/null"));
     }
 
     #[test]

@@ -51,6 +51,7 @@ pub mod queue;
 pub mod readiness;
 pub mod recovery;
 pub mod remote;
+pub mod remote_bridge;
 pub mod remote_discovery;
 pub mod remote_passwords;
 pub mod resources;

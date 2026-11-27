@@ -392,8 +392,8 @@ pub fn session_gone(message: &str) -> bool {
 /// Instructions for the first prompt of a new conversation, with Nook's bridge note when the bridge is on.
 pub fn instructions(input: &CommandInput) -> String {
     let own = input.instructions.trim().to_string();
-    if input.bridge.is_some() {
-        [own, super::bridge::INSTRUCTIONS.to_string()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
+    if let Some(b) = &input.bridge {
+        [own, b.instructions().to_string()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
     } else {
         own
     }

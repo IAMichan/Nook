@@ -1,21 +1,22 @@
 //! A new session on another machine (`WorkspaceManager.startRemote` on the Mac): the same agents and turns, started
-//! over SSH in a folder there. Nook checks the folder first (one login, `cd … && pwd`), so a wrong folder or a machine
-//! that does not let you in says so before a session exists.
-//!
-//! Not yet here (the Mac has them, AG-132): a new worktree on the machine, git over ssh (the diff, snapshots per turn),
-//! machines that log in with a password, and Nook's tools for the agent there.
+//! over SSH in a folder or new worktree there, with git over ssh (diff, snapshots per turn) and Nook's browser/page
+//! tools forwarded back over ssh (`remote_bridge`). Nook checks the folder first (one login, `cd … && pwd`), so a
+//! wrong folder or a machine that does not let you in says so before a session exists.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use uuid::Uuid;
 
-use super::{Manager, ManagerEvent, Out};
+use super::{Inner, Manager, ManagerEvent, Out};
 use crate::i18n::{tr, trf};
+use crate::workspace::bridge::BridgeLaunch;
 use crate::workspace::git::{self, Git};
 use crate::workspace::models::*;
-use crate::workspace::remote::{self, RemoteMachines, RemoteTarget};
+use crate::workspace::remote::{self, RemoteBridgeToken, RemoteMachines, RemoteTarget};
+use crate::workspace::remote_bridge;
 use crate::workspace::rollback::ConversationMark;
 
 impl Manager {
@@ -141,6 +142,10 @@ impl Manager {
             other_projects: vec![],
             remote: Some(target),
         };
+        // Install Nook's small Perl MCP script once per machine per run so the agent gets browser_open/render_page.
+        if let Some(remote_target) = run.remote.as_ref() {
+            self.prepare_remote_bridge(remote_target);
+        }
         // The first snapshot, before the agent changes anything: HEAD of a new worktree, or the folder as it is.
         let first = git::checkpoint_ref(&id.to_string(), 0);
         let made = repo_root.is_some()
@@ -175,6 +180,61 @@ impl Manager {
         self.launch_turn(id, config.task.clone(), remote_program(config.provider), true);
         self.refresh_git(id);
         Ok(id)
+    }
+
+    /// Whether `token` matches the per-session remote bridge token for active remote session `id`.
+    pub fn accepts_remote_bridge(&self, id: Uuid, token: &str) -> bool {
+        let s = self.lock();
+        let Some(run) = s.runs.iter().find(|r| r.id == id) else { return false };
+        if run.remote.is_none() || !run.status.is_active() {
+            return false;
+        }
+        remote_bridge::matches_token(s.bridge_tokens.get(&id).map(String::as_str), token)
+    }
+
+    /// Installs `nook-mcp` on `target` once per run of Nook and remembers `$HOME` there. Returns `None` if the bridge
+    /// is disabled, not listening, or the machine lacks Perl/`JSON::PP` — in which case the session runs without tools.
+    pub(super) fn prepare_remote_bridge(&self, target: &RemoteTarget) -> Option<String> {
+        if (self.hooks.bridge)().is_none() || remote_bridge::local_port().is_none() {
+            return None;
+        }
+        if let Some(home) = self.lock().remote_homes.get(&target.machine_id).cloned() {
+            return Some(home);
+        }
+        let args = remote::command_arguments(target, "sh", &["-c".into(), remote_bridge::setup_command()], None, &BTreeMap::new());
+        let output = remote::run_ssh(target, &args, Duration::from_secs(25)).ok()?;
+        let home = output.lines().map(str::trim).rfind(|l| l.starts_with('/'))?.to_string();
+        self.lock().remote_homes.insert(target.machine_id.clone(), home.clone());
+        Some(home)
+    }
+
+    /// Background variant of [`prepare_remote_bridge`] for follow-up turns after a Nook restart.
+    pub(super) fn prepare_remote_bridge_async(self: &Arc<Self>, target: RemoteTarget) {
+        let this = Arc::clone(self);
+        self.runtime.spawn_blocking(move || {
+            let _ = this.prepare_remote_bridge(&target);
+        });
+    }
+
+    /// Builds the remote `BridgeLaunch`, SSH `-R` forwarding args, and stdin token for `id` when `nook-mcp` is ready on
+    /// `target`'s machine and Nook's remote bridge listener is active.
+    pub(super) fn remote_bridge_for_locked(
+        s: &mut Inner,
+        id: Uuid,
+        target: &RemoteTarget,
+    ) -> Option<(BridgeLaunch, Vec<String>, RemoteBridgeToken)> {
+        let port = remote_bridge::local_port()?;
+        let home = s.remote_homes.get(&target.machine_id)?.clone();
+        let token = s.bridge_tokens.entry(id).or_insert_with(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())).clone();
+        let run_str = id.to_string();
+        let socket = remote_bridge::socket_path(&home, &run_str);
+        let token_file = remote_bridge::token_path(&home, &run_str);
+        let mut env = BTreeMap::new();
+        env.insert("NOOK_BRIDGE_SOCK".into(), socket.clone());
+        env.insert("NOOK_BRIDGE_TOKEN_FILE".into(), token_file.clone());
+        let launch = BridgeLaunch { script: remote_bridge::script_path(&home), env, remote: true };
+        let forward = remote_bridge::forward(&socket, port);
+        Some((launch, forward, RemoteBridgeToken { value: token, file: token_file }))
     }
 }
 
@@ -237,6 +297,94 @@ mod tests {
         assert_eq!(remote_program(RunProvider::Cursor), "cursor-agent");
         let taken = ["/home/me/.nook/worktrees/app/fix", "/home/me/.nook/worktrees/app/fix-2"];
         assert_eq!(remote_worktree_path("/home/me/", "App", "fix", |p| taken.contains(&p)), "/home/me/.nook/worktrees/app/fix-3");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remote_bridge_token_only_accepts_active_remote_run() {
+        let root = std::env::temp_dir().join(format!("nook-manager-bridge-{}", Uuid::new_v4()));
+        let hooks = Hooks {
+            executable: Box::new(|_| None),
+            account_environment: Box::new(|_| BTreeMap::new()),
+            bridge: Box::new(|| Some(BridgeLaunch { script: "/nook-mcp".into(), ..Default::default() })),
+            worktree_root: Box::new(|| "/tmp".into()),
+            auto_resume_limited: Box::new(|| false),
+        };
+        let manager = Manager::new(root.join("store"), hooks, tokio::runtime::Handle::current(), |_| {});
+        remote_bridge::set_local_port(49152);
+        let id = Uuid::new_v4();
+        let target = RemoteTarget {
+            machine_id: "m-1".into(),
+            name: "box".into(),
+            host: "me@box".into(),
+            port: None,
+            identity_file: None,
+            directory: "/home/me/app".into(),
+        };
+        let now = Utc::now();
+        let token = {
+            let mut s = manager.lock();
+            s.remote_homes.insert("m-1".into(), "/home/me".into());
+            s.runs.push(WorkspaceRun {
+                id,
+                title: "Remote".into(),
+                task: "Hi".into(),
+                provider: RunProvider::Claude,
+                profile_id: String::new(),
+                model: String::new(),
+                resolved_model: None,
+                mode: ExecutionMode::Agent,
+                permission: PermissionPolicy::AcceptEdits,
+                isolation: IsolationMode::Folder,
+                project_path: "/home/me/app".into(),
+                working_directory: "/home/me/app".into(),
+                repo_root: None,
+                branch: None,
+                base_branch: None,
+                worktree_path: None,
+                instructions: String::new(),
+                status: RunStatus::Running,
+                status_detail: None,
+                provider_session_id: None,
+                created_at: now,
+                updated_at: now,
+                archived: false,
+                usage: RunUsage::default(),
+                turn_started_at: Some(now),
+                reviewed_at: None,
+                last_change_at: None,
+                changed_files: None,
+                lines_added: None,
+                lines_removed: None,
+                checkpoints: vec![],
+                limited_at: None,
+                limit_reset_at: None,
+                auto_resume: false,
+                effort: None,
+                pending_handoff: None,
+                conversation: None,
+                pending_rollback: None,
+                goal: None,
+                compacting: false,
+                tasks: None,
+                restart: Default::default(),
+                prompt_cache: None,
+                other_projects: vec![],
+                remote: Some(target.clone()),
+            });
+            let (launch, forward, tok) = Manager::remote_bridge_for_locked(&mut s, id, &target).unwrap();
+            assert!(launch.remote);
+            assert_eq!(launch.script, "/home/me/.nook/nook-mcp");
+            assert!(forward.iter().any(|a| a.contains("127.0.0.1:49152")));
+            tok.value
+        };
+        assert!(manager.accepts_remote_bridge(id, &token));
+        assert!(!manager.accepts_remote_bridge(id, "wrong-token"));
+        {
+            let mut s = manager.lock();
+            s.runs[0].status = RunStatus::Completed;
+        }
+        assert!(!manager.accepts_remote_bridge(id, &token), "a stopped session's token opens nothing");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

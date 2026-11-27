@@ -153,7 +153,7 @@ remote access to it.
 A new session picks where it runs under the composer, with **Runs on**: this Mac (or this computer on Windows and
 Linux), one of the machines from Settings › Devices › Machines, or **Add a machine…**. With a machine chosen, the
 heading asks for the folder there (typed, `~/code/app` or `/srv/app`), and the agent starts there over SSH with that
-machine's own login of the agent. On Windows and Linux, Nook's tools for the agent there are not available yet (AG-132).
+machine's own login of the agent.
 
 Each machine in **Runs on** has a dot for whether it answers (mint connected, amber connecting or waiting for a
 password, coral not reachable). Nothing polls: machines are asked when the menu opens and right before an automatic
@@ -168,11 +168,13 @@ automatically), set per machine and for this computer under Settings › Devices
 computer; with no place left the session starts here (`MachineBalance`, `core/src/workspace/balance.rs`). t3code's own
 algorithm is not public in its sources, so this is Nook's reading of its four levels.
 
-A session over SSH gets Nook's browser, `render_page` and read access to its own session (`RemoteBridge`). Nook copies `nook-mcp`
-to `~/.nook` there (it needs Perl with `JSON::PP`) and ssh forwards a socket in that folder to `bridge-remote.sock` on the Mac.
-That socket is separate from `bridge.sock`: a call on it needs a token made for that run, works only while that session is at work, and every tool that acts on the Mac
-(terminals, pull requests, devices, delegation, connectors, secrets) and every other session is refused, because whoever controls that machine controls
-what comes through. `localhost` in the browser is the Mac. Without Perl the session simply runs without these tools.
+A session over SSH gets Nook's browser, `render_page` and read access to its own session (`RemoteBridge` on the Mac,
+`remote_bridge.rs` on Windows and Linux). Nook copies `nook-mcp` to `~/.nook` there (it needs Perl with `JSON::PP`) and
+ssh forwards a socket in that folder to `bridge-remote.sock` on the Mac or a loopback `127.0.0.1` port in the Tauri app.
+That listener is separate from the local bridge: a call on it needs a token made for that run, works only while that
+session is at work, and every tool that acts on this computer (terminals, pull requests, devices, delegation,
+connectors, secrets) and every other session is refused, because whoever controls that machine controls what comes
+through. `localhost` in the browser is this computer. Without Perl the session simply runs without these tools.
 
 ### Project scripts (`nook.json`)
 

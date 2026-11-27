@@ -74,7 +74,7 @@ pub fn setup(app: &AppHandle) {
             if !desktop || !lock(&bridge_settings).agent_tools {
                 return None;
             }
-            Some(BridgeLaunch { script: bridge_script().to_string_lossy().into_owned() })
+            Some(BridgeLaunch { script: bridge_script().to_string_lossy().into_owned(), ..Default::default() })
         }),
         worktree_root: Box::new(move || lock(&root_settings).worktree_root()),
         auto_resume_limited: Box::new(move || lock(&resume_settings).auto_resume_limited),
