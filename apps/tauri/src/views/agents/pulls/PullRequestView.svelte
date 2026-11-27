@@ -19,6 +19,7 @@
     type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile, type ReviewEvent,
   } from "../../../lib/pulls";
   import { pullDetails, pullRequests } from "../../../lib/pulls.svelte";
+  import { prSync } from "../../../lib/workspace/pull-requests.svelte";
   import { ago } from "../time";
   import { tr } from "../../../lib/i18n.svelte";
   import CheckLog from "./CheckLog.svelte";
@@ -207,6 +208,7 @@
     mergeError = null;
     try {
       await pullsApi.merge(accountId, detail.repo, detail.number, method, detail.headSha);
+      prSync.markState(detail.repo, detail.number, "merged").catch(() => {});
       pullRequests.markStale();
       merging = false;
       await load();

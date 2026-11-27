@@ -25,6 +25,7 @@ use nook_core::workspace::bridge::BridgeLaunch;
 use nook_core::workspace::guest_shares::{GuestShares, GuestSharesCallbacks};
 use nook_core::workspace::manager::{Hooks, Manager, ManagerEvent};
 use nook_core::workspace::models::{RunStatus, WorkspaceRun};
+use nook_core::workspace::pull_requests::PullRequestSyncStore;
 use nook_core::workspace::settings::WorkspaceSettings;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager as _};
@@ -38,6 +39,7 @@ pub struct WorkspaceState {
     pub guest_shares: Arc<GuestShares>,
     pub governor: Arc<nook_core::workspace::governor::AgentGovernor>,
     pub settings: Arc<Mutex<WorkspaceSettings>>,
+    pub pr_sync: Arc<Mutex<PullRequestSyncStore>>,
     #[cfg(desktop)]
     pub terminals: terminals::Terminals,
     #[cfg(desktop)]
@@ -120,6 +122,7 @@ pub fn setup(app: &AppHandle) {
     if let Some(services) = app.try_state::<crate::services::Services>() {
         manager.recap.set(services.recap.clone());
     }
+    let pr_sync = Arc::new(Mutex::new(PullRequestSyncStore::load()));
     let guest_relay_app = app.clone();
     let guest_read_app = app.clone();
     let guest_write_app = app.clone();
@@ -164,6 +167,7 @@ pub fn setup(app: &AppHandle) {
         guest_shares: guest_shares.clone(),
         governor,
         settings,
+        pr_sync,
         #[cfg(desktop)]
         terminals: Default::default(),
         #[cfg(desktop)]

@@ -695,29 +695,87 @@ fn github_client() -> reqwest::Client {
 
 /// De pull requests van een branch op GitHub: de open (als die er is) en of een eerdere gemerged of gesloten is.
 pub async fn github_branch_pull_requests(tokens: &[String], repo: &str, branch: &str) -> (Option<String>, bool) {
-    let Some(owner) = repo.split('/').next() else { return (None, false) };
+    let links = github_branch_pull_request_links(tokens, repo, branch).await;
+    let open = links.iter().find(|l| l.state.is_open()).map(|l| l.url.clone());
+    let landed = open.is_none() && !links.is_empty();
+    (open, landed)
+}
+
+/// Parses one GitHub pull request API object into a [`super::pull_requests::PullRequestLink`].
+fn parse_github_pr_link(repo: &str, obj: &Value) -> Option<super::pull_requests::PullRequestLink> {
+    use super::pull_requests::{PullRequestLink, PullRequestState};
+    let number = obj.get("number").and_then(Value::as_u64)?;
+    let url = obj
+        .get("html_url")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("https://github.com/{repo}/pull/{number}"));
+    let title = obj.get("title").and_then(Value::as_str).map(str::to_string);
+    let raw_state = obj.get("state").and_then(Value::as_str).unwrap_or("open");
+    let draft = obj.get("draft").and_then(Value::as_bool).unwrap_or(false);
+    let merged = obj.get("merged_at").and_then(Value::as_str).is_some_and(|s| !s.is_empty())
+        || obj.get("merged").and_then(Value::as_bool).unwrap_or(false);
+    let state = if merged { PullRequestState::Merged } else { PullRequestState::from_wire(raw_state, draft) };
+    let updated_at = obj
+        .get("updated_at")
+        .and_then(Value::as_str)
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&chrono::Utc));
+    let base_branch = obj.get("base").and_then(|b| b.get("ref")).and_then(Value::as_str).map(str::to_string);
+    let head_branch = obj.get("head").and_then(|h| h.get("ref")).and_then(Value::as_str).map(str::to_string);
+    let conflicted = state.is_open()
+        && (obj.get("mergeable_state").and_then(Value::as_str) == Some("dirty")
+            || obj.get("mergeable").and_then(Value::as_bool) == Some(false));
+    Some(PullRequestLink {
+        host: SourceControlHost::Github,
+        repository: repo.to_string(),
+        number,
+        url,
+        title,
+        state,
+        updated_at,
+        base_branch,
+        head_branch,
+        conflicted,
+    })
+}
+
+/// Fetches all pull requests (open, draft, merged, closed) for a branch on GitHub as rich [`super::pull_requests::PullRequestLink`] values.
+pub async fn github_branch_pull_request_links(tokens: &[String], repo: &str, branch: &str) -> Vec<super::pull_requests::PullRequestLink> {
+    let Some(owner) = repo.split('/').next() else { return Vec::new() };
     let client = github_client();
     for token in tokens {
         let request = github(client.get(format!("https://api.github.com/repos/{repo}/pulls")), token).query(&[
             ("state", "all"),
             ("head", &format!("{owner}:{branch}")),
-            ("per_page", "10"),
+            ("per_page", "20"),
         ]);
         let Ok(response) = request.send().await else { continue };
         if response.status().as_u16() != 200 {
             continue;
         }
         let Ok(list) = response.json::<Vec<Value>>().await else { continue };
-        let open = list
-            .iter()
-            .find(|p| p.get("state").and_then(Value::as_str) == Some("open"))
-            .and_then(|p| p.get("html_url"))
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let landed = open.is_none() && !list.is_empty();
-        return (open, landed);
+        return list.iter().filter_map(|p| parse_github_pr_link(repo, p)).collect();
     }
-    (None, false)
+    Vec::new()
+}
+
+/// Fetches a single pull request by number on GitHub so manually linked or timeline-mentioned PRs get title, state, and branches.
+pub async fn github_fetch_pull_request_link(tokens: &[String], repo: &str, number: u64) -> Option<super::pull_requests::PullRequestLink> {
+    if number == 0 {
+        return None;
+    }
+    let client = github_client();
+    for token in tokens {
+        let request = github(client.get(format!("https://api.github.com/repos/{repo}/pulls/{number}")), token);
+        let Ok(response) = request.send().await else { continue };
+        if response.status().as_u16() != 200 {
+            continue;
+        }
+        let Ok(obj) = response.json::<Value>().await else { continue };
+        return parse_github_pr_link(repo, &obj);
+    }
+    None
 }
 
 #[cfg(test)]

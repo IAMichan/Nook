@@ -1093,10 +1093,18 @@ pub struct StartedBranch {
 
 /// Een nieuwe branch voor een nieuwe pull request (na jouw klik op "Nieuwe branch en PR").
 #[tauri::command]
-pub async fn workspace_start_branch(state: State<'_, WorkspaceState>, run: String, topic: String) -> Res<StartedBranch> {
-    let run = id(&run)?;
+pub async fn workspace_start_branch(app: AppHandle, state: State<'_, WorkspaceState>, run: String, topic: String) -> Res<StartedBranch> {
+    let run_id = id(&run)?;
     let m = state.manager.clone();
-    blocking(move || m.start_branch(run, &topic).map(|(branch, cut)| StartedBranch { branch, cut })).await?
+    let old_branch = m.git_snapshot(run_id).and_then(|s| s.status).and_then(|s| s.branch);
+    let base_branch = m.run(run_id).and_then(|r| r.base_branch);
+    let started = blocking(move || m.start_branch(run_id, &topic).map(|(branch, cut)| StartedBranch { branch, cut })).await??;
+    {
+        let mut store = lock(&state.pr_sync);
+        store.record_branch_change(&run, old_branch.as_deref(), &started.branch, base_branch.as_deref());
+    }
+    let _ = app.emit("workspace-pr-sync-changed", ());
+    Ok(started)
 }
 
 #[tauri::command]
@@ -1207,6 +1215,11 @@ pub async fn workspace_create_pull_request(
         let url =
             source_control::create_github_pull_request(&tokens, &repository.display_name(), &title, &body, &head, &base, draft).await?;
         m.note(run, &trf("Pull request geopend: {url}", "Pull request opened: {url}", &[("url", &url)]));
+        {
+            let mut store = lock(&ws.pr_sync);
+            store.record_opened(&run.to_string(), &url, Some(&head), Some(title), Utc::now());
+        }
+        let _ = app.emit("workspace-pr-sync-changed", ());
         return Ok(PullRequestResult { url, created: true });
     }
     let url = repository.new_pull_request_url(&base, &head, Some(&title), Some(&body), draft).ok_or(tr(
@@ -1222,6 +1235,207 @@ pub async fn workspace_create_pull_request(
         ),
     );
     Ok(PullRequestResult { url, created: false })
+}
+
+// MARK: Linked pull requests & PullRequestSync (AG-104)
+
+fn detect_folder_repo(git: &nook_core::workspace::git::Git, dir: &str) -> (Option<RemoteRepository>, Option<String>, Option<String>) {
+    let branch = git.current_branch(dir);
+    let remotes = git.remotes(dir);
+    let remote = if remotes.iter().any(|r| r == "origin") { Some("origin".to_string()) } else { remotes.first().cloned() };
+    let repo = remote.as_deref().and_then(|r| git.remote_url(dir, r)).and_then(|u| RemoteRepository::detect(&u));
+    let default_branch = remote.as_deref().and_then(|r| git.default_branch(dir, r));
+    (repo, branch, default_branch)
+}
+
+#[tauri::command]
+pub fn workspace_pr_sync_snapshot(state: State<'_, WorkspaceState>) -> nook_core::workspace::pull_requests::PullRequestSyncSnapshot {
+    lock(&state.pr_sync).data.clone()
+}
+
+/// Refreshes pull requests for a session or folder+branch from GitHub and scans the session's timeline for PR mentions.
+#[tauri::command]
+pub async fn workspace_pr_sync_refresh(
+    app: AppHandle,
+    run: Option<String>,
+    directory: Option<String>,
+    branch: Option<String>,
+) -> Res<nook_core::workspace::pull_requests::PullRequestSyncSnapshot> {
+    use nook_core::workspace::pull_requests::{PullRequestLink, PullRequestSyncStore, SessionBranches};
+
+    let ws = app.state::<WorkspaceState>();
+    let m = ws.manager.clone();
+    let run_uuid = match run.as_deref().filter(|s| !s.is_empty()) {
+        Some(raw) => Some(id(raw)?),
+        None => None,
+    };
+    let run_record = run_uuid.and_then(|u| m.run(u));
+    let dir = directory.filter(|s| !s.is_empty()).or_else(|| run_record.as_ref().map(|r| r.working_directory.clone())).unwrap_or_default();
+    if dir.is_empty() {
+        return Ok(lock(&ws.pr_sync).data.clone());
+    }
+
+    let m2 = m.clone();
+    let dir_for_git = dir.clone();
+    let (repo, detected_branch, default_branch) = blocking(move || match m2.git() {
+        Some(git) => detect_folder_repo(git, &dir_for_git),
+        None => (None, None, None),
+    })
+    .await?;
+
+    let active_branch = branch.filter(|s| !s.is_empty()).or(detected_branch);
+    let now = Utc::now();
+
+    if let (Some(repo), Some(branch_name)) = (&repo, &active_branch) {
+        if repo.host == SourceControlHost::Github && !SessionBranches::is_default_branch(branch_name, default_branch.as_deref()) {
+            let tokens = crate::workspace::github_tokens(&app, &repo.display_name());
+            if !tokens.is_empty() {
+                let fetched = source_control::github_branch_pull_request_links(&tokens, &repo.display_name(), branch_name).await;
+                let mut store = lock(&ws.pr_sync);
+                if let Some(run_id) = run.as_deref().filter(|s| !s.is_empty()) {
+                    store.record_run_links(run_id, fetched, now);
+                } else {
+                    store.record_folder_links(&dir, branch_name, fetched, now);
+                }
+            }
+        }
+    }
+
+    // Scan timeline for mentioned PR URLs and CLI commands (`gh pr`, `glab mr`, `#123`).
+    if let Some(uuid) = run_uuid {
+        let events = m.timeline(uuid);
+        let mentions = nook_core::workspace::pr_links::mentions_in_events(&events);
+        let session_key = PullRequestSyncStore::session_key(run.as_deref(), &dir);
+        for mention in mentions.into_iter().take(12) {
+            if mention.number <= 0 {
+                continue;
+            }
+            let num = mention.number as u64;
+            let mut candidate: Option<PullRequestLink> = mention.url.as_deref().and_then(PullRequestLink::from_url);
+            let target_repo = candidate
+                .as_ref()
+                .map(|c| c.repository.clone())
+                .or_else(|| mention.repo.clone())
+                .or_else(|| repo.as_ref().map(RemoteRepository::display_name));
+            if let Some(repo_name) = target_repo {
+                let is_github = candidate
+                    .as_ref()
+                    .map(|c| c.host == SourceControlHost::Github)
+                    .unwrap_or_else(|| repo.as_ref().is_none_or(|r| r.host == SourceControlHost::Github));
+                if is_github {
+                    let tokens = crate::workspace::github_tokens(&app, &repo_name);
+                    if !tokens.is_empty() {
+                        if let Some(enriched) = source_control::github_fetch_pull_request_link(&tokens, &repo_name, num).await {
+                            candidate = Some(enriched);
+                        }
+                    }
+                }
+            }
+            if let Some(link) = candidate {
+                lock(&ws.pr_sync).mention_link(&session_key, link);
+            }
+        }
+    }
+
+    let snapshot = lock(&ws.pr_sync).data.clone();
+    let _ = app.emit("workspace-pr-sync-changed", ());
+    Ok(snapshot)
+}
+
+/// Manually links a pull request (URL, `owner/repo#12`, or `#12`) to a session.
+#[tauri::command]
+pub async fn workspace_pr_link_add(
+    app: AppHandle,
+    session_key: String,
+    directory: Option<String>,
+    reference: String,
+) -> Res<nook_core::workspace::pull_requests::PullRequestLink> {
+    use nook_core::workspace::pull_requests::{ParsedPullRequestRef, PullRequestLink, PullRequestState};
+
+    let parsed = ParsedPullRequestRef::parse(&reference)
+        .ok_or_else(|| tr("Dat is geen pull-requestlink of -nummer.", "That isn't a pull request link or number.").to_string())?;
+
+    let ws = app.state::<WorkspaceState>();
+    let dir_repo = if let Some(dir) = directory.filter(|s| !s.is_empty()) {
+        let m = ws.manager.clone();
+        blocking(move || m.git().and_then(|git| detect_folder_repo(git, &dir).0)).await?
+    } else {
+        None
+    };
+
+    let (host, repository, url) = match parsed.repository {
+        Some(repo_path) => {
+            let host = parsed.host.unwrap_or_else(|| {
+                if dir_repo.as_ref().is_some_and(|r| r.path.eq_ignore_ascii_case(&repo_path)) {
+                    dir_repo.as_ref().map(|r| r.host.clone()).unwrap_or(SourceControlHost::Github)
+                } else {
+                    SourceControlHost::Github
+                }
+            });
+            let url = parsed.url.unwrap_or_else(|| match host {
+                SourceControlHost::Gitlab => format!("https://gitlab.com/{repo_path}/-/merge_requests/{}", parsed.number),
+                SourceControlHost::Bitbucket => format!("https://bitbucket.org/{repo_path}/pull-requests/{}", parsed.number),
+                _ => format!("https://github.com/{repo_path}/pull/{}", parsed.number),
+            });
+            (host, repo_path, url)
+        }
+        None => {
+            let repo = dir_repo.ok_or_else(|| {
+                tr("Deze sessie zit niet in een repository met een remote.", "This session isn't in a repository with a remote.")
+                    .to_string()
+            })?;
+            let url = repo
+                .pull_request_url(parsed.number)
+                .unwrap_or_else(|| format!("https://github.com/{}/pull/{}", repo.display_name(), parsed.number));
+            (repo.host.clone(), repo.display_name(), url)
+        }
+    };
+
+    let mut link = PullRequestLink {
+        host: host.clone(),
+        repository: repository.clone(),
+        number: parsed.number,
+        url,
+        title: None,
+        state: PullRequestState::Open,
+        updated_at: Some(Utc::now()),
+        base_branch: None,
+        head_branch: None,
+        conflicted: false,
+    };
+
+    if host == SourceControlHost::Github {
+        let tokens = crate::workspace::github_tokens(&app, &repository);
+        if !tokens.is_empty() {
+            if let Some(enriched) = source_control::github_fetch_pull_request_link(&tokens, &repository, parsed.number).await {
+                link = enriched;
+            }
+        }
+    }
+
+    lock(&ws.pr_sync).add_link(&session_key, link.clone());
+    let _ = app.emit("workspace-pr-sync-changed", ());
+    Ok(link)
+}
+
+/// Unlinks or dismisses a pull request from a session so branch sync won't re-add it.
+#[tauri::command]
+pub fn workspace_pr_link_remove(app: AppHandle, state: State<'_, WorkspaceState>, session_key: String, link_id: String, url: String) {
+    lock(&state.pr_sync).remove_link(&session_key, &link_id, &url);
+    let _ = app.emit("workspace-pr-sync-changed", ());
+}
+
+/// Updates the cached state of a pull request (e.g. merged/closed) across every session that references it.
+#[tauri::command]
+pub fn workspace_pr_mark_state(
+    app: AppHandle,
+    state: State<'_, WorkspaceState>,
+    repository: String,
+    number: u64,
+    pr_state: nook_core::workspace::pull_requests::PullRequestState,
+) {
+    lock(&state.pr_sync).mark_state(&repository, number, pr_state, Utc::now());
+    let _ = app.emit("workspace-pr-sync-changed", ());
 }
 
 // MARK: Verdergaan in Nook
