@@ -131,6 +131,7 @@ pub fn run() {
             platform::tray_live::tray_live,
             #[cfg(desktop)]
             platform::desktop::quit_nook,
+            #[cfg(desktop)]
             platform::desktop::quit_now,
             workspace::clones::clone_jobs,
             keybindings::keybindings_read,
@@ -683,6 +684,7 @@ pub fn run() {
             commands::whatsapp::chat_delete,
             commands::whatsapp::chat_ask_nook,
             commands::workspace::workspace_side_chat,
+            #[cfg(desktop)]
             workspace::bridge::bridge_submit_secret,
             chats::inbox::chat_inbox_edit_message,
             chats::inbox::chat_inbox_delete_for_everyone,

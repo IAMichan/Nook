@@ -81,16 +81,3 @@ pub(super) fn render_page(app: &AppHandle, a: &Map<String, Value>, caller: &Brid
         request.height as i64
     )))
 }
-
-/// The page an event shows, behind its content policy; only from Nook's own page folder.
-pub fn page_html(run: Uuid, event_file: &str) -> Result<String, String> {
-    let root = nook_core::paths::dot_nook().join("pages").join(run.to_string());
-    let path = std::path::Path::new(event_file);
-    let real = path.canonicalize().map_err(|_| "The page is gone.".to_string())?;
-    let root = root.canonicalize().map_err(|_| "The page is gone.".to_string())?;
-    if !real.starts_with(&root) {
-        return Err("Not a page of this session.".into());
-    }
-    let html = std::fs::read_to_string(&real).map_err(|_| "The page is gone.".to_string())?;
-    Ok(cards::sandboxed(&html))
-}
