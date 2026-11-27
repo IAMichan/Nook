@@ -28,6 +28,9 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ### Fixed
 
+- Agent conversations, agent transcripts and Nook's chat no longer bounce up and down while you read or scroll back
+  through them as an agent works. Their rows are now all drawn for real instead of guessed by a lazy list, and older
+  rows are drawn above as you scroll up, so nothing above what you read moves.
 - On Windows and Linux, Nook no longer freezes ("not responding") when the Chats tab loads while WhatsApp is
   syncing.
 - On Windows, Nook no longer freezes ("not responding") when it opens a tab or the browser in its own window, or puts the bar on every screen.

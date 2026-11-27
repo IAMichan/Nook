@@ -35,21 +35,6 @@
   "setupDetail": {
     "message": "Extensie-ID: $1"
   },
-  "siteNone": {
-    "message": "Geen pagina"
-  },
-  "siteRestricted": {
-    "message": "De browser houdt zijn eigen pagina’s voor zichzelf; Nook kan ze niet lezen of gebruiken."
-  },
-  "siteAllowed": {
-    "message": "Nook mag op deze site lezen en werken als je het vraagt."
-  },
-  "siteBlocked": {
-    "message": "Uit voor deze site: Nook leest of raakt hem niet aan."
-  },
-  "siteSwitch": {
-    "message": "Nook op $1"
-  },
   "activeNote": {
     "message": "Nook mag deze browser gebruiken."
   },
@@ -263,11 +248,14 @@
   "pickFailed": {
     "message": "Selecteren lukte niet. Laad de pagina opnieuw en probeer het nog eens."
   },
-  "trustName": {
-    "message": "Doen zonder te vragen"
+  "accessTitle": {
+    "message": "Toegang op $1"
   },
-  "trustSwitch": {
-    "message": "Laat Nook op $1 werken zonder te vragen"
+  "accessAsk": {
+    "message": "Eerst vragen"
+  },
+  "accessTrust": {
+    "message": "Zonder te vragen"
   },
   "trustOn": {
     "message": "Nook klikt en typt hier zonder eerst te vragen. Betalen, versturen en verwijderen vraagt het nog wel."

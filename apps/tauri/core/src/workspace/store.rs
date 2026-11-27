@@ -338,6 +338,8 @@ mod tests {
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            other_projects: vec![],
+            remote: None,
         }
     }
 

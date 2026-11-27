@@ -56,7 +56,7 @@ final class CompanionServer: ObservableObject {
         // second, so at most two looks a second (an agent's words reach the phone as they are written, not in
         // one-second jumps), and only what changed is sent. Without a live phone `pushChanges` returns at once.
         // The chats follow too (`pushChats`): a new message, someone typing, or Nook writing in one of its conversations.
-        watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.objectWillChange,
+        watch = app.workspace.objectWillChange.merge(with: app.workspace.timelines.objectWillChange, app.hub.changes,
                                                      ChatCaptureService.shared.objectWillChange, ChatTypingCenter.shared.objectWillChange,
                                                      app.chat.objectWillChange, ChatActionSuggestions.shared.objectWillChange)
             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)

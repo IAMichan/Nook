@@ -38,6 +38,7 @@ export function sectionSubtitle(section: SettingsSectionId): string {
     case "chats": return tr("WhatsApp, Telegram, Slack en de rest, en hoe chats gelezen worden", "WhatsApp, Telegram, Slack and the rest, and how chats are read");
     case "connections": return tr("Online diensten, je eigen servers en de apps op deze computer", "Online services, your own servers and the apps on this computer");
     case "iphone": return tr("Nook op je iPhone, ook buitenshuis", "Nook on your iPhone, also away from home");
+    case "machines": return tr("Computers waar je agents via SSH op werken", "Computers your agents work on over SSH");
     case "privacy": return tr("Wat een cloud-AI mag zien, en vergeten wat Nook zag", "What a cloud AI may see, and forgetting what Nook saw");
     case "permissions": return tr("De machtigingen van de computer en de accounts die Nook bereikt", "The computer's permissions and the accounts Nook can reach");
     case "activityLog": return tr("Wat Nook deed, en wanneer", "What Nook did, and when");
@@ -57,6 +58,7 @@ export function pageSubtitle(page: SettingsSectionId, several: boolean): string 
     case "agents": return tr("Gekoppelde agents en accounts, hun skills, en wat ze kosten", "Linked agents and accounts, their skills, and what they cost");
     case "sessions": return tr("Hoe sessies starten en werken, waar ze draaien en openen, en het archief", "How sessions start and behave, where they work and open, and the archive");
     case "projects": return tr("Wat elk project zelf instelt, en hoe pull requests gevolgd en geschreven worden", "What each project sets for itself, and how pull requests are watched and written");
+    case "iphone": return tr("Nook op je telefoon, en de machines waar je agents op werken", "Nook on your phone, and the machines your agents work on");
     case "privacy": return tr("Wat Nook mag zien en versturen, en wat het deed", "What Nook may see and send, and what it did");
     case "maintenance": return tr("Updates, energie, diagnose en over Nook", "Updates, energy, diagnostics and about Nook");
     default: return sectionSubtitle(page);

@@ -5,7 +5,7 @@
 // the subjects of one page.
 //
 // The Tauri app follows the Mac's pages and names. Where it has no content for a Mac subject yet (Notifications per
-// app, Editor & browser, Machines, the privacy parts), the subject is left out until
+// app, Editor & browser, the privacy parts), the subject is left out until
 // its item in docs/WINDOWS-PARITY.md lands; Gamer Mode is a Tauri-first page in the Nook group.
 import { tr } from "./i18n.svelte";
 
@@ -18,7 +18,7 @@ export const settingsSections = [
   "brain", "assistant", "memory", "instructions",
   "autocomplete", "autocompleteApps", "autocompleteStyle", "autocompletePlayground", "autocompleteStats", "dictation",
   "agents", "skills", "usage", "sessions", "worktrees", "openIn", "archive", "automation", "projects", "pullRequests",
-  "chats", "connections", "iphone", "privacy", "permissions", "activityLog",
+  "chats", "connections", "iphone", "machines", "privacy", "permissions", "activityLog",
   "maintenance", "about",
 ] as const;
 export type SettingsSectionId = (typeof settingsSections)[number];
@@ -47,7 +47,7 @@ export const settingsPages: Record<SettingsGroupId, { page: SettingsSectionId; p
   connect: [
     { page: "chats", parts: ["chats"] },
     { page: "connections", parts: ["connections"] },
-    { page: "iphone", parts: ["iphone"] },
+    { page: "iphone", parts: ["iphone", "machines"] },
     { page: "privacy", parts: ["privacy", "permissions", "activityLog"] },
   ],
   system: [
@@ -78,7 +78,7 @@ export function settingsGroup(section: SettingsSectionId): SettingsGroupId {
 const sectionAliases: Record<string, SettingsSectionId> = {
   overview: "start", accounts: "connections", voice: "sound", companion: "iphone", gamer: "games",
   look: "appearance", theme: "appearance", keys: "shortcuts", keybindings: "shortcuts", updates: "maintenance",
-  typing: "autocomplete", flow: "dictation", system: "maintenance", devices: "iphone", phone: "iphone",
+  typing: "autocomplete", flow: "dictation", system: "maintenance", devices: "iphone", phone: "iphone", ssh: "machines",
   services: "connections", bar: "notch", quiet: "notch",
 };
 
@@ -134,6 +134,7 @@ export function sectionTitle(section: SettingsSectionId): string {
     case "chats": return tr("Chat-apps", "Chat apps");
     case "connections": return tr("Diensten", "Services");
     case "iphone": return "Companion";
+    case "machines": return tr("Machines", "Machines");
     case "privacy": return tr("Privacyniveau", "Privacy level");
     case "permissions": return tr("Toegang", "Access");
     case "activityLog": return tr("Logboek", "Activity log");
@@ -170,7 +171,7 @@ export const sectionIcons: Record<SettingsSectionId, string> = {
   autocomplete: "text-cursor", autocompleteApps: "layout-grid", autocompleteStyle: "type", autocompletePlayground: "text-cursor-input",
   autocompleteStats: "trending-up", dictation: "mic", agents: "terminal", skills: "book", usage: "chart-column", sessions: "messages-square",
   worktrees: "folder", openIn: "external-link", archive: "archive", automation: "calendar-clock", projects: "folder-cog", pullRequests: "git-branch",
-  chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone",
+  chats: "messages-square", connections: "user-check", iphone: "monitor-smartphone", machines: "server",
   privacy: "hand", permissions: "shield-check", activityLog: "list", maintenance: "wrench", about: "info",
 };
 

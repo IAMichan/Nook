@@ -8,7 +8,7 @@
 // `.release()`. Its elements live in a closed shadow root, so the page's styles cannot hide or restyle it. It wears Nook's
 // theme (the look the side panel keeps): the strip in the color of Nook's menus. The glow breathes in the colors of the
 // logo of the coding agent that drives the page (Claude's orange, Gemini's blue and violet…), and the strip names it, as
-// Nook's own browser does (`BrowserTakeoverOverlay`); a step of Nook itself glows in Nook's violet.
+// Nook's own browser does (`BrowserTakeoverOverlay`); a step of Nook itself glows in Nook's accent (`NookTheme.iris`).
 (() => {
   if (globalThis.__nookPresence) return;
 
@@ -36,7 +36,7 @@
     root.innerHTML = `
       <style>
         :host { all: initial; }
-        .wrap { --glow: #b0a2e6; --hues: conic-gradient(var(--glow), var(--glow)); --menu: #171717; --paper: #f5f5f5; --line: #262626; --coral: #ff6467; --amber: #f0b65a; }
+        .wrap { --glow: #f4f3f7; --hues: conic-gradient(var(--glow), var(--glow)); --menu: #171717; --paper: #f5f5f5; --line: #262626; --coral: #ff6467; --amber: #f0b65a; }
         /* The lights along the edges and the line, in the colors that run round the page (a conic gradient through
            them), cut to the edges with a mask; one layer, so a single animation makes them breathe together. */
         .glow { position: fixed; inset: 0; opacity: 0; transition: opacity .25s ease-out; }
@@ -97,7 +97,7 @@
     // Nook's theme, from the look the side panel keeps; only #RRGGBB values, so nothing else reaches the style.
     Promise.resolve(chrome.storage?.local?.get('look')).then(({ look } = {}) => {
       const colors = look?.dark || {};
-      for (const [name, token] of [['--glow', 'violet'], ['--menu', 'menu'], ['--paper', 'paper'], ['--line', 'line2'], ['--coral', 'coral'], ['--amber', 'amber']]) {
+      for (const [name, token] of [['--glow', 'accent'], ['--menu', 'menu'], ['--paper', 'paper'], ['--line', 'line2'], ['--coral', 'coral'], ['--amber', 'amber']]) {
         if (/^#[0-9a-f]{6}$/i.test(colors[token] || '')) state.wrap.style.setProperty(name, colors[token]);
       }
     }).catch(() => {});
@@ -136,7 +136,7 @@
     return say('presenceAgentWorking', [name]) || `${name} is working in this tab`;
   }
 
-  /** Paints the glow in the driving agent's logo colors (only `#RRGGBB`), or back in Nook's violet without one. */
+  /** Paints the glow in the driving agent's logo colors (only `#RRGGBB`), or back in Nook's accent without one. */
   function paint(driver) {
     const colors = Array.isArray(driver?.colors) ? driver.colors.filter((color) => /^#[0-9a-f]{6}$/i.test(color)).slice(0, 4) : [];
     const name = typeof driver?.name === 'string' ? driver.name.slice(0, 60) : '';

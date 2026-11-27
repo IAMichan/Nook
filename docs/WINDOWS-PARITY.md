@@ -134,7 +134,7 @@ are the visible differences that no item listed yet; the rest were already cover
 
 - [ ] **UI-30** Chats page: collect notifications, read on open, read in the app on open, other apps, extra field, Giphy, Beeper import, chat notice rules, connector health · M
 
-- [ ] **UI-31** Devices › Machines (SSH machines, with AG-132) · L Still open: SSH machines need AG-132 first.
+- [ ] **UI-31** Devices › Machines (SSH machines, with AG-132) · L Update 2026-11-27: the Machines tab is there (add, edit, test, remove; `views/settings/Machines.svelte`); the password field and hosts found in `~/.ssh/config` wait for AG-132.
 
 - [x] **UI-32** Privacy: privacy level, "what leaves this computer", forget screen text, apps Nook never reads, OS permissions overview (SV-75), the On this device source picker as its own subject · M Partly done (2026-11-20): "Forget what Nook just saw" (`screen_forget` empties the live screen cache). Open: the privacy level and "what leaves this computer" (no redaction step before a cloud AI on Windows yet; the four promises are not claimed until they hold), apps Nook never reads, the OS permissions overview and On this device as its own subject. Update 2026-11-20: Permissions overview for Windows (microphone and notifications from Windows' privacy switches, with Allow / Revoke… opening the Windows Settings page; `permissions_overview`). The privacy level and the four promises stay open. Update 2026-11-21: Privacy has the Mac's tab bar with two of its parts: Privacy (screen text, permissions, linked accounts) and Activity log (the log). Privacy level, Access and Only on this computer as the Mac splits them stay open. Update 2026-11-22: Privacy level as on the Mac: "What a cloud AI sees" Open / Balanced / Strict with its line, the local-brain note, "What leaves your computer" with the four promises, and Screen text; Access holds the permissions and linked accounts. Behavior: `brain::privacy_level` (unit-tested) filters what Nook gathered (context, screen text and every tool result in the answer loop) before an external brain gets it, and what Nook tools give a coding agent; Strict also keeps the screen and the clipboard on this computer (`Settings::kept_here`, also for agents). Still open: apps Nook never reads, and Only on this computer as its own subject. Done (2026-11-23): `views/settings/Privacy.svelte` now completes apps Nook never reads and the On this device source picker alongside Privacy level, What leaves your computer, Forget screen text, and OS permissions overview.
 
@@ -456,7 +456,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-30** Sign-in after an expired login (`AgentSignInFailure`) · M Done (2026-11-23): `needs_sign_in` in `core/src/workspace/recovery.rs` and `lib/workspace/agent-updates.ts` detects expired or missing authentication across agents, and the failed turn card in `views/agents/run/Timeline.svelte` offers `Log in again` to run the profile's sign-in command in Nook's terminal.
 
-- [ ] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M
+- [x] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M Done (2026-11-27): `core/src/workspace/connector_sign_in.rs` (with `ConnectorDomains` icon lookup and Claude/Codex needs-auth parsers), `parsers.rs` (`mcp_servers`, `control_response`, `mcp_authenticate`/`mcp_status`/`mcp_reconnect`), `codex_app_server.rs` (`mcpServerStatus/list`, `mcpServer/oauth/login`, `config/mcpServer/reload`), `manager.rs` (live and idle control sign-in, 4-second polling up to 5 minutes, sibling account sharing & reconnect, gone-on-recheck handling), `workspace_connector_sign_in` / `workspace_connector_hide` commands, and `ConnectorSignInBanner.svelte` + `ConnectorSignInGroup.svelte` in `RunPanel.svelte`.
 
 - [x] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M — ported `readiness.rs`, `advice.rs`, `token_savings.rs`, and `tuning.rs` in `nook-core`, wired prompt-cache tracking, idle/size/return compaction, `AutoCompactMark`, `ClaudeToolSearch`, and `AppliedTuning` into `Manager`/`CommandInput`, added Tauri commands (`workspace_tuning_scan`, `workspace_tuning_set`, `workspace_readiness`, `workspace_limit_advice`, `workspace_offers_compact_first`), and added `TokenSettingsSection.svelte` under Settings › Coding agents › Usage & costs.
   - Also (2026-11-27): the first-run flow's "Coding agents" step (`components/OnboardingAgents.svelte`, `lib/agent-readiness.ts`) shows each agent ready, to sign in, or to install, and offers the git folders you worked in over the last 30 days as projects (`workspace_project_candidates`, `workspace_remember_project`).
@@ -615,7 +615,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-112** Bulk delete, custom snooze, dropping files onto a row · S
 
-- [ ] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
+- [x] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
   - Part done: changed-line counts on rows ("+120 −8", from git after every turn: `WorkspaceRun.lines_added`/`lines_removed`; for terminal sessions from the hub), the project's initials badge, Add project in the list's head. Open: favicons, multi-project label, the row's Project menu. Since then: the project's own icon (favicon, linked icon, monorepo web app, AppIcon picture; `core/src/workspace/favicon.rs`, `workspace_favicon`). Still open: the multi-project label (sessions here have one project) and the row's Project menu. And the row's Project menu on right-click (New session in it, favorite, Show in Explorer, Copy path, Select…), the project's own name from Settings › Projects in the rows and the new-session menu, archived projects left out of it, and the project's own values for a new session ahead of your last choices there.
 
 - [x] **AG-114** One notice per finished turn with logo and gist (`AgentStatusNotice`); `AgentAlerts.svelte` covers part · S
@@ -643,11 +643,11 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.9 Automation and remote
 
-- [ ] **AG-130** Scheduled tasks that act on their own without a session (#1676); Nook Chat as a target is BR-15…BR-17 · M
+- [x] **AG-130** Scheduled tasks that act on their own without a session (#1676); Nook Chat as a target is BR-15…BR-17 · M
 
 - [ ] **AG-131** Webhook filters, duplicate key, coalescing, deliveries log, public relay, deliveries kept across a quit (`WebhookRelay`, #1677) · M
 
-- [ ] **AG-132** Remote machines over SSH (`RemoteMachines`, `RemoteBridge`, `RemoteHostDiscovery`, `RemoteMachinesSettings`, #1533) · L
+- [ ] **AG-132** Remote machines over SSH (`RemoteMachines`, `RemoteBridge`, `RemoteHostDiscovery`, `RemoteMachinesSettings`, #1533) · L Update 2026-11-27: machines (alias or user@host, port, key file) are kept in `machines.json` with a connection test that lists the agents found there (Settings › Devices › Machines), and a new session picks where it runs under the composer ("Runs on": this computer or a machine); the agent then runs there through `ssh` in a folder there, which Nook checks first (`core/src/workspace/remote.rs`, `manager_remote.rs`). Still open: password logins (`RemotePasswords`, askpass), a new worktree and git over ssh on the machine (diff, snapshots per turn), Nook's tools for the agent there (`RemoteBridge`), and finding hosts from `~/.ssh/config` (`RemoteHostDiscovery`).
 
 - [ ] **AG-133** Nook as a remote MCP server with tunnel and grants (`RemoteMCP*`, `RemoteMCPSettings`) · L
 

@@ -32,7 +32,7 @@ final class KeepAwake: ObservableObject {
     func attach(app: AppModel) {
         self.app = app
         // A session that starts or stops working; at most one look every two seconds.
-        watch = app.workspace.objectWillChange.merge(with: app.hub.objectWillChange)
+        watch = app.workspace.objectWillChange.merge(with: app.hub.changes)
             .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.update() } }
         // The power adapter, the battery, the end of the grace period, agents in a terminal: looked at every 30 seconds.

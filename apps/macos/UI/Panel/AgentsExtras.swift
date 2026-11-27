@@ -28,7 +28,7 @@ struct PanelFooter: View {
     let selected: String
     let open: (String) -> Void
     let openSettings: () -> Void
-    @ObservedObject var history: AgentHistory
+    let history: AgentHistory
     /// The icons one under the other, for a narrow column (the Chats tab's rail of icons).
     var vertical = false
     /// Leaving a footer page for where you were; nil keeps the icons there too.

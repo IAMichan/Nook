@@ -4,7 +4,7 @@ import type { AgentProfile, HistoryResult } from "./agents";
 
 const history = (over: Partial<HistoryResult> = {}): HistoryResult => ({ sessions: [], accounts: {}, usage: {}, installed: [], executables: {}, ...over });
 const profile = (id: string, kind: AgentProfile["kind"]): AgentProfile => ({
-  id, kind, label: id, home: null, auth: null, title: id, displayHome: "", preferred: true, hasKey: false, launchCommand: "", loginCommand: "",
+  id, kind, label: id, home: null, auth: null, title: id, displayHome: "", preferred: true, hasKey: false, launchCommand: "", loginCommand: "", enabled: true,
 });
 
 describe("agent-readiness (AgentReadiness)", () => {

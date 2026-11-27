@@ -1278,7 +1278,7 @@ pub fn render_scheduled_task(task: &ScheduledTask) -> String {
         ScheduledTaskTarget::ExistingSession { id, fresh } => {
             format!("session {id}{}", if *fresh { " (fresh)" } else { "" })
         }
-        ScheduledTaskTarget::Nook => "Nook Chat".into(),
+        ScheduledTaskTarget::Nook => format!("Nook Chat · after a run {}", task.autonomy.describe()),
     };
     let next = task.next_run.map(|t| format!(" · next: {}", t.to_rfc3339())).unwrap_or_default();
     let last = task.last_status.map(|s| format!(" · last: {s:?}").to_ascii_lowercase()).unwrap_or_default();

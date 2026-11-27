@@ -5,7 +5,7 @@
 import {
   ACT_METHODS, GROUP_TITLE, HOST_NAME, PROTOCOL_VERSION, activityLine, approvalCard, approvalDecision, browserName,
   approvalNeeded, cleanLook, commandError, consoleText, mustAsk, pointOfNoReturn,
-  describeTabs, driverOf, elementsCopy, isAnswering, isBlocked, isRestricted, looksLikePdf, mayPick, normalizeURL, panelMessageAllowed,
+  describeTabs, driverOf, elementsCopy, isAnswering, isBlocked, isRestricted, looksLikePdf, mayPick, normalizeURL, panelMessageAllowed, tabShowing,
   pdfCrop, pdfPointCopy, questionImages, reconnectDelay, serial, siteOf
 } from './lib/core.js';
 
@@ -32,9 +32,11 @@ let cachedSettings = null;
 async function settings() {
   if (cachedSettings) return cachedSettings;
   const stored = await chrome.storage.local.get({ paused: false, blocked: [], trusted: [] });
+  // Nook may read and use every site: the switch per site is gone, so a site switched off before is on again.
+  if (Array.isArray(stored.blocked) && stored.blocked.length) await chrome.storage.local.remove('blocked');
   cachedSettings = {
     paused: !!stored.paused,
-    blocked: Array.isArray(stored.blocked) ? stored.blocked : [],
+    blocked: [],
     // The sites the user lets Nook act on without asking first (a task from the side panel; see `approve`).
     trusted: Array.isArray(stored.trusted) ? stored.trusted : []
   };
@@ -336,14 +338,21 @@ async function listTabs() {
 }
 
 async function open(params, tab, command) {
-  const since = Date.now();
+  let since = Date.now();
+  let reused = false;
   const where = String(params.url || '').trim().toLowerCase();
   if (tab && where === 'back') await chrome.tabs.goBack(tab.id);
   else if (tab && where === 'forward') await chrome.tabs.goForward(tab.id);
   else if (tab && where === 'reload') await chrome.tabs.reload(tab.id);
   else {
     const url = normalizeURL(params.url);
-    if (tab) {
+    // The address is already open (the page the user asks about, often): Nook works in that tab as it is, without a
+    // second tab and without reloading it. "reload" loads it again.
+    const showing = tab ? null : await openTabShowing(url);
+    if (showing) {
+      tab = showing;
+      reused = true;
+    } else if (tab) {
       await chrome.tabs.update(tab.id, { url });
     } else {
       // While the user works in another tab than Nook's, the new page opens beside it without taking their view.
@@ -352,17 +361,30 @@ async function open(params, tab, command) {
     }
   }
   await use(tab);
+  // A tab that was already open shows its page now: no newer document to wait for.
+  if (reused) since = 0;
   const loaded = await waitForLoad(tab.id, LOAD_TIMEOUT, since);
   const [, state] = await Promise.all([presence(tab.id, 'busy', command?.by), afterLook(tab.id)]);
-  const login = await signInWait(tab.id, command, `Opened ${loaded.url} in tab ${tab.id}.`, state);
+  const opened = reused ? `${loaded.url} was already open in tab ${tab.id}; Nook works there now (not reloaded)` : `Opened ${loaded.url} in tab ${tab.id}`;
+  const login = await signInWait(tab.id, command, `${opened}.`, state);
   if (login) return login;
   // What can be used on it goes along, so the next step needs no chrome_find first.
   const look = await glance(tab.id, state);
   return {
     ok: true, url: loaded.url,
-    text: `Opened ${loaded.title || '(no title)'} | ${loaded.url} in tab ${tab.id}${loaded.status === 'complete' ? '' : ' (still loading)'}. `
+    text: (reused
+      ? `${loaded.title || '(no title)'} | ${loaded.url} was already open in tab ${tab.id}; Nook works there now (not reloaded; url "reload" loads it again). `
+      : `Opened ${loaded.title || '(no title)'} | ${loaded.url} in tab ${tab.id}${loaded.status === 'complete' ? '' : ' (still loading)'}. `)
       + 'Use chrome_read for its text.' + (look ? '\n\n' + look : ' Use chrome_find for what you can click and type in.')
   };
+}
+
+/** A tab of the user's that already shows `url` (`tabShowing`), or null. */
+async function openTabShowing(url) {
+  if (!url) return null;
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  const front = await activeTab(null).catch(() => null);
+  return tabShowing(tabs, url, { current: await currentTab(), front: front?.id });
 }
 
 /** Puts a tab Nook opened in the "Nook" tab group of its window, made once per window. */
@@ -385,7 +407,8 @@ async function addToNookGroup(tab) {
       }
     }
     groupId = await chrome.tabs.group(groupId === undefined ? { tabIds: [tab.id], createProperties: { windowId: tab.windowId } } : { tabIds: [tab.id], groupId });
-    await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: 'purple' });
+    // Grey: Nook's own color is its theme's calm accent, not a hue, and grey is the browser's closest group color.
+    await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: 'grey' });
     groups[tab.windowId] = groupId;
     await chrome.storage.session.set({ groups, group: groupId });
   } catch {
@@ -912,14 +935,6 @@ async function handlePanel(message) {
       await remember({ icon: message.paused ? 'pause' : 'resume', text: message.paused ? 'Paused Nook in this browser' : 'Nook may use this browser again', ok: true });
       return { ok: true };
     }
-    case 'site': {
-      const site = siteOf(message.url);
-      if (!site) return { ok: false };
-      const { blocked } = await settings();
-      const next = message.allowed ? blocked.filter((entry) => entry !== site) : [...new Set([...blocked, site])];
-      await chrome.storage.local.set({ blocked: next });
-      return { ok: true };
-    }
     case 'ask': {
       const tab = await activeTab(message.windowId);
       const page = await pageForQuestion(tab);
@@ -945,7 +960,7 @@ async function handlePanel(message) {
     // A step of a task waiting for the user: once, always on this site, or no.
     case 'decide':
       return { ok: decide(String(message.id || ''), String(message.decision || '')) };
-    // Acting on a site without asking first (the side panel's second switch).
+    // Acting on a site without asking first (the access choice in the composer's model menu).
     case 'trust': {
       const site = siteOf(message.url);
       if (!site) return { ok: false };

@@ -41,6 +41,10 @@ pub enum DriverEvent {
     RollbackApplied,
     /// Codex `thread/rollback` (and `thread/revert` fallback) failed; carries the error message.
     RollbackFailed(String),
+    /// MCP servers needing the user to sign in (`ConnectorSignIns`, AG-31).
+    ConnectorsNeedingSignIn(Vec<String>),
+    /// Reply to a control request sent over the driver (`mcpServer/oauth/login`, `mcpServerStatus/list`).
+    ControlReply { request_id: String, response: Option<Value>, error: Option<String> },
 }
 
 /// A `/` command an agent offers itself (`AgentSlashCommand` on the Mac): its name without the slash, what it does in
@@ -107,6 +111,18 @@ pub trait Driver: Send {
     }
     /// Lines that ask the agent to end the turn.
     fn interrupt(&mut self) -> Vec<String>;
+    /// Asks the agent for a connector's OAuth sign-in URL (`mcpServer/oauth/login` for Codex).
+    fn sign_in_connector(&mut self, _request_id: &str, _server: &str) -> Option<Vec<String>> {
+        None
+    }
+    /// Asks the agent to list MCP server auth status (`mcpServerStatus/list` for Codex).
+    fn check_connectors(&mut self, _request_id: &str) -> Option<Vec<String>> {
+        None
+    }
+    /// Asks the agent to reload MCP server auth after signing in elsewhere (`config/mcpServer/reload` for Codex).
+    fn reconnect_connectors(&mut self, _servers: &[String]) -> Option<Vec<String>> {
+        None
+    }
     /// Variables of your own environment the agent must not get (an account or project of someone else's).
     fn removed_environment(&self) -> &'static [&'static str] {
         &[]

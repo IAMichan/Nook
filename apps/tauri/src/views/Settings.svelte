@@ -26,6 +26,7 @@
   import "./settings/settings.css";
   import SettingsPartTabs from "./settings/SettingsPartTabs.svelte";
   import Overview from "./settings/Overview.svelte";
+  import Machines from "./settings/Machines.svelte";
   import General from "./settings/General.svelte";
   import Notch from "./settings/Notch.svelte";
   import Brain from "./settings/Brain.svelte";
@@ -92,6 +93,7 @@
     chats: { component: Accounts, props: { part: "chats" } },
     connections: { component: Accounts, props: { part: "services" } },
     iphone: { component: Companion, when: desktop },
+    machines: { component: Machines, when: localAgents },
     privacy: { component: Privacy, props: { part: "level" } },
     permissions: { component: Privacy, props: { part: "access" } },
     activityLog: { component: Privacy, props: { part: "log" } },
