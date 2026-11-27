@@ -319,9 +319,9 @@ mod tests {
         let reply = line("Claude", "Next steps: add tests for the login flow and update the docs", "r");
         let yours = line("You", "Remind me to tell Arjan about the login fix tomorrow", "y");
         for place in [Place::Agent { name: "Claude".into(), title: "Login".into() }, Place::Nook] {
-            assert!(!worth_a_look(&[reply.clone()], &place));
+            assert!(!worth_a_look(std::slice::from_ref(&reply), &place));
             assert!(worth_a_look(&[reply.clone(), yours.clone()], &place));
-            assert!(prompt(&place, &[yours.clone()], 1, &[], &[], "").contains("Only a request in the user's own"));
+            assert!(prompt(&place, std::slice::from_ref(&yours), 1, &[], &[], "").contains("Only a request in the user's own"));
         }
         assert!(worth_a_look(&[reply], &Place::Chat { app: "Slack".into(), name: "Team".into() }));
     }
