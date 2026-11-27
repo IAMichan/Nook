@@ -13,7 +13,7 @@ struct DevServerStrip: View {
     private static var lastFound: [String: [DevServer]] = [:]
     /// Scans only while somebody can see the window: idle Nook runs no `lsof` behind a covered or minimized window.
     @State private var gate = AttentionGate()
-    /// Why a server has no Stop: shown under the bar after a tap on its stop button.
+    /// Why a stop did not happen: shown under the bar after a tap on a stop button.
     @State private var note: String?
     /// Bumped after a stop, so the scan looks again at once.
     @State private var rescan = 0
@@ -106,36 +106,45 @@ struct DevServerStrip: View {
         var rescan: Int
     }
 
-    /// Stops a server Nook started; for any other server it says why not, since stopping something you run elsewhere
-    /// would take it away behind your back.
+    /// Stops a server: one Nook started at once; one you started elsewhere after a question, since it also ends there
+    /// (in the terminal app you started it from).
+    @ViewBuilder
     private func stopButton(_ server: DevServer) -> some View {
-        Button {
-            guard server.startedByNook else {
-                withAnimation(NookTheme.reveal) {
-                    note = note == nil ? tr("automation.server.notOurs", server.command, String(server.port)) : nil
-                }
-                return
-            }
-            let shells = TerminalStore.shared.sessions.map(\.shellPID)
-            Task {
-                let stopped = await Task.detached(priority: .userInitiated) {
-                    DevServerOwnership.stop(server, roots: .current(shells: shells))
-                }.value
-                withAnimation(NookTheme.reveal) {
-                    note = stopped ? nil : tr("automation.server.notOurs", server.command, String(server.port))
-                }
-                try? await Task.sleep(nanoseconds: 700_000_000)
-                rescan += 1
-            }
-        } label: {
-            Image(icon: "stop.fill")
-                .font(NookTheme.font(8, .semibold))
-                .foregroundStyle(server.startedByNook ? NookTheme.textSecondary : NookTheme.textTertiary)
-                .frame(width: 18, height: 22)
-                .contentShape(Rectangle())
+        let title = tr("automation.server.stop", String(server.port))
+        if server.startedByNook {
+            Button { stop(server) } label: { stopIcon }
+                .buttonStyle(.nookPlain)
+                .nookTip(title)
+                .accessibilityLabel(title)
+        } else {
+            ConfirmedButton(question: tr("automation.server.stopQuestion", server.command, String(server.port)),
+                            detail: tr("automation.server.stopElsewhere"),
+                            confirmTitle: tr("automation.server.stopConfirm"),
+                            action: { stop(server) }) { stopIcon }
+                .labelled(title)
+                .buttonStyle(.nookPlain)
         }
-        .buttonStyle(.nookPlain)
-        .nookTip(server.startedByNook ? tr("automation.server.stop", String(server.port)) : tr("automation.server.stopUnavailable"))
-        .accessibilityLabel(tr("automation.server.stop", String(server.port)))
+    }
+
+    private var stopIcon: some View {
+        Image(icon: "stop.fill")
+            .font(NookTheme.font(8, .semibold))
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(width: 18, height: 22)
+            .contentShape(Rectangle())
+    }
+
+    private func stop(_ server: DevServer) {
+        let shells = TerminalStore.shared.sessions.map(\.shellPID)
+        Task {
+            let stopped = await Task.detached(priority: .userInitiated) {
+                DevServerOwnership.stop(server, roots: .current(shells: shells))
+            }.value
+            withAnimation(NookTheme.reveal) {
+                note = stopped ? nil : tr("automation.server.stopFailed", server.command, String(server.port))
+            }
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            rescan += 1
+        }
     }
 }

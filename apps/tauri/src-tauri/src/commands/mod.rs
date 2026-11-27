@@ -10,6 +10,7 @@ pub mod companion;
 pub mod file_view;
 pub mod games;
 pub mod instructions;
+pub mod machines;
 pub mod mail;
 pub mod maintenance;
 pub mod plans;

@@ -26,6 +26,13 @@ final class TimelineVisitsTests: XCTestCase {
         XCTAssertNil(visits.visit(for: "s10"))
     }
 
+    func testTheOlderBranchesFoldComesBackAsYouLeftIt() throws {
+        var visits = TimelineVisits()
+        visits.remember(sessionID: "run:1", visit: TimelineVisit(open: [], lastViewedAt: at(5), olderBranchesOpen: true))
+        let back = try JSONDecoder().decode(TimelineVisits.self, from: JSONEncoder().encode(visits))
+        XCTAssertEqual(back.visit(for: "run:1")?.olderBranchesOpen, true)
+    }
+
     func testDecodingIsTolerant() throws {
         var visits = TimelineVisits()
         visits.remember(sessionID: "run:1", visit: TimelineVisit(open: ["fold:a"], lastViewedAt: at(5)))
@@ -36,6 +43,7 @@ final class TimelineVisitsTests: XCTestCase {
         XCTAssertTrue(partial.open.isEmpty)
         let older = try JSONDecoder().decode(TimelineVisit.self, from: Data(#"{"anchorID":"x","atEnd":false,"open":["fold:a"]}"#.utf8))
         XCTAssertEqual(older.open, ["fold:a"], "a visit stored with where you were reading still reads")
+        XCTAssertFalse(older.olderBranchesOpen, "a visit from before the tray fold was kept has it closed")
     }
 
     func testRowDates() {

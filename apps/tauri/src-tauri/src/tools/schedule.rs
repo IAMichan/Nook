@@ -43,7 +43,7 @@ fn schedule_fields() -> serde_json::Map<String, Value> {
 
 /// The `autonomy` field of the automation tools.
 fn autonomy_schema() -> Value {
-    json!({"type": "string", "enum": NookAutonomy::ALL.map(NookAutonomy::id), "description": "What Nook carries out by itself after each run: ask (default: every step waits for the user), decide (Nook carries out the routine steps itself and asks for the rest), auto (Nook carries out every step it may do unattended: messages, calendar, reminders, notes, comments). Deleting, merging, commands, settings and payments always wait for the user. Set it only as the user asks: \"without asking me\", \"send it yourself\", \"you decide\" are decide or auto."})
+    json!({"type": "string", "enum": NookAutonomy::ALL.map(NookAutonomy::id), "description": "What Nook carries out by itself after each run: ask (default: every step waits for the user), decide (Nook carries out the routine steps itself and asks for the rest), auto (Nook carries out every step it may do unattended: messages, mail, calendar, reminders, notes, comments). Deleting, merging, commands, settings and payments always wait for the user. Set it only as the user asks: \"without asking me\", \"send it yourself\", \"you decide\" are decide or auto."})
 }
 
 fn schedule_schema() -> Value {
@@ -100,15 +100,6 @@ fn nook_tasks(tasks: Vec<ScheduledTask>) -> Vec<ScheduledTask> {
     tasks.into_iter().filter(|t| t.target == ScheduledTaskTarget::Nook).collect()
 }
 
-/// What the brain hears when automations are off in Settings: saved, but nothing runs until the user turns them on.
-fn off_note(auto: &AutomationState) -> &'static str {
-    if auto.settings().scheduled_tasks {
-        ""
-    } else {
-        " Scheduled tasks are off in Settings › Agents › Automation: tell the user it runs once they turn them on there."
-    }
-}
-
 fn changed(app: &AppHandle) {
     let _ = app.emit("automation-changed", ());
 }
@@ -149,7 +140,7 @@ impl ToolSource for Schedule {
                             return Ok("The user has no automations yet.".to_string());
                         }
                         let lines: Vec<String> = tasks.iter().map(nook_schedule::list_line).collect();
-                        Ok(lines.join("\n") + off_note(&auto))
+                        Ok(lines.join("\n"))
                     }
                 },
             ),
@@ -222,11 +213,10 @@ fn schedule(app: &AppHandle, input: &Value) -> Result<String, String> {
     let next = task.next_run.map(|at| format!(" The first run is at {}.", at.with_timezone(&Local).to_rfc3339())).unwrap_or_default();
     let quiet = if task.quiet { " It only speaks up when something new needs the user." } else { "" };
     Ok(format!(
-        "Saved the automation \"{}\" ({}).{next}{quiet} After each run {}. Each run is a conversation of its own in Nook Chat. The user changes, pauses or removes it in Settings › Agents › Automation.{}",
+        "Saved the automation \"{}\" ({}).{next}{quiet} After each run {}. Each run is a conversation of its own in Nook Chat. The user changes, pauses or removes it in Settings › Agents › Automation.",
         task.title,
         nook_schedule::describe(&task.rule),
         task.autonomy.describe(),
-        off_note(&auto)
     ))
 }
 
@@ -250,9 +240,9 @@ fn secretary(app: &AppHandle, level: NookAutonomy) -> Result<String, String> {
         return Ok("The secretary's automations exist already; nothing was added.".into());
     }
     Ok(format!(
-        "Set up the personal secretary: {}. Each run is a conversation of its own in Nook Chat with everything prepared for approval; the user changes times or pauses them in Settings › Agents › Automation.{}",
+        "Set up the personal secretary: {}. After each run {}. Each run is a conversation of its own in Nook Chat; the user changes times or pauses them in Settings › Agents › Automation.",
         added.join("; "),
-        off_note(&auto)
+        level.describe(),
     ))
 }
 
@@ -283,5 +273,5 @@ fn update(app: &AppHandle, input: &Value) -> Result<String, String> {
     if let Some(next) = now.next_run.filter(|_| now.enabled) {
         line += &format!(" Next run at {}.", next.with_timezone(&Local).to_rfc3339());
     }
-    Ok(line + off_note(&auto))
+    Ok(line)
 }

@@ -44,19 +44,6 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertEqual(HistoryWindow.eagerRows(rowsPerTurn: [40, 40, 2, 3], start: 3), 3, "never more than the window shows")
     }
 
-    func testRowsMoveIntoTheLazyStackInSteps() {
-        XCTAssertEqual(HistoryWindow.lazyRows(count: 20, eager: 12), 0, "fewer than a step: all drawn in full")
-        XCTAssertEqual(HistoryWindow.lazyRows(count: 100, eager: 48), 48)
-        // A working agent adds rows one by one: the split between the parts stays where it is for a while.
-        let splits = (100...115).map { HistoryWindow.lazyRows(count: $0, eager: 48) }
-        XCTAssertEqual(Set(splits).count, 2, "moves once in sixteen new rows, not with every one")
-        for count in 0...300 {
-            let lazy = HistoryWindow.lazyRows(count: count, eager: 48)
-            XCTAssertGreaterThanOrEqual(count - lazy, min(count, 48), "the last rows are always drawn in full")
-            XCTAssertLessThan(count - lazy, 48 + HistoryWindow.lazyStep)
-        }
-        XCTAssertEqual(HistoryWindow.lazyRows(count: 5, eager: 9), 0)
-    }
 
     func testAConversationThatWentBackKeepsAValidStart() {
         XCTAssertEqual(HistoryWindow.clamped(40, turnCount: 10), 9)
@@ -121,15 +108,26 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.05)
     }
 
-    func testTheSplitHoldsWhileYouReadBack() {
-        // 16 new rows would move 16 rows into the lazy stack: held where it was, they stay drawn in full.
-        XCTAssertEqual(HistoryWindow.heldSplit(natural: 224, held: 208), 208)
-        // A fold at the end would move rows out of the lazy stack again: held too.
-        XCTAssertEqual(HistoryWindow.heldSplit(natural: 192, held: 208), 192 + 16)
-        // The row that was the first drawn in full is gone, or nothing was held yet.
-        XCTAssertEqual(HistoryWindow.heldSplit(natural: 224, held: nil), 224)
-        // The part drawn in full grew too long while you read: back to the usual split.
-        XCTAssertEqual(HistoryWindow.heldSplit(natural: 500, held: 208, maxGrowth: 200), 500)
-        XCTAssertEqual(HistoryWindow.heldSplit(natural: 408, held: 208, maxGrowth: 200), 208)
+    func testOnlyTheLastRowsAreDrawnWhenAConversationOpens() {
+        XCTAssertEqual(HistoryWindow.drawnStart(count: 30, first: nil, fromEnd: nil, minimum: 12), 0, "a short one in full")
+        XCTAssertEqual(HistoryWindow.drawnStart(count: 500, first: nil, fromEnd: nil, minimum: 12), 500 - HistoryWindow.drawnRows)
+        XCTAssertEqual(HistoryWindow.drawnStart(count: 500, first: nil, fromEnd: nil, minimum: 90), 410, "the last turns, when more")
+    }
+
+    func testTheDrawnRowsStayWhereTheyStartAsRowsComeAndGo() {
+        // New rows at the end: the first drawn row stays the same, so nothing above what you read changes.
+        XCTAssertEqual(HistoryWindow.drawnStart(count: 520, first: 440, fromEnd: 60, minimum: 12), 440)
+        // That row folded away: as far from the end as it was.
+        XCTAssertEqual(HistoryWindow.drawnStart(count: 520, first: nil, fromEnd: 60, minimum: 12), 460)
+        // Never fewer than the last turns.
+        XCTAssertEqual(HistoryWindow.drawnStart(count: 100, first: 95, fromEnd: 5, minimum: 12), 88)
+    }
+
+    func testScrollingNearTheTopDrawsAPageMore() {
+        XCTAssertEqual(HistoryWindow.earlierDrawn(from: 440), 440 - HistoryWindow.drawnPage)
+        XCTAssertEqual(HistoryWindow.earlierDrawn(from: 10), 0)
+        XCTAssertTrue(HistoryWindow.nearDrawnTop(fromTop: 900, container: 600))
+        XCTAssertFalse(HistoryWindow.nearDrawnTop(fromTop: 1300, container: 600))
+        XCTAssertFalse(HistoryWindow.nearDrawnTop(fromTop: 0, container: 0), "not laid out yet")
     }
 }

@@ -404,7 +404,7 @@ struct PanelApprovalBar: View {
     let tab: PanelTab
     /// The task open over the tab, if any: the session behind it is not on screen.
     let sheet: PanelSheet?
-    @ObservedObject var hub: AgentHub
+    let hub: AgentHub
     /// Not observed: it changes with every streamed token, and `AppModel` already redraws when a session it runs asks
     /// for an approval or has a question.
     let workspace: WorkspaceManager

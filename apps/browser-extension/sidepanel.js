@@ -15,7 +15,9 @@ const t = (key, ...subs) => chrome.i18n.getMessage(key, subs) || key;
 const $ = (id) => document.getElementById(id);
 
 let status = { nook: 'connecting' };
-let options = { paused: false, blocked: [], trusted: [] };
+let options = { paused: false, trusted: [] };
+/** The site in front and whether Nook acts there without asking, for the composer's model menu; null on no site. */
+let access = null;
 let page = null;
 let conversation = null;
 // What the panel draws: the messages it read back (`older`, oldest first) and the newest ones Nook keeps sending
@@ -72,7 +74,8 @@ const composer = mountComposer($('composer'), {
   onsend: (text, images) => ask(text, images),
   onstop: () => stopAnswer(),
   onbrain: () => loadBrain(),
-  onchoosebrain: (id) => chooseBrain(id)
+  onchoosebrain: (id) => chooseBrain(id),
+  onaccess: (trusted) => setAccess(trusted)
 });
 const locale = chrome.i18n.getUILanguage?.() || undefined;
 const transcript = mountTranscript($('transcript'), {
@@ -168,23 +171,12 @@ function renderStatus() {
 }
 
 function renderSite() {
+  // Nook may read and use every site; on one, the access in the composer's model menu says whether it asks before each
+  // step there or acts without asking.
   const url = page?.url || '';
-  const site = siteOf(url);
-  const restricted = !url || isRestricted(url);
-  const allowed = !restricted && !isBlocked(url, options.blocked);
-  $('site-name').textContent = site || page?.title || t('siteNone');
-  $('site-note').textContent = restricted ? t('siteRestricted') : allowed ? t('siteAllowed') : t('siteBlocked');
-  $('site-mark').className = 'site-mark' + (options.paused ? ' paused' : allowed ? '' : ' off');
-  const toggle = $('site-switch');
-  toggle.checked = allowed;
-  toggle.disabled = restricted;
-  toggle.setAttribute('aria-label', t('siteSwitch', site || ''));
-  // Acting without asking: only on a site Nook may use at all.
-  const trusted = allowed && isBlocked(url, options.trusted);
-  $('trust').hidden = !allowed || !site;
-  $('trust-switch').checked = trusted;
-  $('trust-switch').setAttribute('aria-label', t('trustSwitch', site || ''));
-  $('trust-note').textContent = trusted ? t('trustOn') : t('trustOff');
+  const site = !url || isRestricted(url) ? '' : siteOf(url);
+  access = site ? { site, trusted: isBlocked(url, options.trusted) } : null;
+  renderComposer();
 
   // Paused: an amber line with Resume under the header; otherwise only the quiet pause button in the header says it.
   $('paused-banner').hidden = !options.paused;
@@ -204,17 +196,12 @@ async function loadPage() {
   renderSite();
 }
 
-// The switch and the button only show the new state once it is stored (storage.onChanged renders it); when the change
-// did not go through, they show the real state again, so the panel never says a site is off while Nook may still use it.
-$('site-switch').addEventListener('change', async (event) => {
-  const reply = await trySend({ type: 'site', url: page?.url, allowed: event.target.checked });
+// The access only shows the new level once it is stored (storage.onChanged renders it); when the change did not go
+// through, it shows the real level again.
+async function setAccess(trusted) {
+  const reply = await trySend({ type: 'trust', url: page?.url, allowed: trusted });
   if (!reply?.ok) renderSite();
-});
-
-$('trust-switch').addEventListener('change', async (event) => {
-  const reply = await trySend({ type: 'trust', url: page?.url, allowed: event.target.checked });
-  if (!reply?.ok) renderSite();
-});
+}
 
 // MARK: - Steps waiting for the user
 
@@ -405,7 +392,8 @@ function renderComposer() {
     canStop: busy && !!conversation,
     history: questionsAsked(messages),
     conversation,
-    brain
+    brain,
+    access
   });
 }
 
@@ -977,11 +965,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     applyLook();
   }
   if (area === 'session' && changes.approvals) setApprovals(changes.approvals.newValue);
-  if (area === 'local' && (changes.paused || changes.blocked || changes.trusted)) {
+  if (area === 'local' && (changes.paused || changes.trusted)) {
     const list = (change, fallback) => (change ? (Array.isArray(change.newValue) ? change.newValue : []) : fallback);
     options = {
       paused: changes.paused ? !!changes.paused.newValue : options.paused,
-      blocked: list(changes.blocked, options.blocked),
       trusted: list(changes.trusted, options.trusted)
     };
     renderSite();
@@ -1004,10 +991,9 @@ chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   status = stored.status || status;
   conversation = stored.conversation || null;
   setApprovals(stored.approvals);
-  const local = await chrome.storage.local.get({ paused: false, blocked: [], trusted: [] });
+  const local = await chrome.storage.local.get({ paused: false, trusted: [] });
   options = {
     paused: !!local.paused,
-    blocked: Array.isArray(local.blocked) ? local.blocked : [],
     trusted: Array.isArray(local.trusted) ? local.trusted : []
   };
   renderStatus();

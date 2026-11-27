@@ -14,6 +14,7 @@
   import Browser from "../workspace/Browser.svelte";
   import Terminals from "../workspace/Terminals.svelte";
   import GrantedRulesSheet from "./GrantedRulesSheet.svelte";
+  import AddProjectPalette from "./AddProjectPalette.svelte";
   import UsageModal from "./UsageModal.svelte";
   import EmptyState from "./EmptyState.svelte";
   import Worktrees from "../workspace/Worktrees.svelte";
@@ -29,13 +30,13 @@
   import type { PullRequestLink } from "../../lib/workspace/pull-requests";
   import { ago, folderName } from "./time";
   import { openNewSessionIn } from "./new-session.svelte";
+  import { multiProjectLabel } from "../../lib/workspace/project-sources";
   import Ico from "../../components/ui/Ico.svelte";
   import Dropdown from "../../components/ui/Dropdown.svelte";
   import DropdownRow from "../../components/ui/DropdownRow.svelte";
   import ProjectIconView from "../../components/ui/ProjectIconView.svelte";
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { api } from "../../lib/api";
   import * as inbox from "../../lib/agent-inbox";
@@ -296,6 +297,8 @@
     scratch: boolean;
     /** The project's folder, for its own icon. */
     root: string;
+    /** Other repository roots edited during this session (`SessionProjects`, #1549). */
+    otherProjects: string[];
   }
 
   // Een proces dat Nook alleen ziet, staat er als zijn gesprek te lezen is; koppelen gaat via Instellingen › Agents.
@@ -353,6 +356,7 @@
       removed: r.linesRemoved ?? 0,
       scratch: isScratch(r.projectPath),
       root: r.repoRoot ?? r.projectPath,
+      otherProjects: r.otherProjects ?? [],
     };
   }
 
@@ -378,6 +382,7 @@
       removed: s.linesRemoved,
       scratch: isScratch(s.cwd),
       root: s.cwd,
+      otherProjects: [],
     };
   }
 
@@ -520,23 +525,18 @@
     }
   }
 
-  /// "Add project" at the head of the list (`AddProjectButton`): a folder on disk becomes a favorite project and the
-  /// new-session screen opens on it.
-  async function addProject() {
-    try {
-      const picked = await openDialog({ directory: true, multiple: false, title: tr("Project toevoegen", "Add project") });
-      if (typeof picked !== "string") return;
-      // A favorite is a project of yours (the Mac pins what you add); read back before the last project is saved over it.
-      if (!(workspace.settings?.favoriteProjects ?? []).includes(picked)) { await workspaceApi.toggleFavoriteProject(picked); await workspace.refresh(); }
-      await openNewSessionIn(picked);
-    } catch (e) {
-      agents.error = String(e);
-    }
+  /// "Add project" palette (`AddProjectPalette` on macOS, #1482, AG-113): new empty Git project, local folder, Git URL, or GitHub owner/repo.
+  let addingProject = $state(false);
+
+  function openProjectSettings() {
+    try { localStorage.setItem("settings.section", "projects"); } catch { /* opens on the last page instead */ }
+    api.showMain("settings");
   }
 
   /// Escape closes the innermost menu or selection first.
   function keys(e: KeyboardEvent) {
     if (e.key === "Escape") {
+      if (addingProject) { e.preventDefault(); addingProject = false; return; }
       if (customSnoozeFor) { e.preventDefault(); customSnoozeFor = null; return; }
       if (menuFor) { e.preventDefault(); menuFor = null; return; }
       if (projectMenu) { e.preventDefault(); projectMenu = null; return; }
@@ -582,7 +582,7 @@
   let picked = $state(new Set<string>());
   let selecting = $state(false);
   let lastClicked: string | null = null;
-  let projectMenu = $state<{ id: string; x: number; y: number } | null>(null);
+  let projectMenu = $state<{ root: string; folder: string; rowId?: string; x: number; y: number } | null>(null);
   const shownIds = $derived([...list.flatMap((sec) => sec.rows.map((r) => r.row.id))]);
 
   // Keep `picked` pruned when sessions disappear from the visible list.
@@ -763,7 +763,7 @@
         {/snippet}
       </Dropdown>
       <button class="head-icon" class:on={!!permissionsSheet} title={tr("Toestemmingen", "Permissions")} aria-label={tr("Toestemmingen", "Permissions")} onclick={() => (permissionsSheet = { project: null, tab: "rules" })}><Ico name="shield-check" size={16} /></button>
-      <button class="head-icon" title={tr("Project toevoegen", "Add project")} aria-label={tr("Project toevoegen", "Add project")} onclick={addProject}><Ico name="folder-plus" size={16} /></button>
+      <button class="head-icon" class:on={addingProject} title={tr("Project toevoegen", "Add project")} aria-label={tr("Project toevoegen", "Add project")} onclick={() => (addingProject = true)}><Ico name="folder-plus" size={16} /></button>
       <button class="head-icon" class:on={selected.kind === "new"} title={tr("Nieuwe sessie", "New session")} aria-label={tr("Nieuwe sessie", "New session")} onclick={() => agents.select("new")}><Ico name="square-pen" size={16} /></button>
     </div>
     <div class="list">
@@ -784,7 +784,7 @@
             <!-- A session row (`AgentListRow` in `AgentRowLayout`): the project's badge and name with the status or how long
                  ago; the session's name; its branch with the agent's logo at the end (beside the name when there is no branch). -->
             <button class="row" class:on={currentId === i.id} class:receded={entry.receded} class:picked={picked.has(i.id)} class:drop-target={dropTarget === i.id}
-              onclick={(e) => clickRow(e, i.id)} oncontextmenu={(e) => { if (!i.scratch && i.root) { e.preventDefault(); projectMenu = { id: i.id, x: e.clientX, y: e.clientY }; } }}>
+              onclick={(e) => clickRow(e, i.id)} oncontextmenu={(e) => { if (!i.scratch && i.root) { e.preventDefault(); projectMenu = { root: i.root, folder: i.folder, rowId: i.id, x: e.clientX, y: e.clientY }; } }}>
               <span class="line0">
                 {#if selecting || picked.size > 0}
                   <span class="sel-box" class:checked={picked.has(i.id)} aria-hidden="true">
@@ -796,7 +796,7 @@
                   <span class="folder" title={i.path}>{tr("Geen project", "No project")}</span>
                 {:else}
                   <span class="badge-mark">{#if favicons[i.root]}<img class="favicon" src={favicons[i.root]} alt="" width="18" height="18" />{:else}<ProjectIconView name={i.folder} size={18} />{/if}</span>
-                  <span class="folder" title={i.path}>{i.folder}</span>
+                  <span class="folder" title={[i.path, ...i.otherProjects].join("\n")}>{multiProjectLabel(i.folder, i.otherProjects)}</span>
                 {/if}
                 <span class="spacer"></span>
                 <span class="slot">
@@ -858,8 +858,30 @@
       {#if inboxState.groupByProject}
         {#each groups as group (group.project)}
           {@const folded = inboxState.collapsedProjects.includes(group.project) && !query.trim()}
-          <button class="project" class:ask={group.needsYou} aria-expanded={!folded} onclick={() => update(inbox.toggleProject(inboxState, group.project))}>
-            <span class="chev">{folded ? "▸" : "▾"}</span><span class="pname">{group.project || tr("geen map", "no folder")}</span>
+          {@const firstItem = group.rows.map((r) => byId.get(r.entry.row.id)).find((x) => x && !x.scratch && x.root)}
+          <button
+            class="project"
+            class:ask={group.needsYou}
+            aria-expanded={!folded}
+            onclick={() => update(inbox.toggleProject(inboxState, group.project))}
+            oncontextmenu={(e) => {
+              if (firstItem) {
+                e.preventDefault();
+                projectMenu = { root: firstItem.root, folder: group.project || firstItem.folder, x: e.clientX, y: e.clientY };
+              }
+            }}
+          >
+            <span class="chev">{folded ? "▸" : "▾"}</span>
+            {#if firstItem}
+              <span class="badge-mark">
+                {#if favicons[firstItem.root]}
+                  <img class="favicon" src={favicons[firstItem.root]} alt="" width="16" height="16" />
+                {:else}
+                  <ProjectIconView name={group.project || firstItem.folder} size={16} />
+                {/if}
+              </span>
+            {/if}
+            <span class="pname">{group.project || tr("geen map", "no folder")}</span>
             <span class="spacer"></span>{#if folded && group.needsYou}<span class="dot waiting"></span>{/if}<span class="faint count">{group.rows.length}</span>
           </button>
           {#each group.rows.filter((r) => !folded || r.entry.row.id === currentId) as r (r.entry.row.id)}{@render entryRow(r.entry, r.kind)}{/each}
@@ -939,21 +961,32 @@
     {/if}
   </aside>
   {#if projectMenu}
-    {@const it = byId.get(projectMenu.id)}
-    {#if it}
-      <!-- The row's Project menu (`projectMenu`): what a project folder's menu does, from any of its sessions. -->
-      <div class="ctx-backdrop" role="presentation" onclick={() => (projectMenu = null)} oncontextmenu={(e) => { e.preventDefault(); projectMenu = null; }}></div>
-      <div class="menu ctx" role="menu" style:left="{projectMenu.x}px" style:top="{projectMenu.y}px">
-        <div class="ctx-head">{tr("Project {name}", "Project {name}", { name: it.folder })}</div>
-        <button role="menuitem" onclick={() => { projectMenu = null; openNewSessionIn(it.root); }}>{tr("Nieuwe sessie in {name}", "New session in {name}", { name: it.folder })}</button>
-        <button role="menuitem" onclick={() => { projectMenu = null; workspaceApi.toggleFavoriteProject(it.root).then(() => workspace.refresh()); }}>{(workspace.settings?.favoriteProjects ?? []).includes(it.root) ? tr("Verwijder uit favorieten", "Remove from favorites") : tr("Voeg toe aan favorieten", "Add to favorites")}</button>
-        <button role="menuitem" onclick={() => { projectMenu = null; revealItemInDir(it.root).catch(() => {}); }}>{tr("Toon in Verkenner", "Show in Explorer")}</button>
-        <button role="menuitem" onclick={() => { projectMenu = null; navigator.clipboard.writeText(it.root).catch(() => {}); }}>{tr("Kopieer pad", "Copy path")}</button>
-        <button role="menuitem" onclick={() => { projectMenu = null; permissionsSheet = { project: it.root, tab: "rules" }; }}>{tr("Opgeslagen regels…", "Granted rules…")}</button>
+    {@const pm = projectMenu}
+    <!-- The Project menu (`projectMenu`): from any session row or project group header. -->
+    <div class="ctx-backdrop" role="presentation" onclick={() => (projectMenu = null)} oncontextmenu={(e) => { e.preventDefault(); projectMenu = null; }}></div>
+    <div class="menu ctx" role="menu" style:left="{pm.x}px" style:top="{pm.y}px">
+      <div class="ctx-head">{tr("Project {name}", "Project {name}", { name: pm.folder })}</div>
+      <button role="menuitem" onclick={() => { projectMenu = null; openNewSessionIn(pm.root); }}>{tr("Nieuwe sessie in {name}", "New session in {name}", { name: pm.folder })}</button>
+      <button role="menuitem" onclick={() => { projectMenu = null; workspaceApi.toggleFavoriteProject(pm.root).then(() => workspace.refresh()); }}>{(workspace.settings?.favoriteProjects ?? []).includes(pm.root) ? tr("Verwijder uit favorieten", "Remove from favorites") : tr("Voeg toe aan favorieten", "Add to favorites")}</button>
+      <button role="menuitem" onclick={() => { projectMenu = null; revealItemInDir(pm.root).catch(() => {}); }}>{tr("Toon in Verkenner", "Show in Explorer")}</button>
+      <button role="menuitem" onclick={() => { projectMenu = null; toolsApi.openTerminal(pm.root).catch((err) => (agents.error = String(err))); }}>{tr("Open in terminal", "Open in terminal")}</button>
+      <button role="menuitem" onclick={() => { projectMenu = null; navigator.clipboard.writeText(pm.root).catch(() => {}); }}>{tr("Kopieer pad", "Copy path")}</button>
+      <button role="menuitem" onclick={() => { projectMenu = null; permissionsSheet = { project: pm.root, tab: "rules" }; }}>{tr("Opgeslagen regels…", "Granted rules…")}</button>
+      <button role="menuitem" onclick={() => { projectMenu = null; openProjectSettings(); }}>{tr("Projectinstellingen…", "Project settings…")}</button>
+      {#if pm.rowId}
         <hr />
-        <button role="menuitem" onclick={() => { projectMenu = null; selecting = true; picked = new Set([it.id]); }}>{tr("Selecteer…", "Select…")}</button>
-      </div>
-    {/if}
+        <button role="menuitem" onclick={() => { projectMenu = null; selecting = true; picked = new Set([pm.rowId!]); }}>{tr("Selecteer…", "Select…")}</button>
+      {/if}
+    </div>
+  {/if}
+  {#if addingProject}
+    <AddProjectPalette
+      onadded={(folder) => {
+        addingProject = false;
+        openNewSessionIn(folder);
+      }}
+      onclose={() => (addingProject = false)}
+    />
   {/if}
   <section class="main" class:thread={selected.kind === "run" || selected.kind === "live" || selected.kind === "past"} class:page={selected.kind === "page" && selected.page !== "browser" && selected.page !== "worktrees"}>
     {#if agents.error}<p class="err">{agents.error} <button class="ghost" onclick={() => (agents.error = null)}>✕</button></p>{/if}

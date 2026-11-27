@@ -3,9 +3,10 @@ import Foundation
 
 /// Scrolling back down to the end of a long session while its agent works: the view stays at the end and follows the
 /// agent from there. It used to reach the end and then jump back up by a chunk, so you could not stay at the end: each
-/// time 16 of the working turn's rows moved into the lazy part of the conversation (`HistoryWindow.lazyRows`), the
+/// time 16 of the working turn's rows moved into the lazy part of the conversation (until 2026-11-27 it had one), the
 /// content shrank and grew back, and the scroll view's clip view kept the offset of the shrink, thousands of points up,
-/// without SwiftUI reporting a move.
+/// without SwiftUI reporting a move. It failed again on 2026-11-27 (783 pt up while hands off) before the lazy part was
+/// removed (`ConversationRows`).
 ///
 /// It scrolls in trackpad strokes: each step goes through the app's event monitors first (where the conversation
 /// learns of your step, `readingScroller`), with the window and the place under the pointer filled in, which an event
@@ -35,7 +36,8 @@ final class LongSessionStaysAtEnd: Scenario {
                 throw ScenarioFailure.couldNotRun("the conversation's scroll view was not found")
             }
             let wheel = Wheel(window: screen.window, scrollView: scrollView)
-            defer { wheel.finish() }
+            let trace = ClipMoveTrace(scrollView)
+            defer { wheel.finish(); trace.stop() }
             self.log(String(format: "before scrolling: %.0f pt from the end of %.0f", Self.fromEnd(scrollView), Self.content(scrollView)))
 
             var worst = 0.0
@@ -67,14 +69,18 @@ final class LongSessionStaysAtEnd: Scenario {
                                                     + String(format: "(%.0f pt from it)", Self.fromEnd(scrollView)))
                 }
                 // Then hands off while the agent keeps working: the view stays at the end.
+                trace.armed = true
                 let end = Date().addingTimeInterval(Self.hold)
                 while Date() < end {
                     RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 60))
                     measure(String(format: "round %d, %.1f s after the last stroke", round, Self.hold - end.timeIntervalSinceNow))
                 }
+                trace.armed = false
                 self.log(String(format: "round %d: at most %.0f pt from the end so far", round, worst))
             }
             try app.screenshot("at-end")
+            // Who moved the view while your hands were off, when it left the end.
+            if worst > Self.endMargin { for line in trace.report().prefix(15) { self.log(line) } }
 
             if worst > Self.endMargin {
                 throw ScenarioFailure.assertion(String(format: "after scrolling down to the end the view moved %.0f pt back up (%@)",

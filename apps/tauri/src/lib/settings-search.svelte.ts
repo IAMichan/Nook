@@ -191,6 +191,8 @@ export const SETTINGS_INDEX: readonly (readonly [string, string, SettingsSection
   ["Op dit apparaat", "On this device", "connections"],
   ["Muziek", "Music", "connections"],
   ["Songteksten online opzoeken", "Look up lyrics online", "connections"],
+  ["Machines", "Machines", "machines"],
+  ["Machine toevoegen", "Add a machine", "machines"],
   ["Telefoon", "Phone", "iphone"],
   ["Companion op je telefoon", "Companion on your phone", "iphone"],
   ["Gekoppelde telefoons", "Paired phones", "iphone"],

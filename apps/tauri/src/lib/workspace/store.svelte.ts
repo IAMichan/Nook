@@ -2,6 +2,7 @@
 import {
   workspaceApi,
   workspaceEvents,
+  type ConnectorSignIn,
   type MessageQueue,
   type RunEvent,
   type WorkspaceOverview,
@@ -22,6 +23,7 @@ class WorkspaceStore {
   runs = $derived(this.overview?.runs ?? []);
   providers = $derived(this.overview?.providers ?? []);
   settings = $derived(this.overview?.settings ?? null);
+  dismissedConnectorSignIns = $derived(this.overview?.settings?.dismissedConnectorSignIns ?? []);
 
   async start() {
     if (this.started) return;
@@ -69,6 +71,11 @@ class WorkspaceStore {
   worktreeSetup(id: string): WorktreeSetupProgress | undefined {
     const key = id.replace(/^run:/, "");
     return this.overview?.worktreeSetups?.[key];
+  }
+
+  connectorSignIns(id: string): ConnectorSignIn[] {
+    const key = id.replace(/^run:/, "");
+    return this.overview?.connectorSignIns?.[key] ?? [];
   }
 
   isRunning(id: string): boolean {

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The heading over the box, with the project it starts in: its picker, a clone and a session on another machine.
+/// The heading over the box, with the project it starts in: its picker and a clone; on another machine, its folder there.
 extension NewSessionComposer {
     // MARK: Heading
 
@@ -114,16 +114,7 @@ extension NewSessionComposer {
         DropdownRow(symbol: "plus.rectangle.on.folder", title: tr("sc.newProject"), detail: tr("sc.newProject.detail")) {
             chooseNewProject()
         }
-        // Another machine over SSH (Settings › Agents › Workspace › Machines).
-        let machines = RemoteMachines.load()
-        if !machines.isEmpty {
-            DropdownDivider()
-            DropdownHeader(title: tr("ws.remote.header"))
-            ForEach(machines) { machine in
-                DropdownRow(symbol: "server.rack", title: machine.name, detail: machine.host,
-                            chosen: remoteMachine?.id == machine.id) { pickMachine(machine) }
-            }
-        }
+        // Another machine over SSH is chosen under the box ("Runs on", `runsOnPicker`), not among the folders here.
     }
 
     private func projectRow(_ path: String) -> some View {

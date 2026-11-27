@@ -6,7 +6,7 @@ import {
   activityLine, browserName, cleanLook, commandError, consoleText, describeTabs, inlineTokens, isAnswering, isBlocked,
   isRestricted, lookIsDark, lookVariables, normalizeURL, panelMessageAllowed, reconnectDelay, serial, siteOf, targetError,
   WATCH_LEASE, WATCH_RENEW, watchRenewalDue, questionImages, MAX_QUESTION_IMAGES, MAX_IMAGE_BASE64, pointOfNoReturn, mustAsk,
-  approvalCard, approvalDecision, driverOf, DRIVER_COLORS
+  approvalCard, approvalDecision, driverOf, DRIVER_COLORS, tabShowing
 } from '../lib/core.js';
 
 test('a site is its host without www', () => {
@@ -273,8 +273,24 @@ test('the agent that drives a page brings its name and only plain colors', () =>
   assert.equal(driverOf({ name: 'Antigravity', colors: Array(9).fill('#4F8BF7') }).colors.length, DRIVER_COLORS);
   assert.equal(driverOf({ name: '  Gemini\n CLI ' }).name, 'Gemini CLI');
   assert.equal(driverOf({ name: 'x'.repeat(200) }).name.length, 60);
-  // Nook's own steps carry no agent: the glow keeps Nook's violet.
+  // Nook's own steps carry no agent: the glow keeps Nook's accent.
   assert.equal(driverOf(undefined), null);
   assert.equal(driverOf('Claude'), null);
   assert.equal(driverOf({ name: '', colors: [] }), null);
+});
+
+test('opening an address that is already open finds that tab', () => {
+  const tabs = [
+    { id: 1, windowId: 1, url: 'https://news.example/', active: false },
+    { id: 2, windowId: 1, url: 'http://localhost:3000/settings#billing', active: true },
+    { id: 3, windowId: 2, url: 'http://localhost:3000/settings', active: true }
+  ];
+  // The tab in front wins over another window's tab with the same page; the #fragment and a trailing slash do not count.
+  assert.equal(tabShowing(tabs, 'http://localhost:3000/settings/', { front: 2 })?.id, 2);
+  // The tab Nook works in comes first.
+  assert.equal(tabShowing(tabs, 'http://localhost:3000/settings', { front: 2, current: 3 })?.id, 3);
+  // Another path or query is another page.
+  assert.equal(tabShowing(tabs, 'http://localhost:3000/settings?tab=2', { front: 2 }), null);
+  assert.equal(tabShowing(tabs, 'http://localhost:3000/', { front: 2 }), null);
+  assert.equal(tabShowing(tabs, null), null);
 });

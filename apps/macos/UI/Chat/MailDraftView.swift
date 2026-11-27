@@ -76,35 +76,30 @@ struct MailDraftView: View {
         }
         .padding(.horizontal, NookTheme.Spacing.xl)
         .padding(.vertical, NookTheme.Spacing.md)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
+        .conversationCard(padding: 0)
     }
 
+    /// The draft as one bordered card: a header, the address fields, the body, and the actions in a footer, each
+    /// section set off by a line so the mail reads as a mail and not as loose text in the conversation.
     private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Image(icon: "envelope")
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTheme.textSecondary)
-                Text(tr("chat.mail.concept"))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                Spacer()
-                statusLabel
-                if closable {
-                    ToolbarIconButton("xmark", tr("chat.mail.dismiss"), height: 20, width: 20) { onDismiss(edited) }
-                }
-            }
-            .padding(.bottom, NookTheme.Spacing.md)
+            header
+            NookDivider()
 
-            // The account to send from, only when the user named one; otherwise Mail's default account sends it.
-            if !draft.from.isEmpty { field(tr("chat.mail.from"), text: $from, prompt: tr("chat.mail.emailPrompt")) }
-            field(tr("chat.mail.to"), text: $to, prompt: tr("chat.mail.emailPrompt"))
-            if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
-            if !bcc.isEmpty || !locked { field(tr("chat.mail.bcc"), text: $bcc, prompt: tr("chat.mail.optional")) }
-            field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"))
-            if let invite = draft.invite { inviteRow(invite) }
+            VStack(alignment: .leading, spacing: 0) {
+                // The account to send from, only when the user named one; otherwise Mail's default account sends it.
+                if !draft.from.isEmpty { field(tr("chat.mail.from"), text: $from, prompt: tr("chat.mail.emailPrompt")) }
+                field(tr("chat.mail.to"), text: $to, prompt: tr("chat.mail.emailPrompt"))
+                if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
+                if !bcc.isEmpty || !locked { field(tr("chat.mail.bcc"), text: $bcc, prompt: tr("chat.mail.optional")) }
+                field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"), divider: draft.invite != nil)
+                if let invite = draft.invite { inviteRow(invite) }
+            }
+            .padding(.horizontal, NookTheme.Spacing.xl)
+            NookDivider()
 
             MentionSuggestions(model: mentionModel, text: $body_, config: .mentions())
+                .padding(.horizontal, NookTheme.Spacing.xl)
                 .padding(.top, mentionModel.isOpen ? NookTheme.Spacing.md : 0)
             TextEditor(text: $body_)
                 .mentions(mentionModel, text: $body_, config: .mentions())
@@ -113,10 +108,41 @@ struct MailDraftView: View {
                 .foregroundStyle(NookTheme.paper)
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
-                .frame(minHeight: 110, maxHeight: 220)
-                .padding(.top, NookTheme.Spacing.md)
+                .frame(minHeight: 110, maxHeight: 340)
+                // The editor insets its text by its line fragment padding; pull it back so the body lines up with the labels.
+                .padding(.horizontal, NookTheme.Spacing.xl - Self.editorInset)
+                .padding(.vertical, NookTheme.Spacing.lg)
                 .disabled(locked)
 
+            NookDivider()
+            footer
+        }
+        .conversationCard(padding: 0)
+    }
+
+    /// `NSTextView`'s default line fragment padding, which `TextEditor` keeps.
+    private static let editorInset: CGFloat = 5
+
+    private var header: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(icon: "envelope")
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.textSecondary)
+            Text(tr("chat.mail.concept"))
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+            Spacer()
+            statusLabel
+            if closable {
+                ToolbarIconButton("xmark", tr("chat.mail.dismiss"), height: 20, width: 20) { onDismiss(edited) }
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.xl)
+        .padding(.vertical, NookTheme.Spacing.md)
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 // A sent mail says so once, in its header; here only Copy stays.
                 if draft.state != .sent {
@@ -129,15 +155,13 @@ struct MailDraftView: View {
                 CopyGhostButton { subject.isEmpty ? body_ : "\(subject)\n\n\(body_)" }
                 Spacer()
             }
-            .padding(.top, NookTheme.Spacing.md)
 
             if case .failed(let message) = draft.state {
                 InlineErrorText(message)
-                    .padding(.top, NookTheme.Spacing.sm)
             }
         }
-        .padding(NookTheme.Spacing.xl)
-        .roundedBackground(NookTheme.field, radius: NookTheme.Radius.sheet)
+        .padding(.horizontal, NookTheme.Spacing.xl)
+        .padding(.vertical, NookTheme.Spacing.md)
     }
 
     @ViewBuilder
@@ -168,15 +192,14 @@ struct MailDraftView: View {
             Spacer()
         }
         .padding(.vertical, NookTheme.Spacing.md)
-        .overlay(alignment: .bottom) { NookDivider() }
     }
 
-    private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
+    private func field(_ label: String, text: Binding<String>, prompt: String, divider: Bool = true) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
             Text(label)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 76, alignment: .leading)
             TextField("", text: text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
@@ -184,6 +207,6 @@ struct MailDraftView: View {
                 .disabled(locked)
         }
         .padding(.vertical, NookTheme.Spacing.md)
-        .overlay(alignment: .bottom) { NookDivider() }
+        .overlay(alignment: .bottom) { if divider { NookDivider() } }
     }
 }

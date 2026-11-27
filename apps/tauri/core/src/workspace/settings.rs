@@ -154,6 +154,8 @@ pub struct WorkspaceSettings {
     pub suggest_next_prompt: bool,
     /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
     pub text_generators: BTreeMap<String, String>,
+    /// MCP connector server names dismissed from the sign-in banner above the composer (`ConnectorSignIns.dismissed`, AG-31).
+    pub dismissed_connector_sign_ins: Vec<String>,
     /// Summarize long idle sessions shortly before their prompt cache expires (`ws.idleCompaction`, AG-32).
     pub idle_compaction: bool,
     /// Automatically summarize a session once its context passes this token count (`ws.autoCompactTokens`, AG-32; `0` = off).
@@ -196,6 +198,7 @@ impl Default for WorkspaceSettings {
             strip_agent_credits: false,
             suggest_next_prompt: true,
             text_generators: BTreeMap::new(),
+            dismissed_connector_sign_ins: vec![],
             idle_compaction: true,
             auto_compact_tokens: super::token_savings::SizeCompaction::DEFAULT_TOKENS,
         }

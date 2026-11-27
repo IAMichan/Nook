@@ -71,4 +71,16 @@ pub const ROWS: &[Row] = &[
         "Cette session ne se trouve pas dans un dépôt avec un remote.",
         "Esta sesión no está en un repositorio con un remoto.",
     ),
+    (
+        "Give the project a name.",
+        "Gib dem Projekt einen Namen.",
+        "Donnez un nom au projet.",
+        "Ponle un nombre al proyecto.",
+    ),
+    (
+        "{name} already exists and is not empty.",
+        "{name} existiert bereits und ist nicht leer.",
+        "{name} existe déjà et n'est pas vide.",
+        "{name} ya existe y no está vacía.",
+    ),
 ];

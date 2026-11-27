@@ -141,41 +141,64 @@ async fn watch(app: &AppHandle, nook_id: &str, reply: Option<&str>, quiet: bool)
     (ScheduledRunStatus::Succeeded, None)
 }
 
-/// Carries out what the task may do by itself (`AppModel+Autonomy` on the Mac): the unattended steps at once (`auto`)
-/// or after Nook's judge found them routine (`decide`). Everything else stays in the plan for the user's click. Each
-/// step runs through the plan runner, which writes the audit log, and the answer ends with what ran and what waits.
+/// One step of a scheduled Nook reply: a plan action (by index) or a mail draft (by id).
+enum AutonomyTarget {
+    Action(usize),
+    Mail(String),
+}
+
+/// Carries out what the task may do by itself (`AppModel+Autonomy` on the Mac, #1676): the unattended steps at once
+/// (`auto`) or after Nook's judge found them routine (`decide`). Both plan actions and mail drafts are weighed and run
+/// together up to `MAX_STEPS_PER_RUN`; everything else stays in the conversation for the user's click. Each step writes
+/// to the audit log, and the answer ends with what ran and what waits.
 async fn carry_out(app: &AppHandle, nook_id: &str, reply: &str, run: &NookRun) {
     let state = app.state::<AppState>();
     let Some(message) = state.with_chat(|c| c.get(nook_id)?.messages.iter().find(|m| m.id == reply).cloned()) else { return };
-    if message.plan_state != Some(PlanState::Pending) || message.actions.is_empty() {
-        return;
-    }
-    let ctx = crate::tools::ToolCtx::new(app, "").in_nook(nook_id);
-    let all = crate::tools::all_tools(&ctx);
-    let mut indices = vec![];
+    let mut targets = vec![];
     let mut steps = vec![];
-    for (index, action) in message.actions.iter().enumerate() {
-        let included = message.action_included.get(index).copied().unwrap_or(true);
-        let clean = message.action_problems.get(index).is_none_or(Vec::is_empty);
-        let open = !message.action_states.get(index).is_some_and(StepState::is_finished);
-        if !(included && clean && open) {
-            continue;
+
+    if message.plan_state == Some(PlanState::Pending) && !message.actions.is_empty() {
+        let ctx = crate::tools::ToolCtx::new(app, "").in_nook(nook_id);
+        let all = crate::tools::all_tools(&ctx);
+        for (index, action) in message.actions.iter().enumerate() {
+            let included = message.action_included.get(index).copied().unwrap_or(true);
+            let clean = message.action_problems.get(index).is_none_or(Vec::is_empty);
+            let open = !message.action_states.get(index).is_some_and(StepState::is_finished);
+            if !(included && clean && open) {
+                continue;
+            }
+            let schema = all.iter().find(|t| t.name == action.tool).map(|t| t.schema.clone()).unwrap_or_default();
+            let detail: Vec<String> =
+                action_gate::fields(&action.input, &schema).iter().map(|f| format!("{}: {}", f.label, f.value)).collect();
+            let recipient = ["to", "name", "chat", "repo"]
+                .iter()
+                .map(|k| crate::tools::text(&action.input, k))
+                .find(|v| !v.is_empty())
+                .unwrap_or_default();
+            targets.push(AutonomyTarget::Action(index));
+            steps.push(AutonomyStep {
+                tool: action.tool.clone(),
+                summary: crate::tools::summarize(&action.tool, &action.input),
+                detail: detail.join("\n"),
+                recipient,
+            });
         }
-        let schema = all.iter().find(|t| t.name == action.tool).map(|t| t.schema.clone()).unwrap_or_default();
-        let detail: Vec<String> = action_gate::fields(&action.input, &schema).iter().map(|f| format!("{}: {}", f.label, f.value)).collect();
-        let recipient =
-            ["to", "name", "chat", "repo"].iter().map(|k| crate::tools::text(&action.input, k)).find(|v| !v.is_empty()).unwrap_or_default();
-        indices.push(index);
+    }
+
+    for mail in message.mails.iter().filter(|m| m.state == "draft") {
+        targets.push(AutonomyTarget::Mail(mail.id.clone()));
         steps.push(AutonomyStep {
-            tool: action.tool.clone(),
-            summary: crate::tools::summarize(&action.tool, &action.input),
-            detail: detail.join("\n"),
-            recipient,
+            tool: autonomy::MAIL_TOOL.to_string(),
+            summary: autonomy::mail_step_summary(&mail.to, &mail.subject),
+            detail: autonomy::mail_step_detail(&mail.cc, &mail.body, mail.attachments.len()),
+            recipient: mail.to.clone(),
         });
     }
+
     if steps.is_empty() {
         return;
     }
+
     let (run_now, to_judge) = autonomy::split(&steps, run.autonomy);
     let mut chosen: std::collections::BTreeSet<usize> = run_now.iter().copied().collect();
     let mut reasons: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
@@ -215,33 +238,90 @@ async fn carry_out(app: &AppHandle, nook_id: &str, reply: &str, run: &NookRun) {
             }
         }
     }
+
+    let approval = format!("scheduled_autonomy: {} ({})", run.title, run.autonomy.id());
     let (mut ran, mut failed) = (0, 0);
+
     if !chosen.is_empty() {
         state.store.audit("scheduled_autonomy", &format!("{} ({})", run.title, run.autonomy.id()), "");
-        let chosen_actions: Vec<usize> = chosen.iter().map(|&i| indices[i]).collect();
-        let before = message.action_included.clone();
-        let included: Vec<bool> = (0..message.actions.len()).map(|i| chosen_actions.contains(&i)).collect();
-        let _ = crate::commands::plans::run_plan(app, nook_id, reply, &included, None, &[]).await;
-        let after = state.with_chat(|c| c.get(nook_id)?.messages.iter().find(|m| m.id == reply).cloned());
-        if let Some(after) = after {
-            for &i in &chosen_actions {
-                match after.action_states.get(i) {
-                    Some(StepState::Done(_) | StepState::Verified(_)) => ran += 1,
-                    Some(StepState::Failed(_)) => failed += 1,
-                    _ => {}
+
+        // Plan actions: only the chosen ones run; the others stay pending for the user's Run click.
+        let chosen_actions: Vec<usize> = chosen
+            .iter()
+            .filter_map(|&i| match &targets[i] {
+                AutonomyTarget::Action(idx) => Some(*idx),
+                AutonomyTarget::Mail(_) => None,
+            })
+            .collect();
+        if !chosen_actions.is_empty() {
+            let before = message.action_included.clone();
+            let included: Vec<bool> = (0..message.actions.len()).map(|i| chosen_actions.contains(&i)).collect();
+            let _ = crate::commands::plans::run_plan(app, nook_id, reply, &included, None, &[]).await;
+            let after = state.with_chat(|c| c.get(nook_id)?.messages.iter().find(|m| m.id == reply).cloned());
+            if let Some(after) = after {
+                for &i in &chosen_actions {
+                    match after.action_states.get(i) {
+                        Some(StepState::Done(_) | StepState::Verified(_)) => ran += 1,
+                        Some(StepState::Failed(_)) => failed += 1,
+                        _ => {}
+                    }
+                }
+            }
+            let remains = (0..message.actions.len()).any(|i| !chosen_actions.contains(&i) && before.get(i).copied().unwrap_or(true));
+            chat::update(app, nook_id, reply, |m| {
+                m.action_included =
+                    (0..m.actions.len()).map(|i| chosen_actions.contains(&i) || before.get(i).copied().unwrap_or(true)).collect();
+                if remains && matches!(m.plan_state, Some(PlanState::Done(_))) {
+                    m.plan_state = Some(PlanState::Pending);
+                }
+            });
+        }
+
+        // Mail drafts: delivered one by one through a linked Microsoft/Google account (never popping mailto: unattended).
+        for &i in &chosen {
+            let AutonomyTarget::Mail(mail_id) = &targets[i] else { continue };
+            let Some(mut draft) = state.with_chat(|c| {
+                c.get(nook_id)?
+                    .messages
+                    .iter()
+                    .find(|m| m.id == reply)?
+                    .mails
+                    .iter()
+                    .find(|d| d.id == *mail_id && d.state == "draft")
+                    .cloned()
+            }) else {
+                continue;
+            };
+            chat::update(app, nook_id, reply, |m| {
+                if let Some(d) = m.mails.iter_mut().find(|d| d.id == *mail_id) {
+                    d.state = "sending".into();
+                    d.error.clear();
+                }
+            });
+            match crate::tools::send_draft_linked(app, &mut draft, None, None).await {
+                Ok(used) => {
+                    state.store.audit("send_mail", &format!("{} · {} · {approval}", draft.to, draft.subject), &used);
+                    chat::update(app, nook_id, reply, |m| {
+                        if let Some(d) = m.mails.iter_mut().find(|d| d.id == *mail_id) {
+                            d.state = "sent".into();
+                            d.error.clear();
+                        }
+                    });
+                    ran += 1;
+                }
+                Err(error) => {
+                    chat::update(app, nook_id, reply, |m| {
+                        if let Some(d) = m.mails.iter_mut().find(|d| d.id == *mail_id) {
+                            d.state = "failed".into();
+                            d.error = error.clone();
+                        }
+                    });
+                    failed += 1;
                 }
             }
         }
-        // What was left for the user is theirs to run: switched on as it was, and the plan open again.
-        let remains = (0..message.actions.len()).any(|i| !chosen_actions.contains(&i) && before.get(i).copied().unwrap_or(true));
-        chat::update(app, nook_id, reply, |m| {
-            m.action_included =
-                (0..m.actions.len()).map(|i| chosen_actions.contains(&i) || before.get(i).copied().unwrap_or(true)).collect();
-            if remains && matches!(m.plan_state, Some(PlanState::Done(_))) {
-                m.plan_state = Some(PlanState::Pending);
-            }
-        });
     }
+
     let waiting: Vec<(String, Option<String>)> =
         (0..steps.len()).filter(|i| !chosen.contains(i)).map(|i| (steps[i].summary.clone(), reasons.get(&i).cloned())).collect();
     let block = autonomy::note(ran, failed, &waiting, run.autonomy);
@@ -249,4 +329,5 @@ async fn carry_out(app: &AppHandle, nook_id: &str, reply: &str, run: &NookRun) {
         chat::update(app, nook_id, reply, |m| m.text.push_str(&block));
     }
     state.save_chat();
+    chat::updated(app, nook_id);
 }

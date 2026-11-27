@@ -24,6 +24,8 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copy": "Tabel kopiëren",
         "table.copyMarkdown": "Kopiëren als Markdown",
         "table.copyCSV": "Kopiëren als CSV",
+        "table.useWidth": "Volle breedte gebruiken",
+        "table.fitColumn": "Binnen de kolom houden",
     ],
     .en: [
         "agents.superseded.title": "Superseded attempt",
@@ -45,6 +47,8 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copy": "Copy table",
         "table.copyMarkdown": "Copy as Markdown",
         "table.copyCSV": "Copy as CSV",
+        "table.useWidth": "Use the full width",
+        "table.fitColumn": "Fit to the column",
     ],
     .de: [
         "agents.superseded.title": "Ersetzter Versuch",
@@ -66,6 +70,8 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copy": "Tabelle kopieren",
         "table.copyMarkdown": "Als Markdown kopieren",
         "table.copyCSV": "Als CSV kopieren",
+        "table.useWidth": "Volle Breite nutzen",
+        "table.fitColumn": "In der Spalte halten",
     ],
     .fr: [
         "agents.superseded.title": "Tentative remplacée",
@@ -87,6 +93,8 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copy": "Copier le tableau",
         "table.copyMarkdown": "Copier en Markdown",
         "table.copyCSV": "Copier en CSV",
+        "table.useWidth": "Utiliser toute la largeur",
+        "table.fitColumn": "Garder dans la colonne",
     ],
     .es: [
         "agents.superseded.title": "Intento sustituido",
@@ -108,5 +116,7 @@ let transcriptTranslations: [AppLanguage: [String: String]] = [
         "table.copy": "Copiar tabla",
         "table.copyMarkdown": "Copiar como Markdown",
         "table.copyCSV": "Copiar como CSV",
+        "table.useWidth": "Usar todo el ancho",
+        "table.fitColumn": "Ajustar a la columna",
     ],
 ]
