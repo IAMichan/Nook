@@ -20,11 +20,13 @@
   import QuestionCard from "../QuestionCard.svelte";
   import ContextBreakdown from "./ContextBreakdown.svelte";
   import GoalStrip from "./GoalStrip.svelte";
+  import GuestStrip from "./GuestStrip.svelte";
   import TaskChecklist from "../../../components/TaskChecklist.svelte";
   import RunComposer from "./RunComposer.svelte";
   import SessionSidePanel from "./SessionSidePanel.svelte";
   import SideChatStrip, { type SideChatItem } from "./SideChatStrip.svelte";
   import { sidePanel } from "./side-panel.svelte";
+  import { guestShares } from "../../../lib/workspace/guest-shares.svelte";
   import { onCommands } from "../../../lib/commands";
   import { collectOutputs, hasNewOutput, opensByItself, outputSignature } from "../../../lib/workspace/session-outputs";
   import { homeDir } from "@tauri-apps/api/path";
@@ -199,6 +201,23 @@
       toast.success(tr("Sessie geëxporteerd", "Session exported"));
     } catch (e) {
       toast.error(tr("Kon de sessie niet exporteren", "Could not export the session"), e);
+    }
+  }
+
+  async function shareWithGuest() {
+    if (!run) return;
+    try {
+      const link = await guestShares.share(runId);
+      await navigator.clipboard.writeText(link);
+      toast.success(
+        tr("Gastlink gekopieerd", "Guest link copied"),
+        tr(
+          "Stuur hem naar één persoon. Hij werkt 24 uur, zolang deze computer aan staat, tot je stopt met delen.",
+          "Send it to one person. It works for 24 hours, while this computer is on, until you stop sharing.",
+        ),
+      );
+    } catch (e) {
+      toast.error(tr("Kon deze sessie niet delen", "Could not share this session"), e);
     }
   }
 
@@ -470,6 +489,16 @@
             <DropdownRow symbol="git-branch" title={tr("Vork maken", "Fork")} disabledReason={busy} onclick={() => { close(); fork(); }} />
             <DropdownRow symbol="pencil" title={tr("Wijzig naam", "Rename")} onclick={() => { close(); titleDraft = run.title; renaming = true; }} />
             <DropdownRow symbol="sparkles" title={tr("Titel opnieuw genereren", "Regenerate title")} disabledReason={regeneratingTitle ? tr("Bezig…", "Working…") : undefined} onclick={() => { close(); regenerateTitle(); }} />
+            {#if guestShares.isShared(runId)}
+              <DropdownRow symbol="user-x" title={tr("Stop met delen", "Stop sharing")} onclick={() => { close(); guestShares.stop(runId); }} />
+            {:else if guestShares.canShare && !run.archived}
+              <DropdownRow
+                symbol="user-plus"
+                title={tr("Delen met een gast", "Share with a guest")}
+                detail={tr("Kopieert een link waarmee iemand deze sessie 24 uur in een browser kan volgen. Wat die schrijft, wacht op jou.", "Copies a link that lets someone follow this session in a browser for 24 hours. What they write waits for you.")}
+                onclick={() => { close(); shareWithGuest(); }}
+              />
+            {/if}
             {#if run.repoRoot}<DropdownRow symbol="diff" title={tr("Wijzigingen bekijken", "View changes")} onclick={() => { close(); openChanges(); }} />{/if}
             <DropdownRow symbol="external-link" title={tr("Open in editor", "Open in editor")} onclick={() => { close(); workspaceApi.openIn(run.workingDirectory).catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e)); }} />
             <DropdownRow symbol="copy" title={tr("Kopieer als Markdown", "Copy as Markdown")} onclick={() => { close(); copyMarkdown(); }} />
@@ -577,6 +606,7 @@
               <TaskChecklist steps={run.tasks} live={isActive(run.status)} phase />
             {/if}
             <SideChatStrip items={sideChats} ondismiss={dismissSideChat} />
+            <GuestStrip runId={run.id} />
             <RunComposer bind:this={composer} {run} onsidechat={askSideChat} />
           {/if}
           </div>

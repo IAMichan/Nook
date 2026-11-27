@@ -2128,3 +2128,45 @@ pub async fn workspace_suggest_next_prompt(app: AppHandle, state: State<'_, Work
     }
     Ok(Some(stripped.to_string()))
 }
+
+// MARK: Guest links (`GuestShares` on the Mac, AG-81)
+
+/// Current guest share state across all sessions, plus whether a relay is available to create new links.
+#[tauri::command]
+pub fn workspace_guest_shares(state: State<'_, WorkspaceState>) -> nook_core::workspace::guest_shares::GuestSharesSnapshot {
+    state.guest_shares.snapshot()
+}
+
+/// Starts (or returns an existing) 24-hour end-to-end encrypted guest link for a session.
+#[tauri::command]
+pub fn workspace_guest_share(state: State<'_, WorkspaceState>, run: String) -> Res<String> {
+    state.guest_shares.share(id(&run)?)
+}
+
+/// Revokes a session's active guest link, disconnects viewers, and deletes any held guest messages & files.
+#[tauri::command]
+pub fn workspace_guest_stop(state: State<'_, WorkspaceState>, run: String) -> Res<()> {
+    state.guest_shares.stop(id(&run)?);
+    Ok(())
+}
+
+/// Sends a held guest message to the session's agent (framed as untrusted guest input).
+#[tauri::command]
+pub fn workspace_guest_send_held(state: State<'_, WorkspaceState>, run: String, message_id: String) -> Res<()> {
+    let msg = message_id.trim();
+    if msg.is_empty() {
+        return Err(tr("Dit bericht bestaat niet meer.", "This message no longer exists.").to_string());
+    }
+    state.guest_shares.send_held(id(&run)?, msg)
+}
+
+/// Dismisses a held guest message and deletes any files the guest attached to it.
+#[tauri::command]
+pub fn workspace_guest_dismiss_held(state: State<'_, WorkspaceState>, run: String, message_id: String) -> Res<()> {
+    let msg = message_id.trim();
+    if msg.is_empty() {
+        return Err(tr("Dit bericht bestaat niet meer.", "This message no longer exists.").to_string());
+    }
+    state.guest_shares.dismiss_held(id(&run)?, msg);
+    Ok(())
+}
