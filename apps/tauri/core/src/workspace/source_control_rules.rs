@@ -1093,7 +1093,7 @@ mod tests {
         // Skips when dirty
         std::fs::write(checkout.join("a.txt"), "edited\n").unwrap();
         assert_eq!(git.auto_pull(&checkout_s, false).unwrap(), AutoPullVerdict::Skip(AutoPullSkipReason::Dirty));
-        std::fs::write(checkout.join("a.txt"), "one\n").unwrap();
+        git.run(&["checkout", "--", "a.txt"], &checkout_s).unwrap();
 
         // Fast-forwards cleanly once idle & clean
         assert_eq!(git.auto_pull(&checkout_s, false).unwrap(), AutoPullVerdict::FastForward);
