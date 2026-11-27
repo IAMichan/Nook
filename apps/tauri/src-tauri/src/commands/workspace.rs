@@ -2297,12 +2297,10 @@ pub fn workspace_limit_advice(app: AppHandle, state: State<'_, WorkspaceState>, 
                     let frac = reading.and_then(|u| {
                         [u.five_hour.as_ref(), u.seven_day.as_ref()].into_iter().flatten().map(|w| w.used_percent / 100.0).reduce(f64::max)
                     });
-                    let reset = reading.and_then(|u| u.five_hour.as_ref().map(|w| w.resets_at)).or_else(|| {
-                        if is_current {
-                            session.limit_reset_at
-                        } else {
-                            None
-                        }
+                    let reset = reading.and_then(|u| u.five_hour.as_ref().map(|w| w.resets_at)).or(if is_current {
+                        session.limit_reset_at
+                    } else {
+                        None
                     });
                     (frac, reset)
                 }
@@ -2311,12 +2309,10 @@ pub fn workspace_limit_advice(app: AppHandle, state: State<'_, WorkspaceState>, 
                     let frac = reading.and_then(|u| {
                         [u.five_hour.as_ref(), u.weekly.as_ref()].into_iter().flatten().map(|w| w.used_percent / 100.0).reduce(f64::max)
                     });
-                    let reset = reading.and_then(|u| u.five_hour.as_ref().and_then(|w| w.resets_at)).or_else(|| {
-                        if is_current {
-                            session.limit_reset_at
-                        } else {
-                            None
-                        }
+                    let reset = reading.and_then(|u| u.five_hour.as_ref().and_then(|w| w.resets_at)).or(if is_current {
+                        session.limit_reset_at
+                    } else {
+                        None
                     });
                     (frac, reset)
                 }
