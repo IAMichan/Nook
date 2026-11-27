@@ -42,13 +42,17 @@ extension AgentRunPanel {
         return true
     }
 
-    /// Widens the window (`HistoryWindow`) to hold the turn of an event it leaves out; true when it had to.
+    /// Widens the window (`HistoryWindow`) to hold the turn of an event it leaves out, and draws its block
+    /// (`RowWindow`); true when either had to.
     @discardableResult
     func revealTurn(of eventID: UUID) -> Bool {
-        guard let turn = derived.turn(of: eventID) else { return false }
+        // Its block is drawn too, with the blocks under it (`RowWindow`): also a reason to scroll a pass later.
+        let drawn = derived.blocks.first(where: { $0.id == eventID || $0.eventIDs.contains(eventID) })
+            .map { rowWindow.reveal($0.id) } ?? false
+        guard let turn = derived.turn(of: eventID) else { return drawn }
         let start = historyStart ?? HistoryWindow.initialStart(rowsPerTurn: derived.rowsPerTurn)
         let widened = HistoryWindow.revealing(turn, from: start)
-        guard widened < start else { return false }
+        guard widened < start else { return drawn }
         historyStart = widened
         return true
     }

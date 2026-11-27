@@ -1,9 +1,10 @@
 import Foundation
 
 /// Keeps the row you read where it is on screen while you read back through an agent's conversation and something
-/// above it changes height: the lazy stack measuring rows it had only guessed (each row that scrolls into view from
-/// above), a turn that folds into "Worked for …" when the agent finishes, a running command's progress, a row that moves
-/// between the lazy and the fully drawn part of the conversation (`HistoryWindow.lazyRows`), earlier turns drawn above.
+/// above it changes height: a turn that folds into "Worked for …" when the agent finishes, a running command's progress,
+/// earlier rows drawn above (`RowWindow`, `growsAbove`). The rows are all drawn in full (`ConversationRows`), so where
+/// they say they stand is where they are: in a lazy stack (until 2026-11-27) they reported guessed places, and holding
+/// a row by a guess moved the conversation by hundreds of points and back.
 /// Without it every such change pushed what you read up or down while the agent worked.
 ///
 /// It holds one row, the first that starts in view, and remembers where on screen you last scrolled it to: your wheel

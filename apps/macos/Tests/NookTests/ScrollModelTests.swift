@@ -252,41 +252,8 @@ final class ScrollModelTests: XCTestCase {
         XCTAssertEqual(odd, .end)
     }
 
-    func testRowsInViewIsBlankOnlyWhenNoDrawnRowReachesIntoTheView() {
-        typealias Span = RowsInView.Span
-        // A row in the middle of the view, or one running through all of it.
-        XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [Span(top: 1200, bottom: 1300)], top: 1000, height: 600))
-        XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [Span(top: 0, bottom: 5000)], top: 1000, height: 600))
-        // Rows still drawn, but all of them above or below the view: what a lazy stack's own reports call "in view".
-        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [Span(top: 200, bottom: 990), Span(top: 1700, bottom: 1800)],
-                                       top: 1000, height: 600))
-        // A hairline at the edge, or a row with no height, is not something to read.
-        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [Span(top: 900, bottom: 1004)], top: 1000, height: 600))
-        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [Span(top: 1200, bottom: 1200)], top: 1000, height: 600))
-        // No row drawn at all.
-        XCTAssertTrue(RowsInView.blank(rows: 10, drawn: [], top: 1000, height: 600))
-        // Nothing to show, or no view yet: never blank.
-        XCTAssertFalse(RowsInView.blank(rows: 0, drawn: [], top: 1000, height: 600))
-        XCTAssertFalse(RowsInView.blank(rows: 10, drawn: [], top: 0, height: 0))
-    }
 
-    func testTheRowsDrawnInFullAndWhatIsUnderThemAreNeverBlank() {
-        typealias Span = RowsInView.Span
-        // Seen in the app: at the end, the last row hidden (its step on the live line), and the view on the live line,
-        // its task list and the room held under rows that folded. Not blank: the guard scrolled up and back down.
-        let rows = [Span(top: 5900, bottom: 6540), Span(top: 6564, bottom: 6564)]
-        XCTAssertFalse(RowsInView.blank(rows: 39, drawn: rows, top: 6615, height: 849, drawnFrom: 5200))
-        // Reaching only a hairline into the part drawn in full is still blank.
-        XCTAssertTrue(RowsInView.blank(rows: 39, drawn: [], top: 4000, height: 600, drawnFrom: 4596))
-        // Above the part drawn in full, in the lazy rows, a stretch with none of them drawn is blank as before.
-        XCTAssertTrue(RowsInView.blank(rows: 39, drawn: rows, top: 2000, height: 849, drawnFrom: 5200))
-        XCTAssertFalse(RowsInView.blank(rows: 39, drawn: [Span(top: 2100, bottom: 2400)], top: 2000, height: 849, drawnFrom: 5200))
-    }
 
-    func testABlankConversationIsRebuiltFromItsThirdTryOnEveryFourth() {
-        let rebuilt = (0..<12).filter { RowsInView.rebuilds(attempt: $0) }
-        XCTAssertEqual(rebuilt, [2, 6, 10])
-    }
 
     func testOnlyTheFirstFrameOfAScrollChangesTheState() {
         var m = ScrollModel()
@@ -329,6 +296,16 @@ final class ScrollModelTests: XCTestCase {
         // A narrower window wraps the rows taller, a wider one shorter: each width keeps its own.
         XCTAssertEqual(held.height(natural: 300, width: 900, key: 1, holds: true), 300)
         XCTAssertEqual(held.height(natural: 450, width: 600, key: 1, holds: true), 500)
+    }
+
+    func testHeldHeightKeepsItsRoomWhenRowsAreDrawnAbove() {
+        var held = HeldHeight()
+        _ = held.height(natural: 500, width: 600, key: 1, top: 40, holds: true)
+        // A fold leaves 80 pt of room under the rows.
+        XCTAssertEqual(held.height(natural: 420, width: 600, key: 1, top: 40, holds: true), 500)
+        // 900 pt of earlier rows drawn above: the content grows by exactly that, the room stays.
+        XCTAssertEqual(held.height(natural: 1320, width: 600, key: 1, top: 0, holds: true), 1400)
+        XCTAssertEqual(held.height(natural: 1340, width: 600, key: 1, top: 0, holds: true), 1400)
     }
 
     func testANewTurnIsHeldNearTheTopWhileItsReplyFillsTheRoomUnderIt() {
