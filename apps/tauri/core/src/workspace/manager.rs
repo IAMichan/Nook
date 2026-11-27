@@ -291,6 +291,9 @@ pub struct Manager {
     before_stop: Mutex<Option<BeforeStop>>,
 }
 
+#[path = "manager_remote.rs"]
+mod remote_start;
+
 /// Verzamelt events en stuurt ze pas als de mutex los is.
 #[derive(Default)]
 struct Out(Vec<ManagerEvent>);
@@ -384,6 +387,14 @@ impl Manager {
             }
         }
         (self.hooks.executable)(provider)
+    }
+
+    /// The program a turn of `run` starts: on another machine the agent's own command there, else the one found here.
+    fn turn_executable(&self, run: &WorkspaceRun) -> Option<String> {
+        if run.remote.is_some() {
+            return Some(remote_start::remote_program(run.provider));
+        }
+        self.resolve_executable(run.provider, &run.profile_id)
     }
 
     fn resolve_account_arguments(&self, profile_id: &str) -> Vec<String> {
@@ -831,6 +842,10 @@ impl Manager {
         if let Some(problem) = config.problem() {
             return Err(problem.message().into());
         }
+        // Another machine over SSH: its folder is a path there, checked there.
+        if !config.machine_id.trim().is_empty() {
+            return self.start_remote(config);
+        }
         let project = paths::normalize(&config.project_path);
         let verdict = paths::verdict(&project);
         if verdict != Verdict::Ok {
@@ -921,6 +936,7 @@ impl Manager {
             restart: Default::default(),
             prompt_cache: None,
             other_projects: vec![],
+            remote: None,
         };
         if worktree.is_none() && rollback::can_roll_back(run.provider) {
             run.checkpoints.push(RunCheckpoint { r#ref: String::new(), date: Utc::now(), conversation: Some(ConversationMark::empty()) });
@@ -1318,6 +1334,7 @@ impl Manager {
             restart: Default::default(),
             prompt_cache: None,
             other_projects: vec![],
+            remote: None,
         };
         let mut out = Out::default();
         {
@@ -1433,10 +1450,11 @@ impl Manager {
             self.enqueue(id, &clean);
             return Ok(());
         }
-        let executable = self.resolve_executable(run.provider, &run.profile_id).ok_or_else(|| {
+        let executable = self.turn_executable(&run).ok_or_else(|| {
             trf("{agent} staat niet op deze computer.", "{agent} is not on this computer.", &[("agent", &run.provider.display_name())])
         })?;
-        if paths::verdict(&run.working_directory) != Verdict::Ok {
+        // A folder on another machine is not on this computer; the agent there finds it, or says it is gone.
+        if run.remote.is_none() && paths::verdict(&run.working_directory) != Verdict::Ok {
             let message = trf(
                 "De werkmap bestaat niet meer: {dir}",
                 "The working folder no longer exists: {dir}",
@@ -1629,8 +1647,14 @@ impl Manager {
         if self.wait_for_capacity(id, &prompt, &executable, show_prompt) {
             return;
         }
-        // Does this version of the agent have its server? Asked once per program, before the lock.
-        if let Some(provider) = self.run(id).map(|r| r.provider) {
+        // Does this version of the agent have its server? Asked once per program, before the lock. Not for an agent on
+        // another machine: its program is not here to ask, and an unknown answer uses the server.
+        let remote = self.run(id).and_then(|r| r.remote);
+        let executable = match &remote {
+            Some(_) => self.run(id).map(|r| remote_start::remote_program(r.provider)).unwrap_or(executable),
+            None => executable,
+        };
+        if let Some(provider) = self.run(id).filter(|_| remote.is_none()).map(|r| r.provider) {
             driver::warm(provider, &executable);
         }
         // Resolve OTLP telemetry outside the mutex (may read settings/secrets/env).
@@ -1655,7 +1679,7 @@ impl Manager {
             let codex_rollback = run.pending_rollback.clone().filter(|p| p.is_codex());
             let account_environment = (self.hooks.account_environment)(&run.profile_id);
             let config_dir = account_environment.get("CLAUDE_CONFIG_DIR").map(String::as_str);
-            let tool_search = if run.provider == RunProvider::Claude {
+            let tool_search = if run.provider == RunProvider::Claude && run.remote.is_none() {
                 let files = super::token_savings::ClaudeToolSearch::settings_files(&run.working_directory, config_dir);
                 let env_val = std::env::var("ENABLE_TOOL_SEARCH").ok();
                 let user_val = super::token_savings::ClaudeToolSearch::user_value(&files).or(env_val);
@@ -1684,7 +1708,8 @@ impl Manager {
                 account_environment,
                 run_id: id.to_string(),
                 profile_id: run.profile_id.clone(),
-                bridge: (self.hooks.bridge)(),
+                // Nook's tools reach an agent on another machine only on the Mac so far (`RemoteBridge`, AG-132).
+                bridge: if run.remote.is_none() { (self.hooks.bridge)() } else { None },
                 effort: run.effort.clone(),
                 tool_search,
                 tuning,
@@ -1727,7 +1752,12 @@ impl Manager {
                     }
                     let mut spec = planned.spec;
                     spec.arguments.extend(self.resolve_account_arguments(&run.profile_id));
-                    let spec = command::apply_telemetry(run.provider, &telemetry, spec);
+                    // On another machine: the same agent through ssh, under that machine's own login of the agent. No
+                    // telemetry receiver there: an endpoint on this computer is usually not reachable from it.
+                    let spec = match &run.remote {
+                        Some(target) => super::remote::wrap(spec, target, &executable, &Default::default()),
+                        None => command::apply_telemetry(run.provider, &telemetry, spec),
+                    };
                     (spec, planned.driver, used_claude_rollback)
                 }
                 Err(message) => {
@@ -2925,7 +2955,7 @@ impl Manager {
             self.emit(out);
             (run, prompt, carried)
         };
-        let Some(executable) = self.resolve_executable(run.provider, &run.profile_id) else {
+        let Some(executable) = self.turn_executable(&run) else {
             self.lock().recovering.remove(&id);
             return false;
         };
@@ -3364,7 +3394,7 @@ impl Manager {
                     context_tokens: run.usage.context_tokens,
                     cache: run.prompt_cache.clone(),
                     holds_for_you: holds,
-                    is_remote: false,
+                    is_remote: run.remote.is_some(),
                 };
                 if let Some(fire) = super::token_savings::IdleCompaction::fire_date(&candidate, now) {
                     if fire <= now {
@@ -5777,6 +5807,7 @@ read rest
             restart: Default::default(),
             prompt_cache: None,
             other_projects: vec![],
+            remote: None,
         };
         {
             let mut s = manager.lock();

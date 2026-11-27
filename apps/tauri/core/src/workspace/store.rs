@@ -339,6 +339,7 @@ mod tests {
             restart: Default::default(),
             prompt_cache: None,
             other_projects: vec![],
+            remote: None,
         }
     }
 

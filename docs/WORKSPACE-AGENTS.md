@@ -150,6 +150,11 @@ remote access to it.
 
 ### Sessions on another machine
 
+A new session picks where it runs under the composer, with **Runs on**: this Mac (or this computer on Windows and
+Linux), one of the machines from Settings › Devices › Machines, or **Add a machine…**. With a machine chosen, the
+heading asks for the folder there (typed, `~/code/app` or `/srv/app`), and the agent starts there over SSH with that
+machine's own login of the agent. On Windows and Linux only key logins and the folder itself work so far (AG-132).
+
 A session over SSH gets Nook's browser, `render_page` and read access to its own session (`RemoteBridge`). Nook copies `nook-mcp`
 to `~/.nook` there (it needs Perl with `JSON::PP`) and ssh forwards a socket in that folder to `bridge-remote.sock` on the Mac.
 That socket is separate from `bridge.sock`: a call on it needs a token made for that run, works only while that session is at work, and every tool that acts on the Mac

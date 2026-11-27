@@ -49,6 +49,7 @@ pub mod prompts;
 pub mod queue;
 pub mod readiness;
 pub mod recovery;
+pub mod remote;
 pub mod resources;
 pub mod restart;
 pub mod rollback;

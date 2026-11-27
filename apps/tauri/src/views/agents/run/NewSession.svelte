@@ -7,6 +7,8 @@
   import AntigravitySetup from "./AntigravitySetup.svelte";
   import ComposerContext from "./ComposerContext.svelte";
   import PromptTools from "./PromptTools.svelte";
+  import RunsOnPicker from "./RunsOnPicker.svelte";
+  import { machinesApi, isValidRemoteFolder, machineFolderLabel, rememberFolder, rememberedFolder, type RemoteMachine } from "../../../lib/workspace/machines";
   import { prompts } from "../../../lib/workspace/prompts.svelte";
   import { compose, project as project_, type ContextRef } from "../../../lib/workspace/context-refs";
   // Een sessie starten (`NewSessionComposer` op de Mac): één vraag, één veld en een paar rustige keuzes eronder.
@@ -59,6 +61,30 @@
   let prepared = false;
   /// The folder whose choices the composer shows.
   let folderApplied = "";
+  /// Where the agent runs ("Runs on"): this computer (null) or a machine over SSH, with the folder typed for it there.
+  let machines = $state<RemoteMachine[]>([]);
+  let machine = $state<RemoteMachine | null>(null);
+  let remoteFolder = $state("");
+
+  $effect(() => {
+    const load = () => machinesApi.list().then((list) => {
+      machines = list;
+      // A machine removed in Settings while it was chosen: back to this computer.
+      if (machine && !list.some((m) => m.id === machine!.id)) machine = null;
+      else if (machine) machine = list.find((m) => m.id === machine!.id) ?? machine;
+    }).catch(() => {});
+    load();
+    const un = machinesApi.onChanged(load);
+    return () => { un.then((f) => f()); };
+  });
+
+  /// Picks where the agent runs; a machine starts in the folder you last used there.
+  function pickMachine(m: RemoteMachine | null) {
+    machine = m;
+    error = null;
+    if (m) remoteFolder = rememberedFolder(m.id) || remoteFolder || "~";
+    requestAnimationFrame(() => textarea?.focus());
+  }
 
   const settings = $derived(workspace.settings);
   const runnable = $derived(workspace.providers.filter((p) => p.supported));
@@ -118,7 +144,8 @@
   // Comparing models (`ModelComparison`): the same prompt to more models, each in a worktree of its own.
   let extras = $state<ComparisonTarget[]>([]);
   const primaryTarget = $derived<ComparisonTarget>({ provider: config.provider, profileId: config.profileId, model: config.model });
-  const comparing = $derived(extras.length > 0 && !noProject);
+  // Not on another machine: each model would need a worktree there, which this app cannot make yet (AG-132).
+  const comparing = $derived(extras.length > 0 && !noProject && !machine);
   function targetName(t: ComparisonTarget): string {
     const agent = workspace.provider(t.provider)?.name ?? t.provider;
     const model = t.model ? catalog.find(t.provider, t.model)?.name ?? t.model : tr("standaard", "default");
@@ -147,6 +174,13 @@
   );
   const blockingReason = $derived.by((): string | null => {
     if (!config.task.trim() && !attached.length && !pictures.length) return tr("Schrijf eerst een opdracht.", "Write a task first.");
+    if (machine) {
+      // On another machine: the agent must be there, not here; ssh and the folder are checked as it starts.
+      if (!isValidRemoteFolder(remoteFolder)) return tr("Typ de map op {machine}: vanaf / of ~/.", "Type the folder on {machine}: from / or ~/.", { machine: machine.name });
+      if (!policies.includes(config.permission)) return tr("Deze agent ondersteunt die rechten niet.", "This agent doesn't support that permission.");
+      if (!provider?.supported) return tr("Nook kan {agent} op dit platform niet zelf aansturen; dat kan op een computer.", "Nook can't drive {agent} itself on this platform; it can on a computer.", { agent: provider?.name ?? config.provider });
+      return null;
+    }
     if (noProject) {
       // A folder of its own is made when it starts: only the agent has to be able to run.
       if (!policies.includes(config.permission)) return tr("Deze agent ondersteunt die rechten niet.", "This agent doesn't support that permission.");
@@ -391,7 +425,7 @@
       attached = [];
       pictures = [];
       mentions = [];
-      try { localStorage.removeItem(draftKey(config.projectPath)); } catch { /* nothing kept */ }
+      try { localStorage.removeItem(draftKey(config.projectPath, null)); } catch { /* nothing kept */ }
       config.task = "";
     }
     if (outcome.started.length) {
@@ -415,11 +449,14 @@
     }
     try {
       const task = project_(compose(config.task, attached, mentions), pictures);
-      const id = await workspaceApi.start({ ...config, task, projectPath: noProject ? "" : config.projectPath, branchName: "" }, allowShared);
+      const id = machine
+        ? await workspaceApi.start({ ...config, task, projectPath: remoteFolder.trim(), isolation: "folder", baseBranch: "", branchName: "", machineId: machine.id }, false)
+        : await workspaceApi.start({ ...config, task, projectPath: noProject ? "" : config.projectPath, branchName: "", machineId: "" }, allowShared);
+      if (machine) rememberFolder(machine.id, remoteFolder);
       attached = [];
       pictures = [];
       mentions = [];
-      try { localStorage.removeItem(draftKey(config.projectPath)); } catch { /* nothing kept */ }
+      try { localStorage.removeItem(draftKey(config.projectPath, machine)); } catch { /* nothing kept */ }
       config.task = "";
       await workspace.refresh();
       if (background) toast.success(tr("Sessie gestart", "Session started"));
@@ -447,10 +484,11 @@
 
   // A draft per folder (`ComposerDraftStore` on the Mac): what you typed for a project waits there when you switch to
   // another one and back, and survives closing the window; starting the session clears it.
-  const draftKey = (folder: string) => `nook.newSession.draft:${noProject ? "" : cleanProjectPath(folder)}`;
+  const draftKey = (folder: string, on: RemoteMachine | null) =>
+    on ? `nook.newSession.draft:machine:${on.id}` : `nook.newSession.draft:${noProject ? "" : cleanProjectPath(folder)}`;
   let draftFolder = "";
   $effect(() => {
-    const key = draftKey(config.projectPath);
+    const key = draftKey(config.projectPath, machine);
     const text = config.task;
     if (key !== draftFolder) {
       // Another folder: its own draft comes back, unless you were typing one already.
@@ -474,7 +512,7 @@
   });
 
   const stop = (e: Event) => e.stopPropagation();
-  const startLabel = $derived(starting ? (config.isolation === "worktree" ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
+  const startLabel = $derived(starting ? (config.isolation === "worktree" && !machine ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
 
   // Markdown lists keep going (`ComposerLists`): a new line after "- item" or "7." starts the next item; one after an
   // empty item ends the list.
@@ -496,7 +534,16 @@
   <!-- The question and the way out of a project under it (`NewSessionComposer.heading`): "or start without a project";
        without one, the question drops the folder and "No project ⌄" opens the projects to pick one again. -->
   <div class="heading-wrap">
-    {#if noProject}
+    {#if machine}
+      <!-- On another machine (`NewSessionComposer.remoteRow`): the folder there is typed, there is no folder panel for it. -->
+      <h2 class="heading">{tr("Wat zullen we bouwen in", "What should we build in")} <span class="project static">{machineFolderLabel(machine, remoteFolder)}</span><span class="qmark">?</span></h2>
+      <label class="remote">
+        <Ico name="server" size={14} />
+        <span class="remote-label">{tr("Map op {machine}:", "Folder on {machine}:", { machine: machine.name })}</span>
+        <input bind:value={remoteFolder} placeholder="~/code/app" spellcheck="false" autocomplete="off" aria-label={tr("Map op {machine}:", "Folder on {machine}:", { machine: machine.name })} />
+        <button class="ghost" title={tr("Terug naar deze computer", "Back to this computer")} aria-label={tr("Terug naar deze computer", "Back to this computer")} onclick={() => pickMachine(null)}>✕</button>
+      </label>
+    {:else if noProject}
       <h2 class="heading">{tr("Waar zullen we aan werken?", "What should we work on?")}</h2>
       <span class="pop">
         <button class="sub on" onclick={(e) => { stop(e); menu = menu === "project" ? "" : "project"; }}>{tr("Geen project", "No project")} <Ico name="chevron-down" size={10} stroke={2.5} /></button>
@@ -581,7 +628,7 @@
        effort live in the picker's footer, as `ModelPickerOptions`), the microphone and the round send button. -->
   <PromptTools bind:this={promptTools} bind:draft={config.task} {textarea} />
   <div class="box">
-    <ComposerContext bind:this={context} {textarea} bind:draft={config.task} root={noProject ? null : (project?.path ?? null)} provider={config.provider} bind:attached bind:pictures bind:mentions />
+    <ComposerContext bind:this={context} {textarea} bind:draft={config.task} root={noProject || machine ? null : (project?.path ?? null)} provider={config.provider} bind:attached bind:pictures bind:mentions />
     <textarea bind:this={textarea} bind:value={config.task} rows="2" placeholder={tr("Beschrijf wat de agent moet doen. Enter start de sessie.", "Describe what the agent should do. Return starts the session.")} onkeydown={keydown} oninput={listInput}></textarea>
     <div class="bar">
       <Dropdown width={260} label={tr("Meer opties", "More options")}>
@@ -610,7 +657,7 @@
         onmode={(m) => { config.mode = m; remember(); }}
         onpermission={(p) => { config.permission = p; remember(); }}
         oneffort={(l) => { config.effort = l; remember(); }} />
-      {#if !noProject}
+      {#if !noProject && !machine}
         <!-- "Compare": the same prompt to more models at once, each in a worktree of its own (`ModelComparison`). -->
         <Dropdown width={280} label={tr("Vergelijk modellen", "Compare models")}>
           {#snippet trigger({ toggle, open })}
@@ -648,9 +695,11 @@
   </div>
 
   <!-- Under the box, tucked against it (`ComposerTray`): where the agent works and from which branch. -->
-  {#if !noProject && (!project || project.repoRoot || project.currentBranch)}
   <div class="below">
-    {#if !project || project.repoRoot}
+    <RunsOnPicker {machines} chosen={machine} onpick={pickMachine} />
+    {#if machine}
+      <span class="pill static"><Ico name="folder" size={15} /><span>{tr("Huidige map", "Current folder")}</span></span>
+    {:else if !noProject && (!project || project.repoRoot)}
       <Dropdown width={300} below label={tr("Waar de agent werkt", "Where the agent works")}>
         {#snippet trigger({ toggle, open })}
           <button class="pill" onclick={toggle} aria-expanded={open} title={worktreeAllowed ? "" : worktreeBlocked}>
@@ -667,7 +716,11 @@
       </Dropdown>
     {/if}
     <span class="spacer"></span>
-    {#if config.isolation === "worktree" && project?.branches.length}
+    {#if machine}
+      <span class="pill static faint-pill">{tr("via SSH · {host}", "via SSH · {host}", { host: machine.host })}</span>
+    {:else if noProject}
+      <!-- A folder of its own: no branch to show. -->
+    {:else if config.isolation === "worktree" && project?.branches.length}
       <Dropdown width={280} below align="right" label={tr("Basis-branch", "Base branch")} onopen={() => (branchQuery = "")}>
         {#snippet trigger({ toggle, open })}
           <button class="pill branch" onclick={toggle} aria-expanded={open}><Ico name="git-branch" size={15} /><span>{tr("Vanaf {branch}", "From {branch}", { branch: config.baseBranch })}</span><Ico name="chevron-down" size={10} stroke={2.5} /></button>
@@ -687,12 +740,13 @@
       <span class="pill static branch"><Ico name="git-branch" size={15} /><span>{project.currentBranch}</span></span>
     {/if}
   </div>
-  {/if}
 
   {#if config.provider === "antigravity"}<AntigravitySetup />{/if}
 
   {#if error}
     <p class="err">{error}</p>
+  {:else if machine}
+    <p class="faint small">{tr("De agent gebruikt zijn eigen login op {machine}. Hij moet daar geïnstalleerd zijn, en ssh moet er met een sleutel in kunnen.", "The agent uses its own login on {machine}. It must be installed there, and ssh must get in with a key.", { machine: machine.name })}</p>
   {:else if sharing.length && config.isolation === "folder"}
     <p class="note">
       {tr("Er werkt al een sessie in deze map: {sessions}. Twee agents in dezelfde map kunnen elkaars werk overschrijven.", "A session is already working in this folder: {sessions}. Two agents in the same folder can overwrite each other's work.", { sessions: sharing.map((r) => r.title).join(", ") })}
@@ -722,6 +776,13 @@
   .qmark { margin-left: calc(-1 * var(--space-6)); }
   .project { background: none; border: none; padding: 0; font: inherit; color: var(--paper); text-decoration: underline dashed var(--text3); text-decoration-thickness: 1.5px; text-underline-offset: 5px; }
   .project:hover { background: none; }
+  .project.static { text-decoration: none; }
+  /* The folder on a machine, typed (`NewSessionComposer.remoteRow`). */
+  .remote { display: flex; align-items: center; gap: var(--space-8); width: 100%; max-width: 640px; font: var(--text-body); color: var(--text3); }
+  .remote-label { color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+  .remote input { flex: 1; min-width: 140px; font: var(--text-code); }
+  .remote .ghost { flex: none; }
+  .faint-pill { color: var(--text3); }
   .clone { display: flex; gap: var(--space-6); }
   .clone input { flex: 1; }
   .box { position: relative; z-index: 1; border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); background: var(--composer); padding: var(--space-16) var(--space-8) var(--space-8) var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper) 6%, transparent); }

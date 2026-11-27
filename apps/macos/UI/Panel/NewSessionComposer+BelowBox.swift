@@ -11,6 +11,8 @@ extension NewSessionComposer {
 
     private var belowBoxRow: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
+            // Where the agent runs: this Mac or a machine over SSH (`runsOnPicker`), first, as it decides the rest.
+            runsOnPicker
             if let remoteMachine {
                 // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
                 ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)

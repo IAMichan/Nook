@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { tr } from "../i18n.svelte";
+import type { RemoteTarget } from "./machines";
 
 export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity";
 export type ExecutionMode = "agent" | "plan";
@@ -80,6 +81,8 @@ export interface WorkspaceRun {
   promptCache?: PromptCacheWindow | null;
   /** Other repository roots this session edited besides its own project (`SessionProjects`, #1549, AG-113). */
   otherProjects?: string[];
+  /** The machine the agent runs on over SSH, with its folder there; absent on this computer (`RemoteTarget`). */
+  remote?: RemoteTarget | null;
 }
 
 export type ContextLevel = "normal" | "warning" | "critical";
@@ -359,6 +362,8 @@ export interface NewRunConfig {
   worktreeRoot: string;
   instructions: string;
   effort: string | null;
+  /** The saved machine to run on (`RemoteMachine.id`); empty or absent runs it on this computer. */
+  machineId?: string;
 }
 
 export type ChangeKind = "added" | "modified" | "deleted" | "renamed" | "copied" | "untracked" | "conflicted" | "typeChanged";
