@@ -12,6 +12,7 @@ pub const ROWS: &[Row] = &[
         "Git est introuvable. Installe git et réessaie.",
         "No se encontró Git. Instala git e inténtalo de nuevo.",
     ),
+    ("This folder doesn't exist.", "Diesen Ordner gibt es nicht.", "Ce dossier n’existe pas.", "Esta carpeta no existe."),
     ("Git was not found.", "Git wurde nicht gefunden.", "Git est introuvable.", "No se encontró Git."),
     (
         "This folder is not a git repository.",
