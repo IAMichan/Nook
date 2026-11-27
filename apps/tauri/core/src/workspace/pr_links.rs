@@ -548,7 +548,11 @@ mod tests {
             &["cd ../other && gh pr view 7", "cd - && gh pr view 8", "cd \"$DIR\" && gh pr view 9"],
             Some("/work/repo"),
         );
-        assert_eq!(moved, vec![MentionedPullRequest { repo: None, number: 7, url: None, directory: Some("/work/other".into()) }]);
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0].number, 7);
+        assert_eq!(moved[0].repo, None);
+        assert_eq!(moved[0].url, None);
+        assert_eq!(moved[0].directory.as_deref().map(|d| d.replace('\\', "/")), Some("/work/other".into()));
     }
 
     #[test]
