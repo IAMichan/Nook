@@ -13,6 +13,7 @@
     usagePageUrl,
     type AccountLimits,
     type AgentKind,
+    type CliProxyHubSnapshot,
     type ResetOutcome,
   } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
@@ -38,6 +39,7 @@
   import { tip } from "../../components/ui/tip";
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import UsagePage from "../workspace/UsagePage.svelte";
+  import CliProxyHubs from "../settings/CliProxyHubs.svelte";
 
   type Tab = "cost" | "tokens" | "limits";
   let { onclose, initialTab }: { onclose: () => void; initialTab?: Tab } = $props();
@@ -72,6 +74,7 @@
   let generation = $state(0);
   let now = $state(new Date());
   let accountLimits = $state<AccountLimits[] | null>(null);
+  let cliproxyHubs = $state<CliProxyHubSnapshot[]>([]);
 
   // Open segment details popover key ("section|window|accountId") and revealed emails.
   let openPopover = $state<string | null>(null);
@@ -79,6 +82,14 @@
   // Per-profile reset credit outcomes and in-flight local guard.
   let creditOutcomes = $state<Record<string, ResetOutcome | null>>({});
   let redeemingLocal = $state<Record<string, boolean>>({});
+
+  async function loadCliProxyHubs() {
+    try {
+      cliproxyHubs = await agentApi.cliproxyHubs();
+    } catch {
+      cliproxyHubs = [];
+    }
+  }
 
   function choose(next: Tab) {
     tab = next;
@@ -155,10 +166,12 @@
   $effect(() => {
     let active = true;
     void loadLimits();
+    void loadCliProxyHubs();
     void agentApi.usageRefresh(false).catch(() => {});
 
     const unlisteners: Array<() => void> = [];
     void agentEvents.onUsage(() => { if (active) void loadLimits(); }).then((u) => unlisteners.push(u)).catch(() => {});
+    void agentEvents.onCliProxy(() => { if (active) void loadCliProxyHubs(); }).then((u) => unlisteners.push(u)).catch(() => {});
     void agentEvents.onCodexUsage(() => { if (active) void loadLimits(); }).then((u) => unlisteners.push(u)).catch(() => {});
     void agentEvents.onHistory(() => { if (active) void loadLimits(); }).then((u) => unlisteners.push(u)).catch(() => {});
 
@@ -180,8 +193,11 @@
   async function refresh() {
     refreshing = true;
     try {
-      await agentApi.usageRefresh(true).catch(() => {});
-      await Promise.all([loadLimits(), agents.refresh(), agents.loadHistory(true), workspace.refresh()]);
+      await Promise.all([
+        agentApi.usageRefresh(true).catch(() => {}),
+        agentApi.cliproxyRefresh(true).catch(() => {}),
+      ]);
+      await Promise.all([loadLimits(), loadCliProxyHubs(), agents.refresh(), agents.loadHistory(true), workspace.refresh()]);
       now = new Date();
       generation++;
     } finally {
@@ -437,7 +453,7 @@
     <div class="body">
       {#if tab === "limits"}
         <div class="limits-scroll">
-          {#if built.sections.length === 0 && built.notices.length === 0}
+          {#if built.sections.length === 0 && built.notices.length === 0 && cliproxyHubs.length === 0}
             <p class="empty-note">{tr("Nog geen limieten — ze verschijnen zodra een agent ze meldt.", "No limits yet — they appear once an agent reports them.")}</p>
           {/if}
 
@@ -635,6 +651,17 @@
                 </div>
               {/each}
             </div>
+          {/if}
+
+          {#if cliproxyHubs.length > 0}
+            <section class="pool-section">
+              <div class="section-head">
+                <h3>{tr("CLIProxyAPI-hubs", "CLIProxyAPI hubs")}</h3>
+              </div>
+              <div class="hub-card">
+                <CliProxyHubs hubs={cliproxyHubs} editable={false} {now} />
+              </div>
+            </section>
           {/if}
 
           {#if built.notices.length > 0}
@@ -1070,6 +1097,12 @@
   }
   .credit-detail.err {
     color: var(--coral-soft);
+  }
+  .hub-card {
+    border: 1px solid var(--line2);
+    border-radius: var(--radius-card);
+    background: var(--well);
+    overflow: hidden;
   }
   .notices {
     display: flex;

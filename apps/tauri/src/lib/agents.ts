@@ -148,6 +148,57 @@ export interface AccountLimits {
   redeeming: boolean;
 }
 
+export type CliProxyProblem =
+  | "noKey"
+  | "badAddress"
+  | "insecureAddress"
+  | "rejectedKey"
+  | "unreachable"
+  | "notAHub";
+
+export interface CliProxyHub {
+  id: string;
+  label: string;
+  url: string;
+}
+
+export interface CliProxyWindow {
+  key: "five_hour" | "seven_day" | "other" | string;
+  usedPercent: number;
+  resetsAt: string | null;
+  durationSecs: number | null;
+}
+
+export interface CliProxyAccount {
+  id: string;
+  provider: string;
+  agentKind: AgentKind | null;
+  name: string;
+  email: string | null;
+  label: string;
+  disabled: boolean;
+  status: string;
+  statusMessage: string | null;
+  unavailable: boolean;
+  available: boolean;
+  retryAt: string | null;
+  succeeded: number;
+  failed: number;
+  windows: CliProxyWindow[];
+}
+
+export interface CliProxyHubSnapshot {
+  hub: CliProxyHub;
+  name: string;
+  accounts: CliProxyAccount[];
+  readAt: string | null;
+  problem: CliProxyProblem | null;
+}
+
+export interface CliProxyAddResult {
+  problem: CliProxyProblem | null;
+}
+
 export interface Marks { finished: string[]; kept: Record<string, string>; visits: Record<string, string> }
 
 export interface Overview {
@@ -245,6 +296,11 @@ export const agentApi = {
   usageRefresh: (manual = false) => invoke<void>("agents_usage_refresh", { manual }),
   codexUsage: () => invoke<Record<string, CodexUsage>>("agents_codex_usage"),
   useResetCredit: (profile: string, key: string) => invoke<ResetOutcome>("agents_use_reset_credit", { profile, key }),
+  cliproxyHubs: () => invoke<CliProxyHubSnapshot[]>("agents_cliproxy_hubs"),
+  cliproxyAdd: (label: string, address: string, key: string) =>
+    invoke<CliProxyAddResult>("agents_cliproxy_add", { label, address, key }),
+  cliproxyRemove: (id: string) => invoke<void>("agents_cliproxy_remove", { id }),
+  cliproxyRefresh: (force = false) => invoke<void>("agents_cliproxy_refresh", { force }),
   integrations: () => invoke<Integration[]>("agents_integrations"),
   prepareLink: (target: LinkTarget, install: boolean, profileId: string | null) =>
     invoke<LinkPreview>("agents_prepare_link", { target, install, profileId }),
@@ -283,6 +339,7 @@ export const agentEvents = {
   onQuestionGone: (cb: (g: Gone) => void): Promise<UnlistenFn> => listen<Gone>("agent-question-gone", (e) => cb(e.payload)),
   onAttention: (cb: (s: AgentSession) => void): Promise<UnlistenFn> => listen<AgentSession>("agent-attention", (e) => cb(e.payload)),
   onUsage: (cb: () => void): Promise<UnlistenFn> => listen("agent-usage", () => cb()),
+  onCliProxy: (cb: () => void): Promise<UnlistenFn> => listen("cliproxy-usage", () => cb()),
   onCodexUsage: (cb: (map: Record<string, CodexUsage>) => void): Promise<UnlistenFn> =>
     listen<Record<string, CodexUsage>>("codex-usage", (e) => cb(e.payload)),
   onHistory: (cb: (h: HistoryResult) => void): Promise<UnlistenFn> => listen<HistoryResult>("agents-history", (e) => cb(e.payload)),
