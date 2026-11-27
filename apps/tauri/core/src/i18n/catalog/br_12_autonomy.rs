@@ -23,4 +23,7 @@ pub const ROWS: &[Row] = &[
     ("from {from}", "von {from}", "de {from}", "de {from}"),
     ("about {words}", "über {words}", "sur {words}", "sobre {words}"),
     ("group chats too", "auch Gruppenchats", "aussi les groupes", "también chats de grupo"),
+    ("Mail to {to}: {subject}", "Mail an {to}: {subject}", "Mail à {to} : {subject}", "Correo a {to}: {subject}"),
+    ("acts by itself", "handelt selbst", "agit seul", "actúa solo"),
+    ("automation", "Automatisierung", "automatisation", "automatización"),
 ];

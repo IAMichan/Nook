@@ -35,21 +35,6 @@
   "setupDetail": {
     "message": "ID de la extensión: $1"
   },
-  "siteNone": {
-    "message": "Ninguna página"
-  },
-  "siteRestricted": {
-    "message": "El navegador se reserva sus propias páginas; Nook no puede leerlas ni usarlas."
-  },
-  "siteAllowed": {
-    "message": "Nook puede leer y trabajar en este sitio cuando se lo pides."
-  },
-  "siteBlocked": {
-    "message": "Desactivado para este sitio: Nook no lo lee ni lo toca."
-  },
-  "siteSwitch": {
-    "message": "Nook en $1"
-  },
   "activeNote": {
     "message": "Nook puede usar este navegador."
   },
@@ -263,11 +248,14 @@
   "pickFailed": {
     "message": "No se pudo seleccionar. Recarga la página e inténtalo de nuevo."
   },
-  "trustName": {
-    "message": "Actuar sin preguntar"
+  "accessTitle": {
+    "message": "Acceso en $1"
   },
-  "trustSwitch": {
-    "message": "Dejar que Nook actúe en $1 sin preguntar"
+  "accessAsk": {
+    "message": "Preguntar antes"
+  },
+  "accessTrust": {
+    "message": "Sin preguntar"
   },
   "trustOn": {
     "message": "Nook hace clic y escribe aquí sin preguntar antes. Pagar, enviar y eliminar siguen preguntando."

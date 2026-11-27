@@ -43,6 +43,14 @@ pub(crate) fn step_tag(tool: &str, input: &Value) -> String {
         {
             nook_core::i18n::tr("controleer", "review").into()
         }
+        "schedule_task" | "set_up_secretary" | "update_scheduled_task" => {
+            let level = nook_core::workspace::autonomy::NookAutonomy::parse(&tools::text(input, "autonomy")).unwrap_or_default();
+            if level == nook_core::workspace::autonomy::NookAutonomy::Ask {
+                nook_core::i18n::tr("automatisering", "automation").into()
+            } else {
+                nook_core::i18n::tr("doet het zelf", "acts by itself").into()
+            }
+        }
         _ => String::new(),
     }
 }

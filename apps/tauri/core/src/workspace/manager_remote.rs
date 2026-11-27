@@ -96,6 +96,7 @@ impl Manager {
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            other_projects: vec![],
             remote: Some(target),
         };
         let mut out = Out::default();

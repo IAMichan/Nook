@@ -1,30 +1,51 @@
-import Foundation
 import AppKit
+import Combine
+import Foundation
+import Observation
 
 /// Tracks running AI agents based on their hooks and surfaces their questions to the notch:
 /// permissions (only when the agent would prompt the user directly) and multiple-choice questions (AskUserQuestion).
 /// If answered in the terminal, the question card in the notch is dismissed immediately.
+///
+/// Observable per property (`@Observable`): a view redraws only for what it reads of the hub. As an `ObservableObject`
+/// whose changes `AppModel` passed on, every hook event that changed the list redrew every view of the app.
 @MainActor
-final class AgentHub: ObservableObject {
-    @Published var sessions: [AgentSession] = []
+@Observable
+final class AgentHub {
+    var sessions: [AgentSession] = [] {
+        didSet { sessionsSubject.send(sessions); changes.send() }
+    }
     /// Agents running as OS processes that do not (yet) report via hooks.
-    @Published private(set) var detected: [AgentSession] = []
+    private(set) var detected: [AgentSession] = [] {
+        didSet { changes.send() }
+    }
     /// Pending permission requests, oldest first.
-    @Published var approvals: [ApprovalRequest] = []
+    var approvals: [ApprovalRequest] = [] {
+        didSet { changes.send() }
+    }
     /// Multiple-choice questions waiting for an answer, oldest first.
-    @Published private(set) var questions: [AgentQuestionRequest] = []
+    private(set) var questions: [AgentQuestionRequest] = [] {
+        didSet { changes.send() }
+    }
     /// Claude subscription usage when the status line integration is connected.
     /// Persisted so it remains visible even when Claude Code is not currently running.
-    @Published var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
-        didSet { Self.savePlanUsage(planUsage) }
+    var planUsage: PlanUsage? = AgentHub.loadPlanUsage() {
+        didSet { Self.savePlanUsage(planUsage); changes.send() }
     }
 
     /// Same for additional Claude accounts, per directory (CLAUDE_CONFIG_DIR). Primary account is in `planUsage`.
-    @Published var profilePlanUsage: [String: PlanUsage] = AgentHub.loadProfilePlanUsage() {
+    var profilePlanUsage: [String: PlanUsage] = AgentHub.loadProfilePlanUsage() {
         didSet {
             if let data = try? JSONEncoder().encode(profilePlanUsage) { UserDefaults.standard.set(data, forKey: Self.profilePlanUsageKey) }
+            changes.send()
         }
     }
+
+    /// For code outside views: `sessions` as they are now and after each change.
+    var sessionsPublisher: AnyPublisher<[AgentSession], Never> { sessionsSubject.eraseToAnyPublisher() }
+    @ObservationIgnored private let sessionsSubject = CurrentValueSubject<[AgentSession], Never>([])
+    /// Sends after any of the lists or usages above changed (what `objectWillChange` was for code outside views).
+    @ObservationIgnored let changes = PassthroughSubject<Void, Never>()
 
     private nonisolated static let planUsageKey = "planUsage"
     private nonisolated static let profilePlanUsageKey = "profilePlanUsage"
@@ -80,14 +101,14 @@ final class AgentHub: ObservableObject {
         UserDefaults.standard.set(data, forKey: planUsageKey)
     }
 
-    var onApproval: ((ApprovalRequest) -> Void)?
+    @ObservationIgnored var onApproval: ((ApprovalRequest) -> Void)?
     /// A question was answered (here or externally) or expired: remove the card. The text is a confirmation
     /// to display if answered from Nook, nil otherwise.
-    var onApprovalGone: ((String, String?) -> Void)?
-    var onQuestion: ((AgentQuestionRequest) -> Void)?
-    var onQuestionGone: ((String, String?) -> Void)?
-    var onAttention: ((AgentSession) -> Void)?
-    var recap: RecapStore?
+    @ObservationIgnored var onApprovalGone: ((String, String?) -> Void)?
+    @ObservationIgnored var onQuestion: ((AgentQuestionRequest) -> Void)?
+    @ObservationIgnored var onQuestionGone: ((String, String?) -> Void)?
+    @ObservationIgnored var onAttention: ((AgentSession) -> Void)?
+    @ObservationIgnored var recap: RecapStore?
 
     struct Record {
         var agentID: String
@@ -155,7 +176,8 @@ final class AgentHub: ObservableObject {
 
     /// Every change marks the records to be saved; one snapshot follows once the change is handled (`scheduleSave`), not
     /// one per write: a hook event writes its record several times.
-    var records: [String: Record] = [:] {
+    /// Not observed: a hook event writes its record several times; views read `sessions`, published from it (`rebuild`).
+    @ObservationIgnored var records: [String: Record] = [:] {
         didSet { scheduleSave() }
     }
     var pendingApprovals: [String: PendingApproval] = [:]
@@ -168,11 +190,11 @@ final class AgentHub: ObservableObject {
             }
         }
     }
-    private let server = UnixSocketServer(path: NookPaths.socketURL.path)
-    private var pruneTimer: Timer?
+    @ObservationIgnored private let server = UnixSocketServer(path: NookPaths.socketURL.path)
+    @ObservationIgnored private var pruneTimer: Timer?
     /// Every agent process from the latest scan, including those reporting via hooks: to end a session from Nook.
-    var processes: [DetectedAgent] = []
-    private var scanTimer: Timer?
+    @ObservationIgnored var processes: [DetectedAgent] = []
+    @ObservationIgnored private var scanTimer: Timer?
 
     /// After this many seconds without answer, agent prompts user directly (hook timeout is 120s).
     static let approvalTimeout: UInt64 = 110
@@ -181,7 +203,7 @@ final class AgentHub: ObservableObject {
     /// App prompts Nook is pressing the button of right now, so a second click does not press again.
     var answering: Set<String> = []
     /// What you allowed "always" for a session in a gated agent (`PreToolGate.grant`), by session key.
-    var sessionGrants: [String: Set<String>] = [:]
+    @ObservationIgnored var sessionGrants: [String: Set<String>] = [:]
     static let questionTimeout: UInt64 = 120
 
     func start() {
@@ -220,7 +242,7 @@ final class AgentHub: ObservableObject {
         }
     }
 
-    private var lastScan: Date = .distantPast
+    @ObservationIgnored private var lastScan: Date = .distantPast
 
     /// The timer's scan: every ten seconds while you work, less often while you are away or the Mac saves power, and only
     /// every few minutes while the screen is locked or asleep (nobody sees the list; a session that ended is still
@@ -234,7 +256,7 @@ final class AgentHub: ObservableObject {
         refreshDetected()
     }
 
-    private var linkedStateCache: [String: (linked: Bool, checkedAt: Date)] = [:]
+    @ObservationIgnored private var linkedStateCache: [String: (linked: Bool, checkedAt: Date)] = [:]
 
     /// Discovers running agents. Ones already reporting via hooks are not duplicated.
     func refreshDetected() {
@@ -307,19 +329,19 @@ final class AgentHub: ObservableObject {
     }
 
     /// When `sessions` was last published, and whether a later publish is waiting (see `rebuild`).
-    var lastPublished: Date = .distantPast
-    var publishPending = false
+    @ObservationIgnored var lastPublished: Date = .distantPast
+    @ObservationIgnored var publishPending = false
     /// Set while `handle` applies a hook event: `rebuild` then only notes that it is wanted.
-    var deferringRebuild = false
-    var rebuildRequested = false
+    @ObservationIgnored var deferringRebuild = false
+    @ObservationIgnored var rebuildRequested = false
     /// Keys restored at launch that no process has confirmed yet.
-    var unconfirmed: Set<String> = []
-    let launchedAt = Date()
-    var saveWork: Task<Void, Never>?
+    @ObservationIgnored var unconfirmed: Set<String> = []
+    @ObservationIgnored let launchedAt = Date()
+    @ObservationIgnored var saveWork: Task<Void, Never>?
     /// Whether `records` changed since the last snapshot; a save is then scheduled on the main queue.
-    var recordsDirty = false
+    @ObservationIgnored var recordsDirty = false
     /// Scans in a row each busy session's process was missing from the process list.
-    var missingScans: [String: Int] = [:]
+    @ObservationIgnored var missingScans: [String: Int] = [:]
     // MARK: Answers from Nook
 
     func approval(id: String) -> ApprovalRequest? {

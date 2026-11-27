@@ -35,21 +35,6 @@
   "setupDetail": {
     "message": "Extension ID: $1"
   },
-  "siteNone": {
-    "message": "No page"
-  },
-  "siteRestricted": {
-    "message": "The browser keeps its own pages to itself; Nook cannot read or use them."
-  },
-  "siteAllowed": {
-    "message": "Nook may read and work on this site when you ask."
-  },
-  "siteBlocked": {
-    "message": "Off for this site: Nook will not read or touch it."
-  },
-  "siteSwitch": {
-    "message": "Nook on $1"
-  },
   "activeNote": {
     "message": "Nook may use this browser."
   },
@@ -263,11 +248,14 @@
   "pickFailed": {
     "message": "Selecting did not work. Reload the page and try again."
   },
-  "trustName": {
-    "message": "Act without asking"
+  "accessTitle": {
+    "message": "Access on $1"
   },
-  "trustSwitch": {
-    "message": "Let Nook act on $1 without asking"
+  "accessAsk": {
+    "message": "Ask first"
+  },
+  "accessTrust": {
+    "message": "Without asking"
   },
   "trustOn": {
     "message": "Nook clicks and types here without asking first. Paying, sending and deleting still ask."

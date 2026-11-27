@@ -57,6 +57,7 @@ pub struct Overview {
     providers: Vec<ProviderInfo>,
     settings: WorkspaceSettings,
     worktree_setups: std::collections::HashMap<Uuid, nook_core::workspace::worktree_setup::WorktreeSetupProgress>,
+    connector_sign_ins: std::collections::HashMap<Uuid, Vec<nook_core::workspace::connector_sign_in::ConnectorSignIn>>,
 }
 
 /// Connects `Manager` to Nook's live OpenTelemetry settings and keychain headers (AG-33 / SV-05).
@@ -111,6 +112,7 @@ pub fn workspace_overview(app: AppHandle, state: State<'_, WorkspaceState>) -> O
         providers,
         settings: lock(&state.settings).clone(),
         worktree_setups: m.visible_setups(),
+        connector_sign_ins: m.connector_sign_ins(),
     }
 }
 
@@ -120,8 +122,9 @@ pub fn workspace_save_settings(app: tauri::AppHandle, state: State<'_, Workspace
     settings.favorite_projects = current.favorite_projects.clone();
     settings.recent_projects = current.recent_projects.clone();
     settings.last_project = current.last_project.clone();
-    // Per-project values have their own commands; a save from elsewhere never drops them.
+    // Per-project values and dismissed connectors have their own commands; a save from elsewhere never drops them.
     settings.project_overrides = current.project_overrides.clone();
+    settings.dismissed_connector_sign_ins = current.dismissed_connector_sign_ins.clone();
     settings.save_to(&WorkspaceSettings::file());
     *current = settings;
     drop(current);
@@ -873,6 +876,32 @@ pub async fn workspace_clone(app: AppHandle, state: State<'_, WorkspaceState>, u
         crate::workspace::clones::clone(&app, git, &clean, &parent_str, host_layout)
     })
     .await?
+}
+
+/// Creates a new project folder with an empty Git repository (`AddProjectPalette`, #1482, AG-113), pins it as a
+/// favorite project, and returns its path.
+#[tauri::command]
+pub async fn workspace_create_project(app: AppHandle, state: State<'_, WorkspaceState>, name: String, near: Option<String>) -> Res<String> {
+    use nook_core::workspace::{session_projects::AddProjectSource, source_control_rules::CloneLayout};
+
+    let m = state.manager.clone();
+    let folder = blocking(move || {
+        let developer = nook_core::agents::home_dir().join("Developer");
+        let parent = CloneLayout::clone_parent(near.as_deref().map(std::path::Path::new), false, &developer);
+        AddProjectSource::create_project(m.git(), &parent, &name)
+    })
+    .await??;
+
+    {
+        let mut s = lock(&state.settings);
+        if !s.favorite_projects.iter().any(|p| p == &folder) {
+            s.favorite_projects.push(folder.clone());
+        }
+        s.remember_project(&folder);
+        s.save_to(&WorkspaceSettings::file());
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(folder)
 }
 
 /// What publishing a local folder to GitHub would do, shown before confirmation (`PublishPlan` on macOS).
@@ -2182,6 +2211,45 @@ pub async fn workspace_suggest_next_prompt(app: AppHandle, state: State<'_, Work
         return Ok(None);
     }
     Ok(Some(stripped.to_string()))
+}
+
+/// Starts sign-in for an MCP connector reported by a session's agent (`WorkspaceManager.signInConnector`, AG-31).
+#[tauri::command]
+pub async fn workspace_connector_sign_in(app: AppHandle, state: State<'_, WorkspaceState>, run: String, name: String) -> Res<()> {
+    let run_id = id(&run)?;
+    let manager = state.manager.clone();
+    let opener = app.clone();
+    manager
+        .sign_in_connector(
+            run_id,
+            name,
+            Arc::new(move |url| {
+                use tauri_plugin_opener::OpenerExt;
+                let _ = opener.opener().open_url(url, None::<&str>);
+            }),
+        )
+        .await;
+    Ok(())
+}
+
+/// Dismisses MCP connectors from the sign-in banner above the composer and cancels any active wait (`hideConnectorSignIns`, AG-31).
+#[tauri::command]
+pub fn workspace_connector_hide(app: AppHandle, state: State<'_, WorkspaceState>, run: String, names: Vec<String>) -> Res<()> {
+    let run_id = id(&run)?;
+    {
+        let mut settings = lock(&state.settings);
+        let mut set: std::collections::BTreeSet<String> = settings.dismissed_connector_sign_ins.iter().cloned().collect();
+        for name in &names {
+            if !name.is_empty() {
+                set.insert(name.clone());
+            }
+        }
+        settings.dismissed_connector_sign_ins = set.into_iter().collect();
+        settings.save_to(&WorkspaceSettings::file());
+    }
+    state.manager.hide_connector_sign_ins(run_id, &names);
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
 }
 
 // MARK: Guest links (`GuestShares` on the Mac, AG-81)

@@ -455,7 +455,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-30** Sign-in after an expired login (`AgentSignInFailure`) · M Done (2026-11-23): `needs_sign_in` in `core/src/workspace/recovery.rs` and `lib/workspace/agent-updates.ts` detects expired or missing authentication across agents, and the failed turn card in `views/agents/run/Timeline.svelte` offers `Log in again` to run the profile's sign-in command in Nook's terminal.
 
-- [ ] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M
+- [x] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M Done (2026-11-27): `core/src/workspace/connector_sign_in.rs` (with `ConnectorDomains` icon lookup and Claude/Codex needs-auth parsers), `parsers.rs` (`mcp_servers`, `control_response`, `mcp_authenticate`/`mcp_status`/`mcp_reconnect`), `codex_app_server.rs` (`mcpServerStatus/list`, `mcpServer/oauth/login`, `config/mcpServer/reload`), `manager.rs` (live and idle control sign-in, 4-second polling up to 5 minutes, sibling account sharing & reconnect, gone-on-recheck handling), `workspace_connector_sign_in` / `workspace_connector_hide` commands, and `ConnectorSignInBanner.svelte` + `ConnectorSignInGroup.svelte` in `RunPanel.svelte`.
 
 - [x] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M — ported `readiness.rs`, `advice.rs`, `token_savings.rs`, and `tuning.rs` in `nook-core`, wired prompt-cache tracking, idle/size/return compaction, `AutoCompactMark`, `ClaudeToolSearch`, and `AppliedTuning` into `Manager`/`CommandInput`, added Tauri commands (`workspace_tuning_scan`, `workspace_tuning_set`, `workspace_readiness`, `workspace_limit_advice`, `workspace_offers_compact_first`), and added `TokenSettingsSection.svelte` under Settings › Coding agents › Usage & costs.
   - Also (2026-11-27): the first-run flow's "Coding agents" step (`components/OnboardingAgents.svelte`, `lib/agent-readiness.ts`) shows each agent ready, to sign in, or to install, and offers the git folders you worked in over the last 30 days as projects (`workspace_project_candidates`, `workspace_remember_project`).
@@ -614,7 +614,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-112** Bulk delete, custom snooze, dropping files onto a row · S
 
-- [ ] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
+- [x] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
   - Part done: changed-line counts on rows ("+120 −8", from git after every turn: `WorkspaceRun.lines_added`/`lines_removed`; for terminal sessions from the hub), the project's initials badge, Add project in the list's head. Open: favicons, multi-project label, the row's Project menu. Since then: the project's own icon (favicon, linked icon, monorepo web app, AppIcon picture; `core/src/workspace/favicon.rs`, `workspace_favicon`). Still open: the multi-project label (sessions here have one project) and the row's Project menu. And the row's Project menu on right-click (New session in it, favorite, Show in Explorer, Copy path, Select…), the project's own name from Settings › Projects in the rows and the new-session menu, archived projects left out of it, and the project's own values for a new session ahead of your last choices there.
 
 - [x] **AG-114** One notice per finished turn with logo and gist (`AgentStatusNotice`); `AgentAlerts.svelte` covers part · S
@@ -642,7 +642,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.9 Automation and remote
 
-- [ ] **AG-130** Scheduled tasks that act on their own without a session (#1676); Nook Chat as a target is BR-15…BR-17 · M
+- [x] **AG-130** Scheduled tasks that act on their own without a session (#1676); Nook Chat as a target is BR-15…BR-17 · M
 
 - [ ] **AG-131** Webhook filters, duplicate key, coalescing, deliveries log, public relay, deliveries kept across a quit (`WebhookRelay`, #1677) · M
 

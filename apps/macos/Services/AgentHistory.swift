@@ -1,6 +1,8 @@
+import Combine
 import Foundation
-import SwiftUI
+import Observation
 import SQLite3
+import SwiftUI
 
 /// Which agent a past session or account belongs to. Nook reads the sessions of Claude Code, Codex, Gemini CLI and
 /// Antigravity from disk; OpenCode, Cursor and Grok it runs over ACP and knows by their login.
@@ -428,17 +430,28 @@ struct AgentUsageSummary: Equatable {
 
 /// Past sessions, token usage, and accounts from Claude Code and Codex. Only reads their own files on this Mac
 /// (~/.claude and ~/.codex) in the background, re-reading a transcript only when it has changed.
+///
+/// Observable per property (`@Observable`): a refresh that brings new token counts redraws the usage views, not every
+/// view of the app as when `AppModel` passed on its `objectWillChange`.
 @MainActor
-final class AgentHistory: ObservableObject {
+@Observable
+final class AgentHistory {
     /// How many days back the Agents list shows earlier sessions: transcripts here, and settled sessions Nook ran itself
     /// (`WorkspaceRunsSection.recent`), so both kinds in "Settled" go back equally far.
     nonisolated static let listDays = 30
 
-    @Published private(set) var sessions: [PastSession] = []
+    private(set) var sessions: [PastSession] = [] {
+        didSet { sessionsSubject.send(sessions); changes.send() }
+    }
+    /// For code outside views: `sessions` as they are now and after each change.
+    var sessionsPublisher: AnyPublisher<[PastSession], Never> { sessionsSubject.eraseToAnyPublisher() }
+    @ObservationIgnored private let sessionsSubject = CurrentValueSubject<[PastSession], Never>([])
+    /// Sends after any of the published lists, accounts or usage changed (what `objectWillChange` was outside views).
+    @ObservationIgnored let changes = PassthroughSubject<Void, Never>()
     /// The sessions read from transcripts on disk, and the ones agents listed themselves (ACP `session/list`) per account:
     /// `sessions` holds both, each conversation once.
-    private var diskSessions: [PastSession] = []
-    private var listedSessions: [String: [PastSession]] = [:]
+    @ObservationIgnored private var diskSessions: [PastSession] = []
+    @ObservationIgnored private var listedSessions: [String: [PastSession]] = [:]
 
     /// What an agent account listed itself (see `WorkspaceManager.listAgentSessions`), replacing what it listed before.
     func setListedSessions(_ list: [PastSession], account: String) {
@@ -458,8 +471,8 @@ final class AgentHistory: ObservableObject {
 
     /// The sessions another one launched, by every conversation id they hold, and the sessions that launched them, by id
     /// (`LaunchedSessions`): a row and a header name the launcher without searching the whole history on every redraw.
-    private var launchedByConversation: [String: PastSession] = [:]
-    private var launchers: [String: PastSession] = [:]
+    @ObservationIgnored private var launchedByConversation: [String: PastSession] = [:]
+    @ObservationIgnored private var launchers: [String: PastSession] = [:]
 
     private func indexLaunched(_ sessions: [PastSession]) {
         let launched = sessions.filter { !$0.launchedBy.isEmpty }
@@ -482,26 +495,38 @@ final class AgentHistory: ObservableObject {
         launchedByConversation["\(agent.rawValue):\(conversation)"].flatMap(launcher(of:))
     }
     /// Per account (`AgentProfile.id`): who is logged in.
-    @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
+    private(set) var profileAccounts: [String: AgentAccount] = [:] {
+        didSet { changes.send() }
+    }
     /// Per account: tokens and sessions for today and this week.
-    @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
+    private(set) var profileUsage: [String: AgentUsageSummary] = [:] {
+        didSet { changes.send() }
+    }
     /// Every agent's tokens per hour and model over the last 90 days, for Settings › Coding agents.
-    @Published private(set) var ledger = UsageLedger()
+    private(set) var ledger = UsageLedger() {
+        didSet { changes.send() }
+    }
     /// Which agents are installed on this Mac (presence of ~/.claude or ~/.codex).
-    @Published private(set) var installed: Set<AgentKind> = []
+    private(set) var installed: Set<AgentKind> = [] {
+        didSet { changes.send() }
+    }
     /// Agents whose executable exists on this Mac.
-    @Published private(set) var executables: [AgentKind: String] = [:]
-    @Published private(set) var loading = false
+    private(set) var executables: [AgentKind: String] = [:] {
+        didSet { changes.send() }
+    }
+    private(set) var loading = false {
+        didSet { changes.send() }
+    }
     /// A scan is under way, whether or not it shows (`loading`).
-    private var scanning = false
+    @ObservationIgnored private var scanning = false
     /// Which API-key accounts have their key in the Keychain, and for which account list and when that was read.
-    private var apiKeysRead: (profiles: [String], date: Date, keys: [String: Bool]) = ([], .distantPast, [:])
+    @ObservationIgnored private var apiKeysRead: (profiles: [String], date: Date, keys: [String: Bool]) = ([], .distantPast, [:])
 
     /// Which accounts Nook reads; AppModel keeps this in sync with `AgentProfileStore`.
-    var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
+    @ObservationIgnored var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
 
-    private let scanner = HistoryScanner()
-    private var lastRefresh = Date.distantPast
+    @ObservationIgnored private let scanner = HistoryScanner()
+    @ObservationIgnored private var lastRefresh = Date.distantPast
 
     /// The default account for each agent (the standard directory, as used by `claude` in the terminal).
     var accounts: [AgentKind: AgentAccount] {

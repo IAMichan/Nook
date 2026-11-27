@@ -1,15 +1,34 @@
 //! How much an automation for Nook Chat (`ScheduledTaskTarget::Nook`) may carry out by itself once its run prepared
-//! the steps (`NookAutonomy`, `AutonomyPolicy` on the Mac): nothing (every step waits for the user's click), what Nook's
-//! judge finds routine, or every step a task may do unattended. The rules live here and are tested on their own; the
-//! app runs the steps through the plan runner, which writes the audit log.
-//!
-//! Not ported: sending a mail draft by itself. The Tauri app hands mail drafts to the mail app (`mailto:`) and has no
-//! sender of its own yet (CH-91), so a draft always waits for the user.
+//! the steps (`NookAutonomy`, `AutonomyPolicy` on the Mac, #1676): nothing (every step waits for the user's click),
+//! what Nook's judge finds routine, or every step a task may do unattended. The rules live here and are tested on their
+//! own; the app runs plan steps through the plan runner and delivers mail drafts through linked accounts, both writing
+//! to the audit log.
 
 use serde::{Deserialize, Serialize};
 
 use super::schedule::ScheduleTrigger;
 use crate::i18n::{tr, trf};
+
+/// A mail draft (`MailDraft`) is not a plan action; its Send counts as this tool (`AutonomyPolicy.mailTool`).
+pub const MAIL_TOOL: &str = "send_mail";
+
+/// Summary line for a mail draft step in the judge prompt and the waiting summary (`autonomy.step.mail`).
+pub fn mail_step_summary(to: &str, subject: &str) -> String {
+    trf("Mail aan {to}: {subject}", "Mail to {to}: {subject}", &[("to", &to), ("subject", &subject)])
+}
+
+/// Detail text for a mail draft step sent to the judge (`AppModel+Autonomy`).
+pub fn mail_step_detail(cc: &str, body: &str, attachments: usize) -> String {
+    let mut out = String::new();
+    if !cc.trim().is_empty() {
+        out.push_str(&format!("Cc: {}\n", cc.trim()));
+    }
+    out.push_str(body);
+    if attachments > 0 {
+        out.push_str(&format!("\n[{attachments} attachment(s)]"));
+    }
+    out
+}
 
 /// The level the user chose for a task. Approving the task with this level is the user's yes for the steps it covers;
 /// every step that runs is in the audit log, and the answer says what ran and what still waits.
@@ -316,5 +335,19 @@ mod tests {
         assert!(text.contains("- Delete event — always waits for you"));
         assert!(note(0, 0, &[], NookAutonomy::Decide).is_empty());
         assert!(run_note(NookAutonomy::Ask).is_none());
+    }
+
+    #[test]
+    fn mail_draft_steps_are_formatted_and_allowed_unattended() {
+        assert!(may_run_unattended(MAIL_TOOL));
+        let summary = mail_step_summary("jan@example.com", "Offer");
+        assert!(summary.contains("jan@example.com") && summary.contains("Offer"));
+        let detail = mail_step_detail("lisa@example.com", "See attached.", 2);
+        assert!(detail.contains("Cc: lisa@example.com"));
+        assert!(detail.contains("See attached."));
+        assert!(detail.contains("[2 attachment(s)]"));
+        let steps = vec![step(MAIL_TOOL), step("delete_event")];
+        assert_eq!(split(&steps, NookAutonomy::Auto), (vec![0], vec![]));
+        assert_eq!(split(&steps, NookAutonomy::Decide), (vec![], vec![0]));
     }
 }

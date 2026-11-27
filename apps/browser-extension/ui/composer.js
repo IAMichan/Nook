@@ -39,6 +39,12 @@ function deferred() {
 		reject
 	};
 }
+// node_modules/svelte/src/internal/client/constants.js
+/**
+* An effect that does not destroy its child effects when it reruns.
+* Runs as part of render effects, i.e. not eagerly as part of tree traversal or effect flushing.
+*/
+var MANAGED_EFFECT = 1 << 24;
 var CLEAN = 1024;
 var DIRTY = 2048;
 var MAYBE_DIRTY = 4096;
@@ -2203,6 +2209,13 @@ function block(fn, flags = 0) {
 }
 /**
 * @param {(() => void)} fn
+* @param {number} flags
+*/
+function managed(fn, flags = 0) {
+	return create_effect(MANAGED_EFFECT | flags, fn);
+}
+/**
+* @param {(() => void)} fn
 */
 function branch(fn) {
 	return create_effect(32 | EFFECT_PRESERVED, fn);
@@ -4340,6 +4353,29 @@ function append_styles$1(anchor, css) {
 		}
 	});
 }
+// node_modules/svelte/src/internal/client/dom/elements/attachments.js
+/** @import { Effect } from '#client' */
+/**
+* @param {Element} node
+* @param {() => (node: Element) => void} get_fn
+*/
+function attach(node, get_fn) {
+	/** @type {false | undefined | ((node: Element) => void)} */
+	var fn = void 0;
+	/** @type {Effect | null} */
+	var e;
+	managed(() => {
+		if (fn !== (fn = get_fn())) {
+			if (e) {
+				destroy_effect(e);
+				e = null;
+			}
+			if (fn) e = branch(() => {
+				effect(() => fn(node));
+			});
+		}
+	});
+}
 // node_modules/clsx/dist/clsx.mjs
 function r(e) {
 	var t, f, n = "";
@@ -5021,15 +5057,15 @@ function hasMarkdown(text) {
 }
 // src/Composer.svelte
 var root$4 = /* @__PURE__ */ from_html(`<button type="button" class="thumb svelte-r7ttdz"><img alt="" class="svelte-r7ttdz"/></button>`);
-var root_1$3 = /* @__PURE__ */ from_html(`<span class="file faint svelte-r7ttdz"> </span>`);
-var root_2$3 = /* @__PURE__ */ from_html(`<button type="button" class="file svelte-r7ttdz"> <span class="faint svelte-r7ttdz"> </span></button>`);
-var root_3$3 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
-var root_4$3 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
-var root_5$3 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
+var root_1$4 = /* @__PURE__ */ from_html(`<span class="file faint svelte-r7ttdz"> </span>`);
+var root_2$4 = /* @__PURE__ */ from_html(`<button type="button" class="file svelte-r7ttdz"> <span class="faint svelte-r7ttdz"> </span></button>`);
+var root_3$4 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
+var root_4$4 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
+var root_5$4 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
 var root_6$2 = /* @__PURE__ */ from_html(`<span> </span>`);
 var root_7$2 = /* @__PURE__ */ from_html(`<div class="layer svelte-r7ttdz" aria-hidden="true"><!> </div>`);
 var root_8$2 = /* @__PURE__ */ from_html(`<button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="M12 5v14M5 12h14"></path></svg></button>`);
-var root_9$1 = /* @__PURE__ */ from_html(`<button type="button" class="round queue svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4"></path></svg></button>`);
+var root_9$2 = /* @__PURE__ */ from_html(`<button type="button" class="round queue svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M2.5 4h11M2.5 8h11M2.5 12h6M11 10.5v4M9 12.5h4"></path></svg></button>`);
 var root_10$1 = /* @__PURE__ */ from_html(`<button type="button" class="round stop svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"></rect></svg></button>`);
 var root_11$1 = /* @__PURE__ */ from_html(`<button type="button" class="round send svelte-r7ttdz"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-r7ttdz"><path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"></path></svg></button>`);
 var root_12$1 = /* @__PURE__ */ from_html(`<div role="group"><!> <div class="box svelte-r7ttdz"><!> <!> <div><!> <textarea rows="1" class="svelte-r7ttdz"></textarea></div> <div class="row svelte-r7ttdz"><input class="file-input svelte-r7ttdz" type="file" multiple=""/> <!> <!> <span class="grow svelte-r7ttdz"></span> <!> <!> <!></div></div> <!></div>`);
@@ -5132,7 +5168,7 @@ function Composer($$anchor, $$props) {
 	var div_1 = sibling(node, 2);
 	var node_1 = child(div_1);
 	var consequent_3 = ($$anchor) => {
-		var div_2 = root_4$3();
+		var div_2 = root_4$4();
 		var node_2 = child(div_2);
 		each(node_2, 19, () => draft().images, (img) => img.url, ($$anchor, img, i) => {
 			var button = root$4();
@@ -5147,7 +5183,7 @@ function Composer($$anchor, $$props) {
 		});
 		var node_3 = sibling(node_2, 2);
 		var consequent = ($$anchor) => {
-			var span = root_1$3();
+			var span = root_1$4();
 			var text_1 = only_child(span, true);
 			template_effect(() => set_text(text_1, $$props.texts.reading));
 			append($$anchor, span);
@@ -5157,7 +5193,7 @@ function Composer($$anchor, $$props) {
 		});
 		var node_4 = sibling(node_3, 2);
 		var consequent_1 = ($$anchor) => {
-			var button_1 = root_2$3();
+			var button_1 = root_2$4();
 			var text_2 = child(button_1);
 			var text_3 = only_child(sibling(text_2));
 			reset(button_1);
@@ -5174,7 +5210,7 @@ function Composer($$anchor, $$props) {
 		});
 		var node_5 = sibling(node_4, 2);
 		var consequent_2 = ($$anchor) => {
-			append($$anchor, root_3$3());
+			append($$anchor, root_3$4());
 		};
 		if_block(node_5, ($$render) => {
 			if (get(dragging)) $$render(consequent_2);
@@ -5187,7 +5223,7 @@ function Composer($$anchor, $$props) {
 	});
 	var node_6 = sibling(node_1, 2);
 	var consequent_4 = ($$anchor) => {
-		var p = root_5$3();
+		var p = root_5$4();
 		var text_4 = only_child(p, true);
 		template_effect(() => set_text(text_4, draft().fileError));
 		append($$anchor, p);
@@ -5255,7 +5291,7 @@ function Composer($$anchor, $$props) {
 	snippet(node_12, () => $$props.extras ?? noop);
 	var node_13 = sibling(node_12, 2);
 	var consequent_7 = ($$anchor) => {
-		var button_3 = root_9$1();
+		var button_3 = root_9$2();
 		template_effect(() => {
 			button_3.disabled = !get(canSend);
 			set_attribute(button_3, "title", $$props.texts.queue);
@@ -5407,11 +5443,11 @@ function brandFill(brand) {
 // src/AgentMark.svelte
 var next = 0;
 var root$3 = /* @__PURE__ */ from_svg(`<svg class="mark laptop svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"></path><path d="M20.054 15.987H3.946"></path></svg>`);
-var root_1$2 = /* @__PURE__ */ from_svg(`<defs><linearGradient x1="0" y1="1" x2="1" y2="0"><stop offset="0"></stop><stop offset="1"></stop></linearGradient></defs>`);
-var root_2$2 = /* @__PURE__ */ from_svg(`<path fill-rule="evenodd"></path>`);
-var root_3$2 = /* @__PURE__ */ from_svg(`<svg class="mark svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><!><!></svg>`);
-var root_4$2 = /* @__PURE__ */ from_svg(`<svg class="mark tile svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#4F8BF7"></stop><stop offset="0.5" stop-color="#EA4335"></stop><stop offset="1" stop-color="#FBBC04"></stop></linearGradient></defs><rect x="0.25" y="0.25" width="23.5" height="23.5" rx="6.7" fill="#171717" stroke="var(--nc-line, #3f3f46)" stroke-width="0.5"></rect><path d="M5.3 18.7 12 5.3l6.7 13.4M8.8 14.1h6.4" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>`);
-var root_5$2 = /* @__PURE__ */ from_html(`<span class="mark letter svelte-1vbdbgh" aria-hidden="true"> </span>`);
+var root_1$3 = /* @__PURE__ */ from_svg(`<defs><linearGradient x1="0" y1="1" x2="1" y2="0"><stop offset="0"></stop><stop offset="1"></stop></linearGradient></defs>`);
+var root_2$3 = /* @__PURE__ */ from_svg(`<path fill-rule="evenodd"></path>`);
+var root_3$3 = /* @__PURE__ */ from_svg(`<svg class="mark svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><!><!></svg>`);
+var root_4$3 = /* @__PURE__ */ from_svg(`<svg class="mark tile svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#4F8BF7"></stop><stop offset="0.5" stop-color="#EA4335"></stop><stop offset="1" stop-color="#FBBC04"></stop></linearGradient></defs><rect x="0.25" y="0.25" width="23.5" height="23.5" rx="6.7" fill="#171717" stroke="var(--nc-line, #3f3f46)" stroke-width="0.5"></rect><path d="M5.3 18.7 12 5.3l6.7 13.4M8.8 14.1h6.4" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>`);
+var root_5$3 = /* @__PURE__ */ from_html(`<span class="mark letter svelte-1vbdbgh" aria-hidden="true"> </span>`);
 var $$css$4 = {
 	hash: "svelte-1vbdbgh",
 	code: ".mark.svelte-1vbdbgh {flex-shrink:0;display:block;}.laptop.svelte-1vbdbgh {fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}.letter.svelte-1vbdbgh {display:grid;place-items:center;border-radius:28%;background:color-mix(in srgb, currentColor 20%, transparent);font-weight:700;line-height:1;}"
@@ -5435,10 +5471,10 @@ function AgentMark($$anchor, $$props) {
 		append($$anchor, svg);
 	};
 	var consequent_2 = ($$anchor) => {
-		var svg_1 = root_3$2();
+		var svg_1 = root_3$3();
 		var node_1 = child(svg_1);
 		var consequent_1 = ($$anchor) => {
-			var defs = root_1$2();
+			var defs = root_1$3();
 			var linearGradient = child(defs);
 			var stop = child(linearGradient);
 			var stop_1 = sibling(stop);
@@ -5456,7 +5492,7 @@ function AgentMark($$anchor, $$props) {
 			if (get(d_1)) $$render(consequent_1);
 		});
 		each(sibling(node_1), 17, () => brandPaths[get(brand)] ?? [], index, ($$anchor, d) => {
-			var path = root_2$2();
+			var path = root_2$3();
 			template_effect(($0) => {
 				set_attribute(path, "d", get(d));
 				set_attribute(path, "fill", $0);
@@ -5471,7 +5507,7 @@ function AgentMark($$anchor, $$props) {
 		append($$anchor, svg_1);
 	};
 	var consequent_3 = ($$anchor) => {
-		var svg_2 = root_4$2();
+		var svg_2 = root_4$3();
 		var defs_1 = child(svg_2);
 		var linearGradient_1 = only_child(defs_1);
 		var path_1 = sibling(defs_1, 2);
@@ -5485,7 +5521,7 @@ function AgentMark($$anchor, $$props) {
 		append($$anchor, svg_2);
 	};
 	var consequent_4 = ($$anchor) => {
-		var span = root_5$2();
+		var span = root_5$3();
 		let styles;
 		var text = only_child(span, true);
 		template_effect(($0) => {
@@ -5509,23 +5545,25 @@ function AgentMark($$anchor, $$props) {
 }
 // src/ModelPicker.svelte
 var pickers = 0;
-var root_1$1 = /* @__PURE__ */ from_html(`<span class="mp-rail-line svelte-9tg97k" aria-hidden="true"></span>`);
-var root_2$1 = /* @__PURE__ */ from_html(`<span class="mp-in-use svelte-9tg97k" aria-hidden="true"></span>`);
-var root_3$1 = /* @__PURE__ */ from_html(`<!> <button type="button"><!> <!></button>`, 1);
-var root_4$1 = /* @__PURE__ */ from_html(`<div class="mp-header svelte-9tg97k"> </div>`);
-var root_5$1 = /* @__PURE__ */ from_html(`<button type="button" role="option"><!> <span class="mp-title svelte-9tg97k"> </span></button>`);
+var root_1$2 = /* @__PURE__ */ from_html(`<span class="mp-rail-line svelte-9tg97k" aria-hidden="true"></span>`);
+var root_2$2 = /* @__PURE__ */ from_html(`<span class="mp-in-use svelte-9tg97k" aria-hidden="true"></span>`);
+var root_3$2 = /* @__PURE__ */ from_html(`<!> <button type="button"><!> <!></button>`, 1);
+var root_4$2 = /* @__PURE__ */ from_html(`<div class="mp-header svelte-9tg97k"> </div>`);
+var root_5$2 = /* @__PURE__ */ from_html(`<button type="button" role="option"><!> <span class="mp-title svelte-9tg97k"> </span></button>`);
 var root_6$1 = /* @__PURE__ */ from_html(`<p class="mp-empty svelte-9tg97k"> </p>`);
-var root_7$1 = /* @__PURE__ */ from_html(`<div class="mp-panel svelte-9tg97k" role="dialog"><div class="mp-rail svelte-9tg97k"></div> <div class="mp-column svelte-9tg97k"><!> <label class="mp-search svelte-9tg97k"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3 3"></path></svg> <input type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" class="svelte-9tg97k"/></label> <div class="mp-list svelte-9tg97k" role="listbox"></div></div></div>`);
-var root_8$1 = /* @__PURE__ */ from_html(`<div class="mp svelte-9tg97k"><button type="button" aria-haspopup="dialog"><!> <span class="mp-label svelte-9tg97k"> </span> <svg class="mp-chevron svelte-9tg97k" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"></path></svg></button> <!></div>`);
+var root_7$1 = /* @__PURE__ */ from_html(`<div class="mp-footer svelte-9tg97k"><!></div>`);
+var root_8$1 = /* @__PURE__ */ from_html(`<div class="mp-panel svelte-9tg97k" role="dialog"><div class="mp-body svelte-9tg97k"><div class="mp-rail svelte-9tg97k"></div> <div class="mp-column svelte-9tg97k"><!> <label class="mp-search svelte-9tg97k"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3 3"></path></svg> <input type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" class="svelte-9tg97k"/></label> <div class="mp-list svelte-9tg97k" role="listbox"></div></div></div> <!></div>`);
+var root_9$1 = /* @__PURE__ */ from_html(`<div class="mp svelte-9tg97k"><button type="button" aria-haspopup="dialog"><!> <span class="mp-label svelte-9tg97k"> </span> <svg class="mp-chevron svelte-9tg97k" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"></path></svg></button> <!></div>`);
 var $$css$3 = {
 	hash: "svelte-9tg97k",
-	code: "\n  /* Class names start with mp-: the surface's own stylesheet (the extension's side panel) has its own .menu, .empty… */.mp.svelte-9tg97k {position:relative;min-width:0;}.mp.svelte-9tg97k button:where(.svelte-9tg97k) {margin:0;border:0;font-family:inherit;font-weight:inherit;line-height:inherit;cursor:pointer;transition:background-color 0.15s ease, color 0.15s ease;}.mp-chip.svelte-9tg97k {display:flex;align-items:center;gap:6px;max-width:100%;min-width:0;height:28px;padding:0 8px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);font-size:13px;white-space:nowrap;}.mp-chip.svelte-9tg97k:hover:not(:disabled), .mp-chip.open.svelte-9tg97k {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}.mp-chip.svelte-9tg97k:disabled {cursor:default;opacity:0.6;}.mp-chip.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.mp-label.svelte-9tg97k {overflow:hidden;text-overflow:ellipsis;min-width:0;}.mp-chevron.svelte-9tg97k {flex-shrink:0;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}.mp-panel.svelte-9tg97k {position:absolute;bottom:calc(100% + 8px);z-index:20;display:flex;align-items:stretch;padding:4px;border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-menu-radius, 12px);background:var(--nc-menu, var(--nc-surface, #ffffff));color:var(--nc-text, #27272a);box-shadow:0 12px 32px rgb(0 0 0 / 0.28);overflow:hidden;}.mp-rail.svelte-9tg97k {flex-shrink:0;display:flex;flex-direction:column;gap:4px;width:44px;padding:6px;background:color-mix(in srgb, var(--nc-text, #27272a) 3%, transparent);border-right:1px solid var(--nc-line, #e4e4e7);}.mp-rail-line.svelte-9tg97k {align-self:center;width:18px;height:1px;margin:2px 0;background:var(--nc-line-focus, #d4d4d8);}.mp-place.svelte-9tg97k {position:relative;display:grid;place-items:center;width:32px;height:32px;padding:0;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-text, #27272a);}.mp-place.svelte-9tg97k:hover {background:var(--nc-hover, #f4f4f5);}.mp-place.shown.svelte-9tg97k {background:color-mix(in srgb, var(--nc-text, #27272a) 8%, transparent);}.mp-place.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:-2px;}.mp-in-use.svelte-9tg97k {position:absolute;top:4px;right:4px;width:4px;height:4px;border-radius:50%;background:color-mix(in srgb, var(--nc-text, #27272a) 70%, transparent);}.mp-column.svelte-9tg97k {flex:1;min-width:0;display:flex;flex-direction:column;padding:0 4px;}.mp-header.svelte-9tg97k {padding:8px 8px 4px;color:var(--nc-faint, #62626c);font-size:11.5px;font-weight:500;}.mp-search.svelte-9tg97k {display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--nc-line, #e4e4e7);color:var(--nc-faint, #62626c);}.mp-search.svelte-9tg97k svg:where(.svelte-9tg97k) {flex-shrink:0;width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;}.mp-search.svelte-9tg97k input:where(.svelte-9tg97k) {flex:1;min-width:0;margin:0;padding:0;border:0;background:transparent;color:var(--nc-text, #27272a);font:inherit;font-size:13px;outline:none;}.mp-search.svelte-9tg97k input:where(.svelte-9tg97k)::placeholder {color:var(--nc-faint, #62626c);}.mp-search.svelte-9tg97k input:where(.svelte-9tg97k)::-webkit-search-cancel-button {display:none;}.mp-list.svelte-9tg97k {max-height:240px;overflow-y:auto;padding:4px 0;}.mp-row.svelte-9tg97k {display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:6px 8px;border-radius:var(--nc-chip-radius, 6px);background:transparent;color:var(--nc-text, #27272a);font-size:13px;text-align:left;}.mp-row.chosen.svelte-9tg97k {background:color-mix(in srgb, var(--nc-text, #27272a) 8%, transparent);}.mp-row.active.svelte-9tg97k {background:var(--nc-hover, #f4f4f5);}.mp-row.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:-2px;}.mp-title.svelte-9tg97k {flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.mp-empty.svelte-9tg97k {margin:0;padding:10px;color:var(--nc-faint, #62626c);font-size:12px;}"
+	code: "\n  /* Class names start with mp-: the surface's own stylesheet (the extension's side panel) has its own .menu, .empty… */.mp.svelte-9tg97k {position:relative;min-width:0;}.mp.svelte-9tg97k button:where(.svelte-9tg97k) {margin:0;border:0;font-family:inherit;font-weight:inherit;line-height:inherit;cursor:pointer;transition:background-color 0.15s ease, color 0.15s ease;}.mp-chip.svelte-9tg97k {display:flex;align-items:center;gap:6px;max-width:100%;min-width:0;height:28px;padding:0 8px;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-faint, #62626c);font-size:13px;white-space:nowrap;}.mp-chip.svelte-9tg97k:hover:not(:disabled), .mp-chip.open.svelte-9tg97k {background:var(--nc-hover, #f4f4f5);color:var(--nc-text, #27272a);}.mp-chip.svelte-9tg97k:disabled {cursor:default;opacity:0.6;}.mp-chip.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:2px;}.mp-label.svelte-9tg97k {overflow:hidden;text-overflow:ellipsis;min-width:0;}.mp-chevron.svelte-9tg97k {flex-shrink:0;width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}.mp-panel.svelte-9tg97k {position:absolute;bottom:calc(100% + 8px);z-index:20;display:flex;flex-direction:column;padding:4px;border:1px solid var(--nc-line, #e4e4e7);border-radius:var(--nc-menu-radius, 12px);background:var(--nc-menu, var(--nc-surface, #ffffff));color:var(--nc-text, #27272a);box-shadow:0 12px 32px rgb(0 0 0 / 0.28);overflow:hidden;}.mp-body.svelte-9tg97k {display:flex;align-items:stretch;min-height:0;}.mp-footer.svelte-9tg97k {border-top:1px solid var(--nc-line, #e4e4e7);}.mp-rail.svelte-9tg97k {flex-shrink:0;display:flex;flex-direction:column;gap:4px;width:44px;padding:6px;background:color-mix(in srgb, var(--nc-text, #27272a) 3%, transparent);border-right:1px solid var(--nc-line, #e4e4e7);}.mp-rail-line.svelte-9tg97k {align-self:center;width:18px;height:1px;margin:2px 0;background:var(--nc-line-focus, #d4d4d8);}.mp-place.svelte-9tg97k {position:relative;display:grid;place-items:center;width:32px;height:32px;padding:0;border-radius:var(--nc-control-radius, 8px);background:transparent;color:var(--nc-text, #27272a);}.mp-place.svelte-9tg97k:hover {background:var(--nc-hover, #f4f4f5);}.mp-place.shown.svelte-9tg97k {background:color-mix(in srgb, var(--nc-text, #27272a) 8%, transparent);}.mp-place.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:-2px;}.mp-in-use.svelte-9tg97k {position:absolute;top:4px;right:4px;width:4px;height:4px;border-radius:50%;background:color-mix(in srgb, var(--nc-text, #27272a) 70%, transparent);}.mp-column.svelte-9tg97k {flex:1;min-width:0;display:flex;flex-direction:column;padding:0 4px;}.mp-header.svelte-9tg97k {padding:8px 8px 4px;color:var(--nc-faint, #62626c);font-size:11.5px;font-weight:500;}.mp-search.svelte-9tg97k {display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--nc-line, #e4e4e7);color:var(--nc-faint, #62626c);}.mp-search.svelte-9tg97k svg:where(.svelte-9tg97k) {flex-shrink:0;width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;}.mp-search.svelte-9tg97k input:where(.svelte-9tg97k) {flex:1;min-width:0;margin:0;padding:0;border:0;background:transparent;color:var(--nc-text, #27272a);font:inherit;font-size:13px;outline:none;}.mp-search.svelte-9tg97k input:where(.svelte-9tg97k)::placeholder {color:var(--nc-faint, #62626c);}.mp-search.svelte-9tg97k input:where(.svelte-9tg97k)::-webkit-search-cancel-button {display:none;}.mp-list.svelte-9tg97k {max-height:240px;overflow-y:auto;padding:4px 0;}.mp-row.svelte-9tg97k {display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:6px 8px;border-radius:var(--nc-chip-radius, 6px);background:transparent;color:var(--nc-text, #27272a);font-size:13px;text-align:left;}.mp-row.chosen.svelte-9tg97k {background:color-mix(in srgb, var(--nc-text, #27272a) 8%, transparent);}.mp-row.active.svelte-9tg97k {background:var(--nc-hover, #f4f4f5);}.mp-row.svelte-9tg97k:focus-visible {outline:2px solid var(--nc-accent, #1e1e22);outline-offset:-2px;}.mp-title.svelte-9tg97k {flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.mp-empty.svelte-9tg97k {margin:0;padding:10px;color:var(--nc-faint, #62626c);font-size:12px;}"
 };
 function ModelPicker($$anchor, $$props) {
 	push($$props, true);
 	append_styles$1($$anchor, $$css$3);
 	let group = prop($$props, "group", 3, ""), disabled = prop($$props, "disabled", 3, false);
 	/** The menu opens: the surface can fetch the newest list. */
+	/** Under the rail and the models, across the panel: the session's options, as `ModelPickerOptions` on the Mac. */
 	/** The panel's width on the Mac (`ModelPickerStyle.width`), and the room it keeps from the window's edges. */
 	const width = 340;
 	/** Ties the search field to its list and the row the arrow keys are on, for assistive technology. */
@@ -5604,7 +5642,7 @@ function ModelPicker($$anchor, $$props) {
 		else return;
 		e.preventDefault();
 	}
-	var div = root_8$1();
+	var div = root_9$1();
 	event("click", $window, (e) => get(open) && !get(root)?.contains(e.target) && set(open, false));
 	event("keydown", $window, (e) => get(open) && e.key === "Escape" && (set(open, false), e.stopPropagation()));
 	event("resize", $window, () => get(open) && place());
@@ -5630,15 +5668,16 @@ function ModelPicker($$anchor, $$props) {
 	next$1(2);
 	reset(button);
 	var node_1 = sibling(button, 2);
-	var consequent_3 = ($$anchor) => {
-		var div_1 = root_7$1();
+	var consequent_4 = ($$anchor) => {
+		var div_1 = root_8$1();
 		let styles;
 		var div_2 = child(div_1);
-		each(div_2, 23, () => get(places), (p) => p.name, ($$anchor, p, i) => {
-			var fragment = root_3$1();
+		var div_3 = child(div_2);
+		each(div_3, 23, () => get(places), (p) => p.name, ($$anchor, p, i) => {
+			var fragment = root_3$2();
 			var node_2 = first_child(fragment);
 			var consequent = ($$anchor) => {
-				append($$anchor, root_1$1());
+				append($$anchor, root_1$2());
 			};
 			if_block(node_2, ($$render) => {
 				if (get(i) > 0 && get(places)[get(i) - 1].local && !get(p).local) $$render(consequent);
@@ -5658,7 +5697,7 @@ function ModelPicker($$anchor, $$props) {
 			});
 			var node_4 = sibling(node_3, 2);
 			var consequent_1 = ($$anchor) => {
-				append($$anchor, root_2$1());
+				append($$anchor, root_2$2());
 			};
 			if_block(node_4, ($$render) => {
 				if (get(p).name === get(inUse) && get(p) !== get(current)) $$render(consequent_1);
@@ -5673,14 +5712,14 @@ function ModelPicker($$anchor, $$props) {
 			delegated("click", button_1, () => show(get(p).name));
 			append($$anchor, fragment);
 		});
-		reset(div_2);
-		var div_3 = sibling(div_2, 2);
-		var node_5 = child(div_3);
+		reset(div_3);
+		var div_4 = sibling(div_3, 2);
+		var node_5 = child(div_4);
 		var consequent_2 = ($$anchor) => {
-			var div_4 = root_4$1();
-			var text_1 = only_child(div_4, true);
+			var div_5 = root_4$2();
+			var text_1 = only_child(div_5, true);
 			template_effect(() => set_text(text_1, get(current).name));
-			append($$anchor, div_4);
+			append($$anchor, div_5);
 		};
 		if_block(node_5, ($$render) => {
 			if (get(current)) $$render(consequent_2);
@@ -5690,9 +5729,9 @@ function ModelPicker($$anchor, $$props) {
 		remove_input_defaults(input);
 		bind_this(input, ($$value) => set(search, $$value), () => get(search));
 		reset(label_1);
-		var div_5 = sibling(label_1, 2);
-		each(div_5, 23, () => get(rows), (choice) => choice.id, ($$anchor, choice, index) => {
-			var button_2 = root_5$1();
+		var div_6 = sibling(label_1, 2);
+		each(div_6, 23, () => get(rows), (choice) => choice.id, ($$anchor, choice, index) => {
+			var button_2 = root_5$2();
 			let classes_2;
 			var node_6 = child(button_2);
 			{
@@ -5726,9 +5765,20 @@ function ModelPicker($$anchor, $$props) {
 			template_effect(() => set_text(text_3, $$props.texts.empty));
 			append($$anchor, p_1);
 		});
-		reset(div_5);
-		bind_this(div_5, ($$value) => set(list, $$value), () => get(list));
-		reset(div_3);
+		reset(div_6);
+		bind_this(div_6, ($$value) => set(list, $$value), () => get(list));
+		reset(div_4);
+		reset(div_2);
+		var node_7 = sibling(div_2, 2);
+		var consequent_3 = ($$anchor) => {
+			var div_7 = root_7$1();
+			snippet(child(div_7), () => $$props.footer);
+			reset(div_7);
+			append($$anchor, div_7);
+		};
+		if_block(node_7, ($$render) => {
+			if ($$props.footer) $$render(consequent_3);
+		});
 		reset(div_1);
 		template_effect(() => {
 			set_attribute(div_1, "aria-label", $$props.texts.button);
@@ -5740,8 +5790,8 @@ function ModelPicker($$anchor, $$props) {
 			set_attribute(input, "aria-activedescendant", get(active) >= 0 ? `${listID}-${get(active)}` : void 0);
 			set_attribute(input, "placeholder", $$props.texts.search);
 			set_attribute(input, "aria-label", $$props.texts.search);
-			set_attribute(div_5, "id", listID);
-			set_attribute(div_5, "aria-label", get(current)?.name);
+			set_attribute(div_6, "id", listID);
+			set_attribute(div_6, "aria-label", get(current)?.name);
 		});
 		delegated("input", input, () => set(highlight, 0));
 		delegated("keydown", input, key);
@@ -5749,7 +5799,7 @@ function ModelPicker($$anchor, $$props) {
 		append($$anchor, div_1);
 	};
 	if_block(node_1, ($$render) => {
-		if (get(open)) $$render(consequent_3);
+		if (get(open)) $$render(consequent_4);
 	});
 	reset(div);
 	bind_this(div, ($$value) => set(root, $$value), () => get(root));
@@ -5873,10 +5923,15 @@ function fileBase64(file) {
 	});
 }
 // ../../apps/browser-extension/composer/PanelComposer.svelte
-var root$2 = /* @__PURE__ */ from_html(`<div class="panel-composer svelte-1dv7v2j"><!></div>`);
+var root$2 = /* @__PURE__ */ from_svg(`<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path>`, 1);
+var root_1$1 = /* @__PURE__ */ from_svg(`<path d="M8 1.8 13 3.6v4c0 3-2.1 5.3-5 6.6-2.9-1.3-5-3.6-5-6.6v-4Z"></path><path d="m5.8 8 1.6 1.6 2.9-3"></path>`, 1);
+var root_2$1 = /* @__PURE__ */ from_html(`<button type="button" role="radio"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-1dv7v2j"><!></svg> <span class="svelte-1dv7v2j"> </span></button>`);
+var root_3$1 = /* @__PURE__ */ from_html(`<p> </p>`);
+var root_4$1 = /* @__PURE__ */ from_html(`<div class="access svelte-1dv7v2j"><div class="access-title svelte-1dv7v2j"> </div> <div class="access-levels svelte-1dv7v2j" role="radiogroup"></div> <div class="access-help svelte-1dv7v2j"></div></div>`);
+var root_5$1 = /* @__PURE__ */ from_html(`<div class="panel-composer svelte-1dv7v2j"><!></div>`);
 var $$css$2 = {
 	hash: "svelte-1dv7v2j",
-	code: "\n  /* The shared composer in the panel's tokens (sidepanel.css), which follow the look Nook sends. */.panel-composer.svelte-1dv7v2j {--nc-surface: var(--composer);--nc-surface-focus: var(--composer);--nc-line: var(--field-stroke);--nc-line-focus: var(--line2);--nc-radius: var(--radius-composer);--nc-control-radius: var(--radius-control);--nc-chip-radius: var(--radius-chip);--nc-menu: var(--surface);--nc-menu-radius: var(--radius-panel);--nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);--nc-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 4%, transparent), 0 8px 24px rgb(0 0 0 / 0.12);--nc-text: var(--paper);--nc-faint: var(--text-tertiary);--nc-hover: var(--row-hover);--nc-accent: var(--accent);--nc-on-accent: var(--on-accent);--nc-accent-hover: var(--accent-hover);--nc-disabled: var(--smoke);--nc-stop: var(--paper);--nc-on-stop: var(--canvas);--nc-error: var(--coral);font:var(--body)/1.45 var(--sans);}"
+	code: "\n  /* The shared composer in the panel's tokens (sidepanel.css), which follow the look Nook sends. */.panel-composer.svelte-1dv7v2j {--nc-surface: var(--composer);--nc-surface-focus: var(--composer);--nc-line: var(--field-stroke);--nc-line-focus: var(--line2);--nc-radius: var(--radius-composer);--nc-control-radius: var(--radius-control);--nc-chip-radius: var(--radius-chip);--nc-menu: var(--surface);--nc-menu-radius: var(--radius-panel);--nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);--nc-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 4%, transparent), 0 8px 24px rgb(0 0 0 / 0.12);--nc-text: var(--paper);--nc-faint: var(--text-tertiary);--nc-hover: var(--row-hover);--nc-accent: var(--accent);--nc-on-accent: var(--on-accent);--nc-accent-hover: var(--accent-hover);--nc-disabled: var(--smoke);--nc-stop: var(--paper);--nc-on-stop: var(--canvas);--nc-error: var(--coral);font:var(--body)/1.45 var(--sans);}\n\n  /* The access under the models: as the Mac's access panel, the levels side by side in a well, the one in use filled,\n     and under them what the one shown allows. */.access.svelte-1dv7v2j {display:flex;flex-direction:column;gap:var(--space-sm);padding:var(--space-md);}.access-title.svelte-1dv7v2j {color:var(--text-tertiary);font-size:var(--label);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.access-levels.svelte-1dv7v2j {display:flex;gap:2px;padding:2px;border-radius:var(--radius-control);background:var(--smoke);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j) {flex:1;display:flex;align-items:center;justify-content:center;gap:var(--space-sm);min-width:0;height:28px;margin:0;padding:0 var(--space-md);border:0;border-radius:var(--radius-chip);background:transparent;color:var(--text-secondary);font:inherit;font-size:var(--detail);cursor:pointer;}.access-levels.svelte-1dv7v2j button.on:where(.svelte-1dv7v2j) {background:color-mix(in srgb, var(--paper) 12%, transparent);color:var(--paper);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j):hover:not(.on) {color:var(--paper);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j):focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}.access-levels.svelte-1dv7v2j svg:where(.svelte-1dv7v2j) {flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}.access-levels.svelte-1dv7v2j span:where(.svelte-1dv7v2j) {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.access-help.svelte-1dv7v2j {display:grid;color:var(--text-tertiary);font-size:var(--label);line-height:1.35;}.access-help.svelte-1dv7v2j p:where(.svelte-1dv7v2j) {grid-area:1 / 1;margin:0;visibility:hidden;}.access-help.svelte-1dv7v2j p.shown:where(.svelte-1dv7v2j) {visibility:visible;}"
 };
 function PanelComposer($$anchor, $$props) {
 	push($$props, true);
@@ -5905,6 +5960,43 @@ function PanelComposer($$anchor, $$props) {
 		search: t("modelSearch"),
 		empty: t("modelEmpty")
 	};
+	/** The two access levels on a site: the symbol (as the Mac's `PermissionPolicy.symbol`), name and what it allows. */
+	const levels = [{
+		trusted: false,
+		icon: "lock",
+		label: t("accessAsk"),
+		help: t("trustOff")
+	}, {
+		trusted: true,
+		icon: "shield",
+		label: t("accessTrust"),
+		help: t("trustOn")
+	}];
+	/** The level under the pointer, else the chosen one: its name and help show under the choice. */
+	let hovered = /* @__PURE__ */ state(null);
+	const shown = /* @__PURE__ */ user_derived(() => levels.find((level) => level.trusted === (get(hovered) ?? $$props.panel.access?.trusted)) ?? levels[0]);
+	/** Picks a level, unless it is the one in use already. */
+	function pickAccess(trusted) {
+		if ($$props.panel.access && $$props.panel.access.trusted !== trusted) $$props.onaccess(trusted);
+	}
+	/** The arrows move through the levels as in any radio group: they pick the next one and take the focus to it. */
+	function accessKey(event) {
+		const by = {
+			ArrowRight: 1,
+			ArrowDown: 1,
+			ArrowLeft: -1,
+			ArrowUp: -1
+		}[event.key];
+		if (!by || !$$props.panel.access) return;
+		event.preventDefault();
+		const next = (levels.findIndex((level) => level.trusted === $$props.panel.access.trusted) + by + levels.length) % levels.length;
+		pickAccess(levels[next].trusted);
+		event.currentTarget.querySelectorAll("button")[next]?.focus();
+	}
+	/** The footer goes away with the menu (Escape, a click outside): what the pointer was on no longer counts. */
+	function forgetHover() {
+		return () => set(hovered, null);
+	}
 	function send({ text, images }) {
 		$$props.onsend(text || t("imageQuestion"), images);
 	}
@@ -5912,14 +6004,84 @@ function PanelComposer($$anchor, $$props) {
 		focus,
 		fill
 	};
-	var div = root$2();
+	var div = root_5$1();
 	var node = child(div);
 	{
 		const controls = ($$anchor) => {
 			var fragment = comment();
 			var node_1 = first_child(fragment);
-			var consequent = ($$anchor) => {
+			var consequent_2 = ($$anchor) => {
 				{
+					const footer = ($$anchor) => {
+						var fragment_2 = comment();
+						var node_2 = first_child(fragment_2);
+						var consequent_1 = ($$anchor) => {
+							var div_1 = root_4$1();
+							var div_2 = child(div_1);
+							var text_1 = only_child(div_2, true);
+							var div_3 = sibling(div_2, 2);
+							each(div_3, 21, () => levels, (level) => level.trusted, ($$anchor, level) => {
+								var button = root_2$1();
+								let classes;
+								var svg = child(button);
+								var node_3 = child(svg);
+								var consequent = ($$anchor) => {
+									var fragment_3 = root$2();
+									next$1();
+									append($$anchor, fragment_3);
+								};
+								var alternate = ($$anchor) => {
+									var fragment_4 = root_1$1();
+									next$1();
+									append($$anchor, fragment_4);
+								};
+								if_block(node_3, ($$render) => {
+									if (get(level).icon === "lock") $$render(consequent);
+									else $$render(alternate, -1);
+								});
+								reset(svg);
+								var text_2 = only_child(sibling(svg, 2), true);
+								reset(button);
+								template_effect(() => {
+									set_attribute(button, "aria-checked", $$props.panel.access.trusted === get(level).trusted);
+									set_attribute(button, "title", get(level).label);
+									set_attribute(button, "tabindex", $$props.panel.access.trusted === get(level).trusted ? 0 : -1);
+									classes = set_class(button, 1, "svelte-1dv7v2j", null, classes, { on: $$props.panel.access.trusted === get(level).trusted });
+									set_text(text_2, get(level).label);
+								});
+								event("mouseenter", button, () => set(hovered, get(level).trusted, true));
+								event("mouseleave", button, () => set(hovered, null));
+								delegated("click", button, () => pickAccess(get(level).trusted));
+								append($$anchor, button);
+							});
+							reset(div_3);
+							var div_4 = sibling(div_3, 2);
+							each(div_4, 21, () => levels, (level) => level.trusted, ($$anchor, level) => {
+								var p = root_3$1();
+								let classes_1;
+								var text_3 = only_child(p, true);
+								template_effect(() => {
+									set_attribute(p, "aria-hidden", get(level) !== get(shown));
+									classes_1 = set_class(p, 1, "svelte-1dv7v2j", null, classes_1, { shown: get(level) === get(shown) });
+									set_text(text_3, get(level).help);
+								});
+								append($$anchor, p);
+							});
+							reset(div_4);
+							reset(div_1);
+							attach(div_1, () => forgetHover);
+							template_effect(($0, $1) => {
+								set_text(text_1, $0);
+								set_attribute(div_3, "aria-label", $1);
+							}, [() => t("accessTitle").replace("$1", $$props.panel.access.site), () => t("accessTitle").replace("$1", $$props.panel.access.site)]);
+							delegated("keydown", div_3, accessKey);
+							append($$anchor, div_1);
+						};
+						if_block(node_2, ($$render) => {
+							if ($$props.panel.access) $$render(consequent_1);
+						});
+						append($$anchor, fragment_2);
+					};
 					let $0 = /* @__PURE__ */ user_derived(() => !$$props.panel.connected);
 					ModelPicker($$anchor, {
 						get label() {
@@ -5942,12 +6104,14 @@ function PanelComposer($$anchor, $$props) {
 						},
 						get onchoose() {
 							return $$props.onchoosebrain;
-						}
+						},
+						footer,
+						$$slots: { footer: true }
 					});
 				}
 			};
 			if_block(node_1, ($$render) => {
-				if ($$props.panel.brain) $$render(consequent);
+				if ($$props.panel.brain) $$render(consequent_2);
 			});
 			append($$anchor, fragment);
 		};
@@ -5985,6 +6149,7 @@ function PanelComposer($$anchor, $$props) {
 	append($$anchor, div);
 	return pop($$exports);
 }
+delegate(["keydown", "click"]);
 // src/markdown.ts
 var englishTexts = {
 	copy: "Copy",
@@ -6516,16 +6681,18 @@ function questionsAsked(messages) {
 /**
 * Mounts the composer in `target`. `onsend(text, images)` gets the question and its pictures
 * (`[{ mediaType, base64 }]`); `onstop` stops Nook's answer; `onbrain` asks for the newest models when the model menu
-* opens; `onchoosebrain(id)` picks one.
+* opens; `onchoosebrain(id)` picks one; `onaccess(trusted)` lets Nook act on the site in front without asking, or not.
 */
-function mountComposer(target, { onsend, onstop, onbrain, onchoosebrain }) {
+function mountComposer(target, { onsend, onstop, onbrain, onchoosebrain, onaccess }) {
 	const panel = proxy({
 		connected: false,
 		busy: false,
 		canStop: false,
 		history: [],
 		conversation: null,
-		brain: null
+		brain: null,
+		/** The site in front and whether Nook acts there without asking (`{ site, trusted }`); null on no site. */
+		access: null
 	});
 	const component = mount(PanelComposer, {
 		target,
@@ -6534,11 +6701,12 @@ function mountComposer(target, { onsend, onstop, onbrain, onchoosebrain }) {
 			onsend,
 			onstop,
 			onbrain,
-			onchoosebrain
+			onchoosebrain,
+			onaccess
 		}
 	});
 	return {
-		/** Changes what the composer shows: `connected`, `busy`, `canStop`, `history`, `conversation`, `brain`. */
+		/** Changes what the composer shows: `connected`, `busy`, `canStop`, `history`, `conversation`, `brain`, `access`. */
 		set(values) {
 			Object.assign(panel, values);
 		},
