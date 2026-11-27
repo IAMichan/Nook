@@ -44,7 +44,7 @@ pub async fn whatsapp_card(c: State<'_, Connectors>, chat: String) -> Res<Option
     let mut previews = HashMap::new();
     for message in &conversation.messages {
         let Some(path) = link.preview(&message.id) else { continue };
-        let image = if message.media == Media::Image { photo(&path) } else { None };
+        let image = if matches!(message.media, Media::Image | Media::Sticker) { photo(&path) } else { None };
         previews.insert(message.id.clone(), Preview { image });
     }
     Ok(Some(Card { conversation, previews }))
@@ -57,6 +57,29 @@ pub async fn whatsapp_card_load(c: State<'_, Connectors>, chat: String) -> Res<b
     let history = link.load_history(&chat).await;
     let previews = link.load_previews(&chat).await;
     Ok(history || previews)
+}
+
+/// Tells WhatsApp's gateway which chat is open in Nook (so it stays online and subscribes to private-chat typing),
+/// or `None` when no WhatsApp chat is open.
+#[tauri::command]
+pub fn whatsapp_presence(c: State<'_, Connectors>, chat: Option<String>) {
+    match chat {
+        Some(ref key) if !key.trim().is_empty() => {
+            let (account, jid) = nook_core::connectors::whatsapp::accounts::split(key);
+            for link in c.whatsapp_accounts.links() {
+                if link.account() == account {
+                    link.set_online(Some(jid));
+                } else {
+                    link.set_online(None);
+                }
+            }
+        }
+        _ => {
+            for link in c.whatsapp_accounts.links() {
+                link.set_online(None);
+            }
+        }
+    }
 }
 
 /// A click on a file in a bubble: fetched from the gateway (unless the card has it) and opened with the app the

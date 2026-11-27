@@ -391,6 +391,7 @@ export const connectorsApi = {
   /** Profile photos of these chats as small data URLs, by chat; a chat without one is left out. */
   whatsappAvatars: (chats: string[]) => invoke<Record<string, string>>("whatsapp_avatars", { chats }),
   whatsappCardLoad: (chat: string) => invoke<boolean>("whatsapp_card_load", { chat }),
+  whatsappPresence: (chat: string | null) => invoke<void>("whatsapp_presence", { chat }),
   whatsappOpenFile: (chat: string, message: string) => invoke<void>("whatsapp_open_file", { chat, message }),
   whatsappAskNook: (chat: string) => invoke<string>("whatsapp_ask_nook", { chat }),
   whatsappMute: (chat: string) => invoke<void>("whatsapp_mute", { chat }),

@@ -237,6 +237,12 @@ impl Message {
             poll: None,
         }
     }
+
+    /// Nothing to show: no text, no attachment, no poll (a reaction or another protocol message the gateway passed on
+    /// as a message). It never becomes a bubble of its own.
+    pub fn is_blank(&self) -> bool {
+        self.text.trim().is_empty() && self.media == Media::None && self.poll.is_none()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -523,6 +529,42 @@ impl Inbox {
         self.sorted().iter().map(|c| c.unread).sum()
     }
 
+    /// How far back a chat-list move is still caught up (`WAInbox.catchUpWindow` on the Mac).
+    pub const CATCH_UP_WINDOW: Duration = Duration::days(2);
+    /// How many behind chats one chat-list refresh catches up at most (`WAInbox.catchUpLimit` on the Mac).
+    pub const CATCH_UP_LIMIT: usize = 10;
+
+    /// Chats the gateway's list moved past the newest message Nook holds of them (or moved after `live_since` when
+    /// Nook holds nothing of them yet, so a quiet chat you wrote in from your phone is caught up without waiting for
+    /// someone else to write). Skips status broadcasts and moves already asked for (`asked`). Newest first,
+    /// [`Self::CATCH_UP_LIMIT`] at most.
+    pub fn behind(
+        &self,
+        chats: &[provider::ChatInfo],
+        asked: &HashMap<String, DateTime<Utc>>,
+        live_since: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> Vec<provider::ChatInfo> {
+        let since = now - Self::CATCH_UP_WINDOW;
+        let mut out: Vec<provider::ChatInfo> = chats
+            .iter()
+            .filter(|chat| {
+                let key = jid::normalized(&chat.jid);
+                if chat.last <= since || asked.get(&key) == Some(&chat.last) || jid::kind(&key) == ChatKind::Status {
+                    return false;
+                }
+                match self.get(&key).and_then(|c| c.messages.last().map(|m| m.date)) {
+                    Some(newest) => newest < chat.last - Duration::seconds(1),
+                    None => live_since.is_some_and(|start| chat.last > start),
+                }
+            })
+            .cloned()
+            .collect();
+        out.sort_by_key(|c| std::cmp::Reverse(c.last));
+        out.truncate(Self::CATCH_UP_LIMIT);
+        out
+    }
+
     /// Voegt een bericht toe aan zijn gesprek. `Notify` als het jou moet bereiken, `Quiet` als het bewaard wordt maar
     /// stil blijft (een stille groep, je eigen bericht). `history`: een ouder bericht dat later geladen werd.
     pub fn add(&mut self, message: Message, filters: &Filters, name: Option<&str>, history: bool) -> Outcome {
@@ -531,6 +573,12 @@ impl Inbox {
         }
         let chat = jid::normalized(&message.chat);
         if filters.ignored.contains(&chat) {
+            return Outcome::Ignored;
+        }
+        // A blank is dropped before its id counts as seen: WhatsApp can deliver a group message twice under one id,
+        // first as a blank (it only hands over the sender's key, which the gateway passes on as a message) and then
+        // with its text. Seen, the real one was a duplicate, never new, and came in only later with history, read.
+        if message.is_blank() {
             return Outcome::Ignored;
         }
         self.seen.insert(message.id.clone());
@@ -793,6 +841,15 @@ pub fn verify(kind: GatewayKind, headers: &HashMap<String, String>, body: &[u8],
     crate::connectors::oauth::constant_time_eq(sent, &signature(body, secret))
 }
 
+/// One person's typing state from a gateway presence event (`WATyping` on the Mac).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typing {
+    pub from: String,
+    pub name: String,
+    pub active: bool,
+    pub recording: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum WebhookEvent {
     Message(Message),
@@ -801,6 +858,11 @@ pub enum WebhookEvent {
         ids: Vec<String>,
         chat: String,
         status: Receipt,
+    },
+    /// Someone started or stopped typing or recording a voice note in a chat.
+    Typing {
+        chat: String,
+        people: Vec<Typing>,
     },
     /// Someone put an emoji on a message ("" takes theirs back): it goes on that message, never in a bubble of its own.
     Reaction {
@@ -873,6 +935,25 @@ fn parse_gowa_receipt(json: &Value) -> WebhookEvent {
     }
 }
 
+/// `{"event":"chat_presence","payload":{from, sender_display_name, chat_id, state: "composing"|"paused",
+/// media: ""|"audio", is_group}}`: WhatsApp only sends it while this device says it is online (`Provider::set_online`).
+/// In a private chat GOWA gives `chat_id` as WhatsApp sent it, mostly the person's `@lid`, but `from` as their number
+/// (as it names that chat everywhere else): the chat is the person who types, by their number.
+fn parse_gowa_presence(json: &Value) -> WebhookEvent {
+    let p = &json["payload"];
+    let Some(mut chat) = non_empty(&p["chat_id"]) else { return WebhookEvent::Ignored };
+    if !jid::is_group(&chat) {
+        if let Some(from) = non_empty(&p["from"]) {
+            chat = from;
+        }
+    }
+    let from = non_empty(&p["from"]).unwrap_or_else(|| chat.clone());
+    let name = non_empty(&p["sender_display_name"]).unwrap_or_default();
+    let active = p["state"].as_str() == Some("composing");
+    let recording = p["media"].as_str() == Some("audio");
+    WebhookEvent::Typing { chat, people: vec![Typing { from, name, active, recording }] }
+}
+
 /// `{"event":"message.ack"|"message.failed","data":{id, messageId, status, chatId?}}`. OpenWA only moves a group
 /// message past one tick when WhatsApp itself does.
 fn parse_openwa_receipt(json: &Value) -> WebhookEvent {
@@ -885,10 +966,38 @@ fn parse_openwa_receipt(json: &Value) -> WebhookEvent {
     WebhookEvent::Receipt { ids: vec![id], chat: d["chatId"].as_str().unwrap_or("").to_string(), status }
 }
 
+/// `{"event":"presence.update","data":{chatId, participants: [{id, state: available|unavailable|composing|recording|
+/// paused}]}}`, for the chats Nook subscribed to (`Provider::set_online`). Coming online or going offline ends typing.
+fn parse_openwa_presence(json: &Value) -> WebhookEvent {
+    let d = &json["data"];
+    let Some(chat) = non_empty(&d["chatId"]) else { return WebhookEvent::Ignored };
+    let people: Vec<Typing> = crate::connectors::list(&d["participants"])
+        .iter()
+        .filter_map(|person| {
+            let id = non_empty(&person["id"])?;
+            let state = person["state"].as_str().unwrap_or("");
+            Some(Typing {
+                from: id,
+                name: String::new(),
+                active: matches!(state, "composing" | "recording"),
+                recording: state == "recording",
+            })
+        })
+        .collect();
+    if people.is_empty() {
+        WebhookEvent::Ignored
+    } else {
+        WebhookEvent::Typing { chat, people }
+    }
+}
+
 fn parse_gowa(json: &Value, me: Option<&str>) -> WebhookEvent {
     let event = json["event"].as_str().unwrap_or("");
     if event == "message.ack" {
         return parse_gowa_receipt(json);
+    }
+    if event == "chat_presence" {
+        return parse_gowa_presence(json);
     }
     let p = &json["payload"];
     if event == "message.reaction" {
@@ -1013,6 +1122,9 @@ fn parse_openwa(json: &Value, me: Option<&str>) -> WebhookEvent {
     if event == "message.ack" || event == "message.failed" {
         return parse_openwa_receipt(json);
     }
+    if event == "presence.update" {
+        return parse_openwa_presence(json);
+    }
     if event != "message.received" && event != "message.sent" {
         return WebhookEvent::Ignored;
     }
@@ -1125,6 +1237,7 @@ pub mod files {
             [b'I', b'D', b'3', ..] | [0xFF, 0xFB | 0xF3 | 0xF2, ..] => "mp3",
             [b'#', b'!', b'A', b'M', b'R', ..] => "amr",
             [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'A', b'V', b'E', ..] => "wav",
+            [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "webp",
             [0xFF, 0xF1 | 0xF9, ..] => "aac",
             [_, _, _, _, b'f', b't', b'y', b'p', ..] => "m4a",
             [0xFF, 0xD8, 0xFF, ..] => "jpg",
@@ -1139,6 +1252,7 @@ pub mod files {
     pub fn file_name(media: &Media, given: Option<&str>, mime: Option<&str>) -> String {
         let fallback = match media {
             Media::Image => "photo",
+            Media::Sticker => "sticker",
             Media::Video => "video",
             Media::Audio | Media::Voice => "voice message",
             Media::Document { .. } => "document",
@@ -1766,5 +1880,72 @@ mod tests {
         voice.text = String::new();
         voice.media = Media::Voice;
         assert!(lines_in(&[voice], "Lisa", &Utc).ends_with("Lisa: [voice message]"));
+    }
+
+    #[test]
+    fn quiet_chat_that_moved_while_listening_is_fetched() {
+        let inbox = Inbox::default();
+        let linked = DateTime::from_timestamp(1_800_000_000, 0).unwrap();
+        let now = linked + Duration::seconds(3600);
+        let group =
+            provider::ChatInfo { jid: "120363000000000009@g.us".into(), name: "Media team".into(), last: linked + Duration::seconds(1800) };
+        let before = provider::ChatInfo { jid: "120363000000000010@g.us".into(), name: "Old".into(), last: linked - Duration::seconds(60) };
+        let status = provider::ChatInfo { jid: "status@broadcast".into(), name: "Status".into(), last: group.last };
+        let empty = HashMap::new();
+        let found = inbox.behind(&[group.clone(), before, status], &empty, Some(linked), now);
+        assert_eq!(found.iter().map(|c| c.jid.as_str()).collect::<Vec<_>>(), vec![group.jid.as_str()]);
+        assert!(inbox.behind(std::slice::from_ref(&group), &empty, None, now).is_empty());
+        let mut asked = HashMap::new();
+        asked.insert(group.jid.clone(), group.last);
+        assert!(inbox.behind(&[group], &asked, Some(linked), now).is_empty());
+    }
+
+    #[test]
+    fn blank_first_copy_of_group_message_leaves_it_new() {
+        let mut inbox = Inbox::default();
+        let group = "120363000000000001@g.us";
+        let filters = Filters::default();
+        // WhatsApp hands a group's sender key over under the message's own id before the text: GOWA passes it as blank.
+        let mut blank = msg("M1", group, 0, false, false);
+        blank.text = String::new();
+        assert_eq!(inbox.add(blank, &filters, None, false), Outcome::Ignored);
+        assert!(inbox.get(group).is_none());
+        // The real message under the same id is new and unread.
+        let real = msg("M1", group, 0, false, false);
+        assert_ne!(inbox.add(real, &filters, None, false), Outcome::Duplicate);
+        let conv = inbox.get(group).unwrap();
+        assert_eq!(conv.unread, 1);
+        assert_eq!(conv.messages.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["M1"]);
+    }
+
+    #[test]
+    fn gowa_and_openwa_typing_presence_events() {
+        // Private chat where GOWA sends @lid as chat_id and the person's phone number as `from`.
+        let lid = br#"{"event":"chat_presence","payload":{"from":"31611111111@s.whatsapp.net","from_lid":"98765432109876@lid","chat_id":"98765432109876@lid","state":"composing","media":"","is_group":false}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, lid, None),
+            Some(WebhookEvent::Typing {
+                chat: "31611111111@s.whatsapp.net".into(),
+                people: vec![Typing { from: "31611111111@s.whatsapp.net".into(), name: String::new(), active: true, recording: false }],
+            })
+        );
+        // Group chat keeps the group's chat_id and records sender_display_name + audio recording.
+        let grp = br#"{"event":"chat_presence","payload":{"from":"31611111111@s.whatsapp.net","sender_display_name":"Lisa","chat_id":"120363000000000001@g.us","state":"composing","media":"audio","is_group":true}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Gowa, grp, None),
+            Some(WebhookEvent::Typing {
+                chat: "120363000000000001@g.us".into(),
+                people: vec![Typing { from: "31611111111@s.whatsapp.net".into(), name: "Lisa".into(), active: true, recording: true }],
+            })
+        );
+        // OpenWA presence.update
+        let openwa = br#"{"event":"presence.update","data":{"chatId":"31611111111@c.us","participants":[{"id":"31611111111@c.us","state":"recording"}]}}"#;
+        assert_eq!(
+            parse_webhook(GatewayKind::Openwa, openwa, None),
+            Some(WebhookEvent::Typing {
+                chat: "31611111111@c.us".into(),
+                people: vec![Typing { from: "31611111111@c.us".into(), name: String::new(), active: true, recording: true }],
+            })
+        );
     }
 }

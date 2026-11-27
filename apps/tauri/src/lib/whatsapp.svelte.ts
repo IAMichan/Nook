@@ -21,6 +21,8 @@ class WhatsAppCardState {
   /** Counts what changes a chat's standing (read, muted, hidden, answered), so lists redraw at once. */
   version = $state(0);
   private started = false;
+  /** Scheduled media retries for the open card (matches Mac's [2, 6, 15, 30]s bubble retries). */
+  private mediaRetryTimers: ReturnType<typeof setTimeout>[] = [];
 
   start() {
     if (this.started) return;
@@ -35,21 +37,55 @@ class WhatsAppCardState {
     connectorEvents.onChanged(() => this.chat && this.reload());
   }
 
+  private clearMediaRetries() {
+    for (const timer of this.mediaRetryTimers) clearTimeout(timer);
+    this.mediaRetryTimers = [];
+  }
+
+  private hasMissingPreviews(): boolean {
+    const card = this.card;
+    if (!card) return false;
+    const previewable = card.conversation.messages.filter(
+      (m) => m.media.kind === "image" || m.media.kind === "sticker" || m.media.kind === "video" || m.media.kind === "document",
+    );
+    return previewable.slice(-6).some((m) => !(m.id in card.previews));
+  }
+
+  private scheduleMediaRetries(chat: string) {
+    this.clearMediaRetries();
+    if (!this.hasMissingPreviews()) return;
+    for (const seconds of [2, 6, 15, 30]) {
+      this.mediaRetryTimers.push(
+        setTimeout(async () => {
+          if (this.chat !== chat || !this.hasMissingPreviews()) return;
+          try {
+            if (await connectorsApi.whatsappCardLoad(chat)) await this.reload();
+          } catch {
+            // Next retry or manual click will try again.
+          }
+        }, seconds * 1000),
+      );
+    }
+  }
+
   async show(chat: string) {
     this.pending = null;
+    this.clearMediaRetries();
     if (this.chat !== chat) {
       this.notice = "";
       this.draft = "";
       this.enlarged = null;
     }
     this.chat = chat;
+    connectorsApi.whatsappPresence(chat).catch(() => {});
     await this.reload();
-    // Older messages (once per chat) and the newest photos, videos and documents, then drawn again.
+    // Older messages (once per chat) and the newest photos, stickers, videos and documents, then drawn again.
     try {
       if (await connectorsApi.whatsappCardLoad(chat)) await this.reload();
     } catch {
       // The card keeps what it has.
     }
+    if (this.chat === chat) this.scheduleMediaRetries(chat);
   }
 
   async reload() {
@@ -58,14 +94,20 @@ class WhatsAppCardState {
     try {
       const card = await connectorsApi.whatsappCard(chat);
       if (this.chat !== chat) return;
-      if (card) this.card = card;
-      else this.dismiss();
+      if (card) {
+        this.card = card;
+        if (!this.hasMissingPreviews()) this.clearMediaRetries();
+      } else {
+        this.dismiss();
+      }
     } catch {
       // Keep the card as it is.
     }
   }
 
   dismiss() {
+    this.clearMediaRetries();
+    if (this.chat) connectorsApi.whatsappPresence(null).catch(() => {});
     this.pending = null;
     this.version++;
     this.chat = null;
