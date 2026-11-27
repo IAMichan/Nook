@@ -90,6 +90,14 @@ pub enum ClaudeEvent {
     RateLimits(Value),
     /// Claude Code's chain entry uuid on a top-level message (used as `--resume-session-at` on rollback).
     ChainEntry(String),
+    /// MCP servers reported in `system/init` that need the user to sign in (`ConnectorSignIns.claude`, AG-31).
+    ConnectorsNeedingSignIn(Vec<String>),
+    /// Answer from Claude Code to a `control_request` sent by Nook (`mcp_authenticate`, `mcp_status`, `mcp_reconnect`).
+    ControlReply {
+        request_id: String,
+        response: Option<Value>,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -148,9 +156,14 @@ pub fn parse_claude(line: &str) -> Vec<ClaudeEvent> {
     let nested = object.get("parent_tool_use_id").is_some_and(|v| !v.is_null());
     match kind {
         "system" => match s(&object, "subtype").unwrap_or("") {
-            "init" => s(&object, "session_id")
-                .map(|id| vec![ClaudeEvent::Initialized { session_id: id.into(), model: s(&object, "model").map(str::to_string) }])
-                .unwrap_or_default(),
+            "init" => {
+                let Some(id) = s(&object, "session_id") else { return vec![] };
+                let mut events = vec![ClaudeEvent::Initialized { session_id: id.into(), model: s(&object, "model").map(str::to_string) }];
+                if let Some(servers) = object.get("mcp_servers") {
+                    events.push(ClaudeEvent::ConnectorsNeedingSignIn(super::connector_sign_in::parse_claude_needs_auth(servers)));
+                }
+                events
+            }
             "status" if s(&object, "status") == Some("compacting") => vec![ClaudeEvent::CompactionStarted],
             "compact_boundary" => vec![ClaudeEvent::Notice("compact".into())],
             _ => vec![],
@@ -262,6 +275,23 @@ pub fn parse_claude(line: &str) -> Vec<ClaudeEvent> {
                 tool_use_id: s(request, "tool_use_id").map(str::to_string),
             }]
         }
+        "control_response" => {
+            let Some(response) = object.get("response") else { return vec![] };
+            let Some(request_id) = s(response, "request_id").filter(|id| !id.is_empty()) else { return vec![] };
+            if s(response, "subtype") == Some("error") {
+                vec![ClaudeEvent::ControlReply {
+                    request_id: request_id.into(),
+                    response: None,
+                    error: Some(s(response, "error").unwrap_or("error").into()),
+                }]
+            } else {
+                vec![ClaudeEvent::ControlReply {
+                    request_id: request_id.into(),
+                    response: Some(response.get("response").cloned().unwrap_or_else(|| json!({}))),
+                    error: None,
+                }]
+            }
+        }
         "rate_limit_event" => vec![ClaudeEvent::RateLimits(object.get("rate_limit_info").cloned().unwrap_or(Value::Null))],
         "result" => {
             let mut usage = TurnUsage::default();
@@ -346,6 +376,21 @@ pub fn claude_question_answer(request_id: &str, input: &Value, answers: &[(Strin
 /// Vraagt Claude Code de lopende beurt te onderbreken.
 pub fn claude_interrupt(id: &str) -> String {
     line(json!({"type": "control_request", "request_id": id, "request": {"subtype": "interrupt"}}))
+}
+
+/// Asks Claude Code for a connector's sign-in URL (`authUrl` and `callbackExpected`).
+pub fn claude_mcp_authenticate(id: &str, server: &str) -> String {
+    line(json!({"type": "control_request", "request_id": id, "request": {"subtype": "mcp_authenticate", "serverName": server}}))
+}
+
+/// Asks Claude Code for current MCP server statuses (`mcpServers`).
+pub fn claude_mcp_status(id: &str) -> String {
+    line(json!({"type": "control_request", "request_id": id, "request": {"subtype": "mcp_status"}}))
+}
+
+/// Asks Claude Code to reconnect an MCP server after signing in externally (e.g. on claude.ai).
+pub fn claude_mcp_reconnect(id: &str, server: &str) -> String {
+    line(json!({"type": "control_request", "request_id": id, "request": {"subtype": "mcp_reconnect", "serverName": server}}))
 }
 
 fn line(v: Value) -> String {
@@ -670,6 +715,45 @@ mod tests {
         assert_eq!(deny["response"]["response"]["behavior"], "deny");
         let i: Value = serde_json::from_str(&claude_interrupt("x")).unwrap();
         assert_eq!(i["request"]["subtype"], "interrupt");
+        let auth: Value = serde_json::from_str(&claude_mcp_authenticate("m1", "claude.ai Supabase")).unwrap();
+        assert_eq!(auth["request_id"], "m1");
+        assert_eq!(auth["request"]["subtype"], "mcp_authenticate");
+        assert_eq!(auth["request"]["serverName"], "claude.ai Supabase");
+        let status: Value = serde_json::from_str(&claude_mcp_status("m2")).unwrap();
+        assert_eq!(status["request"]["subtype"], "mcp_status");
+        let reconnect: Value = serde_json::from_str(&claude_mcp_reconnect("m3", "claude.ai Supabase")).unwrap();
+        assert_eq!(reconnect["request"]["subtype"], "mcp_reconnect");
+        assert_eq!(reconnect["request"]["serverName"], "claude.ai Supabase");
+    }
+
+    #[test]
+    fn claude_connectors_and_control_replies() {
+        let init = r#"{"type":"system","subtype":"init","session_id":"s-1","model":"claude-sonnet-4-6","mcp_servers":[{"name":"nook","status":"connected"},{"name":"claude.ai Linear","status":"needs-auth"}]}"#;
+        let events = parse_claude(init);
+        assert_eq!(
+            events,
+            vec![
+                ClaudeEvent::Initialized { session_id: "s-1".into(), model: Some("claude-sonnet-4-6".into()) },
+                ClaudeEvent::ConnectorsNeedingSignIn(vec!["claude.ai Linear".into()]),
+            ]
+        );
+        let ok = parse_claude(
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"req-1","response":{"authUrl":"https://claude.ai/auth","callbackExpected":false}}}"#,
+        );
+        assert_eq!(
+            ok,
+            vec![ClaudeEvent::ControlReply {
+                request_id: "req-1".into(),
+                response: Some(json!({"authUrl": "https://claude.ai/auth", "callbackExpected": false})),
+                error: None,
+            }]
+        );
+        let err =
+            parse_claude(r#"{"type":"control_response","response":{"subtype":"error","request_id":"req-2","error":"Server not found"}}"#);
+        assert_eq!(
+            err,
+            vec![ClaudeEvent::ControlReply { request_id: "req-2".into(), response: None, error: Some("Server not found".into()) }]
+        );
     }
 
     #[test]

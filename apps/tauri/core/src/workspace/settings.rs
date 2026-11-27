@@ -154,6 +154,8 @@ pub struct WorkspaceSettings {
     pub suggest_next_prompt: bool,
     /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
     pub text_generators: BTreeMap<String, String>,
+    /// MCP connector server names dismissed from the sign-in banner above the composer (`ConnectorSignIns.dismissed`, AG-31).
+    pub dismissed_connector_sign_ins: Vec<String>,
 }
 
 impl Default for WorkspaceSettings {
@@ -192,6 +194,7 @@ impl Default for WorkspaceSettings {
             strip_agent_credits: false,
             suggest_next_prompt: true,
             text_generators: BTreeMap::new(),
+            dismissed_connector_sign_ins: vec![],
         }
     }
 }

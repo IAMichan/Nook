@@ -455,7 +455,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-30** Sign-in after an expired login (`AgentSignInFailure`) · M Done (2026-11-23): `needs_sign_in` in `core/src/workspace/recovery.rs` and `lib/workspace/agent-updates.ts` detects expired or missing authentication across agents, and the failed turn card in `views/agents/run/Timeline.svelte` offers `Log in again` to run the profile's sign-in command in Nook's terminal.
 
-- [ ] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M
+- [x] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M Done (2026-11-27): `core/src/workspace/connector_sign_in.rs` (with `ConnectorDomains` icon lookup and Claude/Codex needs-auth parsers), `parsers.rs` (`mcp_servers`, `control_response`, `mcp_authenticate`/`mcp_status`/`mcp_reconnect`), `codex_app_server.rs` (`mcpServerStatus/list`, `mcpServer/oauth/login`, `config/mcpServer/reload`), `manager.rs` (live and idle control sign-in, 4-second polling up to 5 minutes, sibling account sharing & reconnect, gone-on-recheck handling), `workspace_connector_sign_in` / `workspace_connector_hide` commands, and `ConnectorSignInBanner.svelte` + `ConnectorSignInGroup.svelte` in `RunPanel.svelte`.
 
 - [ ] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M
   - Open: the advice lives in Settings › Coding agents and Settings › Sessions (`AgentReadiness`, `TokenSettingsSection`), which belong to the Settings pages.

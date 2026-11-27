@@ -567,6 +567,8 @@ pub fn run() {
             commands::workspace::workspace_revert,
             commands::workspace::workspace_set_goal,
             commands::workspace::workspace_context_usage,
+            commands::workspace::workspace_connector_sign_in,
+            commands::workspace::workspace_connector_hide,
             commands::workspace::workspace_worktrees,
             commands::workspace::workspace_remove_worktree,
             commands::workspace::workspace_agent_versions,

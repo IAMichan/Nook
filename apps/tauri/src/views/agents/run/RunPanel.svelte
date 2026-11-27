@@ -19,6 +19,8 @@
   import ApprovalCard from "../ApprovalCard.svelte";
   import QuestionCard from "../QuestionCard.svelte";
   import ContextBreakdown from "./ContextBreakdown.svelte";
+  import ConnectorSignInBanner from "./ConnectorSignInBanner.svelte";
+  import ConnectorSignInGroup from "./ConnectorSignInGroup.svelte";
   import GoalStrip from "./GoalStrip.svelte";
   import TaskChecklist from "../../../components/TaskChecklist.svelte";
   import RunComposer from "./RunComposer.svelte";
@@ -52,6 +54,7 @@
   const run = $derived(workspace.run(runId));
   const events = $derived(workspace.timelines[runId] ?? []);
   const sideChats = $derived(sideChatsByRun[runId] ?? []);
+  const connectorSignIns = $derived(workspace.connectorSignIns(runId));
   const panel = $derived(sidePanel.forRun(runId));
 
   /** Runs a quick `/btw` or `/side` side question with session context without interrupting the main agent (AG-61). */
@@ -474,6 +477,9 @@
             <DropdownRow symbol="external-link" title={tr("Open in editor", "Open in editor")} onclick={() => { close(); workspaceApi.openIn(run.workingDirectory).catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e)); }} />
             <DropdownRow symbol="copy" title={tr("Kopieer als Markdown", "Copy as Markdown")} onclick={() => { close(); copyMarkdown(); }} />
             <DropdownRow symbol="download" title={tr("Exporteer…", "Export…")} onclick={() => { close(); exportMarkdown(); }} />
+            {#if connectorSignIns.length > 0}
+              <ConnectorSignInGroup runId={run.id} connectors={connectorSignIns} onselect={close} />
+            {/if}
             <DropdownRow symbol="archive" title={run.archived ? tr("Haal uit archief", "Unarchive") : tr("Archiveer", "Archive")} disabledReason={busy}
               onclick={() => { close(); workspace.act(() => workspaceApi.archive(runId, !run.archived)); }} />
             <DropdownRow symbol="trash-2" title={tr("Verwijder", "Delete")} tint="var(--coral)" disabledReason={busy} onclick={() => { close(); confirmDelete = true; }} />
@@ -577,6 +583,9 @@
               <TaskChecklist steps={run.tasks} live={isActive(run.status)} phase />
             {/if}
             <SideChatStrip items={sideChats} ondismiss={dismissSideChat} />
+            {#if connectorSignIns.length > 0}
+              <ConnectorSignInBanner runId={run.id} connectors={connectorSignIns} dismissed={workspace.dismissedConnectorSignIns} />
+            {/if}
             <RunComposer bind:this={composer} {run} onsidechat={askSideChat} />
           {/if}
           </div>

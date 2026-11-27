@@ -45,13 +45,15 @@ pub fn policy(mode: ExecutionMode, permission: PermissionPolicy) -> (&'static st
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Call {
     Initialize,
     Thread { resuming: bool },
     Rollback,
     Revert,
     Turn,
+    McpStatus(Option<String>),
+    McpOAuth(String),
     Other,
 }
 
@@ -236,6 +238,12 @@ impl CodexDriver {
                 } else {
                     let line = self.start_turn();
                     step.replies.push(line);
+                    let status = self.request(
+                        Call::McpStatus(None),
+                        "mcpServerStatus/list",
+                        json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+                    );
+                    step.replies.push(status);
                 }
             }
             (Call::Rollback, None) => {
@@ -243,6 +251,14 @@ impl CodexDriver {
                 step.events.push(DriverEvent::RollbackApplied);
                 let line = self.start_turn();
                 step.replies.push(line);
+                if let Some(thread) = self.thread.clone() {
+                    let status = self.request(
+                        Call::McpStatus(None),
+                        "mcpServerStatus/list",
+                        json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+                    );
+                    step.replies.push(status);
+                }
             }
             (Call::Rollback, Some(e)) => {
                 let unsupported = {
@@ -265,18 +281,42 @@ impl CodexDriver {
                 step.events.push(DriverEvent::RollbackFailed(e));
                 let line = self.start_turn();
                 step.replies.push(line);
+                if let Some(thread) = self.thread.clone() {
+                    let status = self.request(
+                        Call::McpStatus(None),
+                        "mcpServerStatus/list",
+                        json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+                    );
+                    step.replies.push(status);
+                }
             }
             (Call::Revert, None) => {
                 self.pending_rollback = None;
                 step.events.push(DriverEvent::RollbackApplied);
                 let line = self.start_turn();
                 step.replies.push(line);
+                if let Some(thread) = self.thread.clone() {
+                    let status = self.request(
+                        Call::McpStatus(None),
+                        "mcpServerStatus/list",
+                        json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+                    );
+                    step.replies.push(status);
+                }
             }
             (Call::Revert, Some(e)) => {
                 self.pending_rollback = None;
                 step.events.push(DriverEvent::RollbackFailed(e));
                 let line = self.start_turn();
                 step.replies.push(line);
+                if let Some(thread) = self.thread.clone() {
+                    let status = self.request(
+                        Call::McpStatus(None),
+                        "mcpServerStatus/list",
+                        json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+                    );
+                    step.replies.push(status);
+                }
             }
             (Call::Turn, None) => {
                 if let Some(turn) = result.pointer("/turn/id").and_then(Value::as_str) {
@@ -284,6 +324,22 @@ impl CodexDriver {
                     self.turn_counted = true;
                     step.events.push(DriverEvent::TurnStarted(Some(turn.into())));
                 }
+            }
+            (Call::McpStatus(req_id), None) => {
+                let names = super::connector_sign_in::parse_codex_needs_auth(&result);
+                step.events.push(DriverEvent::ConnectorsNeedingSignIn(names));
+                if let Some(request_id) = req_id {
+                    step.events.push(DriverEvent::ControlReply { request_id, response: Some(result), error: None });
+                }
+            }
+            (Call::McpStatus(req_id), Some(e)) => {
+                if let Some(request_id) = req_id {
+                    step.events.push(DriverEvent::ControlReply { request_id, response: None, error: Some(e) });
+                }
+            }
+            (Call::McpOAuth(request_id), error) => {
+                let response = error.is_none().then_some(result);
+                step.events.push(DriverEvent::ControlReply { request_id, response, error });
             }
             (Call::Initialize | Call::Thread { .. } | Call::Turn, Some(e)) => self.finish(step, true, "error", e, None),
             (Call::Other, _) => {}
@@ -658,6 +714,32 @@ impl Driver for CodexDriver {
         }
         lines
     }
+
+    fn sign_in_connector(&mut self, request_id: &str, server: &str) -> Option<Vec<String>> {
+        if self.finished {
+            return None;
+        }
+        Some(vec![self.request(Call::McpOAuth(request_id.into()), "mcpServer/oauth/login", json!({"name": server}))])
+    }
+
+    fn check_connectors(&mut self, request_id: &str) -> Option<Vec<String>> {
+        let thread = self.thread.clone()?;
+        if self.finished {
+            return None;
+        }
+        Some(vec![self.request(
+            Call::McpStatus(Some(request_id.into())),
+            "mcpServerStatus/list",
+            json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+        )])
+    }
+
+    fn reconnect_connectors(&mut self, _servers: &[String]) -> Option<Vec<String>> {
+        if self.finished {
+            return None;
+        }
+        Some(vec![self.request(Call::Other, "config/mcpServer/reload", json!({}))])
+    }
 }
 
 #[cfg(test)]
@@ -797,5 +879,39 @@ mod tests {
         let mut d = CodexDriver::new(&input(None));
         let s = d.receive(r#"{"method":"item/started","params":{"item":{"id":"u1","type":"userMessage","content":[{"type":"text","text":"also fix b"}]}}}"#);
         assert_eq!(s.events, vec![DriverEvent::UserMessageRead("also fix b".into())]);
+    }
+
+    #[test]
+    fn connector_sign_in_status_oauth_and_reload() {
+        let (_, mut d) = launch(&input(None));
+        d.receive(r#"{"id":1,"result":{}}"#);
+        let s = d.receive(r#"{"id":2,"result":{"thread":{"id":"th-9"}}}"#);
+        assert_eq!(sent(&s.replies[0])["method"], "turn/start");
+        let status_req = sent(&s.replies[1]);
+        assert_eq!(status_req["method"], "mcpServerStatus/list");
+        assert_eq!(status_req["params"]["threadId"], "th-9");
+        let status_id = status_req["id"].as_i64().unwrap();
+        let s = d.receive(&format!(
+            r#"{{"id":{status_id},"result":{{"data":[{{"name":"Linear","authStatus":"notLoggedIn"}},{{"name":"nook","authStatus":"unsupported"}}]}}}}"#
+        ));
+        assert_eq!(s.events, vec![DriverEvent::ConnectorsNeedingSignIn(vec!["Linear".into()])]);
+
+        let login = d.sign_in_connector("req-1", "Linear").unwrap();
+        let login_req = sent(&login[0]);
+        assert_eq!(login_req["method"], "mcpServer/oauth/login");
+        assert_eq!(login_req["params"]["name"], "Linear");
+        let login_id = login_req["id"].as_i64().unwrap();
+        let s = d.receive(&format!(r#"{{"id":{login_id},"result":{{"authorizationUrl":"https://linear.app/oauth"}}}}"#));
+        assert_eq!(
+            s.events,
+            vec![DriverEvent::ControlReply {
+                request_id: "req-1".into(),
+                response: Some(json!({"authorizationUrl": "https://linear.app/oauth"})),
+                error: None,
+            }]
+        );
+
+        let reload = d.reconnect_connectors(&["Linear".into()]).unwrap();
+        assert_eq!(sent(&reload[0])["method"], "config/mcpServer/reload");
     }
 }

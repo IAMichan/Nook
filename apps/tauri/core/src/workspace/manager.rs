@@ -240,8 +240,15 @@ struct Inner {
     prepare_tasks: HashMap<Uuid, tokio::task::AbortHandle>,
     /// Last `git fetch` time per normalized `(repo_root, base_branch)` key so fetches happen at most once per 2 minutes.
     remote_base_refreshed: HashMap<String, DateTime<Utc>>,
+    /// MCP connectors each session's agent reported as needing sign-in (`connectorSignIns` on the Mac, AG-31).
+    connector_sign_ins: HashMap<Uuid, Vec<super::connector_sign_in::ConnectorSignIn>>,
+    /// Active sign-in status polling tasks per `(run_id, server_name)`.
+    connector_checks: HashMap<Uuid, HashMap<String, tokio::task::AbortHandle>>,
+    /// Pending replies to control requests sent over a live running agent process, keyed by `request_id`.
+    control_replies: HashMap<String, ControlReplySender>,
 }
 
+type ControlReplySender = tokio::sync::oneshot::Sender<(Option<Value>, Option<String>)>;
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
 type TelemetryProvider = Arc<dyn Fn() -> crate::services::telemetry::OtlpConfig + Send + Sync>;
 /// Opens a terminal in `folder` running `command` with tab title `title`, returning a closure that reports whether
@@ -1862,6 +1869,14 @@ impl Manager {
                                 &mut out,
                             );
                         }
+                        driver::DriverEvent::ConnectorsNeedingSignIn(names) => {
+                            Self::note_connectors_needing_sign_in_locked(&mut s, id, names, &mut out);
+                        }
+                        driver::DriverEvent::ControlReply { request_id, response, error } => {
+                            if let Some(tx) = s.control_replies.remove(&request_id) {
+                                let _ = tx.send((response, error));
+                            }
+                        }
                     }
                 }
             }
@@ -2298,6 +2313,14 @@ impl Manager {
                 }
             }
             ClaudeEvent::ChainEntry(uuid) => Self::note_conversation_head(s, id, &uuid),
+            ClaudeEvent::ConnectorsNeedingSignIn(names) => {
+                Self::note_connectors_needing_sign_in_locked(s, id, names, out);
+            }
+            ClaudeEvent::ControlReply { request_id, response, error } => {
+                if let Some(tx) = s.control_replies.remove(&request_id) {
+                    let _ = tx.send((response, error));
+                }
+            }
         }
         (false, false)
     }
@@ -3256,6 +3279,7 @@ impl Manager {
             if let Some(handle) = s.prepare_tasks.remove(&id) {
                 handle.abort();
             }
+            Self::forget_connector_sign_ins_locked(&mut s, id);
             s.git.remove(&id);
             s.dirty_runs = true;
             s.dirty_queues = true;
@@ -3522,7 +3546,12 @@ impl Manager {
             RunEvent::new(EventKind::System, tr("/clear wacht tot de agent gestopt is.", "/clear waits until the agent has stopped."))
         };
         if self.run(id).is_some() {
-            Self::append(&mut self.lock(), id, event, &mut out);
+            let mut s = self.lock();
+            if cleared {
+                Self::forget_connector_sign_ins_locked(&mut s, id);
+            }
+            Self::append(&mut s, id, event, &mut out);
+            drop(s);
             self.emit(out);
         }
         cleared
@@ -3551,6 +3580,600 @@ impl Manager {
     /// The process of the agent working for a session now, for its CPU and memory (`agentPIDs` on the Mac).
     pub fn agent_pid(&self, id: Uuid) -> Option<u32> {
         self.lock().processes.get(&id).and_then(|p| p.pid)
+    }
+
+    // MARK: Connector sign-in (AG-31)
+
+    /// Connectors waiting for the user to sign in, keyed by session id (`connectorSignIns` on the Mac).
+    pub fn connector_sign_ins(&self) -> HashMap<Uuid, Vec<super::connector_sign_in::ConnectorSignIn>> {
+        self.lock().connector_sign_ins.clone()
+    }
+
+    /// Connectors waiting for the user to sign in for one session.
+    pub fn connector_sign_ins_for(&self, id: Uuid) -> Vec<super::connector_sign_in::ConnectorSignIn> {
+        self.lock().connector_sign_ins.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Records the connectors that need sign-in for `id` (empty clears them) and propagates newly connected servers
+    /// to sibling sessions on the same agent account.
+    pub fn note_connectors_needing_sign_in(&self, id: Uuid, names: Vec<String>) {
+        let mut out = Out::default();
+        {
+            let mut s = self.lock();
+            Self::note_connectors_needing_sign_in_locked(&mut s, id, names, &mut out);
+        }
+        self.emit(out);
+    }
+
+    fn note_connectors_needing_sign_in_locked(s: &mut Inner, id: Uuid, names: Vec<String>, out: &mut Out) {
+        let current = s.connector_sign_ins.get(&id).cloned().unwrap_or_default();
+        let merged = super::connector_sign_in::merge_sign_ins(&names, &current);
+        let connected: Vec<super::connector_sign_in::ConnectorSignIn> =
+            current.iter().filter(|c| c.waiting && !names.contains(&c.name)).cloned().collect();
+        for done in &connected {
+            if let Some(handle) = s.connector_checks.get_mut(&id).and_then(|m| m.remove(&done.name)) {
+                handle.abort();
+            }
+            Self::append(
+                s,
+                id,
+                RunEvent::new(
+                    EventKind::System,
+                    trf(
+                        "{title} is verbonden. De agent kan hem vanaf het volgende bericht gebruiken.",
+                        "{title} is connected. The agent can use it from your next message.",
+                        &[("title", &done.title)],
+                    ),
+                ),
+                out,
+            );
+        }
+        if merged != current {
+            if merged.is_empty() {
+                s.connector_sign_ins.remove(&id);
+            } else {
+                s.connector_sign_ins.insert(id, merged);
+            }
+            out.push(ManagerEvent::Changed);
+        }
+        if !connected.is_empty() {
+            let connected_names: Vec<String> = connected.into_iter().map(|c| c.name).collect();
+            Self::share_connector_sign_ins_locked(s, id, &connected_names, out);
+        }
+    }
+
+    /// Removes newly connected servers from sibling sessions of the same agent & account, and reconnects them on any
+    /// sibling process that is currently open (`shareConnectorSignIns` on the Mac).
+    fn share_connector_sign_ins_locked(s: &mut Inner, id: Uuid, names: &[String], out: &mut Out) {
+        let Some(source) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
+        let account = super::connector_sign_in::account_key(source.provider, &source.profile_id, None);
+        let siblings: Vec<(Uuid, RunProvider, Vec<String>)> = s
+            .connector_sign_ins
+            .iter()
+            .filter(|(other, _)| **other != id)
+            .filter_map(|(other, list)| {
+                let run = s.runs.iter().find(|r| r.id == *other)?;
+                if super::connector_sign_in::account_key(run.provider, &run.profile_id, None) != account {
+                    return None;
+                }
+                let signed_in: Vec<String> = list.iter().map(|c| c.name.clone()).filter(|n| names.contains(n)).collect();
+                (!signed_in.is_empty()).then_some((*other, run.provider, signed_in))
+            })
+            .collect();
+        for (other, provider, signed_in) in siblings {
+            for name in &signed_in {
+                if let Some(handle) = s.connector_checks.get_mut(&other).and_then(|m| m.remove(name)) {
+                    handle.abort();
+                }
+            }
+            if let Some(list) = s.connector_sign_ins.get_mut(&other) {
+                list.retain(|c| !signed_in.contains(&c.name));
+                if list.is_empty() {
+                    s.connector_sign_ins.remove(&other);
+                }
+            }
+            out.push(ManagerEvent::Changed);
+            Self::reconnect_connectors_locked(s, other, provider, &signed_in);
+        }
+    }
+
+    fn reconnect_connectors_locked(s: &mut Inner, id: Uuid, provider: RunProvider, names: &[String]) {
+        let Some(proc) = s.processes.get_mut(&id) else { return };
+        let Some(input) = proc.input.clone() else { return };
+        match provider {
+            RunProvider::Claude => {
+                for name in names {
+                    let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+                    let _ = input.send(Input::Line(parsers::claude_mcp_reconnect(&req_id, name)));
+                }
+            }
+            RunProvider::Codex => {
+                if let Some(lines) = proc.driver.as_mut().and_then(|d| d.reconnect_connectors(names)) {
+                    for line in lines {
+                        let _ = input.send(Input::Line(line));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Hides the given connectors in `id`: cancels any active sign-in wait so the banner above the composer disappears.
+    pub fn hide_connector_sign_ins(&self, id: Uuid, names: &[String]) {
+        let mut changed = false;
+        {
+            let mut s = self.lock();
+            for name in names {
+                if let Some(handle) = s.connector_checks.get_mut(&id).and_then(|m| m.remove(name)) {
+                    handle.abort();
+                }
+                if let Some(list) = s.connector_sign_ins.get_mut(&id) {
+                    if let Some(item) = list.iter_mut().find(|c| c.name == *name) {
+                        if item.waiting {
+                            item.waiting = false;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if changed {
+            self.emit(Out(vec![ManagerEvent::Changed]));
+        }
+    }
+
+    fn forget_connector_sign_ins_locked(s: &mut Inner, id: Uuid) {
+        if let Some(checks) = s.connector_checks.remove(&id) {
+            for (_, handle) in checks {
+                handle.abort();
+            }
+        }
+        s.connector_sign_ins.remove(&id);
+    }
+
+    fn set_connector_waiting(&self, id: Uuid, name: &str, waiting: bool) {
+        let mut changed = false;
+        {
+            let mut s = self.lock();
+            if let Some(list) = s.connector_sign_ins.get_mut(&id) {
+                if let Some(item) = list.iter_mut().find(|c| c.name == name) {
+                    if item.waiting != waiting {
+                        item.waiting = waiting;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if changed {
+            self.emit(Out(vec![ManagerEvent::Changed]));
+        }
+    }
+
+    /// Asks the session's agent for a connector's sign-in URL, opens it with `open_url`, and polls every 4 seconds (up
+    /// to 5 minutes) until the connector connects (`signInConnector` on the Mac, AG-31).
+    pub async fn sign_in_connector(self: &Arc<Self>, id: Uuid, name: String, open_url: Arc<dyn Fn(&str) + Send + Sync>) {
+        self.sign_in_connector_with_timing(id, name, open_url, Duration::from_secs(300), Duration::from_secs(4)).await;
+    }
+
+    async fn sign_in_connector_with_timing(
+        self: &Arc<Self>,
+        id: Uuid,
+        name: String,
+        open_url: Arc<dyn Fn(&str) + Send + Sync>,
+        wait_limit: Duration,
+        poll_interval: Duration,
+    ) {
+        let Some(run) = self.run(id) else { return };
+        match run.provider {
+            RunProvider::Claude => {
+                self.sign_in_claude_connector(id, &run, name, open_url, wait_limit, poll_interval).await;
+            }
+            RunProvider::Codex => {
+                self.sign_in_codex_connector(id, &run, name, open_url, wait_limit, poll_interval).await;
+            }
+            _ => {}
+        }
+    }
+
+    fn control_command_input(&self, run: &WorkspaceRun, executable: String) -> CommandInput {
+        CommandInput {
+            provider: run.provider,
+            executable,
+            prompt: String::new(),
+            model: run.model.clone(),
+            mode: run.mode,
+            permission: run.permission,
+            instructions: run.instructions.clone(),
+            working_directory: run.working_directory.clone(),
+            resume_session_id: run.provider_session_id.clone(),
+            fork_session: false,
+            resume_at: None,
+            pending_rollback: None,
+            account_environment: (self.hooks.account_environment)(&run.profile_id),
+            run_id: run.id.to_string(),
+            profile_id: run.profile_id.clone(),
+            bridge: (self.hooks.bridge)(),
+            effort: run.effort.clone(),
+        }
+    }
+
+    async fn send_live_claude_control(
+        &self,
+        id: Uuid,
+        make: impl FnOnce(&str) -> String,
+    ) -> Option<Result<(Option<Value>, Option<String>), String>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+        let sent = {
+            let mut s = self.lock();
+            if let Some(input) = s.processes.get(&id).and_then(|p| p.input.clone()) {
+                s.control_replies.insert(req_id.clone(), tx);
+                input.send(Input::Line(make(&req_id))).is_ok()
+            } else {
+                false
+            }
+        };
+        if !sent {
+            self.lock().control_replies.remove(&req_id);
+            return None;
+        }
+        let reply = match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            Ok(Ok(pair)) => Ok(pair),
+            Ok(Err(_)) => Err(tr("de agent draait niet", "the agent is not running").into()),
+            Err(_) => {
+                self.lock().control_replies.remove(&req_id);
+                Err(tr("de agent gaf geen inlogpagina", "the agent gave no sign-in page").into())
+            }
+        };
+        Some(reply)
+    }
+
+    async fn send_live_codex_sign_in(&self, id: Uuid, server: &str) -> Option<Result<(Option<Value>, Option<String>), String>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+        let sent = {
+            let mut s = self.lock();
+            if let Some(proc) = s.processes.get_mut(&id) {
+                let input = proc.input.clone();
+                if let (Some(input), Some(lines)) = (input, proc.driver.as_mut().and_then(|d| d.sign_in_connector(&req_id, server))) {
+                    s.control_replies.insert(req_id.clone(), tx);
+                    lines.into_iter().all(|l| input.send(Input::Line(l)).is_ok())
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if !sent {
+            self.lock().control_replies.remove(&req_id);
+            return None;
+        }
+        let reply = match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            Ok(Ok(pair)) => Ok(pair),
+            Ok(Err(_)) => Err(tr("de agent draait niet", "the agent is not running").into()),
+            Err(_) => {
+                self.lock().control_replies.remove(&req_id);
+                Err(tr("de agent gaf geen inlogpagina", "the agent gave no sign-in page").into())
+            }
+        };
+        Some(reply)
+    }
+
+    async fn send_live_codex_check(&self, id: Uuid) -> Option<Vec<String>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+        let sent = {
+            let mut s = self.lock();
+            if let Some(proc) = s.processes.get_mut(&id) {
+                let input = proc.input.clone();
+                if let (Some(input), Some(lines)) = (input, proc.driver.as_mut().and_then(|d| d.check_connectors(&req_id))) {
+                    s.control_replies.insert(req_id.clone(), tx);
+                    lines.into_iter().all(|l| input.send(Input::Line(l)).is_ok())
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if !sent {
+            self.lock().control_replies.remove(&req_id);
+            return None;
+        }
+        let result = tokio::time::timeout(Duration::from_secs(30), rx).await.ok().and_then(Result::ok);
+        self.lock().control_replies.remove(&req_id);
+        let (Some(resp), None) = result? else { return None };
+        let names = super::connector_sign_in::parse_codex_needs_auth(&resp);
+        self.note_connectors_needing_sign_in(id, names.clone());
+        Some(names)
+    }
+
+    async fn sign_in_claude_connector(
+        self: &Arc<Self>,
+        id: Uuid,
+        run: &WorkspaceRun,
+        name: String,
+        open_url: Arc<dyn Fn(&str) + Send + Sync>,
+        wait_limit: Duration,
+        poll_interval: Duration,
+    ) {
+        let mut idle: Option<IdleClaudeControl> = None;
+        let reply = if let Some(live) = self.send_live_claude_control(id, |req| parsers::claude_mcp_authenticate(req, &name)).await {
+            live
+        } else {
+            let Some(executable) = (self.hooks.executable)(RunProvider::Claude) else {
+                self.connector_sign_in_failed(id, &name, tr("de agent draait niet", "the agent is not running").into(), false, None).await;
+                return;
+            };
+            let input = self.control_command_input(run, executable);
+            match IdleClaudeControl::spawn(&input) {
+                Ok(mut proc) => {
+                    let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+                    let res = proc.request(&req_id, &parsers::claude_mcp_authenticate(&req_id, &name), Duration::from_secs(30)).await;
+                    idle = Some(proc);
+                    res
+                }
+                Err(_) => Err(tr("de agent draait niet", "the agent is not running").into()),
+            }
+        };
+
+        let (response, error) = match reply {
+            Ok(pair) => pair,
+            Err(message) => {
+                self.connector_sign_in_failed(id, &name, message, false, None).await;
+                return;
+            }
+        };
+        let auth_url = response
+            .as_ref()
+            .and_then(|v| v.get("authUrl"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|u| u.starts_with("https://") || u.starts_with("http://"))
+            .map(str::to_string);
+        if error.is_some() || auth_url.is_none() {
+            let recheck = error.is_some();
+            let reason = error.unwrap_or_else(|| tr("de agent gaf geen inlogpagina", "the agent gave no sign-in page").into());
+            let mut idle_for_recheck = idle;
+            let rechecked = if recheck { self.check_claude_connectors(id, idle_for_recheck.as_mut()).await } else { None };
+            self.connector_sign_in_failed(id, &name, reason, false, rechecked).await;
+            return;
+        }
+        let link = auth_url.unwrap();
+        // A claude.ai connector is connected externally: Claude Code learns of it when it reconnects.
+        let reconnects = response.as_ref().and_then(|v| v.get("callbackExpected")).and_then(Value::as_bool) != Some(true);
+        open_url(&link);
+        self.wait_for_claude_connector(id, name, reconnects, idle, wait_limit, poll_interval);
+    }
+
+    fn wait_for_claude_connector(
+        self: &Arc<Self>,
+        id: Uuid,
+        name: String,
+        reconnects: bool,
+        mut idle: Option<IdleClaudeControl>,
+        wait_limit: Duration,
+        poll_interval: Duration,
+    ) {
+        self.set_connector_waiting(id, &name, true);
+        let manager = self.clone();
+        let server = name.clone();
+        let rounds = (wait_limit.as_millis() / poll_interval.as_millis().max(1)).max(1) as u64;
+        let _guard = self.runtime.enter();
+        let handle = self
+            .runtime
+            .spawn(async move {
+                for _ in 0..rounds {
+                    tokio::time::sleep(poll_interval).await;
+                    let still_waiting =
+                        manager.lock().connector_sign_ins.get(&id).is_some_and(|list| list.iter().any(|c| c.name == server && c.waiting));
+                    if !still_waiting {
+                        return;
+                    }
+                    if reconnects {
+                        if let Some(proc) = idle.as_mut() {
+                            let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+                            let _ = proc.request(&req_id, &parsers::claude_mcp_reconnect(&req_id, &server), Duration::from_secs(15)).await;
+                        } else {
+                            let _ = manager.send_live_claude_control(id, |req| parsers::claude_mcp_reconnect(req, &server)).await;
+                        }
+                    }
+                    let _ = manager.check_claude_connectors(id, idle.as_mut()).await;
+                }
+                manager.set_connector_waiting(id, &server, false);
+                if let Some(checks) = manager.lock().connector_checks.get_mut(&id) {
+                    checks.remove(&server);
+                }
+            })
+            .abort_handle();
+        let mut s = self.lock();
+        let entry = s.connector_checks.entry(id).or_default();
+        if let Some(prev) = entry.insert(name, handle) {
+            prev.abort();
+        }
+    }
+
+    async fn check_claude_connectors(&self, id: Uuid, idle: Option<&mut IdleClaudeControl>) -> Option<Vec<String>> {
+        let reply = if let Some(proc) = idle {
+            let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+            proc.request(&req_id, &parsers::claude_mcp_status(&req_id), Duration::from_secs(15)).await.ok()
+        } else if let Some(live) = self.send_live_claude_control(id, parsers::claude_mcp_status).await {
+            live.ok()
+        } else {
+            let run = self.run(id)?;
+            let executable = (self.hooks.executable)(RunProvider::Claude)?;
+            let input = self.control_command_input(&run, executable);
+            let mut proc = IdleClaudeControl::spawn(&input).ok()?;
+            let req_id = format!("nook-mcp-{}", &Uuid::new_v4().to_string()[..8]);
+            proc.request(&req_id, &parsers::claude_mcp_status(&req_id), Duration::from_secs(15)).await.ok()
+        };
+        let (Some(resp), None) = reply? else { return None };
+        let rows = resp.get("mcpServers")?;
+        let names = super::connector_sign_in::parse_claude_needs_auth(rows);
+        self.note_connectors_needing_sign_in(id, names.clone());
+        Some(names)
+    }
+
+    async fn sign_in_codex_connector(
+        self: &Arc<Self>,
+        id: Uuid,
+        run: &WorkspaceRun,
+        name: String,
+        open_url: Arc<dyn Fn(&str) + Send + Sync>,
+        wait_limit: Duration,
+        poll_interval: Duration,
+    ) {
+        let mut idle: Option<IdleCodexControl> = None;
+        let reply = if let Some(live) = self.send_live_codex_sign_in(id, &name).await {
+            live
+        } else {
+            let Some(executable) = (self.hooks.executable)(RunProvider::Codex) else {
+                self.connector_sign_in_failed(id, &name, tr("de agent draait niet", "the agent is not running").into(), false, None).await;
+                return;
+            };
+            let input = self.control_command_input(run, executable);
+            match IdleCodexControl::spawn(&input).await {
+                Ok(mut proc) => {
+                    let res = proc.request("mcpServer/oauth/login", serde_json::json!({"name": name}), Duration::from_secs(30)).await;
+                    idle = Some(proc);
+                    res
+                }
+                Err(_) => Err(tr("de agent draait niet", "the agent is not running").into()),
+            }
+        };
+
+        let (response, error) = match reply {
+            Ok(pair) => pair,
+            Err(message) => {
+                self.connector_sign_in_failed(id, &name, message, false, None).await;
+                return;
+            }
+        };
+        let auth_url = response
+            .as_ref()
+            .and_then(|v| v.get("authorizationUrl"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|u| u.starts_with("https://") || u.starts_with("http://"))
+            .map(str::to_string);
+        if error.is_some() || auth_url.is_none() {
+            let recheck = error.is_some();
+            let reason = error.unwrap_or_else(|| tr("de agent gaf geen inlogpagina", "the agent gave no sign-in page").into());
+            let mut idle_for_recheck = idle;
+            let rechecked = if recheck { self.check_codex_connectors(id, idle_for_recheck.as_mut()).await } else { None };
+            self.connector_sign_in_failed(id, &name, reason, false, rechecked).await;
+            return;
+        }
+        let link = auth_url.unwrap();
+        open_url(&link);
+        self.wait_for_codex_connector(id, name, idle, wait_limit, poll_interval);
+    }
+
+    fn wait_for_codex_connector(
+        self: &Arc<Self>,
+        id: Uuid,
+        name: String,
+        mut idle: Option<IdleCodexControl>,
+        wait_limit: Duration,
+        poll_interval: Duration,
+    ) {
+        self.set_connector_waiting(id, &name, true);
+        let manager = self.clone();
+        let server = name.clone();
+        let rounds = (wait_limit.as_millis() / poll_interval.as_millis().max(1)).max(1) as u64;
+        let _guard = self.runtime.enter();
+        let handle = self
+            .runtime
+            .spawn(async move {
+                for _ in 0..rounds {
+                    tokio::time::sleep(poll_interval).await;
+                    let still_waiting =
+                        manager.lock().connector_sign_ins.get(&id).is_some_and(|list| list.iter().any(|c| c.name == server && c.waiting));
+                    if !still_waiting {
+                        return;
+                    }
+                    let _ = manager.check_codex_connectors(id, idle.as_mut()).await;
+                }
+                manager.set_connector_waiting(id, &server, false);
+                if let Some(checks) = manager.lock().connector_checks.get_mut(&id) {
+                    checks.remove(&server);
+                }
+            })
+            .abort_handle();
+        let mut s = self.lock();
+        let entry = s.connector_checks.entry(id).or_default();
+        if let Some(prev) = entry.insert(name, handle) {
+            prev.abort();
+        }
+    }
+
+    async fn check_codex_connectors(&self, id: Uuid, idle: Option<&mut IdleCodexControl>) -> Option<Vec<String>> {
+        if let Some(proc) = idle {
+            let thread = proc.thread_id.clone()?;
+            let (Some(resp), None) = proc
+                .request(
+                    "mcpServerStatus/list",
+                    serde_json::json!({"threadId": thread, "detail": "toolsAndAuthOnly"}),
+                    Duration::from_secs(15),
+                )
+                .await
+                .ok()?
+            else {
+                return None;
+            };
+            let names = super::connector_sign_in::parse_codex_needs_auth(&resp);
+            self.note_connectors_needing_sign_in(id, names.clone());
+            return Some(names);
+        }
+        if let Some(names) = self.send_live_codex_check(id).await {
+            return Some(names);
+        }
+        let run = self.run(id)?;
+        let executable = (self.hooks.executable)(RunProvider::Codex)?;
+        let input = self.control_command_input(&run, executable);
+        let mut proc = IdleCodexControl::spawn(&input).await.ok()?;
+        let thread = proc.thread_id.clone()?;
+        let (Some(resp), None) = proc
+            .request("mcpServerStatus/list", serde_json::json!({"threadId": thread, "detail": "toolsAndAuthOnly"}), Duration::from_secs(15))
+            .await
+            .ok()?
+        else {
+            return None;
+        };
+        let names = super::connector_sign_in::parse_codex_needs_auth(&resp);
+        self.note_connectors_needing_sign_in(id, names.clone());
+        Some(names)
+    }
+
+    async fn connector_sign_in_failed(&self, id: Uuid, name: &str, error: String, _recheck: bool, rechecked_names: Option<Vec<String>>) {
+        self.set_connector_waiting(id, name, false);
+        let title = super::connector_sign_in::connector_title(name);
+        let event = if let Some(names) = rechecked_names.filter(|list| !list.iter().any(|n| n == name)) {
+            let _ = names;
+            RunEvent::new(
+                EventKind::System,
+                trf(
+                    "{title} hoeft niet meer: de agent heeft deze connector niet meer, of een andere connector doet hetzelfde.",
+                    "{title} is no longer needed: the agent dropped this connector, or another connector covers the same service.",
+                    &[("title", &title)],
+                ),
+            )
+        } else {
+            RunEvent::new(
+                EventKind::Error,
+                trf(
+                    "Inloggen bij {title} lukte niet: {error}",
+                    "Signing in to {title} did not work: {error}",
+                    &[("title", &title), ("error", &error)],
+                ),
+            )
+        };
+        let mut out = Out::default();
+        if self.run(id).is_some() {
+            Self::append(&mut self.lock(), id, event, &mut out);
+            self.emit(out);
+        }
     }
 
     pub fn git(&self) -> Option<&Git> {
@@ -4078,6 +4701,11 @@ impl Manager {
             for (_, handle) in s.prepare_tasks.drain() {
                 handle.abort();
             }
+            for (_, checks) in s.connector_checks.drain() {
+                for (_, handle) in checks {
+                    handle.abort();
+                }
+            }
             cut
         };
         let running = self.lock().processes.len();
@@ -4363,6 +4991,152 @@ impl Manager {
         out.push(ManagerEvent::Changed);
         self.emit(out);
         Ok(new_id)
+    }
+}
+
+/// A short-lived Claude Code stream-json child process used for MCP connector sign-in and status polling while no turn
+/// is running. Kept alive across the polling loop so OAuth flows with `callbackExpected: true` keep their local callback
+/// listener running, and terminated immediately via `kill_on_drop(true)` when dropped.
+struct IdleClaudeControl {
+    _child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    stdout: tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+}
+
+impl IdleClaudeControl {
+    fn spawn(input: &CommandInput) -> Result<Self, String> {
+        let spec = command::spec(input);
+        let base: BTreeMap<String, String> = std::env::vars().collect();
+        let env = command::environment(&base, &spec.executable, &spec.extra_environment);
+        let mut cmd = tokio::process::Command::new(&spec.executable);
+        cmd.args(&spec.arguments)
+            .current_dir(&spec.working_directory)
+            .env_clear()
+            .envs(&env)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(0x0800_0000);
+        }
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let stdin = child.stdin.take().ok_or_else(|| "missing stdin".to_string())?;
+        let stdout = child.stdout.take().ok_or_else(|| "missing stdout".to_string())?;
+        Ok(Self { _child: child, stdin, stdout: BufReader::new(stdout).lines() })
+    }
+
+    async fn request(&mut self, request_id: &str, line: &str, timeout: Duration) -> Result<(Option<Value>, Option<String>), String> {
+        self.stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+        self.stdin.flush().await.map_err(|e| e.to_string())?;
+        let target = request_id.to_string();
+        let fut = async {
+            while let Ok(Some(raw)) = self.stdout.next_line().await {
+                for event in parsers::parse_claude(&raw) {
+                    if let ClaudeEvent::ControlReply { request_id, response, error } = event {
+                        if request_id == target {
+                            return Ok((response, error));
+                        }
+                    }
+                }
+            }
+            Err(tr("de agent draait niet", "the agent is not running").to_string())
+        };
+        tokio::time::timeout(timeout, fut)
+            .await
+            .map_err(|_| tr("de agent gaf geen inlogpagina", "the agent gave no sign-in page").to_string())?
+    }
+}
+
+/// A short-lived `codex app-server` child process used for MCP connector sign-in and status polling while no turn is
+/// running, terminated via `kill_on_drop(true)` when dropped.
+struct IdleCodexControl {
+    _child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    stdout: tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    next_id: i64,
+    thread_id: Option<String>,
+}
+
+impl IdleCodexControl {
+    async fn spawn(input: &CommandInput) -> Result<Self, String> {
+        let mut extra = input.account_environment.clone();
+        extra.insert("NOOK_RUN_ID".into(), input.run_id.clone());
+        let base: BTreeMap<String, String> = std::env::vars().collect();
+        let env = command::environment(&base, &input.executable, &extra);
+        let mut cmd = tokio::process::Command::new(&input.executable);
+        cmd.arg("app-server")
+            .current_dir(&input.working_directory)
+            .env_clear()
+            .envs(&env)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(0x0800_0000);
+        }
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let stdin = child.stdin.take().ok_or_else(|| "missing stdin".to_string())?;
+        let stdout = child.stdout.take().ok_or_else(|| "missing stdout".to_string())?;
+        let mut this = Self { _child: child, stdin, stdout: BufReader::new(stdout).lines(), next_id: 1, thread_id: None };
+        let (_, init_err) = this
+            .request(
+                "initialize",
+                serde_json::json!({
+                    "clientInfo": {"name": "nook", "title": "Nook", "version": env!("CARGO_PKG_VERSION")},
+                    "capabilities": {"experimentalApi": true}
+                }),
+                Duration::from_secs(15),
+            )
+            .await?;
+        if let Some(err) = init_err {
+            return Err(err);
+        }
+        let notif = format!("{}\n", serde_json::json!({"method": "initialized", "params": {}}));
+        this.stdin.write_all(notif.as_bytes()).await.map_err(|e| e.to_string())?;
+        this.stdin.flush().await.map_err(|e| e.to_string())?;
+
+        let mut params = serde_json::json!({"cwd": input.working_directory});
+        let method = if let Some(resume) = input.resume_session_id.as_ref().filter(|s| !s.is_empty()) {
+            params["threadId"] = serde_json::json!(resume);
+            params["excludeTurns"] = serde_json::json!(true);
+            "thread/resume"
+        } else {
+            "thread/start"
+        };
+        let (thread_res, _) = this.request(method, params, Duration::from_secs(15)).await?;
+        this.thread_id = thread_res
+            .as_ref()
+            .and_then(|v| v.pointer("/thread/id"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| input.resume_session_id.clone());
+        Ok(this)
+    }
+
+    async fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Result<(Option<Value>, Option<String>), String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = format!("{}\n", serde_json::json!({"id": id, "method": method, "params": params}));
+        self.stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+        self.stdin.flush().await.map_err(|e| e.to_string())?;
+        let fut = async {
+            while let Ok(Some(raw)) = self.stdout.next_line().await {
+                if let Some(driver::Message::Response { id: reply_id, result, error }) = driver::parse(&raw) {
+                    if reply_id == id {
+                        let resp = error.is_none().then_some(result);
+                        return Ok((resp, error));
+                    }
+                }
+            }
+            Err(tr("de agent draait niet", "the agent is not running").to_string())
+        };
+        tokio::time::timeout(timeout, fut)
+            .await
+            .map_err(|_| tr("de agent gaf geen inlogpagina", "the agent gave no sign-in page").to_string())?
     }
 }
 
@@ -4757,6 +5531,147 @@ read rest
         };
         let err = rt.block_on(manager.start_setup_scripts(id, &root.to_string_lossy(), &[blocking_script]));
         assert!(err.is_some(), "closing a blocking setup script terminal before exit code must fail setup");
+
+        manager.shutdown();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn connector_sign_in_lifecycle_and_sharing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("nook-connector-signin-{}", Uuid::new_v4()));
+        let project = root.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let flag = root.join("connected.flag");
+        let script = root.join("fake-claude-mcp");
+        std::fs::write(
+            &script,
+            format!(
+                r#"#!/bin/sh
+FLAG="{flag}"
+while IFS= read -r line; do
+  case "$line" in
+    *'"type":"user"'*)
+      printf '{{"type":"system","subtype":"init","session_id":"s-mcp","model":"claude-sonnet-4-6","mcp_servers":[{{"name":"claude.ai Supabase","status":"needs-auth"}},{{"name":"nook","status":"connected"}}]}}\n'
+      printf '{{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"s-mcp"}}\n'
+      exit 0
+      ;;
+    *'"subtype":"mcp_authenticate"'*)
+      req=$(printf '%s' "$line" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+      case "$line" in
+        *'"serverName":"plugin:work:dropped"'*)
+          printf '{{"type":"control_response","response":{{"subtype":"error","request_id":"%s","error":"Server not found"}}}}\n' "$req"
+          ;;
+        *)
+          printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{"authUrl":"https://claude.ai/connect/supabase","callbackExpected":false}}}}}}\n' "$req"
+          ;;
+      esac
+      ;;
+    *'"subtype":"mcp_reconnect"'*)
+      req=$(printf '%s' "$line" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+      touch "$FLAG"
+      printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{}}}}}}\n' "$req"
+      ;;
+    *'"subtype":"mcp_status"'*)
+      req=$(printf '%s' "$line" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+      if [ -f "$FLAG" ]; then
+        printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{"mcpServers":[{{"name":"claude.ai Supabase","status":"connected"}}]}}}}}}\n' "$req"
+      else
+        printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{"mcpServers":[{{"name":"claude.ai Supabase","status":"needs-auth"}}]}}}}}}\n' "$req"
+      fi
+      ;;
+  esac
+done
+"#,
+                flag = flag.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let exec = script.to_string_lossy().into_owned();
+        let manager = Manager::new(
+            root.join("store"),
+            Hooks {
+                executable: Box::new(move |_| Some(exec.clone())),
+                account_environment: Box::new(|_| BTreeMap::new()),
+                bridge: Box::new(|| None),
+                worktree_root: Box::new(String::new),
+                auto_resume_limited: Box::new(|| false),
+            },
+            rt.handle().clone(),
+            |_| {},
+        );
+
+        let cfg = NewRunConfig { task: "hi".into(), project_path: project.to_string_lossy().into(), ..Default::default() };
+        let id = manager.start(cfg.clone(), false).unwrap();
+        assert!(rt.block_on(manager.wait_idle(id, Duration::from_secs(5))));
+
+        // System/init reported claude.ai Supabase as needs-auth.
+        let list = manager.connector_sign_ins_for(id);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "claude.ai Supabase");
+        assert_eq!(list[0].title, "Supabase");
+        assert_eq!(list[0].icon_domain.as_deref(), Some("supabase.com"));
+        assert!(!list[0].waiting);
+
+        // Create a sibling session on the same agent/account that also lists Supabase.
+        let cfg2 = NewRunConfig { task: "hi2".into(), project_path: project.to_string_lossy().into(), ..Default::default() };
+        let sibling = manager.start(cfg2, false).unwrap();
+        assert!(rt.block_on(manager.wait_idle(sibling, Duration::from_secs(5))));
+        manager.note_connectors_needing_sign_in(sibling, vec!["claude.ai Supabase".into(), "claude.ai Figma".into()]);
+        assert_eq!(manager.connector_sign_ins_for(sibling).len(), 2);
+
+        // Sign in on the first session: opens authUrl, polls mcp_reconnect + mcp_status, clears both sessions!
+        let opened: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+        let opened_cb = opened.clone();
+        rt.block_on(manager.sign_in_connector_with_timing(
+            id,
+            "claude.ai Supabase".into(),
+            Arc::new(move |u| opened_cb.lock().unwrap().push(u.to_string())),
+            Duration::from_secs(5),
+            Duration::from_millis(50),
+        ));
+        assert_eq!(opened.lock().unwrap().as_slice(), &["https://claude.ai/connect/supabase"]);
+
+        // Wait briefly for the polling task to complete and mark Supabase connected.
+        rt.block_on(async {
+            for _ in 0..40 {
+                if manager.connector_sign_ins_for(id).is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+        assert!(manager.connector_sign_ins_for(id).is_empty());
+        // Sibling session automatically dropped Supabase too while keeping Figma.
+        let sibling_left = manager.connector_sign_ins_for(sibling);
+        assert_eq!(sibling_left.len(), 1);
+        assert_eq!(sibling_left[0].name, "claude.ai Figma");
+        // Connected notice was added to the timeline.
+        let timeline = manager.timeline(id);
+        assert!(timeline.iter().any(|e| e.kind == EventKind::System && e.text.contains("Supabase")));
+
+        // Hiding a connector clears waiting state.
+        manager.note_connectors_needing_sign_in(sibling, vec!["claude.ai Figma".into()]);
+        manager.set_connector_waiting(sibling, "claude.ai Figma", true);
+        assert!(manager.connector_sign_ins_for(sibling)[0].waiting);
+        manager.hide_connector_sign_ins(sibling, &["claude.ai Figma".into()]);
+        assert!(!manager.connector_sign_ins_for(sibling)[0].waiting);
+
+        // Recheck after auth error when connector disappeared logs a System "no longer needed" note instead of Error.
+        manager.note_connectors_needing_sign_in(id, vec!["plugin:work:dropped".into()]);
+        rt.block_on(manager.sign_in_connector_with_timing(
+            id,
+            "plugin:work:dropped".into(),
+            Arc::new(|_| {}),
+            Duration::from_secs(1),
+            Duration::from_millis(50),
+        ));
+        let timeline_after = manager.timeline(id);
+        assert!(timeline_after.iter().any(|e| e.kind == EventKind::System && e.text.contains("dropped")));
 
         manager.shutdown();
         let _ = std::fs::remove_dir_all(root);
