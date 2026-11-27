@@ -3,6 +3,7 @@
   // een map naar keuze, en de terminal zelf. Met `folder` alleen de terminals van die map (een sessie), met de scripts
   // van het project (nook.json) en de dev-servers die daar luisteren.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
+  import { ask } from "../../lib/confirm.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import { nook } from "../../lib/state.svelte";
   import { toolEvents, toolsApi, type DevServer, type ProjectScript, type TerminalInfo } from "../../lib/workspace/api";
@@ -42,13 +43,19 @@
   }
 
   let serverNote = $state<string | null>(null);
-  /// Stops a server Nook started; for any other it says why not, as stopping something you run elsewhere would take it away
-  /// behind your back.
+  /// Stops a server: one Nook started at once; one you started elsewhere after a question, since it also ends there.
   async function stopServer(s: DevServer) {
-    const notOurs = tr("{command} op poort {port} is niet door Nook of een van zijn sessies gestart. Stop hem waar je hem startte, zodat niets wat je elders draait achter je rug verdwijnt.", "{command} on port {port} was not started by Nook or one of its sessions. Stop it where you started it, so nothing you run elsewhere disappears behind your back.", { command: s.command, port: s.port });
-    if (!s.startedByNook || !folder) { serverNote = serverNote ? null : notOurs; return; }
+    if (!folder) return;
+    if (!s.startedByNook) {
+      const yes = await ask({
+        question: tr("{command} op poort {port} stoppen?", "Stop {command} on port {port}?", { command: s.command, port: s.port }),
+        detail: tr("Nook heeft deze server niet gestart. Hij stopt ook in de terminal of app waar je hem startte.", "Nook did not start this server. It also stops in the terminal or app you started it from."),
+        confirmTitle: tr("Stop server", "Stop server"),
+      });
+      if (!yes) return;
+    }
     const stopped = await toolsApi.stopDevServer(folder, s.pid, s.port).catch(() => false);
-    serverNote = stopped ? null : notOurs;
+    serverNote = stopped ? null : tr("{command} op poort {port} kon niet gestopt worden. Hij luistert niet meer op die poort, of hoort bij Nook zelf.", "{command} on port {port} could not be stopped. It no longer listens on that port, or it belongs to Nook itself.", { command: s.command, port: s.port });
     setTimeout(loadFolder, 700);
   }
 
@@ -163,8 +170,8 @@
         {#each servers as s (s.port)}
           <span class="server-chip">
             <button class="server" title={`${s.command} (pid ${s.pid})`} onclick={() => toolsApi.go(s.url)}>◍ {s.url}</button>
-            <button class="stop" class:muted={!s.startedByNook} aria-label={tr("Stop de server op poort {port}", "Stop the server on port {port}", { port: s.port })}
-              title={s.startedByNook ? tr("Stop de server op poort {port}", "Stop the server on port {port}", { port: s.port }) : tr("Nook heeft deze server niet gestart en kan hem dus niet stoppen", "Nook did not start this server, so it can't stop it")}
+            <button class="stop" aria-label={tr("Stop de server op poort {port}", "Stop the server on port {port}", { port: s.port })}
+              title={tr("Stop de server op poort {port}", "Stop the server on port {port}", { port: s.port })}
               onclick={() => stopServer(s)}><Ico name="square" size={8} stroke={3} fill="currentColor" /></button>
           </span>
         {/each}
@@ -206,7 +213,6 @@
   .server { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; }
   .server-chip { display: inline-flex; align-items: center; gap: var(--space-2); }
   .stop { display: grid; place-items: center; width: 18px; height: 22px; margin: 0; padding: 0; border: 0; background: transparent; color: var(--text2); }
-  .stop.muted { color: var(--text3); }
   .note { margin: 0; font: var(--text-detail); }
   .empty { text-align: center; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .err { color: var(--coral); font-size: 12px; margin: 0; }
