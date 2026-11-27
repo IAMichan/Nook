@@ -337,6 +337,7 @@ mod tests {
             compacting: false,
             tasks: None,
             restart: Default::default(),
+            prompt_cache: None,
         }
     }
 

@@ -7,7 +7,7 @@ use nook_core::agents::history::HistoryResult;
 use nook_core::agents::installer::{self, State as LinkState, Target};
 use nook_core::agents::line_diff::DiffLine;
 use nook_core::agents::models::{AgentApproval, AgentSession, ApprovalDecision, PlanUsage, QuestionRequest};
-use nook_core::agents::profiles::{AgentAuthMethod, AgentProfile};
+use nook_core::agents::profiles::{profile_home_variable, AccountVariable, AgentAuthMethod, AgentProfile};
 use nook_core::agents::transcript::{self, AgentChatMessage};
 use nook_core::agents::{scanner, AgentKind};
 use serde::Serialize;
@@ -249,7 +249,10 @@ pub struct ProfileView {
     title: String,
     display_home: String,
     preferred: bool,
+    enabled: bool,
     has_key: bool,
+    home_variable: Option<&'static str>,
+    stored_secret_variables: Vec<String>,
     launch_command: String,
     login_command: String,
 }
@@ -261,14 +264,25 @@ pub fn agents_profiles(app: AppHandle, state: State<'_, AgentsState>) -> Vec<Pro
     store
         .all()
         .into_iter()
-        .map(|p| ProfileView {
-            title: p.title(),
-            display_home: p.display_home(),
-            preferred: store.preferred(p.kind).id == p.id,
-            has_key: p.kind == AgentKind::Claude && secrets.read(&p.secret_account()).is_some(),
-            launch_command: p.launch_command(),
-            login_command: p.login_command(),
-            profile: p,
+        .map(|p| {
+            let stored_secret_variables = p
+                .active_variables()
+                .iter()
+                .filter(|v| v.sensitive && secrets.read(&p.variable_secret_account(&v.name)).is_some_and(|s| !s.is_empty()))
+                .map(|v| v.name.clone())
+                .collect();
+            ProfileView {
+                title: p.title(),
+                display_home: p.display_home(),
+                preferred: store.preferred(p.kind).id == p.id,
+                enabled: p.is_enabled(),
+                has_key: p.kind == AgentKind::Claude && secrets.read(&p.secret_account()).is_some(),
+                home_variable: profile_home_variable(p.kind),
+                stored_secret_variables,
+                launch_command: p.launch_command(),
+                login_command: p.login_command(),
+                profile: p,
+            }
         })
         .collect()
 }
@@ -293,11 +307,14 @@ pub fn agents_profile_rename(app: AppHandle, state: State<'_, AgentsState>, id: 
     changed(&app);
 }
 
-/// Haalt een account uit Nook. De map en de inlog op schijf blijven staan; de sleutel in de kluis gaat weg.
+/// Haalt een account uit Nook. De map en de inlog op schijf blijven staan; de sleutel en geheime variabelen gaan weg.
 #[tauri::command]
 pub fn agents_profile_remove(app: AppHandle, state: State<'_, AgentsState>, id: String) -> Res<()> {
-    let secret = lock(&state.profiles).remove(&id).ok_or("Het hoofdaccount blijft altijd.")?;
-    let _ = app.state::<AppState>().secrets.remove(&secret);
+    let secret_keys = lock(&state.profiles).remove(&id).ok_or("Het hoofdaccount blijft altijd.")?;
+    let secrets = app.state::<AppState>().secrets.clone();
+    for key in secret_keys {
+        let _ = secrets.remove(&key);
+    }
     changed(&app);
     Ok(())
 }
@@ -321,6 +338,44 @@ pub fn agents_profile_key(app: AppHandle, state: State<'_, AgentsState>, id: Str
     app.state::<AppState>().secrets.write(&profile.secret_account(), &key)?;
     changed(&app);
     Ok(app.state::<AppState>().secrets.read(&profile.secret_account()).is_some())
+}
+
+#[tauri::command]
+pub fn agents_profile_set_enabled(app: AppHandle, state: State<'_, AgentsState>, id: String, enabled: bool) {
+    lock(&state.profiles).set_enabled(&id, enabled);
+    changed(&app);
+}
+
+#[tauri::command]
+pub fn agents_profile_set_executable_path(app: AppHandle, state: State<'_, AgentsState>, id: String, path: String) {
+    lock(&state.profiles).set_executable_path(&id, &path);
+    changed(&app);
+}
+
+#[tauri::command]
+pub fn agents_profile_set_extra_arguments(app: AppHandle, state: State<'_, AgentsState>, id: String, arguments: Vec<String>) {
+    lock(&state.profiles).set_extra_arguments(&id, arguments);
+    changed(&app);
+}
+
+#[tauri::command]
+pub fn agents_profile_set_variables(app: AppHandle, state: State<'_, AgentsState>, id: String, variables: Vec<AccountVariable>) -> Res<()> {
+    let plan = lock(&state.profiles).set_variables(&id, variables);
+    let secrets = app.state::<AppState>().secrets.clone();
+    for key in plan.delete {
+        let _ = secrets.remove(&key);
+    }
+    for (key, value) in plan.write {
+        secrets.write(&key, &value)?;
+    }
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn agents_profile_set_custom_models(app: AppHandle, state: State<'_, AgentsState>, id: String, models: Vec<String>) {
+    lock(&state.profiles).set_custom_models(&id, models);
+    changed(&app);
 }
 
 #[tauri::command]

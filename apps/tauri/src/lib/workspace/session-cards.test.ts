@@ -26,13 +26,68 @@ describe("session cards", () => {
     expect(pageHeight(event("system", { output: "10" }))).toBe(80);
   });
 
-  it("starts a suggestion beside the session, asking first", () => {
-    const run = { provider: "claude", profileId: "claude-work", model: "opus", isolation: "folder", projectPath: "/p", workingDirectory: "/p", baseBranch: "main" } as unknown as WorkspaceRun;
+  it("starts a suggestion beside the session with matching defaults", () => {
+    const run = {
+      provider: "claude",
+      profileId: "claude-work",
+      model: "opus",
+      effort: "high",
+      permission: "acceptEdits",
+      isolation: "folder",
+      projectPath: "/p",
+      workingDirectory: "/p",
+      baseBranch: "main",
+    } as unknown as WorkspaceRun;
     const s = { title: "T", prompt: "Do it", summary: "", agent: "", worktree: true };
-    const same = suggestedConfig(s, run, "claude", ["ask", "acceptEdits"], { models: {}, profiles: {} });
-    expect(same).toMatchObject({ task: "Do it", profileId: "claude-work", model: "opus", isolation: "worktree", baseBranch: "main", permission: "ask", projectPath: "/p" });
-    const other = suggestedConfig({ ...s, worktree: null }, run, "codex", ["acceptEdits"], { models: { codex: "gpt-5" }, profiles: {} });
-    expect(other).toMatchObject({ provider: "codex", profileId: "codex", model: "gpt-5", isolation: "folder", baseBranch: "", permission: "acceptEdits" });
+    const same = suggestedConfig(s, run, "claude", ["ask", "acceptEdits"], {
+      models: {},
+      profiles: {},
+      worktreeRoot: "/wt",
+    });
+    expect(same).toMatchObject({
+      task: "Do it",
+      profileId: "claude-work",
+      model: "opus",
+      effort: "high",
+      isolation: "worktree",
+      baseBranch: "main",
+      worktreeRoot: "/wt",
+      permission: "acceptEdits",
+      projectPath: "/p",
+    });
+
+    const other = suggestedConfig(
+      { ...s, worktree: null },
+      run,
+      "codex",
+      ["ask", "acceptEdits"],
+      {
+        models: { codex: "gpt-5" },
+        profiles: { codex: "codex-main" },
+        efforts: { codex: "medium" },
+        isolation: "worktree",
+        permission: "ask",
+        folderChoices: {
+          "/p": {
+            provider: "codex",
+            mode: "agent",
+            permission: "acceptEdits",
+            isolation: "worktree",
+            agents: { codex: { profileId: "codex-work", model: "gpt-5-codex", effort: "low" } },
+          },
+        },
+      },
+      "develop",
+    );
+    expect(other).toMatchObject({
+      provider: "codex",
+      profileId: "codex-work",
+      model: "gpt-5-codex",
+      effort: "low",
+      isolation: "worktree",
+      baseBranch: "develop",
+      permission: "acceptEdits",
+    });
   });
 
   it("keeps a card out of a finished turn's fold", () => {

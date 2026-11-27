@@ -62,9 +62,13 @@
     if (windowTokens <= 0 || (usedRaw <= 0 && !compacting)) return null;
 
     const used = Math.min(usedRaw, windowTokens);
-    const autoCompactAt = Math.min(DEFAULT_AUTO_COMPACT_TOKENS, Math.floor(windowTokens * AUTO_COMPACT_WINDOW_SHARE));
+    const configuredCompact = workspace.settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS;
+    const autoCompactAt =
+      configuredCompact > 0
+        ? Math.min(configuredCompact, Math.floor(windowTokens * AUTO_COMPACT_WINDOW_SHARE))
+        : null;
     const fraction = Math.min(1, used / windowTokens);
-    const budget = autoCompactAt > 0 ? Math.min(autoCompactAt, windowTokens) : windowTokens;
+    const budget = autoCompactAt && autoCompactAt > 0 ? Math.min(autoCompactAt, windowTokens) : windowTokens;
     const pressure = budget > 0 ? Math.min(1, used / budget) : 0;
     const level = levelFromPressure(pressure);
 
@@ -122,7 +126,7 @@
       }
     }
 
-    const buffer = Math.max(0, windowTokens - Math.max(autoCompactAt, used));
+    const buffer = autoCompactAt != null ? Math.max(0, windowTokens - Math.max(autoCompactAt, used)) : 0;
     const free = Math.max(0, windowTokens - used - buffer);
     push("autocompact_buffer", buffer, "buffer");
     push("free_space", free, "free");
@@ -134,7 +138,7 @@
       pressure,
       level,
       autoCompactAt,
-      headroomTokens: Math.max(0, autoCompactAt - used),
+      headroomTokens: Math.max(0, budget - used),
       compacting,
       detailed: false,
       parts,

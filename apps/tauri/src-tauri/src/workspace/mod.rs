@@ -85,6 +85,18 @@ pub fn setup(app: &AppHandle) {
     let support_dir = nook_core::paths::support_directory();
     let directory = support_dir.join("workspace");
     let manager = Manager::new(directory, hooks, runtime.clone(), move |event| on_event(&handle, event));
+    let exe_app = app.clone();
+    manager.set_account_executable(move |profile_id| {
+        let agents = exe_app.try_state::<AgentsState>()?;
+        let path = lock(&agents.profiles).profile(profile_id)?.executable_override();
+        path
+    });
+    let args_app = app.clone();
+    manager.set_account_arguments(move |profile_id| {
+        let Some(agents) = args_app.try_state::<AgentsState>() else { return Vec::new() };
+        let args = lock(&agents.profiles).profile(profile_id).map(|p| p.launch_arguments()).unwrap_or_default();
+        args
+    });
     if let Some(services) = app.try_state::<crate::services::Services>() {
         manager.recap.set(services.recap.clone());
     }
@@ -165,6 +177,9 @@ pub fn setup(app: &AppHandle) {
             if tick % 60 == 5 {
                 let m = manager.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || m.refresh_worktrees()).await;
+            }
+            if tick % 30 == 10 {
+                manager.check_idle_compactions();
             }
             // Auto-pull default branches roughly every 15 minutes per repo, when enabled globally or per project.
             if tick % 30 == 15 {
@@ -266,19 +281,14 @@ pub fn shutdown(app: &AppHandle) {
     }
 }
 
-/// De omgeving van een account: `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/…, en bij een Claude-account met API-sleutel die
-/// sleutel uit de kluis. Rechtstreeks naar het proces; nooit gelogd of bewaard.
+/// De omgeving van een account: eigen omgevingsvariabelen (ook uit de kluis), daarna `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/…,
+/// en bij een Claude-account met API-sleutel die sleutel uit de kluis. Rechtstreeks naar het proces; nooit gelogd of bewaard.
 fn account_environment(app: &AppHandle, profile_id: &str) -> BTreeMap<String, String> {
     let Some(agents) = app.try_state::<AgentsState>() else { return BTreeMap::new() };
     let profile: Option<AgentProfile> = lock(&agents.profiles).profile(profile_id);
     let Some(profile) = profile else { return BTreeMap::new() };
-    let mut env = profile.environment();
-    if profile.kind == nook_core::agents::AgentKind::Claude && profile.uses_api_key() {
-        if let Some(key) = app.state::<AppState>().secrets.read(&profile.secret_account()).filter(|k| !k.trim().is_empty()) {
-            env.insert("ANTHROPIC_API_KEY".into(), key.trim().to_string());
-        }
-    }
-    env
+    let secrets = app.state::<AppState>().secrets.clone();
+    profile.launch_environment(|key| secrets.read(key))
 }
 
 fn on_event(app: &AppHandle, event: ManagerEvent) {

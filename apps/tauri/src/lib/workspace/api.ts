@@ -23,6 +23,12 @@ export interface RunUsage {
   activeSeconds: number;
 }
 
+export interface PromptCacheWindow {
+  expiresAt: string;
+  ttl: number;
+  afterCompaction: boolean;
+}
+
 export interface WorkspaceRun {
   id: string;
   title: string;
@@ -70,6 +76,8 @@ export interface WorkspaceRun {
   compacting?: boolean;
   /** The agent's own task list of the current work (TodoWrite, a Codex plan, an ACP plan). */
   tasks?: { text: string; status: "pending" | "active" | "done" | "cancelled" }[] | null;
+  /** Claude Code: how long the prompt cache of the session's last request stays warm (`IdleCompaction`, AG-32). */
+  promptCache?: PromptCacheWindow | null;
 }
 
 export type ContextLevel = "normal" | "warning" | "critical";
@@ -120,6 +128,8 @@ export interface ProviderCapabilities {
   reportsCost: boolean;
   reportsContextWindow: boolean;
   reportsCacheTokens: boolean;
+  /** Reports how long its prompt cache stays warm (`IdleCompaction`, AG-32). */
+  reportsPromptCacheLifetime?: boolean;
   policies: PermissionPolicy[];
   steering: boolean;
   nativeFork: boolean;
@@ -213,6 +223,10 @@ export interface WorkspaceSettings {
   suggestNextPrompt?: boolean;
   /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
   textGenerators?: Record<string, string>;
+  /// Summarize long idle Claude Code sessions shortly before their prompt cache expires (`ws.idleCompaction`, AG-32).
+  idleCompaction?: boolean;
+  /// Summarize a session once its context crosses this size in tokens (`ws.autoCompactTokens`, 0 = off, AG-32).
+  autoCompactTokens?: number;
 }
 
 export type CommitStyle = "standard" | "conventional" | "repository" | "custom";

@@ -20,6 +20,40 @@ pub enum AgentAuthMethod {
     ApiKey,
 }
 
+/// One environment variable of an account (`AccountVariable` on the Mac). A sensitive value (such as a token) is stored
+/// in the system keychain rather than in `agent-profiles.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountVariable {
+    pub name: String,
+    /// Empty on disk for a sensitive variable: its value lives in the `SecretStore`.
+    #[serde(default)]
+    pub value: String,
+    #[serde(default)]
+    pub sensitive: bool,
+}
+
+impl AccountVariable {
+    /// Letters, digits and underscores, not starting with a digit (the shell's rule).
+    pub fn is_valid_name(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else { return false };
+        if first != '_' && !first.is_ascii_alphabetic() {
+            return false;
+        }
+        chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+    }
+}
+
+/// Keychain updates returned by `ProfileStore::set_variables` so `nook-core` stays decoupled from secret-store I/O.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VariableSecretPlan {
+    /// `(secret_account, value)` pairs to write to the keychain.
+    pub write: Vec<(String, String)>,
+    /// `secret_account` keys to erase from the keychain.
+    pub delete: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentProfile {
@@ -30,8 +64,23 @@ pub struct AgentProfile {
     pub label: String,
     /// `None`: de standaardmap van de agent.
     pub home: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AgentAuthMethod>,
+    /// True once switched off: Nook omits this account from lists and Auto while keeping its login and settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
+    /// Program this account starts instead of the one Nook found (`~` expanded on launch).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    /// Extra arguments appended after Nook's own on every launch under this account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_arguments: Option<Vec<String>>,
+    /// Per-account environment variables (sensitive values live in the keychain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variables: Option<Vec<AccountVariable>>,
+    /// Additional model names offered in this account's model menus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_models: Option<Vec<String>>,
 }
 
 /// The environment variable that points a CLI agent at a dedicated account directory (`None` for single-account agents).
@@ -78,11 +127,26 @@ pub fn supports_multi_account_profiles(kind: AgentKind) -> bool {
 
 impl AgentProfile {
     pub fn default_profile(kind: AgentKind) -> Self {
-        Self { id: kind.id().into(), kind, label: String::new(), home: None, auth: None }
+        Self {
+            id: kind.id().into(),
+            kind,
+            label: String::new(),
+            home: None,
+            auth: None,
+            disabled: None,
+            executable_path: None,
+            extra_arguments: None,
+            variables: None,
+            custom_models: None,
+        }
     }
 
     pub fn is_default(&self) -> bool {
         self.home.is_none()
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.disabled != Some(true)
     }
 
     pub fn uses_api_key(&self) -> bool {
@@ -92,6 +156,64 @@ impl AgentProfile {
     /// De kluisnaam van de API-sleutel van dit account.
     pub fn secret_account(&self) -> String {
         format!("agent.apikey.{}", self.id)
+    }
+
+    /// Keychain account name for a sensitive environment variable of this account.
+    pub fn variable_secret_account(&self, name: &str) -> String {
+        format!("agent.env.{}.{name}", self.id)
+    }
+
+    /// Variables configured on this account, in order.
+    pub fn active_variables(&self) -> &[AccountVariable] {
+        self.variables.as_deref().unwrap_or(&[])
+    }
+
+    /// Program override for this account with leading `~` expanded, or `None` to use the one Nook detected.
+    pub fn executable_override(&self) -> Option<String> {
+        let raw = self.executable_path.as_deref()?.trim();
+        if raw.is_empty() {
+            return None;
+        }
+        if raw == "~" {
+            return Some(home_dir().to_string_lossy().into_owned());
+        }
+        if let Some(rest) = raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
+            return Some(home_dir().join(rest).to_string_lossy().into_owned());
+        }
+        Some(raw.to_string())
+    }
+
+    /// Trimmed non-empty extra arguments appended on every launch under this account.
+    pub fn launch_arguments(&self) -> Vec<String> {
+        self.extra_arguments.as_deref().unwrap_or(&[]).iter().map(|a| a.trim()).filter(|a| !a.is_empty()).map(str::to_string).collect()
+    }
+
+    /// Custom model names configured on this account.
+    pub fn custom_models_list(&self) -> &[String] {
+        self.custom_models.as_deref().unwrap_or(&[])
+    }
+
+    /// Full launch environment for this account: user variables first, then Nook's home directory variable and API key
+    /// so user variables can never override the account's folder or key.
+    pub fn launch_environment(&self, read_secret: impl Fn(&str) -> Option<String>) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        for variable in self.active_variables() {
+            let value = if variable.sensitive {
+                read_secret(&self.variable_secret_account(&variable.name)).unwrap_or_default()
+            } else {
+                variable.value.clone()
+            };
+            env.insert(variable.name.clone(), value);
+        }
+        for (k, v) in self.environment() {
+            env.insert(k, v);
+        }
+        if self.kind == AgentKind::Claude && self.uses_api_key() {
+            if let Some(key) = read_secret(&self.secret_account()).filter(|k| !k.trim().is_empty()) {
+                env.insert("ANTHROPIC_API_KEY".into(), key.trim().to_string());
+            }
+        }
+        env
     }
 
     pub fn home_path(&self) -> PathBuf {
@@ -304,6 +426,11 @@ impl ProfileStore {
             label: if name.is_empty() { "Werk".into() } else { name.chars().take(30).collect() },
             home: Some(folder.to_string_lossy().into_owned()),
             auth: None,
+            disabled: None,
+            executable_path: None,
+            extra_arguments: None,
+            variables: None,
+            custom_models: None,
         };
         self.stored.profiles.push(profile.clone());
         self.save();
@@ -324,8 +451,9 @@ impl ProfileStore {
         self.save();
     }
 
-    /// Haalt een account uit Nook. De map en de inlog op schijf blijven staan. Geeft de kluisnaam terug om te wissen.
-    pub fn remove(&mut self, id: &str) -> Option<String> {
+    /// Haalt een account uit Nook. De map en de inlog op schijf blijven staan. Geeft alle kluissleutels terug om te
+    /// wissen (API-sleutel + gevoelige omgevingsvariabelen).
+    pub fn remove(&mut self, id: &str) -> Option<Vec<String>> {
         let profile = self.profile(id).filter(|p| !p.is_default())?;
         self.stored.profiles.retain(|p| p.id != id);
         self.stored.dismissed.insert(normalize(&profile.home_path().to_string_lossy()));
@@ -333,15 +461,104 @@ impl ProfileStore {
             self.stored.preferred.remove(profile.kind.id());
         }
         self.save();
-        Some(profile.secret_account())
+        let mut secrets = vec![profile.secret_account()];
+        for variable in profile.active_variables().iter().filter(|v| v.sensitive) {
+            secrets.push(profile.variable_secret_account(&variable.name));
+        }
+        Some(secrets)
+    }
+
+    fn update_profile(&mut self, id: &str, change: impl FnOnce(&mut AgentProfile)) {
+        let Some(mut profile) = self.profile(id) else { return };
+        let before = profile.clone();
+        change(&mut profile);
+        if profile == before {
+            return;
+        }
+        if let Some(existing) = self.stored.profiles.iter_mut().find(|p| p.id == id) {
+            *existing = profile;
+        } else {
+            self.stored.profiles.push(profile);
+        }
+        self.save();
     }
 
     pub fn set_auth(&mut self, id: &str, method: AgentAuthMethod) {
-        let Some(mut profile) = self.profile(id) else { return };
-        profile.auth = if method == AgentAuthMethod::Cli { None } else { Some(method) };
-        self.stored.profiles.retain(|p| p.id != id);
-        self.stored.profiles.push(profile);
-        self.save();
+        self.update_profile(id, |p| p.auth = if method == AgentAuthMethod::Cli { None } else { Some(method) });
+    }
+
+    /// Switches an account on or off (`setEnabled` on the Mac). Primary accounts can be switched off too; if the
+    /// preferred account is disabled and another enabled account exists for the same agent, preference moves there.
+    pub fn set_enabled(&mut self, id: &str, enabled: bool) {
+        self.update_profile(id, |p| p.disabled = if enabled { None } else { Some(true) });
+        if !enabled {
+            if let Some(profile) = self.profile(id) {
+                if self.stored.preferred.get(profile.kind.id()).map(String::as_str) == Some(id) {
+                    if let Some(other) = self.profiles(profile.kind).into_iter().find(|p| p.is_enabled()) {
+                        self.stored.preferred.insert(profile.kind.id().into(), other.id);
+                        self.save();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sets a custom program path for an account, or clears it when blank (`setExecutablePath` on the Mac).
+    pub fn set_executable_path(&mut self, id: &str, path: &str) {
+        let clean = path.trim();
+        self.update_profile(id, |p| p.executable_path = if clean.is_empty() { None } else { Some(clean.to_string()) });
+    }
+
+    /// Sets extra arguments appended on every launch of an account (`setExtraArguments` on the Mac).
+    pub fn set_extra_arguments(&mut self, id: &str, arguments: Vec<String>) {
+        let clean: Vec<String> = arguments.into_iter().map(|a| a.trim().to_string()).filter(|a| !a.is_empty()).collect();
+        self.update_profile(id, |p| p.extra_arguments = if clean.is_empty() { None } else { Some(clean) });
+    }
+
+    /// Sets custom model names offered in this account's model menus (`setCustomModels` on the Mac).
+    pub fn set_custom_models(&mut self, id: &str, models: Vec<String>) {
+        let mut seen = BTreeSet::new();
+        let clean: Vec<String> =
+            models.into_iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty() && seen.insert(m.clone())).collect();
+        self.update_profile(id, |p| p.custom_models = if clean.is_empty() { None } else { Some(clean) });
+    }
+
+    /// Replaces an account's environment variables (`setVariables` on the Mac). Invalid or duplicate names are dropped.
+    /// Sensitive values are never stored on disk; returns a [`VariableSecretPlan`] for the caller to apply to the
+    /// system keychain (an empty sensitive value keeps the previously stored keychain secret intact).
+    pub fn set_variables(&mut self, id: &str, variables: Vec<AccountVariable>) -> VariableSecretPlan {
+        let Some(profile) = self.profile(id) else { return VariableSecretPlan::default() };
+        let mut seen = BTreeSet::new();
+        let clean: Vec<AccountVariable> = variables
+            .into_iter()
+            .filter_map(|v| {
+                let name = v.name.trim().to_string();
+                if !AccountVariable::is_valid_name(&name) || !seen.insert(name.clone()) {
+                    return None;
+                }
+                Some(AccountVariable { name, value: v.value, sensitive: v.sensitive })
+            })
+            .collect();
+
+        let mut plan = VariableSecretPlan::default();
+        for old in profile.active_variables() {
+            if old.sensitive && !clean.iter().any(|v| v.name == old.name && v.sensitive) {
+                plan.delete.push(profile.variable_secret_account(&old.name));
+            }
+        }
+        let mut stored = Vec::with_capacity(clean.len());
+        for variable in clean {
+            if variable.sensitive {
+                if !variable.value.is_empty() {
+                    plan.write.push((profile.variable_secret_account(&variable.name), variable.value));
+                }
+                stored.push(AccountVariable { name: variable.name, value: String::new(), sensitive: true });
+            } else {
+                stored.push(variable);
+            }
+        }
+        self.update_profile(id, |p| p.variables = if stored.is_empty() { None } else { Some(stored) });
+        plan
     }
 
     /// Neemt accountmappen op die al op deze computer staan (`~/.claude-werk` met een inlog), en de map van een lopende
@@ -457,7 +674,7 @@ mod tests {
             kind: AgentKind::Gemini,
             label: "Werk".into(),
             home: Some("/h/.gemini-werk/.gemini".into()),
-            auth: None,
+            ..AgentProfile::default_profile(AgentKind::Gemini)
         };
         assert_eq!(profile.environment().get("GEMINI_CLI_HOME").map(String::as_str), Some("/h/.gemini-werk"));
         assert!(AgentKind::Gemini.suggested_home("werk").ends_with(".gemini"));
@@ -476,7 +693,7 @@ mod tests {
         store.set_preferred("claude-werk");
         let reloaded = ProfileStore::load(Some(dir.join("p.json")));
         assert_eq!(reloaded.preferred(AgentKind::Claude).id, "claude-werk");
-        assert_eq!(store.remove("claude-werk").as_deref(), Some("agent.apikey.claude-werk"));
+        assert_eq!(store.remove("claude-werk"), Some(vec!["agent.apikey.claude-werk".into()]));
         assert!(store.remove("claude").is_none(), "het hoofdaccount blijft");
         std::fs::write(folder.join(".claude.json"), "{}").unwrap();
         assert!(store.discover(&dir).is_empty() || store.stored.dismissed.contains(&normalize(&folder.to_string_lossy())));
@@ -510,7 +727,7 @@ mod tests {
                 kind,
                 label: "Werk".into(),
                 home: Some(folder.to_string_lossy().into_owned()),
-                auth: None,
+                ..AgentProfile::default_profile(kind)
             };
             assert_eq!(p.environment().get(var).map(String::as_str), Some(folder.to_string_lossy().as_ref()));
             assert!(p.launch_command().contains(var));
@@ -521,6 +738,90 @@ mod tests {
         assert!(discovered.iter().any(|(k, p)| *k == AgentKind::Opencode && p.ends_with(".opencode-werk")));
         assert!(discovered.iter().any(|(k, p)| *k == AgentKind::Cursor && p.ends_with(".cursor-klant")));
         assert!(discovered.iter().any(|(k, p)| *k == AgentKind::Grok && p.ends_with(".grok-prive")));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn account_options_and_variables_lifecycle() {
+        assert!(AccountVariable::is_valid_name("HTTPS_PROXY"));
+        assert!(AccountVariable::is_valid_name("_x1"));
+        assert!(!AccountVariable::is_valid_name("1X"));
+        assert!(!AccountVariable::is_valid_name("A-B"));
+        assert!(!AccountVariable::is_valid_name(""));
+
+        let dir = std::env::temp_dir().join(format!("nook-profiles-opts-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("profiles.json");
+        let mut store = ProfileStore::load(Some(file.clone()));
+        let work = store.add(AgentKind::Claude, "Work", Some(dir.join(".claude-work")));
+
+        // Switching off the preferred account shifts preference to an enabled account.
+        store.set_preferred(&work.id);
+        assert_eq!(store.preferred(AgentKind::Claude).id, work.id);
+        store.set_enabled(&work.id, false);
+        assert!(!store.profile(&work.id).unwrap().is_enabled());
+        assert_eq!(store.preferred(AgentKind::Claude).id, "claude");
+        store.set_enabled(&work.id, true);
+        assert!(store.profile(&work.id).unwrap().is_enabled());
+
+        // Executable path expands `~`, extra arguments trim/filter, custom models deduplicate.
+        store.set_executable_path(&work.id, "  ~/bin/claude-custom  ");
+        assert!(store.profile(&work.id).unwrap().executable_override().unwrap().ends_with("bin/claude-custom"));
+        store.set_extra_arguments(&work.id, vec![" --verbose ".into(), "".into(), "--max-turns=5".into()]);
+        assert_eq!(store.profile(&work.id).unwrap().launch_arguments(), vec!["--verbose", "--max-turns=5"]);
+        store.set_custom_models(&work.id, vec!["claude-gateway-1".into(), " ".into(), "claude-gateway-1".into(), "claude-beta".into()]);
+        assert_eq!(store.profile(&work.id).unwrap().custom_models_list(), &["claude-gateway-1", "claude-beta"]);
+
+        // Variables: invalid/duplicate names dropped; sensitive values stored in keychain plan, never on disk.
+        let plan = store.set_variables(
+            &work.id,
+            vec![
+                AccountVariable { name: "HTTPS_PROXY".into(), value: "http://proxy:8080".into(), sensitive: false },
+                AccountVariable { name: "1BAD".into(), value: "no".into(), sensitive: false },
+                AccountVariable { name: "GATEWAY_TOKEN".into(), value: "secret-123".into(), sensitive: true },
+                AccountVariable { name: "CLAUDE_CONFIG_DIR".into(), value: "/evil".into(), sensitive: false },
+            ],
+        );
+        assert_eq!(plan.write, vec![(format!("agent.env.{}.GATEWAY_TOKEN", work.id), "secret-123".into())]);
+        assert!(plan.delete.is_empty());
+
+        // Disk JSON never contains the secret value.
+        let disk = std::fs::read_to_string(&file).unwrap();
+        assert!(!disk.contains("secret-123"));
+
+        // Saving again with empty sensitive value keeps the existing keychain secret untouched.
+        let plan2 = store.set_variables(
+            &work.id,
+            vec![
+                AccountVariable { name: "HTTPS_PROXY".into(), value: "http://proxy:8080".into(), sensitive: false },
+                AccountVariable { name: "GATEWAY_TOKEN".into(), value: String::new(), sensitive: true },
+                AccountVariable { name: "CLAUDE_CONFIG_DIR".into(), value: "/evil".into(), sensitive: false },
+            ],
+        );
+        assert!(plan2.write.is_empty());
+        assert!(plan2.delete.is_empty());
+
+        // Launch environment: user vars included, sensitive read from keychain, account home variable wins over clash!
+        let reloaded = ProfileStore::load(Some(file));
+        let p = reloaded.profile(&work.id).unwrap();
+        let env =
+            p.launch_environment(
+                |key| {
+                    if key == format!("agent.env.{}.GATEWAY_TOKEN", work.id) {
+                        Some("secret-123".into())
+                    } else {
+                        None
+                    }
+                },
+            );
+        assert_eq!(env.get("HTTPS_PROXY").map(String::as_str), Some("http://proxy:8080"));
+        assert_eq!(env.get("GATEWAY_TOKEN").map(String::as_str), Some("secret-123"));
+        assert_eq!(env.get("CLAUDE_CONFIG_DIR").map(String::as_str), Some(dir.join(".claude-work").to_string_lossy().as_ref()));
+
+        // Removing the account returns both its API key and sensitive variable keychain entries.
+        let removed = store.remove(&work.id).unwrap();
+        assert!(removed.contains(&format!("agent.apikey.{}", work.id)));
+        assert!(removed.contains(&format!("agent.env.{}.GATEWAY_TOKEN", work.id)));
         let _ = std::fs::remove_dir_all(dir);
     }
 }
