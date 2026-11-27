@@ -65,6 +65,10 @@ pub struct AwayView {
     /// Nook's own relay in this build; without one, only your own relay can be used.
     nook_relay: Option<String>,
     relay_status: nook_core::companion::relay::RelayStatus,
+    /// Live progress/failure while deploying the user's own relay on Cloudflare (CO-08).
+    relay_setup: nook_core::companion::cloudflare_relay::RelaySetupState,
+    /// Whether the user's own relay was deployed by Nook (so Nook keeps its Worker up to date).
+    own_relay_managed: bool,
     keep_awake: nook_core::companion::keep_awake::KeepAwakeMode,
     /// What is held now and why (none while nothing is).
     keep_awake_decision: Option<nook_core::companion::keep_awake::Decision>,
@@ -164,6 +168,8 @@ fn info(c: &Companion) -> CompanionInfo {
             relay: store.relay(),
             nook_relay: companion::nook_relay(),
             relay_status: c.relay.status(),
+            relay_setup: c.relay_setup.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            own_relay_managed: store.own_relay_is_managed(),
             keep_awake: store.keep_awake(),
             keep_awake_decision: c.keep.lock().unwrap_or_else(|e| e.into_inner()).decision.filter(|d| d.reason.is_some()),
             background_supported: companion::background::supported(),
@@ -384,6 +390,91 @@ pub fn companion_set_relay(
     #[cfg(not(desktop))]
     {
         let _ = (app, companion, enabled, own, address);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// Cloudflare's pre-filled API token creation page (`CloudflareRelaySetup.tokenPage`).
+#[tauri::command]
+pub fn companion_cloudflare_token_url() -> String {
+    nook_core::companion::cloudflare_relay::token_page()
+}
+
+/// Deploys Nook's companion relay to the user's Cloudflare account with one API token (`CloudflareRelayDeployer`).
+/// Emits `companion-changed` as each deploy step progresses and once the Worker answers `/health`.
+#[tauri::command]
+pub fn companion_setup_own_relay(app: tauri::AppHandle, companion: State<'_, Companion>, token: String) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        use nook_core::companion::cloudflare_relay::{self, DeployOptions, DeployStep, RelaySetupState};
+        use tauri::{Emitter, Manager};
+
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            return Err("Cloudflare API token is empty.".into());
+        }
+        {
+            let mut setup = companion.relay_setup.lock().unwrap_or_else(|e| e.into_inner());
+            if matches!(*setup, RelaySetupState::Working { .. }) {
+                return Ok(info(&companion));
+            }
+            *setup = RelaySetupState::Working { step: DeployStep::Account };
+        }
+        let snapshot = info(&companion);
+        let _ = app.emit("companion-changed", ());
+        let app_handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let progress_app = app_handle.clone();
+            let result = cloudflare_relay::deploy(&token, None, &DeployOptions::default(), move |step| {
+                let c = progress_app.state::<Companion>();
+                *c.relay_setup.lock().unwrap_or_else(|e| e.into_inner()) = RelaySetupState::Working { step };
+                let _ = progress_app.emit("companion-changed", ());
+            })
+            .await;
+
+            let c = app_handle.state::<Companion>();
+            match result {
+                Ok(deployed) => {
+                    let store = c.server.store();
+                    store.set_relay_cloudflare_token(&token);
+                    store.set_relay_cloudflare_account(Some(deployed.account));
+                    store.set_relay_deployed(&deployed.version, &deployed.address);
+                    store.set_relay(nook_core::companion::store::RelaySettings { enabled: true, own: true, address: deployed.address });
+                    *c.relay_setup.lock().unwrap_or_else(|e| e.into_inner()) = RelaySetupState::Idle;
+                    companion::apply_relay(&c);
+                    let _ = app_handle.emit("guest-shares-changed", ());
+                }
+                Err(error) => {
+                    *c.relay_setup.lock().unwrap_or_else(|e| e.into_inner()) = RelaySetupState::Failed { error };
+                }
+            }
+            let _ = app_handle.emit("companion-changed", ());
+        });
+        Ok(snapshot)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, companion, token);
+        Err(NO_SERVER.into())
+    }
+}
+
+/// Forgets the user's own relay locally (the Worker stays on Cloudflare until deleted there).
+#[tauri::command]
+pub fn companion_forget_own_relay(app: tauri::AppHandle, companion: State<'_, Companion>) -> Result<CompanionInfo, String> {
+    #[cfg(desktop)]
+    {
+        use tauri::Emitter;
+        companion.server.store().forget_own_relay();
+        *companion.relay_setup.lock().unwrap_or_else(|e| e.into_inner()) = nook_core::companion::cloudflare_relay::RelaySetupState::Idle;
+        companion::apply_relay(&companion);
+        let _ = app.emit("guest-shares-changed", ());
+        let _ = app.emit("companion-changed", ());
+        Ok(info(&companion))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, companion);
         Err(NO_SERVER.into())
     }
 }

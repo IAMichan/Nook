@@ -1017,7 +1017,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **CO-07** Live Activity planner and updates (`CompanionNotifier`) · M
 
-- [ ] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
+- [x] **CO-08** Deploy your own relay on Cloudflare from Settings (`CloudflareRelayDeployer`, `CloudflareRelaySetup`) · M
 
 - [x] **CO-09** Per-phone app version and "phone too old" notice in Settings › iPhone · S
 
