@@ -47,5 +47,18 @@ pub fn workspace_page_html(state: State<'_, WorkspaceState>, run: String, event:
     if e.tool.as_deref() != Some(cards::PAGE_TOOL) {
         return Err("Not a page.".into());
     }
-    crate::workspace::bridge::cards::page_html(run, e.detail.as_deref().unwrap_or(""))
+    page_html(run, e.detail.as_deref().unwrap_or(""))
+}
+
+/// The page an event shows, behind its content policy; only from Nook's own page folder.
+fn page_html(run: Uuid, event_file: &str) -> Result<String, String> {
+    let root = nook_core::paths::dot_nook().join("pages").join(run.to_string());
+    let path = std::path::Path::new(event_file);
+    let real = path.canonicalize().map_err(|_| "The page is gone.".to_string())?;
+    let root = root.canonicalize().map_err(|_| "The page is gone.".to_string())?;
+    if !real.starts_with(&root) {
+        return Err("Not a page of this session.".into());
+    }
+    let html = std::fs::read_to_string(&real).map_err(|_| "The page is gone.".to_string())?;
+    Ok(cards::sandboxed(&html))
 }

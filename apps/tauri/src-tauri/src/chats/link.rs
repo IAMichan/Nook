@@ -128,11 +128,14 @@ fn open(app: &AppHandle, step: &Step, name: &str, done: Done) -> Result<(), Stri
     let mut builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(start))
         .title(trf("Inloggen bij {app}", "Log in to {app}", &[("app", &name)]))
         .inner_size(520.0, 720.0)
-        .center()
-        .focused(true)
         // Its own store, gone with the window: the sign-in lives in the chat helper, not in Nook.
         .incognito(true)
         .initialization_script(agent::GOOGLE_PASSKEYS);
+    // Android shows every window full screen and in front, so only the desktop has a window to center and focus.
+    #[cfg(desktop)]
+    {
+        builder = builder.center().focused(true);
+    }
     if let Some(script) = link::header_script(&link::page_headers(collect)) {
         builder = builder.initialization_script(script);
     }
