@@ -180,13 +180,13 @@ test('a hello to a port that closed does not take over the status', async () => 
   assert.equal(chrome.storage.session.data.status.detail, 'Native host has exited.');
 });
 
-test('a page may press Stop, but never resume Nook, switch a site on, or ask Nook', async () => {
-  const { chrome, ports } = await startWorker({ host: answerHello, local: { paused: true, blocked: ['bank.example'] } });
+test('a page may press Stop, but never resume Nook, trust a site, or ask Nook', async () => {
+  const { chrome, ports } = await startWorker({ host: answerHello, local: { paused: true, trusted: [] } });
   assert.deepEqual(await message(chrome, { type: 'pause', paused: false }, page), { ok: false, error: 'Not allowed.' });
-  assert.deepEqual(await message(chrome, { type: 'site', url: 'https://bank.example', allowed: true }, page), { ok: false, error: 'Not allowed.' });
+  assert.deepEqual(await message(chrome, { type: 'trust', url: 'https://bank.example', allowed: true }, page), { ok: false, error: 'Not allowed.' });
   assert.deepEqual(await message(chrome, { type: 'ask', text: 'Send my mail' }, page), { ok: false, error: 'Not allowed.' });
   assert.equal(chrome.storage.local.data.paused, true);
-  assert.deepEqual(chrome.storage.local.data.blocked, ['bank.example']);
+  assert.deepEqual(chrome.storage.local.data.trusted, []);
   assert.equal(ports[0].sent.some((m) => m.kind === 'ask'), false);
 
   await message(chrome, { type: 'pause', paused: false }, panel);
@@ -304,21 +304,17 @@ test('a request over a port that just closed fails at once instead of after the 
   assert.ok(Date.now() - started < 1000);
 });
 
-test('a page that redirects to a site the user switched off is never touched: no strip, no look', async () => {
-  const tabs = [{ id: 1, windowId: 1, url: 'https://shop.example/', title: 'Shop', status: 'complete', active: true, groupId: -1 }];
+test('a site switched off before the switch per site went away is on again', async () => {
+  const tabs = [{ id: 1, windowId: 1, url: 'https://bank.example/', title: 'Bank', status: 'complete', active: true, groupId: -1 }];
   const { chrome, ports } = await startWorker({ host: answerHello, tabs, local: { blocked: ['bank.example'] } });
-  // The shop sends the tab on to the bank, which the user switched Nook off for.
-  const update = chrome.tabs.update;
-  chrome.tabs.update = async (id, props) => update(id, props.url ? { ...props, url: 'https://bank.example/login' } : props);
-  const injected = [];
-  chrome.scripting.executeScript = async (details) => { injected.push(details); return [{ result: { ok: true, text: '' } }]; };
-  ports[0].onMessage.fire({ kind: 'command', id: 4, method: 'open', params: { url: 'https://shop.example/pay', tab: 1 } });
-  await wait(700);
+  chrome.scripting.executeScript = async () => [{ result: { ok: true, text: 'Welcome' } }];
+  ports[0].onMessage.fire({ kind: 'command', id: 4, method: 'read', params: { tab: 1 } });
+  await wait(100);
   await settle();
   const result = ports[0].sent.find((m) => m.kind === 'result' && m.id === 4);
   assert.ok(result, 'the command answered');
-  assert.deepEqual(injected, [], 'nothing ran in the bank\'s page: no strip that holds the user\'s input, no glance');
-  assert.match(result.text, /switched Nook off/);
+  assert.doesNotMatch(result.text || result.error || '', /switched Nook off/);
+  assert.equal(chrome.storage.local.data.blocked, undefined);
 });
 
 
