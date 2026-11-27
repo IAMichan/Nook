@@ -614,7 +614,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-112** Bulk delete, custom snooze, dropping files onto a row · S
 
-- [ ] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
+- [x] **AG-113** Project favicon, multi-project label (#1549), changed-line counts, project menus, add project source (#1482) · M
   - Part done: changed-line counts on rows ("+120 −8", from git after every turn: `WorkspaceRun.lines_added`/`lines_removed`; for terminal sessions from the hub), the project's initials badge, Add project in the list's head. Open: favicons, multi-project label, the row's Project menu. Since then: the project's own icon (favicon, linked icon, monorepo web app, AppIcon picture; `core/src/workspace/favicon.rs`, `workspace_favicon`). Still open: the multi-project label (sessions here have one project) and the row's Project menu. And the row's Project menu on right-click (New session in it, favorite, Show in Explorer, Copy path, Select…), the project's own name from Settings › Projects in the rows and the new-session menu, archived projects left out of it, and the project's own values for a new session ahead of your last choices there.
 
 - [x] **AG-114** One notice per finished turn with logo and gist (`AgentStatusNotice`); `AgentAlerts.svelte` covers part · S

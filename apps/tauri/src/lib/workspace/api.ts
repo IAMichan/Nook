@@ -78,6 +78,8 @@ export interface WorkspaceRun {
   tasks?: { text: string; status: "pending" | "active" | "done" | "cancelled" }[] | null;
   /** Claude Code: how long the prompt cache of the session's last request stays warm (`IdleCompaction`, AG-32). */
   promptCache?: PromptCacheWindow | null;
+  /** Other repository roots this session edited besides its own project (`SessionProjects`, #1549, AG-113). */
+  otherProjects?: string[];
 }
 
 export type ContextLevel = "normal" | "warning" | "critical";
@@ -486,6 +488,8 @@ export const workspaceApi = {
     invoke<void>("workspace_apply_hunk", { run: run(id), file, index, action }),
   commit: (id: string, message: string, paths: string[]) => invoke<string>("workspace_commit", { run: run(id), message, paths }),
   clone: (url: string, near: string | null) => invoke<string>("workspace_clone", { url, near }),
+  /** Creates a new empty Git repository project from a name (`AddProjectSource`, #1482, AG-113). */
+  createProject: (name: string, near?: string | null) => invoke<string>("workspace_create_project", { name, near: near ?? null }),
   publishPlan: (folder: string) => invoke<PublishPlan | null>("workspace_publish_plan", { folder }),
   publishRepository: (folder: string, name: string, owner: string | null, isPrivate: boolean) =>
     invoke<string>("workspace_publish_repository", { folder, name, owner, isPrivate }),

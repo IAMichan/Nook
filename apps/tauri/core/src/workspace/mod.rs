@@ -56,6 +56,7 @@ pub mod scheduler;
 pub mod scratch;
 pub mod secret_files;
 pub mod session_cards;
+pub mod session_projects;
 pub mod settings;
 pub mod skills;
 pub mod source_control;

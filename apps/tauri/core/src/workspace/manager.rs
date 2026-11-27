@@ -913,6 +913,7 @@ impl Manager {
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            other_projects: vec![],
         };
         if worktree.is_none() && rollback::can_roll_back(run.provider) {
             run.checkpoints.push(RunCheckpoint { r#ref: String::new(), date: Utc::now(), conversation: Some(ConversationMark::empty()) });
@@ -1309,6 +1310,7 @@ impl Manager {
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            other_projects: vec![],
         };
         let mut out = Out::default();
         {
@@ -2085,7 +2087,12 @@ impl Manager {
         let mut e = RunEvent::new(EventKind::FileChange, shown).with_tool(kind).with_detail(path);
         e.state = None;
         Self::append(s, id, e, out);
-        Self::update(s, id, |r| r.last_change_at = Some(Utc::now()));
+        Self::update(s, id, |r| {
+            r.last_change_at = Some(Utc::now());
+            if let Some(next) = super::session_projects::SessionProjects::adding(path, &base, &r.other_projects) {
+                r.other_projects = next;
+            }
+        });
     }
 
     fn tool_event(s: &mut Inner, id: Uuid, call: &str, name: &str, input: &Value, nested: bool, out: &mut Out) {
@@ -4992,6 +4999,7 @@ read rest
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            other_projects: vec![],
         };
         {
             let mut s = manager.lock();
