@@ -8,18 +8,22 @@ struct TimelineVisit: Codable, Equatable, Sendable {
     var open: Set<String>
     /// When you left the conversation.
     var lastViewedAt: Date
+    /// The older branches and their pull requests were shown in the tray above the composer.
+    var olderBranchesOpen: Bool
 
-    init(open: Set<String>, lastViewedAt: Date) {
+    init(open: Set<String>, lastViewedAt: Date, olderBranchesOpen: Bool = false) {
         self.open = open
         self.lastViewedAt = lastViewedAt
+        self.olderBranchesOpen = olderBranchesOpen
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         open = try c.decodeIfPresent(Set<String>.self, forKey: .open) ?? []
         lastViewedAt = try c.decodeIfPresent(Date.self, forKey: .lastViewedAt) ?? Date(timeIntervalSince1970: 0)
+        olderBranchesOpen = try c.decodeIfPresent(Bool.self, forKey: .olderBranchesOpen) ?? false
     }
-    enum CodingKeys: String, CodingKey { case open, lastViewedAt }
+    enum CodingKeys: String, CodingKey { case open, lastViewedAt, olderBranchesOpen }
 }
 
 /// The visits per session id; bounded, the least recently viewed go first.

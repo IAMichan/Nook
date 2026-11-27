@@ -34,8 +34,9 @@ struct AgentRunPanel: View {
     @State var renaming = false
     @State var titleDraft = ""
     @FocusState var titleFocused: Bool
-    /// The older branches of a session that worked on many, shown in the tray above the composer.
-    @State var showsOlderBranches = false
+    /// The older branches of a session that worked on many, shown in the tray above the composer. Remembered with the
+    /// visit, so the fold is as you left it when you come back to the session.
+    @State var showsOlderBranches: Bool
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
     @State var repository: String?
     /// The agent's skills for `$`, read from its skill folders.
@@ -126,6 +127,7 @@ struct AgentRunPanel: View {
         self.headerAccessory = headerAccessory
         _derived = State(initialValue: .forRun(runID))
         _countedLines = State(initialValue: CountedTurnLines.forRun(runID))
+        _showsOlderBranches = State(initialValue: TimelineVisitStore.shared.visit(for: Self.visitKey(runID))?.olderBranchesOpen ?? false)
     }
 
     var draft: String {
