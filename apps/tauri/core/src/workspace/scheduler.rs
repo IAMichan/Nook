@@ -8,7 +8,7 @@
 //! edit and command follows the usual approvals; a run a webhook starts always asks, because its payload comes from
 //! outside. Webhook signing secrets live in the secret store, never in the file.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -26,6 +26,10 @@ use super::schedule::{
     WebhookQueue,
 };
 use super::webhook::{self, Delivery, DeliveryLog, RateWindow, Request};
+use super::webhook_rules::{
+    self, CoalesceOutcome, SavedWebhookDelivery, WebhookCoalescer, WebhookDedupe, WebhookDeliveryOutcome, WebhookDeliveryRecord,
+    WebhookRules,
+};
 use crate::secrets::SecretStore;
 
 /// The seconds between two checks for due tasks.
@@ -39,6 +43,8 @@ pub struct AutomationSettings {
     pub scheduled_tasks: bool,
     /// The port of the local webhook listener (127.0.0.1 only); 0 = no webhooks.
     pub webhook_port: u16,
+    /// Receive webhooks from the internet through the configured companion relay (`scheduledWebhooksPublic` on the Mac).
+    pub webhooks_public: bool,
     /// A new session gets a short title from its first message, written by the chosen brain.
     pub auto_titles: bool,
     /// Your own rules for titles (Settings › Sessions › Behavior, `titleInstructions` on the Mac), given to the brain
@@ -48,7 +54,7 @@ pub struct AutomationSettings {
 
 impl Default for AutomationSettings {
     fn default() -> Self {
-        Self { scheduled_tasks: false, webhook_port: 0, auto_titles: true, title_instructions: String::new() }
+        Self { scheduled_tasks: false, webhook_port: 0, webhooks_public: false, auto_titles: true, title_instructions: String::new() }
     }
 }
 
@@ -134,12 +140,29 @@ struct State {
     queue: WebhookQueue,
     /// Webhook deliveries that wait for their task to be free, oldest first.
     pending: HashMap<Uuid, VecDeque<Delivery>>,
+    /// Per webhook task, the latest verified deliveries (newest first, capped at `WebhookDeliveryRecord::LIMIT`).
+    deliveries: HashMap<Uuid, Vec<WebhookDeliveryRecord>>,
+    /// Per webhook task, duplicate keys seen in the last week (`WebhookDedupe`).
+    dedupe: HashMap<Uuid, WebhookDedupe>,
+    /// Open coalesce windows folding bursts of deliveries into a single run (`WebhookCoalescer`).
+    coalescer: WebhookCoalescer<Delivery>,
+    /// Accepted deliveries restored from disk at launch before [`Scheduler::resume_restored_webhooks`] admits or drops them.
+    restored: HashMap<Uuid, Vec<SavedWebhookDelivery>>,
     /// Task → the session it started and what started it, for runs going on now.
     running: HashMap<Uuid, (Option<Uuid>, ScheduleTrigger)>,
     logs: HashMap<Uuid, DeliveryLog>,
     rates: HashMap<Uuid, RateWindow>,
     /// Per message task, what it admitted and what still waits for a run.
     arrivals: HashMap<Uuid, ArrivalQueue>,
+}
+
+fn by_uuid<T: for<'de> Deserialize<'de>>(root: &Value, key: &str) -> HashMap<Uuid, T> {
+    let Some(obj) = root.get(key).and_then(Value::as_object) else { return HashMap::new() };
+    obj.iter().filter_map(|(k, v)| Some((Uuid::parse_str(k).ok()?, serde_json::from_value(v.clone()).ok()?))).collect()
+}
+
+fn by_key<T: Serialize>(map: &HashMap<Uuid, T>) -> HashMap<String, &T> {
+    map.iter().map(|(id, v)| (id.to_string(), v)).collect()
 }
 
 pub struct Scheduler {
@@ -164,13 +187,11 @@ impl Scheduler {
         crate::paths::support_directory().join("scheduled-tasks.json")
     }
 
-    /// Loads the list. A run a restart cut off becomes failed and is planned again.
+    /// Loads the list. A run a restart cut off becomes failed and is planned again; accepted webhook deliveries kept on
+    /// disk are restored for [`Self::resume_restored_webhooks`].
     pub fn new<Tz: TimeZone>(file: PathBuf, secrets: Arc<dyn SecretStore>, now: DateTime<Utc>, tz: &Tz) -> Self {
-        let rows: Vec<Value> = std::fs::read(&file)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-            .and_then(|v| v.get("tasks").and_then(Value::as_array).cloned())
-            .unwrap_or_default();
+        let root = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
+        let rows: Vec<Value> = root.get("tasks").and_then(Value::as_array).cloned().unwrap_or_default();
         // A row that does not read is skipped, the others still load.
         let loaded: Vec<ScheduledTask> = rows.into_iter().filter_map(|r| serde_json::from_value(r).ok()).collect();
         let mut tasks = ScheduledTask::recover_interrupted(loaded.clone(), now, tz);
@@ -181,8 +202,19 @@ impl Scheduler {
                 t.next_run = t.planned_run(now, true, tz);
             }
         }
+        let webhook_tasks: HashSet<Uuid> = tasks.iter().filter(|t| t.rule.is_webhook()).map(|t| t.id).collect();
+        let mut deliveries: HashMap<Uuid, Vec<WebhookDeliveryRecord>> = by_uuid(&root, "deliveries");
+        deliveries.retain(|id, list| {
+            list.truncate(WebhookDeliveryRecord::LIMIT);
+            webhook_tasks.contains(id) && !list.is_empty()
+        });
+        let mut dedupe: HashMap<Uuid, WebhookDedupe> = by_uuid(&root, "dedupe");
+        dedupe.retain(|id, _| webhook_tasks.contains(id));
+        let waiting: HashMap<Uuid, Vec<SavedWebhookDelivery>> = by_uuid(&root, "waiting");
+        let restored = SavedWebhookDelivery::restore(waiting, &webhook_tasks, now);
         let changed = tasks != loaded;
-        let scheduler = Self { file, secrets, state: Mutex::new(State { tasks, ..Default::default() }) };
+        let state = State { tasks, deliveries, dedupe, restored, ..Default::default() };
+        let scheduler = Self { file, secrets, state: Mutex::new(state) };
         if changed {
             scheduler.save(&scheduler.lock());
         }
@@ -194,7 +226,30 @@ impl Scheduler {
     }
 
     fn save(&self, s: &State) {
-        let file = serde_json::json!({ "version": 1, "tasks": s.tasks });
+        let mut waiting: HashMap<Uuid, Vec<SavedWebhookDelivery>> = HashMap::new();
+        for (id, queue) in &s.pending {
+            let list: Vec<SavedWebhookDelivery> = queue.iter().map(SavedWebhookDelivery::from_delivery).collect();
+            if !list.is_empty() {
+                waiting.insert(*id, list);
+            }
+        }
+        for (id, window) in s.coalescer.windows() {
+            let mut latest = window.latest.clone();
+            latest.combined = window.count;
+            waiting.entry(*id).or_default().push(SavedWebhookDelivery::from_delivery(&latest));
+        }
+        for (id, list) in &s.restored {
+            if !list.is_empty() {
+                waiting.entry(*id).or_default().extend(list.iter().cloned());
+            }
+        }
+        let file = serde_json::json!({
+            "version": 1,
+            "tasks": s.tasks,
+            "deliveries": by_key(&s.deliveries),
+            "dedupe": by_key(&s.dedupe),
+            "waiting": by_key(&waiting),
+        });
         if let Ok(bytes) = serde_json::to_vec_pretty(&file) {
             let _ = crate::paths::write_atomic(&self.file, &bytes);
             #[cfg(unix)]
@@ -217,6 +272,39 @@ impl Scheduler {
         self.lock().gate.is_running(id)
     }
 
+    /// Recent verified deliveries for `id`, newest first (at most `WebhookDeliveryRecord::LIMIT`).
+    pub fn deliveries(&self, id: Uuid) -> Vec<WebhookDeliveryRecord> {
+        self.lock().deliveries.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Admits accepted webhook deliveries saved across a restart when `enabled` is true; otherwise drops them (as a
+    /// new delivery would be refused while scheduled tasks are switched off).
+    pub fn resume_restored_webhooks(&self, enabled: bool) -> bool {
+        let mut s = self.lock();
+        let restored = std::mem::take(&mut s.restored);
+        if restored.is_empty() {
+            return false;
+        }
+        let mut resumed = false;
+        if enabled {
+            for (id, list) in restored {
+                let active = s.tasks.iter().any(|t| t.id == id && t.enabled && t.rule.is_webhook());
+                if !active {
+                    continue;
+                }
+                for saved in list {
+                    let Some(delivery) = saved.into_delivery() else { continue };
+                    if s.queue.admit(id) {
+                        s.pending.entry(id).or_default().push_back(delivery);
+                        resumed = true;
+                    }
+                }
+            }
+        }
+        self.save(&s);
+        resumed
+    }
+
     // MARK: Editing
 
     /// Adds a task, or replaces the one with the same id. A changed schedule counts from now, so editing never fires a
@@ -233,8 +321,15 @@ impl Scheduler {
             row.created_at = old.created_at;
             if old.rule.is_webhook() && !row.rule.is_webhook() {
                 let _ = self.secrets.remove(&secret_account(row.id));
+                s.deliveries.remove(&row.id);
+                s.dedupe.remove(&row.id);
+                s.restored.remove(&row.id);
+                s.pending.remove(&row.id);
+                s.coalescer.forget(row.id);
+                s.queue.forget(row.id);
             }
         }
+        row.webhook = if row.rule.is_webhook() { row.webhook.cleaned() } else { WebhookRules::default() };
         if row.permission == PermissionPolicy::Bypass {
             row.permission = PermissionPolicy::Ask;
         }
@@ -259,6 +354,10 @@ impl Scheduler {
         let mut s = self.lock();
         s.tasks.retain(|t| t.id != id);
         s.pending.remove(&id);
+        s.deliveries.remove(&id);
+        s.dedupe.remove(&id);
+        s.restored.remove(&id);
+        s.coalescer.forget(id);
         s.queue.forget(id);
         s.logs.remove(&id);
         s.rates.remove(&id);
@@ -282,6 +381,10 @@ impl Scheduler {
             for _ in s.pending.remove(&id).unwrap_or_default() {
                 s.queue.release(id);
             }
+            if s.coalescer.forget(id) {
+                s.queue.release(id);
+            }
+            s.restored.remove(&id);
         }
         self.save(&s);
     }
@@ -303,6 +406,11 @@ impl Scheduler {
         for _ in s.pending.remove(&id).unwrap_or_default() {
             s.queue.release(id);
         }
+        if s.coalescer.forget(id) {
+            s.queue.release(id);
+        }
+        s.restored.remove(&id);
+        self.save(&s);
         Some(secret)
     }
 
@@ -609,8 +717,62 @@ impl Scheduler {
         self.save(&s);
     }
 
+    /// Moves every closed coalesce window into its task's pending queue (its queue slot was admitted when the window
+    /// opened). Returns true when at least one window flushed.
+    pub fn flush_coalesced(&self, now: DateTime<Utc>) -> bool {
+        let mut s = self.lock();
+        let flushed = s.coalescer.flush_due(now);
+        if flushed.is_empty() {
+            return false;
+        }
+        for (id, mut window) in flushed {
+            let active = s.tasks.iter().any(|t| t.id == id && t.enabled && t.rule.is_webhook());
+            if active {
+                window.latest.combined = window.count.max(1);
+                s.pending.entry(id).or_default().push_back(window.latest);
+            } else {
+                s.queue.release(id);
+            }
+        }
+        self.save(&s);
+        true
+    }
+
+    /// Earliest time an open coalesce window closes, so the app can schedule a prompt wake-up instead of waiting for
+    /// the next 30-second tick.
+    pub fn next_coalesce_deadline(&self) -> Option<DateTime<Utc>> {
+        self.lock().coalescer.next_deadline()
+    }
+
+    fn flush_one_locked(s: &mut State, id: Uuid, now: DateTime<Utc>) -> bool {
+        let Some(mut window) = s.coalescer.flush(id, now) else { return false };
+        let active = s.tasks.iter().any(|t| t.id == id && t.enabled && t.rule.is_webhook());
+        if active {
+            window.latest.combined = window.count.max(1);
+            s.pending.entry(id).or_default().push_back(window.latest);
+        } else {
+            s.queue.release(id);
+        }
+        true
+    }
+
+    fn log_delivery(
+        &self,
+        s: &mut State,
+        id: Uuid,
+        delivery_id: &str,
+        outcome: WebhookDeliveryOutcome,
+        detail: Option<String>,
+        now: DateTime<Utc>,
+    ) {
+        let record = WebhookDeliveryRecord::new(delivery_id, outcome, detail, now);
+        WebhookDeliveryRecord::prepend(s.deliveries.entry(id).or_default(), record);
+        self.save(s);
+    }
+
     /// Starts the next webhook delivery of every free task. Called after each tick and each accepted delivery.
     pub fn drain_webhooks<Tz: TimeZone>(&self, host: &dyn SessionHost, profile: DefaultProfile<'_>, now: DateTime<Utc>, tz: &Tz) {
+        self.flush_coalesced(now);
         loop {
             let next = {
                 let mut s = self.lock();
@@ -628,7 +790,10 @@ impl Scheduler {
                             found = Some((id, delivery, prompt));
                             break;
                         }
-                        _ => s.queue.release(id),
+                        _ => {
+                            s.queue.release(id);
+                            self.save(&s);
+                        }
                     }
                 }
                 found
@@ -638,7 +803,9 @@ impl Scheduler {
             // One key per delivery: a delivery that comes in twice (already refused by its id) never runs twice.
             let key = format!("scheduled-task:{id}:delivery:{}", delivery.id);
             if !self.fire(host, id, &key, ScheduleTrigger::Webhook, &text, profile, now, tz) {
-                self.lock().queue.release(id);
+                let mut s = self.lock();
+                s.queue.release(id);
+                self.save(&s);
             }
         }
     }
@@ -646,17 +813,18 @@ impl Scheduler {
     // MARK: Webhooks
 
     /// What to answer a complete request. Nothing about a task is revealed or changed before the signature is right,
-    /// so an unsigned flood cannot fill the logs or use up a task's rate. An accepted delivery waits in the task's
-    /// queue; [`Self::drain_webhooks`] starts it.
+    /// so an unsigned flood cannot fill the logs or use up a task's rate. Verified deliveries pass through the task's
+    /// filters, duplicate key check, and optional coalesce window before waiting in the task's queue;
+    /// [`Self::drain_webhooks`] starts them.
     pub fn handle_webhook(&self, enabled: bool, request: &Request, now: DateTime<Utc>) -> (u16, String) {
         if request.method != "POST" {
             return (405, "POST only".into());
         }
         let unknown = (404, "unknown hook".to_string());
         let Some(id) = webhook::task_id(&request.path) else { return unknown };
-        if !enabled || !self.task(id).is_some_and(|t| t.enabled && t.rule.is_webhook()) {
+        let Some(task) = self.task(id).filter(|t| enabled && t.enabled && t.rule.is_webhook()) else {
             return unknown;
-        }
+        };
         let Some(secret) = self.webhook_secret(id, false) else { return unknown };
         if !webhook::verify(&secret, &request.body, webhook::signature(&request.headers)) {
             return (401, "bad signature".into());
@@ -671,16 +839,52 @@ impl Scheduler {
         if s.logs.get(&id).is_some_and(|l| l.contains(&delivery_id)) {
             return (409, "duplicate delivery".into());
         }
-        if !s.queue.admit(id) {
-            return (429, "queue full".into());
-        }
-        s.logs.entry(id).or_default().record(&delivery_id);
-        s.pending.entry(id).or_default().push_back(Delivery {
-            id: delivery_id,
+        let delivery = Delivery {
+            id: delivery_id.clone(),
             body: request.body.clone(),
             headers: request.headers.clone(),
             received_at: now,
-        });
+            combined: 1,
+        };
+        if let Some(failed) = task.webhook.failing_filter(&delivery) {
+            s.logs.entry(id).or_default().record(&delivery_id);
+            self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::Filtered, Some(failed.summary()), now);
+            return (202, "filtered: nothing runs".into());
+        }
+        if let Some(key) = webhook_rules::render_key(&task.webhook.duplicate_key, &delivery) {
+            let first = s.dedupe.entry(id).or_default().claim(&key, now, WebhookRules::DUPLICATE_WINDOW_SECONDS);
+            if !first {
+                s.logs.entry(id).or_default().record(&delivery_id);
+                self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::Duplicate, Some(key), now);
+                return (202, "duplicate key: nothing runs".into());
+            }
+        }
+        if let Some(window) = task.webhook.coalesce_window() {
+            // A window that closed but was not flushed yet goes first, so it is not overwritten.
+            Self::flush_one_locked(&mut s, id, now);
+            if s.coalescer.has_open(id, now) {
+                if let CoalesceOutcome::Merged { count } = s.coalescer.add(delivery, id, window, now) {
+                    s.logs.entry(id).or_default().record(&delivery_id);
+                    self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::Coalesced, Some(count.to_string()), now);
+                }
+                return (202, "accepted".into());
+            }
+            if !s.queue.admit(id) {
+                self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::QueueFull, None, now);
+                return (429, "queue full".into());
+            }
+            s.coalescer.add(delivery, id, window, now);
+            s.logs.entry(id).or_default().record(&delivery_id);
+            self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::Accepted, Some(window.to_string()), now);
+            return (202, "accepted".into());
+        }
+        if !s.queue.admit(id) {
+            self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::QueueFull, None, now);
+            return (429, "queue full".into());
+        }
+        s.logs.entry(id).or_default().record(&delivery_id);
+        s.pending.entry(id).or_default().push_back(delivery);
+        self.log_delivery(&mut s, id, &delivery_id, WebhookDeliveryOutcome::Accepted, None, now);
         (202, "accepted".into())
     }
 }
@@ -1103,5 +1307,125 @@ mod tests {
         assert_eq!(a.listening_port(), Some(8787));
         a.webhook_port = 80;
         assert_eq!(a.listening_port(), None);
+    }
+
+    #[test]
+    fn webhook_filters_and_duplicate_keys_are_logged_and_prevent_runs() {
+        use crate::workspace::webhook_rules::{WebhookFilter, WebhookFilterTest};
+        let dir = TempDir::new();
+        let s = scheduler(dir.path());
+        let now = utc("2026-03-02T08:00:00Z");
+        let mut task = ScheduledTask::new("hook", "Triage {{body.pr}}", ScheduleRule::Webhook, target(), now);
+        task.webhook.filters = vec![
+            WebhookFilter::new("body.action", WebhookFilterTest::OneOf, "opened, reopened"),
+            WebhookFilter::new("body.draft", WebhookFilterTest::Equals, "false"),
+        ];
+        task.webhook.duplicate_key = "{{body.pr}}-{{body.action}}".into();
+        let task = s.save_task(task, now, &Utc);
+        let secret = s.webhook_secret(task.id, false).unwrap();
+
+        // Fails filter: 202, nothing queued, logged as Filtered.
+        let filtered = r#"{"action":"closed","draft":false,"pr":7}"#;
+        let ans = s.handle_webhook(true, &request(task.id, &secret, filtered, "d1"), now);
+        assert_eq!(ans.0, 202);
+        assert!(ans.1.contains("filtered"));
+
+        // Passes filters and claims duplicate key: accepted.
+        let ok = r#"{"action":"opened","draft":false,"pr":7}"#;
+        assert_eq!(s.handle_webhook(true, &request(task.id, &secret, ok, "d2"), now).0, 202);
+
+        // Same duplicate key with a different delivery id: 202, nothing queued, logged as Duplicate.
+        let dup = s.handle_webhook(true, &request(task.id, &secret, ok, "d3"), now + chrono::Duration::seconds(5));
+        assert_eq!(dup.0, 202);
+        assert!(dup.1.contains("duplicate key"));
+
+        let host = FakeHost::default();
+        s.drain_webhooks(&host, &profile, now + chrono::Duration::seconds(6), &Utc);
+        assert_eq!(host.started.lock().unwrap().len(), 1);
+
+        let log = s.deliveries(task.id);
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[0].outcome, WebhookDeliveryOutcome::Duplicate);
+        assert_eq!(log[0].detail.as_deref(), Some("7-opened"));
+        assert_eq!(log[1].outcome, WebhookDeliveryOutcome::Accepted);
+        assert_eq!(log[2].outcome, WebhookDeliveryOutcome::Filtered);
+        assert!(log[2].detail.as_deref().unwrap_or("").contains("body.action"));
+    }
+
+    #[test]
+    fn webhook_coalesce_folds_a_burst_into_one_run_with_latest_payload() {
+        let dir = TempDir::new();
+        let s = scheduler(dir.path());
+        let now = utc("2026-03-02T08:00:00Z");
+        let mut task = ScheduledTask::new("hook", "Check {{body.sha}}", ScheduleRule::Webhook, target(), now);
+        task.webhook.coalesce_seconds = 60;
+        let task = s.save_task(task, now, &Utc);
+        let secret = s.webhook_secret(task.id, false).unwrap();
+
+        assert_eq!(s.handle_webhook(true, &request(task.id, &secret, r#"{"sha":"aaa"}"#, "d1"), now).0, 202);
+        assert_eq!(s.next_coalesce_deadline(), Some(now + chrono::Duration::seconds(60)));
+        assert_eq!(
+            s.handle_webhook(true, &request(task.id, &secret, r#"{"sha":"bbb"}"#, "d2"), now + chrono::Duration::seconds(20)).0,
+            202
+        );
+        assert_eq!(
+            s.handle_webhook(true, &request(task.id, &secret, r#"{"sha":"ccc"}"#, "d3"), now + chrono::Duration::seconds(45)).0,
+            202
+        );
+
+        let host = FakeHost::default();
+        // Still inside the window: nothing runs yet.
+        s.drain_webhooks(&host, &profile, now + chrono::Duration::seconds(59), &Utc);
+        assert!(host.started.lock().unwrap().is_empty());
+
+        // Window closes at +60s: one run with the latest payload ("ccc") and a burst note for 3 deliveries.
+        s.drain_webhooks(&host, &profile, now + chrono::Duration::seconds(60), &Utc);
+        let started = host.started.lock().unwrap().clone();
+        assert_eq!(started.len(), 1);
+        assert!(started[0].task.contains("ccc"));
+        assert!(!started[0].task.contains("aaa"));
+        assert!(started[0].task.contains("3 webhook deliveries arrived within the task's coalesce window"));
+
+        let log = s.deliveries(task.id);
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[0].outcome, WebhookDeliveryOutcome::Coalesced);
+        assert_eq!(log[0].detail.as_deref(), Some("3"));
+        assert_eq!(log[1].outcome, WebhookDeliveryOutcome::Coalesced);
+        assert_eq!(log[1].detail.as_deref(), Some("2"));
+        assert_eq!(log[2].outcome, WebhookDeliveryOutcome::Accepted);
+        assert_eq!(log[2].detail.as_deref(), Some("60"));
+    }
+
+    #[test]
+    fn waiting_webhook_deliveries_and_open_windows_survive_a_restart() {
+        let dir = TempDir::new();
+        let file = dir.path().join("scheduled-tasks.json");
+        let secrets = Arc::new(MemorySecrets::default());
+        let now = utc("2026-03-02T08:00:00Z");
+
+        let task_id = {
+            let s = Scheduler::new(file.clone(), secrets.clone(), now, &Utc);
+            let mut task = ScheduledTask::new("hook", "Handle {{body.v}}", ScheduleRule::Webhook, target(), now);
+            task.webhook.coalesce_seconds = 120;
+            let task = s.save_task(task, now, &Utc);
+            let secret = s.webhook_secret(task.id, false).unwrap();
+            assert_eq!(s.handle_webhook(true, &request(task.id, &secret, r#"{"v":"first"}"#, "d1"), now).0, 202);
+            assert_eq!(
+                s.handle_webhook(true, &request(task.id, &secret, r#"{"v":"second"}"#, "d2"), now + chrono::Duration::seconds(10)).0,
+                202
+            );
+            task.id
+        };
+
+        // Restart 5 minutes later: the waiting delivery is restored and ready to resume when tasks are enabled.
+        let restarted = Scheduler::new(file.clone(), secrets.clone(), now + chrono::Duration::minutes(5), &Utc);
+        assert_eq!(restarted.deliveries(task_id).len(), 2);
+        assert!(restarted.resume_restored_webhooks(true));
+        let host = FakeHost::default();
+        restarted.drain_webhooks(&host, &profile, now + chrono::Duration::minutes(5), &Utc);
+        let started = host.started.lock().unwrap().clone();
+        assert_eq!(started.len(), 1);
+        assert!(started[0].task.contains("second"));
+        assert!(started[0].task.contains("2 webhook deliveries arrived within the task's coalesce window"));
     }
 }

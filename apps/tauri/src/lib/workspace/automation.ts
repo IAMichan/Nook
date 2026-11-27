@@ -28,6 +28,42 @@ export type ScheduledTaskTarget =
 
 export type ScheduledRunStatus = "running" | "succeeded" | "failed" | "skipped";
 
+export type WebhookFilterTest = "equals" | "oneOf" | "exists";
+
+export interface WebhookFilter {
+  id: string;
+  field: string;
+  test: WebhookFilterTest;
+  value: string;
+}
+
+export interface WebhookRules {
+  filters: WebhookFilter[];
+  duplicateKey: string;
+  /** Window in seconds (`10..=3600`); `0` disables coalescing. */
+  coalesceSeconds: number;
+}
+
+export type WebhookDeliveryOutcome = "accepted" | "filtered" | "duplicate" | "coalesced" | "queueFull";
+
+export interface WebhookDeliveryRecord {
+  id: string;
+  deliveryId: string;
+  receivedAt: string;
+  outcome: WebhookDeliveryOutcome;
+  detail?: string | null;
+}
+
+export type RelayState = "off" | "connecting" | "connected" | "noRelay";
+
+export function emptyWebhookRules(): WebhookRules {
+  return { filters: [], duplicateKey: "", coalesceSeconds: 0 };
+}
+
+export function newWebhookFilter(): WebhookFilter {
+  return { id: crypto.randomUUID(), field: "", test: "equals", value: "" };
+}
+
 export interface ScheduledTask {
   id: string;
   title: string;
@@ -48,6 +84,8 @@ export interface ScheduledTask {
   preset?: string | null;
   /** For Nook: what each run carries out by itself (`workspace::autonomy`). */
   autonomy?: NookAutonomy;
+  /** For webhook tasks: filters, duplicate key, and burst coalescing (`workspace::webhook_rules`). */
+  webhook?: WebhookRules;
 }
 
 export type NookAutonomy = "ask" | "decide" | "auto";
@@ -64,12 +102,15 @@ export function autonomyLevels(): { id: NookAutonomy; label: string; detail: str
 export interface TaskView extends ScheduledTask {
   running: boolean;
   webhookUrl: string | null;
+  publicWebhookUrl?: string | null;
+  deliveries?: WebhookDeliveryRecord[];
   sessionTitle: string | null;
 }
 
 export interface AutomationSettings {
   scheduledTasks: boolean;
   webhookPort: number;
+  webhooksPublic?: boolean;
   autoTitles: boolean;
   /** Your own rules for titles, given to the brain with every title it writes. */
   titleInstructions?: string;
@@ -80,6 +121,7 @@ export interface AutomationOverview {
   tasks: TaskView[];
   listening: number | null;
   listenerError: string | null;
+  relayState: RelayState;
 }
 
 export type RunNow = "started" | "busy" | "notAvailable";
@@ -232,13 +274,51 @@ export function statusLabel(status: ScheduledRunStatus | null): string {
   }
 }
 
+/** Label for a webhook delivery outcome in the Deliveries log. */
+export function deliveryOutcomeLabel(outcome: WebhookDeliveryOutcome): string {
+  switch (outcome) {
+    case "accepted":
+      return tr("Aangenomen", "Accepted");
+    case "filtered":
+      return tr("Gefilterd", "Filtered");
+    case "duplicate":
+      return tr("Dubbel", "Duplicate");
+    case "coalesced":
+      return tr("Samengevoegd", "Combined");
+    case "queueFull":
+      return tr("Overgeslagen", "Skipped");
+  }
+}
+
+/** Detail line for a webhook delivery log entry. */
+export function deliveryDetailLabel(record: Pick<WebhookDeliveryRecord, "outcome" | "detail">): string {
+  const detail = record.detail ?? "";
+  switch (record.outcome) {
+    case "accepted":
+      return detail
+        ? tr("Opende een venster van {seconds} s", "Opened a window of {seconds} s", { seconds: detail })
+        : tr("Draait, of wacht op de run ervoor", "Runs, or waits for the run before it");
+    case "filtered":
+      return tr("Klopte niet: {filter}", "Failed: {filter}", { filter: detail });
+    case "duplicate":
+      return tr("Sleutel al gezien: {key}", "Key seen before: {key}", { key: detail });
+    case "coalesced":
+      return tr("{count} leveringen in dit venster", "{count} deliveries in this window", { count: detail });
+    case "queueFull":
+      return tr("Er wachtten te veel leveringen", "Too many deliveries were waiting");
+  }
+}
+
 /** What is wrong with the editor's values, or null. */
-export function problem(task: { prompt: string; rule: ScheduleRule; target: ScheduledTaskTarget }, now = Date.now()): string | null {
+export function problem(task: { prompt: string; rule: ScheduleRule; target: ScheduledTaskTarget; webhook?: WebhookRules }, now = Date.now()): string | null {
   if (!task.prompt.trim()) return tr("Schrijf een prompt.", "Write a prompt.");
   if (task.target.type === "newSession" && !task.target.projectPath.trim()) return tr("Kies een projectmap.", "Choose a project folder.");
   if (task.target.type === "existingSession" && !task.target.id) return tr("Kies de sessie waar de runs heen gaan.", "Choose the session the runs go to.");
   if (task.rule.type === "once" && !(new Date(task.rule.at).getTime() > now)) return tr("Kies een moment in de toekomst.", "Choose a moment in the future.");
   if (task.rule.type === "interval" && !(task.rule.seconds >= 60)) return tr("Het interval is minstens 1 minuut.", "The interval is at least 1 minute.");
+  if (task.rule.type === "webhook" && task.webhook?.filters.some((f) => !f.field.trim())) {
+    return tr("Elk filter heeft een waardenaam nodig, zoals body.action.", "Every filter needs a value name, such as body.action.");
+  }
   return null;
 }
 
@@ -258,6 +338,7 @@ export function blankTask(projectPath: string, provider: RunProvider): Scheduled
     nextRun: null,
     lastSession: null,
     createdAt: new Date().toISOString(),
+    webhook: emptyWebhookRules(),
   };
 }
 
