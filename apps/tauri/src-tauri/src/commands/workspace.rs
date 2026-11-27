@@ -2171,7 +2171,6 @@ pub fn workspace_connector_hide(app: AppHandle, state: State<'_, WorkspaceState>
     Ok(())
 }
 
-
 // MARK: Token tuning, agent readiness & session advice (AG-32)
 
 #[derive(Serialize)]
