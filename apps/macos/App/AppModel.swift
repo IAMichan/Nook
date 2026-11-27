@@ -296,11 +296,11 @@ final class AppModel: ObservableObject {
         self.viewModel = viewModel
         notch = NotchController(viewModel: viewModel)
         // Every view of the app redraws when one of these changes. Launching sends dozens of changes in a row (each
-        // connector, history, usage, the first screen read), and a running agent changes the hub with every step it
-        // takes, so they are combined: the first change redraws at once, a burst at most four times a second. At one
-        // redraw per frame, a busy agent kept the notch, its panel and the main window redrawing in full all the time.
+        // connector, history, usage, the first screen read), so they are combined: the first change redraws at once, a
+        // burst at most four times a second. A full redraw costs the main thread 150-500 ms in a Debug build, so a part
+        // that changes often should not be here: the agent hub is `@Observable` (a hook event redraws only the views
+        // that read what it changed), and so should the others become, one at a time.
         let children: [AnyPublisher<Void, Never>] = [
-            hub.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             nowPlaying.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             settings.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             connectors.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
@@ -346,7 +346,7 @@ final class AppModel: ObservableObject {
             }
             .store(in: &bag)
         // The same while the agent's own app or terminal works on it: each step it reports shows up, a few seconds apart.
-        hub.$sessions.throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+        hub.sessionsPublisher.throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.followTerminalContinuations() }
             .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
@@ -440,7 +440,7 @@ final class AppModel: ObservableObject {
         // Agent start/stop events update the idle notch indicator. In no particular order: the hub lists working sessions by
         // their last event, so two agents at work swap places all the time, and each `show` redraws the notch and the main
         // window with an animation.
-        hub.$sessions
+        hub.sessionsPublisher
             .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" }.sorted() }
             .removeDuplicates()
             .receive(on: RunLoop.main)
