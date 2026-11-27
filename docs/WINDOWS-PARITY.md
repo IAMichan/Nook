@@ -430,7 +430,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.2 Agents and transports
 
-- [ ] **AG-20** Pi agent (`AgentKind.pi`, `PiRPC`, `WorkspaceManager+Pi`, `PiRPCTurnDriver`): `pi --mode rpc` driver in `core/src/workspace/driver.rs` · L
+- [x] **AG-20** Pi agent (`AgentKind.pi`, `PiRPC`, `WorkspaceManager+Pi`, `PiRPCTurnDriver`): `pi --mode rpc` driver in `core/src/workspace/driver.rs` · L
+  - Done: `AgentKind::Pi` (`pi`, `~/.pi/agent`, `PI_CODING_AGENT_DIR`, `@earendil-works/pi-coding-agent` install/update, `auth.json` account detection, `--session` resume, `.pi/agent/skills` / `.pi/skills`), `RunProvider::Pi` + `Transport::PiRpc`, `core/src/workspace/pi_rpc.rs` (`rpc` command builders, `PiModel`, atomic `nook-pi-extension.ts` installer for tool approvals and `nook-mcp` bridge registration, `PiStreamEvent` parser, `PiDriver` with streaming thinking/text, tool output updates, `edit`/`write` file-change tracking, `confirm` approvals without Always, `select`/`input`/`editor` dialogs as `AskUserQuestion`, `/compact` mapping, mid-turn steering with `UserMessageRead` receipts, `abort` interrupt suppression, `agent_end` 3s settle fallback, usage/cost/context-window accounting), frontend types/lists/colors/effort levels (`minimal`..`xhigh`), 5-language i18n, replay tests against all 5 `pi_*.ndjson` fixtures, and end-to-end fake-`pi` tests in `driver_tests.rs`.
 
 - [ ] **AG-21** Own ACP agents (`CustomAgents`, `AcpAgentsSettings`, `AcpInstaller`): profile store, adapter install, Settings › Agents page · M
 

@@ -108,6 +108,7 @@ pub fn account_key(provider: RunProvider, profile_id: &str, machine: Option<&str
         RunProvider::Cursor => "cursor",
         RunProvider::Grok => "grok",
         RunProvider::Antigravity => "antigravity",
+        RunProvider::Pi => "pi",
     };
     format!("{kind}|{profile_id}|{}", machine.unwrap_or(""))
 }

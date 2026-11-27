@@ -321,7 +321,7 @@ export interface PoolSection {
   details: Record<string, LimitAccountDetails>;
 }
 
-const AGENT_ORDER = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok"];
+const AGENT_ORDER = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok", "pi"];
 
 /** Builds per-agent pooled sections and unavailable notices (`UsageLimitSection.make` on the Mac). */
 export function buildPoolSections(

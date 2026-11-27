@@ -34,6 +34,7 @@ fn places(provider: RunProvider) -> (&'static str, &'static str) {
         RunProvider::Cursor => (".cursor/skills", ".cursor/skills"),
         // Grok Build also reads Claude Code's skills; it documents no project folder of its own.
         RunProvider::Grok => (".grok/skills", ".claude/skills"),
+        RunProvider::Pi => (".pi/agent/skills", ".pi/skills"),
     }
 }
 

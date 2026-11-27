@@ -2015,6 +2015,20 @@ impl Manager {
                                 let _ = tx.send((response, error));
                             }
                         }
+                        driver::DriverEvent::ToolOutput { id: call, output } => {
+                            if let Some(event) = s.turns.get(&id).and_then(|t| t.tool_events.get(&call)).copied() {
+                                Self::mutate(&mut s, id, event, &mut out, |e| {
+                                    e.output = Some(RunEvent::clip(&output));
+                                });
+                            }
+                        }
+                        driver::DriverEvent::ScheduleSettle => {
+                            let manager = self.clone();
+                            self.runtime.spawn(async move {
+                                tokio::time::sleep(Duration::from_secs(3)).await;
+                                manager.handle_driver_settle(id, generation);
+                            });
+                        }
                     }
                 }
             }
@@ -2062,6 +2076,52 @@ impl Manager {
         };
         for tool in tools {
             self.recap.note(|r, now| r.tool_use(&tool, now));
+        }
+        self.emit(out);
+        if finished {
+            self.turn_did_finish(id);
+        }
+    }
+
+    fn handle_driver_settle(self: &Arc<Self>, id: Uuid, generation: u64) {
+        let mut out = Out::default();
+        let mut finished = false;
+        let mut close_input = false;
+        {
+            let mut s = self.lock();
+            if s.processes.get(&id).map(|p| p.generation) != Some(generation) {
+                return;
+            }
+            let Some(step) = s.processes.get_mut(&id).and_then(|p| p.driver.as_mut()).map(|d| d.settle()) else {
+                return;
+            };
+            if step.events.is_empty() && step.replies.is_empty() {
+                return;
+            }
+            if let Some(input) = s.processes.get(&id).and_then(|p| p.input.clone()) {
+                for reply in step.replies {
+                    let _ = input.send(Input::Line(reply));
+                }
+            }
+            for event in step.events {
+                if let driver::DriverEvent::Claude(event) = event {
+                    let (done, close) = Self::handle_claude(&mut s, id, event, &mut out);
+                    finished |= done;
+                    close_input |= close;
+                }
+            }
+            if close_input {
+                if let Some(input) = s.processes.get(&id).and_then(|p| p.input.as_ref()) {
+                    let _ = input.send(Input::Close);
+                }
+                let manager = self.clone();
+                self.runtime.spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    if manager.same_process(id, generation) {
+                        manager.force_kill(id);
+                    }
+                });
+            }
         }
         self.emit(out);
         if finished {
@@ -2376,7 +2436,7 @@ impl Manager {
                         usage.cache_write_tokens = Some(m.values().map(|t| t.cache_write).sum());
                     }
                 }
-                usage.context_tokens = turn.and_then(|t| t.last_context);
+                usage.context_tokens = usage.context_tokens.or_else(|| turn.and_then(|t| t.last_context));
                 if usage.duration_seconds.is_none() {
                     if let Some(started) = turn.and_then(|t| t.started) {
                         usage.duration_seconds = Some((Utc::now() - started).num_milliseconds() as f64 / 1000.0);

@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { tr } from "../i18n.svelte";
 import type { RemoteTarget } from "./machines";
 
-export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity";
+export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity" | "pi";
 export type ExecutionMode = "agent" | "plan";
 export type PermissionPolicy = "ask" | "acceptEdits" | "bypass";
 export type IsolationMode = "folder" | "worktree";
@@ -605,9 +605,9 @@ export const modeHelp: Record<ExecutionMode, string> = {
   get plan() { return tr("Alleen lezen en een plan maken; er wordt niets aangepast.", "Only read and make a plan; nothing is changed."); },
 };
 
-/// Redeneerniveaus (EffortLevels op de Mac): Codex via `model_reasoning_effort`, Claude Code via `--effort`; low,
-/// medium and high are the levels every model accepts.
+/// Redeneerniveaus (EffortLevels op de Mac): Codex via `model_reasoning_effort`, Claude Code via `--effort`, Pi via `--thinking`.
 export function effortLevels(provider: RunProvider): string[] {
+  if (provider === "pi") return ["minimal", "low", "medium", "high", "xhigh"];
   return provider === "codex" || provider === "claude" ? ["low", "medium", "high"] : [];
 }
 

@@ -92,6 +92,7 @@ const PROVIDER_DISPLAY_NAMES: Record<RunProvider, string> = {
   cursor: "Cursor",
   grok: "Grok",
   antigravity: "Antigravity",
+  pi: "Pi",
 };
 
 export function providerDisplayName(provider: RunProvider): string {

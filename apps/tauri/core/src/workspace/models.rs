@@ -19,11 +19,12 @@ pub enum RunProvider {
     Cursor,
     Grok,
     Antigravity,
+    Pi,
 }
 
 impl RunProvider {
-    pub const ALL: [RunProvider; 7] =
-        [Self::Claude, Self::Codex, Self::Gemini, Self::Opencode, Self::Cursor, Self::Grok, Self::Antigravity];
+    pub const ALL: [RunProvider; 8] =
+        [Self::Claude, Self::Codex, Self::Gemini, Self::Opencode, Self::Cursor, Self::Grok, Self::Antigravity, Self::Pi];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -34,6 +35,7 @@ impl RunProvider {
             Self::Cursor => "cursor",
             Self::Grok => "grok",
             Self::Antigravity => "antigravity",
+            Self::Pi => "pi",
         }
     }
 
@@ -46,6 +48,7 @@ impl RunProvider {
             Self::Cursor => "Cursor",
             Self::Grok => "Grok",
             Self::Antigravity => "Antigravity",
+            Self::Pi => "Pi",
         }
     }
 
@@ -59,6 +62,7 @@ impl RunProvider {
             Self::Cursor => K::Cursor,
             Self::Grok => K::Grok,
             Self::Antigravity => K::Antigravity,
+            Self::Pi => K::Pi,
         }
     }
 
@@ -72,6 +76,7 @@ impl RunProvider {
             K::Cursor => Self::Cursor,
             K::Grok => Self::Grok,
             K::Antigravity => Self::Antigravity,
+            K::Pi => Self::Pi,
         }
     }
 
@@ -83,7 +88,7 @@ impl RunProvider {
             K::Claude => Some(Self::Claude),
             K::Codex => Some(Self::Codex),
             K::Gemini => Some(Self::Gemini),
-            K::Opencode | K::Cursor | K::Grok | K::Antigravity => None,
+            K::Opencode | K::Cursor | K::Grok | K::Antigravity | K::Pi => None,
         }
     }
 
@@ -97,6 +102,7 @@ impl RunProvider {
         match self {
             Self::Claude => Transport::ClaudeStream,
             Self::Codex => Transport::CodexAppServer,
+            Self::Pi => Transport::PiRpc,
             Self::Gemini | Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => Transport::Acp,
         }
     }
@@ -165,6 +171,26 @@ impl RunProvider {
                 echoes_steers: false,
                 reports_prompt_cache_lifetime: false,
             },
+            Self::Pi => ProviderCapabilities {
+                approvals: true,
+                interrupt: true,
+                streaming_text: true,
+                plan_mode: false,
+                reports_cost: true,
+                reports_context_window: true,
+                reports_cache_tokens: true,
+                policies: vec![Ask, AcceptEdits, Bypass],
+                steering: true,
+                native_fork: false,
+                can_fork_from_turn: false,
+                can_rollback_conversation: false,
+                live_settings: false,
+                deny_reason_in_response: false,
+                speed_tiers: false,
+                ultracode: false,
+                echoes_steers: true,
+                reports_prompt_cache_lifetime: false,
+            },
             Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => ProviderCapabilities {
                 approvals: true,
                 interrupt: true,
@@ -202,13 +228,14 @@ impl RunProvider {
 }
 
 /// The protocol of a session's process: Claude Code's `stream-json`, Codex's `app-server` (JSON-RPC; `codex exec` when
-/// that is missing), or ACP (JSON-RPC; Gemini CLI's headless mode when that is missing).
+/// that is missing), Pi's RPC mode (`pi --mode rpc`), or ACP (JSON-RPC; Gemini CLI's headless mode when that is missing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Transport {
     ClaudeStream,
     CodexAppServer,
     Acp,
+    PiRpc,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -905,8 +932,10 @@ pub mod tool_summary {
     /// Bestanden die deze tool wijzigt, met het soort wijziging.
     pub fn file_changes(tool: &str, input: &Value) -> Vec<(String, String)> {
         match tool {
-            "Edit" | "MultiEdit" | "NotebookEdit" | "replace" => path(input).map(|p| vec![(p, "modified".into())]).unwrap_or_default(),
-            "Write" | "write_file" => path(input).map(|p| vec![(p, "written".into())]).unwrap_or_default(),
+            "Edit" | "MultiEdit" | "NotebookEdit" | "replace" | "edit" => {
+                path(input).map(|p| vec![(p, "modified".into())]).unwrap_or_default()
+            }
+            "Write" | "write_file" | "write" => path(input).map(|p| vec![(p, "written".into())]).unwrap_or_default(),
             _ => vec![],
         }
     }

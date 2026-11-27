@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { locale, tr } from "./i18n.svelte";
 
-export type AgentKind = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "cursor" | "grok";
+export type AgentKind = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "cursor" | "grok" | "pi";
 export type AgentStatus = "waiting" | "running" | "failed" | "done" | "detected";
 export type StepMark = "done" | "running" | "blocked" | "failed" | "todo";
 export type DiffKind = "add" | "remove" | "context";
@@ -368,11 +368,11 @@ export const agentEvents = {
 };
 
 export const agentNames: Record<AgentKind, string> = {
-  claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", antigravity: "Antigravity", opencode: "OpenCode", cursor: "Cursor", grok: "Grok",
+  claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", antigravity: "Antigravity", opencode: "OpenCode", cursor: "Cursor", grok: "Grok", pi: "Pi",
 };
 
 export const agentColors: Record<AgentKind, string> = {
-  claude: "#E08A5E", codex: "#6FCFB3", gemini: "#8AB4F8", antigravity: "#EA4335", opencode: "#F5A742", cursor: "#9AA4B2", grok: "#D9D9DE",
+  claude: "#E08A5E", codex: "#6FCFB3", gemini: "#8AB4F8", antigravity: "#EA4335", opencode: "#F5A742", cursor: "#9AA4B2", grok: "#D9D9DE", pi: "#7FD1E8",
 };
 
 /// De kleur bij een weergavenaam ("Claude Code", "Codex", …).

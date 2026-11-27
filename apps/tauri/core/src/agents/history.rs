@@ -123,7 +123,7 @@ impl PastSession {
     pub fn resume_arguments(&self) -> Vec<String> {
         match self.agent {
             AgentKind::Codex => vec!["resume".into(), self.session_id.clone()],
-            AgentKind::Opencode => vec!["--session".into(), self.session_id.clone()],
+            AgentKind::Opencode | AgentKind::Pi => vec!["--session".into(), self.session_id.clone()],
             _ => vec!["--resume".into(), self.session_id.clone()],
         }
     }
@@ -897,19 +897,19 @@ fn gemini_account(home: &Path) -> Option<AgentAccount> {
     }
 }
 
-/// OpenCode, Cursor en Grok: ingelogd als hun inlogbestand er is.
+/// OpenCode, Cursor, Grok en Pi: ingelogd als hun inlogbestand er is.
 fn acp_account(kind: AgentKind, home: &Path) -> Option<AgentAccount> {
     let file = if kind == AgentKind::Cursor { home.join("cli-config.json") } else { home.join("auth.json") };
     let Some(root) = read_json(&file) else {
-        // Grok bewaart zijn inlog elders in zijn map: de map zelf betekent dat hij is ingesteld.
-        return (kind == AgentKind::Grok).then(|| account(kind, kind.name(), "", ""));
+        // Grok bewaart zijn inlog elders in zijn map, en Pi kan een API-sleutel uit de omgeving gebruiken.
+        return matches!(kind, AgentKind::Grok | AgentKind::Pi).then(|| account(kind, kind.name(), "", ""));
     };
     match kind {
         AgentKind::Cursor => {
             let auth = root.get("authInfo")?;
             Some(account(kind, auth.get("email").and_then(Value::as_str).unwrap_or(kind.name()), "", ""))
         }
-        AgentKind::Opencode => {
+        AgentKind::Opencode | AgentKind::Pi => {
             let mut providers: Vec<&String> = root.as_object()?.keys().collect();
             providers.sort();
             (!providers.is_empty()).then(|| account(kind, providers.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", "), "", ""))

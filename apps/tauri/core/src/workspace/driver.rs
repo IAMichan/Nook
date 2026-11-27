@@ -45,6 +45,11 @@ pub enum DriverEvent {
     ConnectorsNeedingSignIn(Vec<String>),
     /// Reply to a control request sent over the driver (`mcpServer/oauth/login`, `mcpServerStatus/list`).
     ControlReply { request_id: String, response: Option<Value>, error: Option<String> },
+    /// Partial output of a running tool (`tool_execution_update` on Pi) without marking it done.
+    ToolOutput { id: String, output: String },
+    /// The agent reported an older end-of-run marker (`agent_end` on Pi); settle the turn after a short grace period
+    /// if no further events arrive.
+    ScheduleSettle,
 }
 
 /// A `/` command an agent offers itself (`AgentSlashCommand` on the Mac): its name without the slash, what it does in
@@ -99,6 +104,10 @@ impl Step {
 pub trait Driver: Send {
     /// A line from the agent's stdout.
     fn receive(&mut self, line: &str) -> Step;
+    /// Called after a `ScheduleSettle` grace timer expires; finishes the turn if the driver is still waiting to settle.
+    fn settle(&mut self) -> Step {
+        Step::default()
+    }
     /// Your answer to an approval (`request_id` as the driver named it). Lines to write; empty for an unknown request.
     fn decide(&mut self, request_id: &str, allow: bool, always: bool) -> Vec<String>;
     /// Your answers to a question, per question text. `None`: not a question of this driver.
@@ -167,6 +176,10 @@ pub fn plan(input: &CommandInput) -> Result<Planned, String> {
             let (spec, driver) = super::acp::launch(input)?;
             Ok(Planned { spec, driver: Some(Box::new(driver)), note: None })
         }
+        Transport::PiRpc => {
+            let (spec, driver) = super::pi_rpc::launch(input);
+            Ok(Planned { spec, driver: Some(Box::new(driver)), note: None })
+        }
     }
 }
 
@@ -180,7 +193,8 @@ pub fn session_executable(provider: RunProvider, found: Option<String>) -> Optio
         | RunProvider::Gemini
         | RunProvider::Opencode
         | RunProvider::Cursor
-        | RunProvider::Grok => found,
+        | RunProvider::Grok
+        | RunProvider::Pi => found,
     }
 }
 
@@ -210,7 +224,7 @@ fn probe_arguments(provider: RunProvider) -> Option<(&'static [&'static str], Op
     match provider.transport() {
         Transport::CodexAppServer => Some((&["app-server", "--help"], None)),
         Transport::Acp if provider == RunProvider::Gemini => Some((&["--help"], Some("--acp"))),
-        Transport::Acp | Transport::ClaudeStream => None,
+        Transport::Acp | Transport::ClaudeStream | Transport::PiRpc => None,
     }
 }
 
