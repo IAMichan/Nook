@@ -10,10 +10,13 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 ## Unreleased
 
+## [0.1.4-beta.1] - 2026-11-27
+
 ### Added
 
 - Settings › Browser has a Passkeys row: on a build signed with Apple's browser entitlement it asks macOS once whether
   Nook may use your passkeys, and it says what is missing when they cannot work.
+
 - On Windows, the Chats tab shows Discord messages from Windows' own notifications, read-only, as the Mac does from
   macOS notifications. WhatsApp, Telegram, Signal, Viber, WeChat and Threema come in the same way when Nook has no link
   of its own to them.
@@ -22,8 +25,11 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 
 - An extension that needs an app on your Mac (native messaging), such as Apple's iCloud Passwords, now says why it
   cannot work in Nook's browser, when you click it and in Settings › Browser, instead of opening an empty popup.
+
 - The chat list shows what is unread at a glance: a solid count, a bold name and a bright line, while read chats step back to grey. Muted chats get a slashed bell and a grey count, a photo, voice message, poll or call gets its icon in the line, and the account name only shows when an app has more than one account in the list. On the Mac and the iPhone.
+
 - Opening a chat reads it in Nook only: the chat's app, your phone and whoever wrote no longer see it as read. "Also read in the app" in Settings › Chats is now off by default.
+
 - A session with several pull requests shows the one not merged yet in its badge, also when a newer one already merged, so you can see the session is not done.
 
 ### Fixed
@@ -31,9 +37,12 @@ the entries it shipped under its version (`scripts/changelog-release.py`); a sta
 - Agent conversations, agent transcripts and Nook's chat no longer bounce up and down while you read or scroll back
   through them as an agent works. Their rows are now all drawn for real instead of guessed by a lazy list, and older
   rows are drawn above as you scroll up, so nothing above what you read moves.
+
 - On Windows and Linux, Nook no longer freezes ("not responding") when the Chats tab loads while WhatsApp is
   syncing.
+
 - On Windows, Nook no longer freezes ("not responding") when it opens a tab or the browser in its own window, or puts the bar on every screen.
+
 - On Windows, the app stays responsive while agents work: looking up installed agents, account limits and a few settings pages no longer holds up the interface.
 
 ## [0.1.3] - 2026-11-26
@@ -555,6 +564,7 @@ Only internal changes; the release page lists them.
 
 First public beta of the macOS app, published from `.github/workflows/release.yml`.
 
+[0.1.4-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.4-beta.1
 [0.1.3]: https://github.com/IAMichan/Nook/releases/tag/v0.1.3
 [0.1.2-beta.2]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.2
 [0.1.2-beta.1]: https://github.com/IAMichan/Nook/releases/tag/v0.1.2-beta.1
