@@ -169,14 +169,13 @@ impl CloneLayout {
             let parsed = reqwest::Url::parse(clean).ok()?;
             let host = parsed.host_str()?.to_string();
             (host, parsed.path().to_string())
-        } else if let Some(at) = clean.find('@') {
+        } else {
+            let at = clean.find('@')?;
             let after_at = &clean[at + 1..];
             let colon = after_at.find(':')?;
             let host = after_at[..colon].to_string();
             let path = after_at[colon + 1..].to_string();
             (host, path)
-        } else {
-            return None;
         };
 
         let host = host_raw.to_lowercase();
