@@ -265,16 +265,30 @@ export interface Integration {
 
 export interface LinkPreview { id: string; title: string; path: string; install: boolean; preview: DiffLine[]; unchanged: boolean }
 
+export interface AccountVariable {
+  name: string;
+  value: string;
+  sensitive: boolean;
+}
+
 export interface AgentProfile {
   id: string;
   kind: AgentKind;
   label: string;
   home: string | null;
   auth: "cli" | "apiKey" | null;
+  disabled?: boolean | null;
+  executablePath?: string | null;
+  extraArguments?: string[] | null;
+  variables?: AccountVariable[] | null;
+  customModels?: string[] | null;
   title: string;
   displayHome: string;
   preferred: boolean;
+  enabled: boolean;
   hasKey: boolean;
+  homeVariable?: string | null;
+  storedSecretVariables?: string[];
   launchCommand: string;
   loginCommand: string;
 }
@@ -313,6 +327,14 @@ export const agentApi = {
   preferProfile: (id: string) => invoke<void>("agents_profile_prefer", { id }),
   setProfileAuth: (id: string, method: "cli" | "apiKey") => invoke<void>("agents_profile_auth", { id, method }),
   setProfileKey: (id: string, key: string) => invoke<boolean>("agents_profile_key", { id, key }),
+  setProfileEnabled: (id: string, enabled: boolean) => invoke<void>("agents_profile_set_enabled", { id, enabled }),
+  setProfileExecutablePath: (id: string, path: string) => invoke<void>("agents_profile_set_executable_path", { id, path }),
+  setProfileExtraArguments: (id: string, argumentsList: string[]) =>
+    invoke<void>("agents_profile_set_extra_arguments", { id, arguments: argumentsList }),
+  setProfileVariables: (id: string, variables: AccountVariable[]) =>
+    invoke<void>("agents_profile_set_variables", { id, variables }),
+  setProfileCustomModels: (id: string, models: string[]) =>
+    invoke<void>("agents_profile_set_custom_models", { id, models }),
   markFinished: (key: string, finished: boolean) => invoke<void>("agents_mark_finished", { key, finished }),
   visit: (id: string, unread = false) => invoke<void>("agents_visit", { id, unread }),
   activateTerminal: (host: string) => invoke<void>("agents_activate_terminal", { host }),

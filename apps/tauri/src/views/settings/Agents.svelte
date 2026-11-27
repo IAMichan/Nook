@@ -17,6 +17,7 @@
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import Ico from "../../components/ui/Ico.svelte";
   import ConnectionRow from "./ConnectionRow.svelte";
+  import AccountOptionsSection from "./AccountOptionsSection.svelte";
   import AgentUpdates from "../agents/AgentUpdates.svelte";
 
   interface AgentVersionInfo {
@@ -484,14 +485,17 @@
             </div>
           {/if}
 
-          {#if entry.agentKind === "claude" || entry.agentKind === "codex" || entry.agentKind === "gemini"}
+          {#if entry.agentKind && entry.provider}
             {@const kind = entry.agentKind}
+            {@const multiAccount = kind !== "antigravity"}
             <div class="section-head">
               <h3>{tr("Accounts", "Accounts")}</h3>
-              <button type="button" class="head-action" onclick={() => (adding = !adding)}><Ico name="plus" size={14} />{tr("Account toevoegen", "Add account")}</button>
+              {#if multiAccount}
+                <button type="button" class="head-action" onclick={() => (adding = !adding)}><Ico name="plus" size={14} />{tr("Account toevoegen", "Add account")}</button>
+              {/if}
             </div>
             <div class="group">
-              {#if adding}
+              {#if adding && multiAccount}
                 <div class="row add-row">
                   <!-- svelte-ignore a11y_autofocus -->
                   <input autofocus placeholder={tr("Naam van een extra account, bijvoorbeeld Werk", "Name of an extra account, for example Work")} bind:value={newLabel[kind]} onkeydown={(e) => e.key === "Enter" && addProfile(kind)} />
@@ -501,13 +505,17 @@
               {#each profiles.filter((p) => p.kind === kind) as p (p.id)}
                 {@const acc = account(p)}
                 {@const links = entry.extraIntegrations.filter((i) => i.profileId === p.id)}
+                {@const off = p.enabled === false}
+                {@const hasAccountProbe = kind === "claude" || kind === "codex"}
                 <ConnectionRow
                   title={profileName(p)}
-                  status={[p.preferred ? tr("Standaard", "Default") : null, acc ?? (kind === "gemini" ? null : tr("Nog niet ingelogd", "Not yet logged in"))].filter(Boolean).join(" · ")}
-                  attention={acc || kind === "gemini" ? null : "amber"}
+                  status={off
+                    ? tr("Uit", "Off")
+                    : [p.preferred ? tr("Standaard", "Default") : null, acc ?? (hasAccountProbe ? tr("Nog niet ingelogd", "Not yet logged in") : null)].filter(Boolean).join(" · ")}
+                  attention={off || acc || !hasAccountProbe ? null : "amber"}
                   menu={[
                     { label: tr("Log in…", "Sign in…"), icon: "terminal", onselect: () => agentApi.runInTerminal(p.loginCommand) },
-                    ...(p.preferred ? [] : [{ label: tr("Maak standaard", "Make default"), icon: "star", onselect: () => agentApi.preferProfile(p.id).then(load) }]),
+                    ...(p.preferred || off ? [] : [{ label: tr("Maak standaard", "Make default"), icon: "star", onselect: () => agentApi.preferProfile(p.id).then(load) }]),
                   ]}
                   danger={p.home ? [{ label: tr("Account uit Nook halen…", "Remove account from Nook…"), icon: "trash-2", onselect: () => removeProfile(p) }] : []}
                 >
@@ -541,8 +549,9 @@
                     {/each}
                     <div class="inline">
                       <button class="small" onclick={() => agentApi.runInTerminal(p.loginCommand)}>{tr("Log in…", "Sign in…")}</button>
-                      {#if !p.preferred}<button class="small" onclick={() => agentApi.preferProfile(p.id).then(load)}>{tr("Maak standaard", "Make default")}</button>{/if}
+                      {#if !p.preferred && !off}<button class="small" onclick={() => agentApi.preferProfile(p.id).then(load)}>{tr("Maak standaard", "Make default")}</button>{/if}
                     </div>
+                    <AccountOptionsSection profile={p} detectedExecutable={exe} commandName={kind} onchange={load} />
                   {/snippet}
                 </ConnectionRow>
               {/each}
@@ -552,12 +561,14 @@
                 </ConnectionRow>
               {/each}
             </div>
-            <p class="faint note">
-              {tr(
-                "Elk account heeft een eigen map (bijvoorbeeld ~/.claude-werk) met een eigen inlog, zodat privé en werk naast elkaar kunnen. Een API-sleutel staat alleen in de kluis van je systeem, nooit in een bestand.",
-                "Each account has its own folder (for example ~/.claude-work) with its own login, so personal and work can live side by side. An API key is only kept in your system's keychain, never in a file.",
-              )}
-            </p>
+            {#if multiAccount}
+              <p class="faint note">
+                {tr(
+                  "Elk account heeft een eigen map (bijvoorbeeld ~/.claude-werk) met een eigen inlog, zodat privé en werk naast elkaar kunnen. Een API-sleutel staat alleen in de kluis van je systeem, nooit in een bestand.",
+                  "Each account has its own folder (for example ~/.claude-work) with its own login, so personal and work can live side by side. An API key is only kept in your system's keychain, never in a file.",
+                )}
+              </p>
+            {/if}
           {/if}
         {/key}
       </div>
