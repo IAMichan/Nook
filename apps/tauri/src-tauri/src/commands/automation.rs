@@ -5,6 +5,8 @@ use chrono::{Local, Utc};
 use nook_core::workspace::models::RunProvider;
 use nook_core::workspace::schedule::ScheduledTask;
 use nook_core::workspace::scheduler::{AutomationSettings, RunNow};
+use nook_core::workspace::webhook_relay::RelayState;
+use nook_core::workspace::webhook_rules::WebhookDeliveryRecord;
 use nook_core::workspace::{delegation, handoff};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -27,6 +29,10 @@ pub struct TaskView {
     running: bool,
     /// `http://127.0.0.1:<port>/hooks/<id>` for a webhook task while the listener is on.
     webhook_url: Option<String>,
+    /// `https://<relay>/v1/hooks/<room>/<id>` for a webhook task while public webhooks are on.
+    public_webhook_url: Option<String>,
+    /// Recent verified deliveries for a webhook task (newest first, up to 50).
+    deliveries: Vec<WebhookDeliveryRecord>,
     /// The title of the session the latest run went to, while it exists.
     session_title: Option<String>,
 }
@@ -39,6 +45,8 @@ pub struct AutomationOverview {
     /// The port the webhook listener listens on now.
     listening: Option<u16>,
     listener_error: Option<String>,
+    /// Live state of the public webhook relay connection.
+    relay_state: RelayState,
 }
 
 #[tauri::command]
@@ -48,15 +56,20 @@ pub fn automation_overview(app: AppHandle, state: State<'_, AutomationState>) ->
         .scheduler
         .tasks()
         .into_iter()
-        .map(|task| TaskView {
-            running: state.scheduler.is_running(task.id),
-            webhook_url: task.rule.is_webhook().then(|| automation::webhook_url(&app, task.id)).flatten(),
-            session_title: task.last_session.and_then(|s| manager.as_ref()?.run(s)).map(|r| r.title),
-            task,
+        .map(|task| {
+            let is_hook = task.rule.is_webhook();
+            TaskView {
+                running: state.scheduler.is_running(task.id),
+                webhook_url: is_hook.then(|| automation::webhook_url(&app, task.id)).flatten(),
+                public_webhook_url: is_hook.then(|| automation::public_webhook_url(&app, task.id)).flatten(),
+                deliveries: if is_hook { state.scheduler.deliveries(task.id) } else { Vec::new() },
+                session_title: task.last_session.and_then(|s| manager.as_ref()?.run(s)).map(|r| r.title),
+                task,
+            }
         })
         .collect();
     let (listening, listener_error) = state.listener();
-    AutomationOverview { settings: state.settings(), tasks, listening, listener_error }
+    AutomationOverview { settings: state.settings(), tasks, listening, listener_error, relay_state: state.relay_state() }
 }
 
 #[tauri::command]
@@ -64,6 +77,7 @@ pub fn automation_save_settings(app: AppHandle, state: State<'_, AutomationState
     *crate::agents::lock(&state.settings) = settings.clone();
     settings.save_to(&AutomationSettings::file());
     automation::apply_listener(&app);
+    automation::apply_relay(&app);
     let _ = app.emit("automation-changed", ());
 }
 
@@ -73,6 +87,7 @@ pub fn automation_save_task(app: AppHandle, state: State<'_, AutomationState>, t
         return Err(nook_core::i18n::tr("Schrijf een prompt.", "Write a prompt.").into());
     }
     let saved = state.scheduler.save_task(task, Utc::now(), &Local);
+    automation::apply_relay(&app);
     let _ = app.emit("automation-changed", ());
     Ok(saved)
 }
@@ -80,6 +95,7 @@ pub fn automation_save_task(app: AppHandle, state: State<'_, AutomationState>, t
 #[tauri::command]
 pub fn automation_delete_task(app: AppHandle, state: State<'_, AutomationState>, task: String) -> Res<()> {
     state.scheduler.delete(id(&task)?);
+    automation::apply_relay(&app);
     let _ = app.emit("automation-changed", ());
     Ok(())
 }
@@ -87,6 +103,7 @@ pub fn automation_delete_task(app: AppHandle, state: State<'_, AutomationState>,
 #[tauri::command]
 pub fn automation_set_task_enabled(app: AppHandle, state: State<'_, AutomationState>, task: String, enabled: bool) -> Res<()> {
     state.scheduler.set_enabled(id(&task)?, enabled, Utc::now(), &Local);
+    automation::apply_relay(&app);
     let _ = app.emit("automation-changed", ());
     Ok(())
 }

@@ -69,4 +69,6 @@ pub mod token_savings;
 pub mod traffic;
 pub mod tuning;
 pub mod webhook;
+pub mod webhook_relay;
+pub mod webhook_rules;
 pub mod worktree_setup;

@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { blankTask, curlExample, editorValues, presetOf, problem, reasonLabel, ruleFor, ruleLabel } from "./automation";
+import {
+  blankTask,
+  curlExample,
+  deliveryDetailLabel,
+  deliveryOutcomeLabel,
+  editorValues,
+  newWebhookFilter,
+  presetOf,
+  problem,
+  reasonLabel,
+  ruleFor,
+  ruleLabel,
+} from "./automation";
 
 const values = { minutes: 30, time: "07:05", weekdays: [] as number[], at: "2099-01-02T03:04" };
 
@@ -34,16 +46,29 @@ describe("scheduled task editor", () => {
     expect(problem(t)).toBeNull();
     t.rule = { type: "once", at: "2000-01-01T00:00:00Z" };
     expect(problem(t)).toBeTruthy();
+    t.rule = { type: "webhook" };
+    t.webhook = { filters: [newWebhookFilter()], duplicateKey: "", coalesceSeconds: 0 };
+    expect(problem(t)).toContain("body.action");
+    t.webhook.filters[0].field = "body.action";
+    expect(problem(t)).toBeNull();
     expect(t.permission).toBe("ask");
     expect(t.enabled).toBe(true);
   });
 
-  it("labels rules and reasons", () => {
+  it("labels rules, reasons, and webhook deliveries", () => {
     expect(ruleLabel({ type: "webhook" })).toBeTruthy();
     expect(ruleLabel({ type: "fixedTime", hour: 9, minute: 0, weekdays: [] })).toContain("09:00");
     expect(reasonLabel("sched.skip.missed")).not.toBe("sched.skip.missed");
     expect(reasonLabel("boom")).toBe("boom");
     expect(reasonLabel(null)).toBeNull();
     expect(curlExample("http://127.0.0.1:8787/hooks/x")).toContain("X-Hub-Signature-256: sha256=$sig");
+    expect(deliveryOutcomeLabel("accepted")).toBe("Accepted");
+    expect(deliveryOutcomeLabel("coalesced")).toBe("Combined");
+    expect(deliveryDetailLabel({ outcome: "accepted", detail: null })).toContain("Runs");
+    expect(deliveryDetailLabel({ outcome: "accepted", detail: "120" })).toContain("120");
+    expect(deliveryDetailLabel({ outcome: "filtered", detail: "body.action = opened" })).toContain("body.action = opened");
+    expect(deliveryDetailLabel({ outcome: "duplicate", detail: "pr-42" })).toContain("pr-42");
+    expect(deliveryDetailLabel({ outcome: "coalesced", detail: "3" })).toContain("3");
+    expect(deliveryDetailLabel({ outcome: "queueFull", detail: null })).toContain("waiting");
   });
 });

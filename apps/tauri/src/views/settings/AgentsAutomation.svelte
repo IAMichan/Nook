@@ -8,8 +8,9 @@
   import { agents } from "../../lib/agents.svelte";
   import { permissionLabels, type RunProvider } from "../../lib/workspace/api";
   import {
-    automationApi, autonomyLevels, blankTask, curlExample, editorValues, presetOf, problem, reasonLabel, ruleFor, ruleLabel, statusLabel,
-    weekdayOrder, weekdayShort, type AutomationOverview, type NookAutonomy, type Preset, type ScheduledTask,
+    automationApi, autonomyLevels, blankTask, curlExample, deliveryDetailLabel, deliveryOutcomeLabel, editorValues, emptyWebhookRules,
+    newWebhookFilter, presetOf, problem, reasonLabel, ruleFor, ruleLabel, statusLabel, weekdayOrder, weekdayShort,
+    type AutomationOverview, type NookAutonomy, type Preset, type ScheduledTask, type WebhookFilterTest,
   } from "../../lib/workspace/automation";
   import { workspace } from "../../lib/workspace/store.svelte";
   import { tr } from "../../lib/i18n.svelte";
@@ -20,6 +21,7 @@
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let editing = $state<ScheduledTask | null>(null);
+  let editingNew = $state(false);
   let preset = $state<Preset>("daily");
   let values = $state(editorValues({ type: "fixedTime", hour: 9, minute: 0, weekdays: [] }));
   let portDraft = $state("");
@@ -71,13 +73,33 @@
 
   function begin(task?: ScheduledTask) {
     const t = task ? structuredClone($state.snapshot(task)) : blankTask(projects[0] ?? "", (workspace.settings?.defaultProvider ?? "claude") as RunProvider);
+    if (!t.webhook) t.webhook = emptyWebhookRules();
     editing = t;
+    editingNew = !task;
     preset = presetOf(t.rule);
     values = editorValues(t.rule);
   }
 
+  const editingTaskView = $derived(editing && !editingNew ? view?.tasks.find((t) => t.id === editing!.id) ?? null : null);
   const draftRule = $derived(editing ? ruleFor(preset, values) : null);
   const draftProblem = $derived(editing && draftRule ? problem({ ...editing, rule: draftRule }) : null);
+
+  function addFilter() {
+    if (!editing) return;
+    if (!editing.webhook) editing.webhook = emptyWebhookRules();
+    editing.webhook.filters = [...editing.webhook.filters, newWebhookFilter()];
+  }
+
+  function removeFilter(id: string) {
+    if (!editing?.webhook) return;
+    editing.webhook.filters = editing.webhook.filters.filter((f) => f.id !== id);
+  }
+
+  function setCoalesceEnabled(on: boolean) {
+    if (!editing) return;
+    if (!editing.webhook) editing.webhook = emptyWebhookRules();
+    editing.webhook.coalesceSeconds = on ? Math.max(10, Math.min(3600, editing.webhook.coalesceSeconds || 120)) : 0;
+  }
 
   async function chooseFolder() {
     const picked = await openDialog({ directory: true, multiple: false }).catch(() => null);
@@ -93,7 +115,15 @@
 
   async function save() {
     if (!editing || !draftRule || draftProblem) return;
-    const task = { ...$state.snapshot(editing), rule: draftRule };
+    const snap = $state.snapshot(editing);
+    if (snap.webhook && snap.webhook.coalesceSeconds > 0) {
+      snap.webhook.coalesceSeconds = Math.max(10, Math.min(3600, Math.round(snap.webhook.coalesceSeconds)));
+    }
+    const task: ScheduledTask = {
+      ...snap,
+      rule: draftRule,
+      webhook: draftRule.type === "webhook" ? (snap.webhook ?? emptyWebhookRules()) : emptyWebhookRules(),
+    };
     await act(() => automationApi.saveTask(task));
     if (!error) editing = null;
   }
@@ -125,8 +155,8 @@
 </script>
 
 {#if view}
-  <!-- The Mac's Automation: scheduled tasks (on, the webhook port, the tasks), then the workspace for agents. Automatic
-       titles are under Sessions › Behavior, as on the Mac. -->
+  <!-- The Mac's Automation: scheduled tasks (on, the webhook port, public relay, the tasks), then the workspace for
+       agents. Automatic titles are under Sessions › Behavior, as on the Mac. -->
   <div class="section-head">
     <h3>{tr("Geplande taken", "Scheduled tasks")}</h3>
     {#if !editing}
@@ -143,6 +173,20 @@
       {#if !portValid}<p class="note err">{tr("Kies een poort tussen 1024 en 65535, of 0 om webhooks uit te zetten.", "Choose a port between 1024 and 65535, or 0 to turn webhooks off.")}</p>{/if}
       {#if view.listening}<p class="note ok">{tr("Luistert op 127.0.0.1:{port} (alleen deze computer)", "Listening on 127.0.0.1:{port} (this computer only)", { port: view.listening })}</p>{/if}
       {#if view.listenerError}<p class="note err">{tr("De webhook-luisteraar kon niet starten: {error}", "The webhook listener could not start: {error}", { error: view.listenerError })}</p>{/if}
+      <label class="row"><span>{tr("Webhooks van internet ontvangen", "Receive webhooks from the internet")}</span>
+        <input type="checkbox" role="switch" checked={!!view.settings.webhooksPublic} onchange={(e) => { if (!view) return; view.settings.webhooksPublic = (e.target as HTMLInputElement).checked; saveSettings(); }} />
+      </label>
+      <p class="faint note">{tr("Diensten zoals GitHub kunnen de webhook-taken van deze computer starten via de relay uit Instellingen › Companion. Deze computer moet aanstaan en Nook open zijn. Elk verzoek moet nog steeds ondertekend zijn.", "Services such as GitHub can start this computer's webhook tasks through the relay from Settings › Companion. This computer must be on and Nook open. Every request must still be signed.")}</p>
+      {#if view.settings.webhooksPublic}
+        <p class="note warn">{tr("De relay geeft de inhoud van webhooks leesbaar door, maar bewaart niets. Companion-verkeer blijft versleuteld.", "The relay passes webhook contents readable, but keeps none of them. Companion traffic stays sealed.")}</p>
+        {#if view.relayState === "noRelay"}
+          <p class="note err">{tr("Kies eerst een relay onder Instellingen › Companion › Buiten de deur.", "Choose a relay under Settings › Companion › Away from home first.")}</p>
+        {:else if view.relayState === "connected"}
+          <p class="note ok">{tr("Verbonden met de webhook-relay", "Connected to the webhook relay")}</p>
+        {:else if view.relayState === "connecting"}
+          <p class="faint note">{tr("Verbinden met de webhook-relay…", "Connecting to the webhook relay…")}</p>
+        {/if}
+      {/if}
     {/if}
     {#each view.tasks as t (t.id)}
       <div class="task" class:off={!t.enabled}>
@@ -169,12 +213,34 @@
             {#if t.webhookUrl}
               <span class="mono">{t.webhookUrl}</span>
               <button class="ghost" onclick={() => copy(t.webhookUrl!)}>{tr("Kopieer adres", "Copy address")}</button>
+            {/if}
+            {#if t.publicWebhookUrl}
+              <span class="faint">{tr("Webhook-adres (vanaf internet)", "Webhook address (from the internet)")}:</span>
+              <span class="mono">{t.publicWebhookUrl}</span>
+              <button class="ghost" onclick={() => copy(t.publicWebhookUrl!)}>{tr("Kopieer publiek adres", "Copy public address")}</button>
+            {/if}
+            {#if t.webhookUrl || t.publicWebhookUrl}
               <button class="ghost" onclick={async () => copy(await automationApi.secret(t.id))}>{tr("Kopieer geheim", "Copy secret")}</button>
               <button class="ghost" onclick={() => act(async () => copy(await automationApi.secret(t.id, true)))}>{tr("Nieuw geheim", "New secret")}</button>
             {:else}
               <span class="faint">{tr("Kies eerst een poort hierboven om het webhook-adres te zien.", "Choose a port above first to see the webhook address.")}</span>
             {/if}
           </div>
+          {#if t.deliveries?.length}
+            <details class="deliveries">
+              <summary class="faint">{tr("Leveringen ({count})", "Deliveries ({count})", { count: t.deliveries.length })}</summary>
+              <div class="delivery-list">
+                {#each t.deliveries as d (d.id)}
+                  <div class="delivery-row">
+                    <span class="badge {d.outcome}">{deliveryOutcomeLabel(d.outcome)}</span>
+                    <span class="mono">{d.deliveryId}</span>
+                    <span class="faint">{when(d.receivedAt)}</span>
+                    <span class="faint">{deliveryDetailLabel(d)}</span>
+                  </div>
+                {/each}
+              </div>
+            </details>
+          {/if}
         {/if}
         {#if confirmDelete === t.id}
           <div class="line">
@@ -232,7 +298,68 @@
         <p class="faint note">{tr("Draait één keer op dit moment, daarna is de taak klaar. Slaapt de computer dan, dan draait hij zodra Nook weer wakker is.", "Runs one time at this moment, then the task is done. If the computer is asleep then, it runs as soon as Nook is awake again.")}</p>
       {:else}
         <p class="faint note">{tr("Stuur een POST met de header X-Hub-Signature-256: sha256=<HMAC-SHA256 van de body met het geheim> en een unieke X-Nook-Delivery. Zonder geldige handtekening start er niets. De inhoud komt bij de agent aan als onbetrouwbare gegevens. Gebruik {{body.pad}} of {{headers.naam}} in de prompt om alleen die waarden mee te geven. Na bewaren krijg je het adres en het geheim.", "Send a POST with the header X-Hub-Signature-256: sha256=<HMAC-SHA256 of the body with the secret> and a unique X-Nook-Delivery. Nothing starts without a valid signature. The content reaches the agent as untrusted data. Use {{body.path}} or {{headers.name}} in the prompt to pass only those values. After saving you get the address and the secret.")}</p>
-        {#if view.listening}<pre class="mono">{curlExample(`http://127.0.0.1:${view.listening}/hooks/${editing.id}`)}</pre>{/if}
+        {#if editing.webhook}
+          <div class="col">
+            <div class="line">
+              <span>{tr("Filters", "Filters")}</span>
+              <span class="spacer"></span>
+              <button class="ghost" onclick={addFilter}><Ico name="plus" size={14} />{tr("Filter toevoegen", "Add filter")}</button>
+            </div>
+            {#each editing.webhook.filters as f (f.id)}
+              <div class="filter-row">
+                <input bind:value={f.field} placeholder="headers.x-github-event" />
+                <select value={f.test} onchange={(e) => { f.test = (e.target as HTMLSelectElement).value as WebhookFilterTest; }}>
+                  <option value="equals">{tr("is gelijk aan", "equals")}</option>
+                  <option value="oneOf">{tr("is een van", "is one of")}</option>
+                  <option value="exists">{tr("bestaat", "exists")}</option>
+                </select>
+                {#if f.test !== "exists"}
+                  <input bind:value={f.value} placeholder={f.test === "oneOf" ? "opened, reopened" : tr("Waarde", "Value")} />
+                {/if}
+                <button class="ghost danger" use:tip={tr("Filter verwijderen", "Remove filter")} onclick={() => removeFilter(f.id)}>{tr("Verwijder", "Delete")}</button>
+              </div>
+            {/each}
+            <p class="faint note">{tr("De taak draait alleen als elk filter klopt; andere leveringen krijgen antwoord, worden gelogd als gefilterd en starten niets. Waarden worden als tekst vergeleken; een object of lijst haalt alleen ‘bestaat’. Scheid de keuzes van ‘is een van’ met komma’s.", "The task runs only when every filter matches; other deliveries are answered, logged as filtered and start nothing. Values compare as text; an object or a list only passes “exists”. Separate the choices of “is one of” with commas.")}</p>
+          </div>
+          <label class="row"><span>{tr("Dubbele sleutel", "Duplicate key")}</span>
+            <input bind:value={editing.webhook.duplicateKey} placeholder={"{{body.pull_request.id}}-{{body.action}}"} />
+          </label>
+          <p class="faint note">{tr("Een levering waarvan de sleutel de afgelopen week al langskwam, wordt overgeslagen. Gebruik placeholders; heeft er een geen waarde, dan vervalt de controle voor die levering. Laat leeg om het uit te zetten.", "A delivery whose key was seen in the past week is skipped. Use placeholders; when one has no value, the check is left out for that delivery. Leave empty to turn it off.")}</p>
+          <div class="row">
+            <label class="check"><input type="checkbox" role="switch" checked={editing.webhook.coalesceSeconds > 0} onchange={(e) => setCoalesceEnabled((e.target as HTMLInputElement).checked)} /> {tr("Reeksen samenvoegen", "Combine bursts")}</label>
+            {#if editing.webhook.coalesceSeconds > 0}
+              <span class="inline">
+                <span class="faint">{tr("Eén run per venster van", "One run per window of")}</span>
+                <input class="port" type="number" min="10" max="3600" bind:value={editing.webhook.coalesceSeconds} />
+                <span class="faint">{tr("seconden", "seconds")}</span>
+              </span>
+            {/if}
+          </div>
+          <p class="faint note">{tr("Het venster gaat open bij de eerste levering; leveringen erna verlengen het niet. Als het sluit, krijgt één run de laatste levering.", "The window opens with the first delivery; deliveries that follow within it do not extend it. When it closes, one run gets the latest delivery.")}</p>
+        {/if}
+        {#if editingTaskView}
+          {@const deliveries = editingTaskView.deliveries ?? []}
+          <details class="deliveries">
+            <summary class="faint">{tr("Leveringen ({count})", "Deliveries ({count})", { count: deliveries.length })}</summary>
+            {#if deliveries.length}
+              <div class="delivery-list">
+                {#each deliveries as d (d.id)}
+                  <div class="delivery-row">
+                    <span class="badge {d.outcome}">{deliveryOutcomeLabel(d.outcome)}</span>
+                    <span class="mono">{d.deliveryId}</span>
+                    <span class="faint">{when(d.receivedAt)}</span>
+                    <span class="faint">{deliveryDetailLabel(d)}</span>
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <p class="faint note">{tr("Nog geen leveringen.", "No deliveries yet.")}</p>
+            {/if}
+          </details>
+        {/if}
+        {#if editingTaskView?.publicWebhookUrl || view.listening}
+          <pre class="mono">{curlExample(editingTaskView?.publicWebhookUrl ?? `http://127.0.0.1:${view.listening}/hooks/${editing.id}`)}</pre>
+        {/if}
       {/if}
 
       <label class="row"><span>{tr("Waar runs heen gaan", "Where runs go")}</span>
@@ -321,6 +448,7 @@
   .inline { display: flex; gap: var(--space-6); align-items: center; }
   .check { display: flex; gap: var(--space-8); align-items: center; }
   .ok { color: var(--mint) !important; }
+  .warn { color: var(--amber) !important; }
   .err { color: var(--coral) !important; }
   .port { width: 90px; }
   .task { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); }
@@ -333,6 +461,16 @@
   .status.failed { color: var(--coral); }
   .status.succeeded { color: var(--mint); }
   .hook { display: flex; gap: var(--space-6); align-items: center; flex-wrap: wrap; font: var(--text-detail); }
+  .filter-row { display: flex; gap: var(--space-6); align-items: center; flex-wrap: wrap; }
+  .filter-row input { flex: 1; min-width: 140px; }
+  .deliveries { padding: var(--space-6) 0; font: var(--text-detail); }
+  .deliveries summary { cursor: pointer; user-select: none; }
+  .delivery-list { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-6); }
+  .delivery-row { display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; padding: var(--space-4) var(--space-8); background: var(--row-hover); border-radius: var(--radius-chip); }
+  .badge { font: var(--text-detail); padding: var(--space-2) var(--space-6); border-radius: var(--radius-chip); background: var(--surface); border: 1px solid var(--separator); }
+  .badge.accepted { color: var(--mint); }
+  .badge.coalesced { color: var(--amber); }
+  .badge.queueFull { color: var(--coral); }
   .mono { font: var(--text-code); }
   pre.mono { white-space: pre-wrap; word-break: break-all; margin: 0; padding: var(--space-6) var(--space-8); background: var(--row-hover); border-radius: var(--radius-chip); }
   .editor { margin-top: var(--space-8); background: var(--surface); border: 1px solid var(--separator); border-radius: var(--radius-panel); padding: 0 var(--space-16) var(--space-12); display: flex; flex-direction: column; }

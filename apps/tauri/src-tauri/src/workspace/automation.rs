@@ -12,6 +12,7 @@ use nook_core::workspace::delegation::Links;
 use nook_core::workspace::handoff::HandoffStore;
 use nook_core::workspace::models::RunProvider;
 use nook_core::workspace::scheduler::{AutomationSettings, Scheduler, TICK_SECONDS};
+use nook_core::workspace::webhook_relay::{RelayState, WebhookRelayClient};
 use nook_core::workspace::{titles, webhook};
 use tauri::{AppHandle, Emitter, Manager as _};
 use uuid::Uuid;
@@ -32,7 +33,9 @@ pub struct AutomationState {
     pub settings: Mutex<AutomationSettings>,
     pub handoffs: HandoffStore,
     pub links: Links,
+    pub relay: WebhookRelayClient,
     listener: Mutex<Listener>,
+    coalesce_timer: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
 impl AutomationState {
@@ -45,21 +48,91 @@ impl AutomationState {
         let l = lock(&self.listener);
         (l.task.is_some().then_some(l.port), l.error.clone())
     }
+
+    /// The live status of the public webhook relay connection.
+    pub fn relay_state(&self) -> RelayState {
+        self.relay.state()
+    }
 }
 
-/// After `workspace::setup`: loads the tasks, starts the tick and, when chosen, the webhook listener.
+/// Shared handler for both the local loopback webhook listener and the public webhook relay.
+fn make_webhook_handler(app: &AppHandle) -> webhook::Handler {
+    let handle = app.clone();
+    Arc::new(move |request| {
+        let Some(auto) = handle.try_state::<AutomationState>() else { return (503, "unavailable".into()) };
+        let answer = auto.scheduler.handle_webhook(auto.settings().scheduled_tasks, &request, Utc::now());
+        if answer.0 == 202 {
+            let app = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tick(&app).await;
+                schedule_coalesce_flush(&app);
+            });
+        }
+        let _ = handle.emit("automation-changed", ());
+        answer
+    })
+}
+
+/// Schedules a one-shot wake-up for the earliest open coalesce window, so a burst flushes right when its window closes
+/// instead of waiting for the 30-second tick.
+pub fn schedule_coalesce_flush(app: &AppHandle) {
+    let Some(auto) = app.try_state::<AutomationState>() else { return };
+    let mut timer = lock(&auto.coalesce_timer);
+    if let Some(old) = timer.take() {
+        old.abort();
+    }
+    let Some(deadline) = auto.scheduler.next_coalesce_deadline() else { return };
+    let delay = (deadline - Utc::now()).to_std().unwrap_or_default() + Duration::from_millis(50);
+    let handle = app.clone();
+    *timer = Some(tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(delay).await;
+        tick(&handle).await;
+        schedule_coalesce_flush(&handle);
+    }));
+}
+
+#[cfg(desktop)]
+fn current_relay_url(app: &AppHandle) -> Option<String> {
+    app.try_state::<crate::companion::Companion>().and_then(|c| crate::companion::current_relay(c.server.store()))
+}
+
+#[cfg(not(desktop))]
+fn current_relay_url(_: &AppHandle) -> Option<String> {
+    None
+}
+
+/// After `workspace::setup`: loads the tasks, resumes any waiting webhook deliveries from before the last quit, and
+/// starts the tick, local webhook listener, and public webhook relay when chosen.
 pub fn setup(app: &AppHandle) {
     let secrets = app.state::<AppState>().secrets.clone();
     let directory = nook_core::paths::support_directory().join("workspace");
-    let scheduler = Arc::new(Scheduler::new(Scheduler::file(), secrets, Utc::now(), &Local));
+    let scheduler = Arc::new(Scheduler::new(Scheduler::file(), secrets.clone(), Utc::now(), &Local));
+    let settings = AutomationSettings::load_from(&AutomationSettings::file());
+    let resumed = scheduler.resume_restored_webhooks(settings.scheduled_tasks);
+    let change_handle = app.clone();
+    let relay = WebhookRelayClient::new(
+        secrets,
+        make_webhook_handler(app),
+        Arc::new(move || {
+            let _ = change_handle.emit("automation-changed", ());
+        }),
+        tauri::async_runtime::handle().inner().clone(),
+    );
     app.manage(AutomationState {
         scheduler: scheduler.clone(),
-        settings: Mutex::new(AutomationSettings::load_from(&AutomationSettings::file())),
+        settings: Mutex::new(settings),
         handoffs: HandoffStore::new(&directory),
         links: Links::new(&directory),
+        relay,
         listener: Mutex::new(Listener::default()),
+        coalesce_timer: Mutex::new(None),
     });
     apply_listener(app);
+    apply_relay(app);
+    if resumed {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move { tick(&handle).await });
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
@@ -157,16 +230,7 @@ pub fn apply_listener(app: &AppHandle) {
         let _ = app.emit("automation-changed", ());
         return;
     };
-    let handle = app.clone();
-    let handler: webhook::Handler = Arc::new(move |request| {
-        let Some(auto) = handle.try_state::<AutomationState>() else { return (503, "unavailable".into()) };
-        let answer = auto.scheduler.handle_webhook(auto.settings().scheduled_tasks, &request, Utc::now());
-        if answer.0 == 202 {
-            let app = handle.clone();
-            tauri::async_runtime::spawn(async move { tick(&app).await });
-        }
-        answer
-    });
+    let handler = make_webhook_handler(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = webhook::listen(port, handler).await;
@@ -185,10 +249,30 @@ pub fn apply_listener(app: &AppHandle) {
     });
 }
 
+/// Connects, reconnects, or stops the public webhook relay after a change of settings, tasks, or companion relay.
+pub fn apply_relay(app: &AppHandle) {
+    let Some(auto) = app.try_state::<AutomationState>() else { return };
+    let settings = auto.settings();
+    let wanted =
+        settings.scheduled_tasks && settings.webhooks_public && auto.scheduler.tasks().iter().any(|t| t.enabled && t.rule.is_webhook());
+    let relay = current_relay_url(app);
+    auto.relay.apply(wanted, relay.as_deref());
+}
+
 /// The address of a task's webhook while the listener is on.
 pub fn webhook_url(app: &AppHandle, task: Uuid) -> Option<String> {
     let port = app.try_state::<AutomationState>()?.settings().listening_port()?;
     Some(format!("http://127.0.0.1:{port}/hooks/{task}"))
+}
+
+/// The public address of a task's webhook through the relay, while public webhooks are on and a relay is configured.
+pub fn public_webhook_url(app: &AppHandle, task: Uuid) -> Option<String> {
+    let auto = app.try_state::<AutomationState>()?;
+    if !auto.settings().webhooks_public {
+        return None;
+    }
+    let relay = current_relay_url(app)?;
+    auto.relay.public_url(&relay, task)
 }
 
 /// The title rules `project` sets for itself (Settings › Projects), empty when none.

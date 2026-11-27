@@ -378,7 +378,9 @@ pub fn companion_set_relay(
         }
         companion.server.store().set_relay(nook_core::companion::store::RelaySettings { enabled, own, address });
         companion::apply_relay(&companion);
+        crate::workspace::automation::apply_relay(&app);
         let _ = app.emit("guest-shares-changed", ());
+        let _ = app.emit("automation-changed", ());
         Ok(info(&companion))
     }
     #[cfg(not(desktop))]

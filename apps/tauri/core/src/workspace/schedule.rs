@@ -311,6 +311,9 @@ pub struct ScheduledTask {
     /// asks: it must not start acting by itself.
     #[serde(default, deserialize_with = "autonomy_or_ask", skip_serializing_if = "is_ask")]
     pub autonomy: super::autonomy::NookAutonomy,
+    /// For webhook tasks: filters, duplicate key template and burst coalescing window (`WebhookRules` on the Mac).
+    #[serde(default, skip_serializing_if = "super::webhook_rules::WebhookRules::is_empty")]
+    pub webhook: super::webhook_rules::WebhookRules,
 }
 
 fn autonomy_or_ask<'de, D: Deserializer<'de>>(d: D) -> Result<super::autonomy::NookAutonomy, D::Error> {
@@ -344,6 +347,7 @@ impl ScheduledTask {
             quiet: false,
             preset: None,
             autonomy: Default::default(),
+            webhook: Default::default(),
         }
     }
 
@@ -471,6 +475,8 @@ pub struct WebhookQueue(HashMap<Uuid, usize>);
 pub const MAX_QUEUED_PER_TASK: usize = 20;
 
 impl WebhookQueue {
+    pub const MAX_QUEUED_PER_TASK: usize = MAX_QUEUED_PER_TASK;
+
     pub fn count(&self, task: Uuid) -> usize {
         self.0.get(&task).copied().unwrap_or(0)
     }
