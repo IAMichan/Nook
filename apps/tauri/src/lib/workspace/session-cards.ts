@@ -1,7 +1,7 @@
 // The cards an agent puts in its own timeline through the bridge (`session_suggest`, `render_page`): reading them from
 // their event and what choosing on a suggestion does. The rules match `core/src/workspace/session_cards.rs`.
 import { invoke } from "@tauri-apps/api/core";
-import type { IsolationMode, NewRunConfig, PermissionPolicy, RunEvent, RunProvider, WorkspaceRun } from "./api";
+import type { FolderChoices, IsolationMode, NewRunConfig, PermissionPolicy, RunEvent, RunProvider, WorkspaceRun } from "./api";
 
 export const SUGGESTION_TOOL = "session_suggestion";
 export const PAGE_TOOL = "render_page";
@@ -15,6 +15,16 @@ export interface SessionSuggestion {
 }
 
 export type SuggestionChoice = "start" | "here" | "options" | "dismiss";
+
+export interface SuggestionDefaults {
+  models: Record<string, string>;
+  profiles: Record<string, string>;
+  efforts?: Record<string, string>;
+  isolation?: IsolationMode;
+  permission?: PermissionPolicy;
+  worktreeRoot?: string;
+  folderChoices?: Record<string, FolderChoices>;
+}
 
 /** The suggestion an event carries; null for any other event. */
 export function suggestionOf(event: RunEvent): SessionSuggestion | null {
@@ -41,32 +51,47 @@ export function pageHeight(event: RunEvent): number {
   return Number.isFinite(h) && h > 0 ? Math.min(1200, Math.max(80, Math.round(h))) : 360;
 }
 
-/** The new session a suggestion starts beside `run`: its agent (or the run's), the run's project, a worktree of its
-    own when asked, and Ask as its rights when the agent offers it. */
+function cleanFolder(raw: string): string {
+  const trimmed = raw.trim();
+  return trimmed.length > 1 ? trimmed.replace(/[\\/]+$/, "") : trimmed;
+}
+
+/** The new session a suggestion starts beside `run` (`AppModel.startSuggestion` on the Mac): the same project,
+    the same agent/account/model/effort/permission unless the suggestion names another agent, and the folder's own
+    defaults for everything else. */
 export function suggestedConfig(
   s: SessionSuggestion,
   run: WorkspaceRun,
   provider: RunProvider,
   policies: PermissionPolicy[],
-  defaults: { models: Record<string, string>; profiles: Record<string, string> },
+  defaults: SuggestionDefaults,
+  resolvedBaseBranch = "",
 ): NewRunConfig {
   const same = provider === run.provider;
-  const isolation: IsolationMode = s.worktree === true ? "worktree" : s.worktree === false ? "folder" : run.isolation;
+  const projectPath = run.projectPath || run.workingDirectory;
+  const folder = defaults.folderChoices?.[cleanFolder(projectPath)];
+  const isolation: IsolationMode =
+    s.worktree === true ? "worktree" : s.worktree === false ? "folder" : (folder?.isolation ?? defaults.isolation ?? run.isolation);
+  const fallbackPermission: PermissionPolicy = policies.includes("ask") ? "ask" : (policies[0] ?? "ask");
+  const wantedPermission: PermissionPolicy | undefined = same ? run.permission : (folder?.permission ?? defaults.permission);
+  const permission: PermissionPolicy = wantedPermission && policies.includes(wantedPermission) ? wantedPermission : fallbackPermission;
+  const folderAgent = folder?.agents?.[provider];
+
   return {
     title: s.title,
     task: s.prompt,
     provider,
-    profileId: same ? run.profileId : (defaults.profiles[provider] ?? provider),
-    model: same ? run.model : (defaults.models[provider] ?? ""),
+    profileId: same ? run.profileId : (folderAgent?.profileId || defaults.profiles[provider] || provider),
+    model: same ? run.model : (folderAgent?.model ?? defaults.models[provider] ?? ""),
     mode: "agent",
-    permission: policies.includes("ask") ? "ask" : (policies[0] ?? "ask"),
+    permission,
     isolation,
-    projectPath: run.projectPath || run.workingDirectory,
-    baseBranch: isolation === "worktree" ? (run.baseBranch ?? "") : "",
+    projectPath,
+    baseBranch: isolation === "worktree" ? (resolvedBaseBranch || run.baseBranch || "") : "",
     branchName: "",
-    worktreeRoot: "",
+    worktreeRoot: defaults.worktreeRoot ?? "",
     instructions: "",
-    effort: null,
+    effort: same ? (run.effort ?? null) : (folderAgent?.effort ?? defaults.efforts?.[provider] ?? null),
   };
 }
 

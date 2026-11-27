@@ -527,7 +527,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-70** Suggested next prompt as ghost text, and choosing who writes titles, commits and PR text; title rules, Regenerate title (`+NextPrompt`, `TextGenerators`, `TextGeneration`, `TextGenerationSettings`) · M Done (2026-11-23): suggested next prompt ghost text (`Tab` accept / `Esc` dismiss) in `RunComposer.svelte`, Regenerate title & title rules, and text generator pickers in `AgentsWorkspace.svelte` (per-kind CLI/API Test stays tracked in SV-65).
 
-- [ ] **AG-71** Session suggestions and suggested steps (`SessionSuggestion`, `AppModel+SessionSuggestion`, #1683) · M
+- [x] **AG-71** Session suggestions and suggested steps (`SessionSuggestion`, `AppModel+SessionSuggestion`, #1683) · M Done (2026-11-27): suggested-session cards (`core/src/workspace/session_cards.rs`, `src-tauri/src/workspace/bridge/cards.rs`, `src-tauri/src/commands/session_cards.rs`, `lib/workspace/session-cards.ts`, `views/agents/run/SuggestionCard.svelte` with folder/run defaults, worktree base-branch resolution, Open toast, and error reporting) and suggested steps (`core/src/brain/action_suggestion.rs`, `src-tauri/src/commands/suggestions.rs`, `lib/action-suggestions.svelte.ts`, `components/ActionSuggestionBar.svelte` mounted across Nook Chat, Chats, RunPanel, and LiveDetail with Settings › Typing toggle and model picker).
 
 - [ ] **AG-72** Main thread mode and sub-threads (`SubThreadLineage`, `SubThreadBeside`) · L
 
