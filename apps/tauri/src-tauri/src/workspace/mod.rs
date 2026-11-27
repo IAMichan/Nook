@@ -34,6 +34,7 @@ use crate::state::AppState;
 
 pub struct WorkspaceState {
     pub manager: Arc<Manager>,
+    pub governor: Arc<nook_core::workspace::governor::AgentGovernor>,
     pub settings: Arc<Mutex<WorkspaceSettings>>,
     #[cfg(desktop)]
     pub terminals: terminals::Terminals,
@@ -81,12 +82,44 @@ pub fn setup(app: &AppHandle) {
     let auto_pull_app = app.clone();
     let auto_pull_settings = settings.clone();
     let directory = nook_core::paths::support_directory().join("workspace");
-    let manager = Manager::new(directory, hooks, runtime, move |event| on_event(&handle, event));
+    let governor_record = directory.join("paused-groups.json");
+    let manager = Manager::new(directory, hooks, runtime.clone(), move |event| on_event(&handle, event));
+    let hot_app = app.clone();
+    let emit_app = app.clone();
+    let governor = nook_core::workspace::governor::AgentGovernor::new(
+        manager.clone(),
+        runtime,
+        governor_record,
+        Box::new(move || {
+            hot_app.try_state::<crate::services::Services>().is_some_and(|_| crate::services::energy::view(&hot_app).signals.hot)
+        }),
+        Box::new(move |throttles| {
+            let _ = emit_app.emit("agent-governor-changed", &throttles);
+        }),
+    );
+    let release_gov = governor.clone();
+    manager.set_before_stop(move |pid| release_gov.release_agent(pid));
+    if desktop {
+        governor.start();
+    }
+    let exe_app = app.clone();
+    manager.set_account_executable(move |profile_id| {
+        let agents = exe_app.try_state::<AgentsState>()?;
+        let path = lock(&agents.profiles).profile(profile_id)?.executable_override();
+        path
+    });
+    let args_app = app.clone();
+    manager.set_account_arguments(move |profile_id| {
+        let Some(agents) = args_app.try_state::<AgentsState>() else { return Vec::new() };
+        let args = lock(&agents.profiles).profile(profile_id).map(|p| p.launch_arguments()).unwrap_or_default();
+        args
+    });
     if let Some(services) = app.try_state::<crate::services::Services>() {
         manager.recap.set(services.recap.clone());
     }
     app.manage(WorkspaceState {
         manager: manager.clone(),
+        governor,
         settings,
         #[cfg(desktop)]
         terminals: Default::default(),
@@ -121,6 +154,9 @@ pub fn setup(app: &AppHandle) {
             if tick % 60 == 5 {
                 let m = manager.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || m.refresh_worktrees()).await;
+            }
+            if tick % 30 == 10 {
+                manager.check_idle_compactions();
             }
             // Auto-pull default branches roughly every 15 minutes per repo, when enabled globally or per project.
             if tick % 30 == 15 {
@@ -215,25 +251,21 @@ pub fn bridge_script() -> std::path::PathBuf {
 /// Bij afsluiten: alles wegschrijven en lopende agents netjes stoppen.
 pub fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<WorkspaceState>() {
+        state.governor.release_all();
         state.manager.shutdown();
         #[cfg(desktop)]
         state.terminals.close_all();
     }
 }
 
-/// De omgeving van een account: `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/…, en bij een Claude-account met API-sleutel die
-/// sleutel uit de kluis. Rechtstreeks naar het proces; nooit gelogd of bewaard.
+/// De omgeving van een account: eigen omgevingsvariabelen (ook uit de kluis), daarna `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/…,
+/// en bij een Claude-account met API-sleutel die sleutel uit de kluis. Rechtstreeks naar het proces; nooit gelogd of bewaard.
 fn account_environment(app: &AppHandle, profile_id: &str) -> BTreeMap<String, String> {
     let Some(agents) = app.try_state::<AgentsState>() else { return BTreeMap::new() };
     let profile: Option<AgentProfile> = lock(&agents.profiles).profile(profile_id);
     let Some(profile) = profile else { return BTreeMap::new() };
-    let mut env = profile.environment();
-    if profile.kind == nook_core::agents::AgentKind::Claude && profile.uses_api_key() {
-        if let Some(key) = app.state::<AppState>().secrets.read(&profile.secret_account()).filter(|k| !k.trim().is_empty()) {
-            env.insert("ANTHROPIC_API_KEY".into(), key.trim().to_string());
-        }
-    }
-    env
+    let secrets = app.state::<AppState>().secrets.clone();
+    profile.launch_environment(|key| secrets.read(key))
 }
 
 fn on_event(app: &AppHandle, event: ManagerEvent) {

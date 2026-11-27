@@ -15,6 +15,7 @@
   // branchnaam en de plek van de worktree volgen vanzelf.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { agentApi, type AgentProfile } from "../../../lib/agents";
+  import { pickableProfiles } from "../../../lib/account-options";
   import { agents } from "../../../lib/agents.svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import { toast } from "../../../lib/toast.svelte";
@@ -61,10 +62,15 @@
 
   const settings = $derived(workspace.settings);
   const runnable = $derived(workspace.providers.filter((p) => p.supported));
-  const connected = $derived(runnable.filter((p) => p.executable));
+  const enabledProfiles = $derived(pickableProfiles(profiles));
+  const hasEnabledAccount = (p: RunProvider) => {
+    const all = profiles.filter((x) => x.kind === p);
+    return all.length === 0 || enabledProfiles.some((x) => x.kind === p);
+  };
+  const connected = $derived(runnable.filter((p) => p.executable && hasEnabledAccount(p.provider)));
   const provider = $derived(workspace.provider(config.provider));
   const policies = $derived<PermissionPolicy[]>(provider?.capabilities.policies ?? ["acceptEdits"]);
-  const profilesFor = (p: RunProvider) => profiles.filter((x) => x.kind === p);
+  const profilesFor = (p: RunProvider) => enabledProfiles.filter((x) => x.kind === p);
 
   function cleanProjectPath(raw: string): string {
     const trimmed = raw.trim();

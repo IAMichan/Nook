@@ -2,6 +2,7 @@
 //! Nooks terminal, browser en pull requests gebruiken. Zoals `Services/Workspace` op de Mac.
 
 pub mod acp;
+pub mod advice;
 pub mod antigravity;
 pub mod antigravity_install;
 pub mod arrivals;
@@ -27,6 +28,7 @@ mod e2e_automation_tests;
 pub mod favicon;
 pub mod file_view;
 pub mod git;
+pub mod governor;
 pub mod handoff;
 pub mod hunk;
 pub mod limits;
@@ -61,6 +63,8 @@ pub mod tasks;
 pub mod terminal;
 pub mod text_generation;
 pub mod titles;
+pub mod token_savings;
 pub mod traffic;
+pub mod tuning;
 pub mod webhook;
 pub mod worktree_setup;

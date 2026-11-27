@@ -2,6 +2,7 @@
   // "Hand off to another agent" (`switchProvider` on the Mac): the session goes on with another agent or account, with
   // what happened so far handed over ahead of your next message. Only between turns.
   import { agentApi, type AgentProfile } from "../../../lib/agents";
+  import { pickableProfiles } from "../../../lib/account-options";
   import { automationApi } from "../../../lib/workspace/automation";
   import { isActive, type RunProvider, type WorkspaceRun } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
@@ -21,7 +22,9 @@
     workspace.providers
       .filter((p) => p.supported && p.executable)
       .flatMap((p) => {
-        const own = profiles.filter((x) => x.kind === p.provider);
+        const allForKind = profiles.filter((x) => x.kind === p.provider);
+        const own = pickableProfiles(allForKind);
+        if (allForKind.length > 0 && own.length === 0) return [];
         const accounts = own.length ? own : [{ id: p.provider, label: "" } as AgentProfile];
         return accounts.map((a) => ({ provider: p.provider as RunProvider, profileId: a.id, label: own.length > 1 ? `${p.name} · ${a.label || tr("Standaard", "Default")}` : p.name }));
       })

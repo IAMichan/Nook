@@ -478,14 +478,19 @@ extension AgentRunPanel {
                     }
                     ForEach(scheduled) { task in SessionScheduledTaskRow(task: task) }
                     if !scheduled.isEmpty && (hasPullRequests || !waiting.isEmpty) { ComposerTrayDivider() }
-                    ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases, columns: columns) }
                     if !branches.isEmpty {
+                        // The fold of older branches heads the section; the other pull requests come under it.
                         RunBranchTray(rows: branches, watches: watches, canWatchCurrent: watchable != nil, runID: runID, workspace: workspace,
-                                      pullRequestSync: pullRequestSync, showsOlderBranches: $showsOlderBranches)
-                    } else if let pullRequest {
-                        PullRequestWatchStrip(url: pullRequest, watch: watch, columns: columns, toggle: canWatch ? {
-                            if watch == nil { workspace.watchPullRequest(runID, url: pullRequest) } else { workspace.stopWatchingPullRequest(runID, url: pullRequest) }
-                        } : nil)
+                                      pullRequestSync: pullRequestSync, showsOlderBranches: $showsOlderBranches) {
+                            ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases, columns: columns) }
+                        }
+                    } else {
+                        ForEach(others) { link in otherRow(link, watches: watches, aliases: aliases, columns: columns) }
+                        if let pullRequest {
+                            PullRequestWatchStrip(url: pullRequest, watch: watch, columns: columns, toggle: canWatch ? {
+                                if watch == nil { workspace.watchPullRequest(runID, url: pullRequest) } else { workspace.stopWatchingPullRequest(runID, url: pullRequest) }
+                            } : nil)
+                        }
                     }
                     if let pending { PullRequestPendingRow(step: pending) }
                     if hasPullRequests && !waiting.isEmpty { ComposerTrayDivider() }

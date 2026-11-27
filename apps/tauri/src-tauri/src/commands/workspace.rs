@@ -553,8 +553,9 @@ pub async fn workspace_project_candidates(
     };
     blocking(move || {
         let home = dirs::home_dir().unwrap_or_default().to_string_lossy().into_owned();
+        let sessions: Vec<(String, DateTime<Utc>)> = sessions.into_iter().map(|s| (s.folder, s.date)).collect();
         readiness::project_candidates(&sessions, &known, &home, Utc::now(), readiness::LIMIT, |folder| {
-            readiness::git_root(folder, |p| p.exists())
+            readiness::git_root(folder, |p| std::path::Path::new(p).exists())
         })
     })
     .await
@@ -1636,6 +1637,21 @@ pub fn workspace_open_skills_folder(app: AppHandle, path: String) -> Res<String>
     Ok(folder.display().to_string())
 }
 
+/// Current per-session resource throttles from `AgentGovernor` (AG-76).
+#[tauri::command]
+pub fn workspace_governor_status(
+    state: State<'_, WorkspaceState>,
+) -> std::collections::HashMap<Uuid, nook_core::workspace::governor::AgentThrottle> {
+    state.governor.throttles()
+}
+
+/// Exempts a session from being paused under memory pressure and immediately resumes its commands (`AgentGovernor`, AG-76).
+#[tauri::command]
+pub fn workspace_governor_let_go_on(state: State<'_, WorkspaceState>, run: String) -> Res<()> {
+    state.governor.let_go_on(id(&run)?);
+    Ok(())
+}
+
 // MARK: Worktree cleanup (`WorktreeCleanupReportView` on the Mac)
 
 #[derive(Debug, Clone, Serialize)]
@@ -2164,4 +2180,223 @@ pub async fn workspace_suggest_next_prompt(app: AppHandle, state: State<'_, Work
         return Ok(None);
     }
     Ok(Some(stripped.to_string()))
+}
+
+// MARK: Token tuning, agent readiness & session advice (AG-32)
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TuningSnapshot {
+    pub rows: Vec<nook_core::workspace::tuning::TuningAdvice>,
+    pub applied: nook_core::workspace::tuning::AppliedTuning,
+    pub settings_file: String,
+    pub home: String,
+}
+
+/// Scans every supported coding agent's local configuration for unused token overhead (`AgentTuning.scan` + `withApplied`, AG-32).
+#[tauri::command]
+pub async fn workspace_tuning_scan() -> Res<TuningSnapshot> {
+    blocking(move || {
+        let home = dirs::home_dir().unwrap_or_else(nook_core::paths::support_directory);
+        let settings_file = home.join(".claude").join("settings.json").to_string_lossy().into_owned();
+        let applied = nook_core::workspace::tuning::AppliedTuning::load_from(&nook_core::workspace::tuning::AppliedTuning::file());
+        let advice = nook_core::workspace::tuning::scan(&home, Utc::now());
+        let rows = nook_core::workspace::tuning::with_applied(advice, &applied, &settings_file);
+        TuningSnapshot { rows, applied, settings_file, home: home.to_string_lossy().into_owned() }
+    })
+    .await
+}
+
+/// Applies or removes a Claude Code tuning suggestion for sessions started by Nook (`AgentTuning.Applied`, AG-32).
+#[tauri::command]
+pub fn workspace_tuning_set(
+    app: AppHandle,
+    advice: nook_core::workspace::tuning::TuningAdvice,
+    on: bool,
+) -> Res<nook_core::workspace::tuning::AppliedTuning> {
+    let file = nook_core::workspace::tuning::AppliedTuning::file();
+    let mut applied = nook_core::workspace::tuning::AppliedTuning::load_from(&file);
+    applied.set(&advice, on);
+    applied.save_to(&file);
+    let kind_label =
+        serde_json::to_value(advice.kind).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_else(|| format!("{:?}", advice.kind));
+    let args = format!("{} · {} · {}", advice.provider.display_name(), kind_label, advice.items.join(", "));
+    if let Some(app_state) = app.try_state::<crate::state::AppState>() {
+        app_state.store.audit("token_tuning", &args, if on { "applied in Nook sessions" } else { "removed" });
+    }
+    Ok(applied)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReadinessItem {
+    pub provider: RunProvider,
+    pub state: nook_core::workspace::readiness::ReadinessState,
+    pub action: nook_core::workspace::readiness::ReadinessAction,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadinessSnapshot {
+    pub agents: Vec<AgentReadinessItem>,
+    pub any_ready: bool,
+    pub projects: Vec<nook_core::workspace::readiness::ProjectCandidate>,
+}
+
+/// Classifies every coding agent's readiness state and collects recent git project candidates (`AgentReadiness`, AG-32).
+#[tauri::command]
+pub async fn workspace_readiness(app: AppHandle, state: State<'_, WorkspaceState>) -> Res<ReadinessSnapshot> {
+    let runs = state.manager.runs();
+    let (recent_projects, favorite_projects) = {
+        let ws = lock(&state.settings);
+        (ws.recent_projects.clone(), ws.favorite_projects.clone())
+    };
+    let (live_names, history_accounts, profiles) = if let Some(agents) = app.try_state::<crate::agents::AgentsState>() {
+        let live: std::collections::HashSet<String> = agents.hub.sessions().into_iter().map(|s| s.name.to_lowercase()).collect();
+        let hist = lock(&agents.last_history).accounts.clone();
+        let profs = lock(&agents.profiles).all();
+        (live, hist, profs)
+    } else {
+        Default::default()
+    };
+    blocking(move || {
+        let now = Utc::now();
+        let home = dirs::home_dir().unwrap_or_else(nook_core::paths::support_directory);
+        let home_str = home.to_string_lossy().into_owned();
+        let providers = [
+            RunProvider::Claude,
+            RunProvider::Codex,
+            RunProvider::Gemini,
+            RunProvider::Opencode,
+            RunProvider::Cursor,
+            RunProvider::Grok,
+            RunProvider::Antigravity,
+        ];
+        let mut states = Vec::with_capacity(providers.len());
+        let mut agents = Vec::with_capacity(providers.len());
+        for provider in providers {
+            let kind = provider.kind();
+            let installed = nook_core::agents::find_executable(kind).is_some();
+            let signed_in = history_accounts.contains_key(kind.id())
+                || profiles.iter().any(|p| p.kind == kind && (p.home.as_deref().is_some_and(|h| !h.is_empty()) || p.uses_api_key()))
+                || runs.iter().any(|r| r.provider == provider)
+                || live_names.contains(&provider.display_name().to_lowercase())
+                || live_names.contains(kind.id());
+            let st = nook_core::workspace::readiness::classify(true, installed, signed_in, false);
+            let action = nook_core::workspace::readiness::action_for(st);
+            states.push(st);
+            agents.push(AgentReadinessItem { provider, state: st, action });
+        }
+        let any_ready = nook_core::workspace::readiness::any_ready(&states);
+        let sessions: Vec<(String, DateTime<Utc>)> = runs.iter().map(|r| (r.project_path.clone(), r.updated_at)).collect();
+        let mut known = recent_projects;
+        known.extend(favorite_projects);
+        let projects = nook_core::workspace::readiness::project_candidates(&sessions, &known, &home_str, now, 12, |folder| {
+            nook_core::workspace::readiness::git_root(folder, |p| std::path::Path::new(p).exists())
+        });
+        ReadinessSnapshot { agents, any_ready, projects }
+    })
+    .await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunAdviceSnapshot {
+    pub options: Vec<nook_core::workspace::advice::LimitSuggestion>,
+    pub fallbacks: Vec<nook_core::workspace::advice::LimitSuggestion>,
+    pub stuck: Option<nook_core::workspace::advice::StuckSuggestion>,
+}
+
+/// Computes limit-switching suggestions and stuck-session advice for a run (`AgentAdvice`, AG-32).
+#[tauri::command]
+pub fn workspace_limit_advice(app: AppHandle, state: State<'_, WorkspaceState>, run: String) -> Res<RunAdviceSnapshot> {
+    let run_id = id(&run)?;
+    let Some(session) = state.manager.run(run_id) else {
+        return Ok(RunAdviceSnapshot { options: Vec::new(), fallbacks: Vec::new(), stuck: None });
+    };
+    let events = state.manager.timeline(run_id);
+    let now = Utc::now();
+
+    let mut limit_states = Vec::new();
+    let mut seen_current = false;
+    if let Some(agents) = app.try_state::<crate::agents::AgentsState>() {
+        let profiles = lock(&agents.profiles).all();
+        let (default_plan, plans) = agents.hub.plan_usage();
+        let codex_map = app.try_state::<crate::agents::usage::UsageState>().map(|u| u.codex_snapshot()).unwrap_or_default();
+        for profile in profiles {
+            let provider = RunProvider::from_kind(profile.kind);
+            let is_current = provider == session.provider && profile.id == session.profile_id;
+            if is_current {
+                seen_current = true;
+            }
+            let (used_fraction, reset_at) = match provider {
+                RunProvider::Claude => {
+                    let reading = plans.get(&profile.id).or(if profile.id == "claude" { default_plan.as_ref() } else { None });
+                    let frac = reading.and_then(|u| {
+                        [u.five_hour.as_ref(), u.seven_day.as_ref()].into_iter().flatten().map(|w| w.used_percent / 100.0).reduce(f64::max)
+                    });
+                    let reset = reading.and_then(|u| u.five_hour.as_ref().map(|w| w.resets_at)).or(if is_current {
+                        session.limit_reset_at
+                    } else {
+                        None
+                    });
+                    (frac, reset)
+                }
+                RunProvider::Codex => {
+                    let reading = codex_map.get(&profile.id);
+                    let frac = reading.and_then(|u| {
+                        [u.five_hour.as_ref(), u.weekly.as_ref()].into_iter().flatten().map(|w| w.used_percent / 100.0).reduce(f64::max)
+                    });
+                    let reset = reading.and_then(|u| u.five_hour.as_ref().and_then(|w| w.resets_at)).or(if is_current {
+                        session.limit_reset_at
+                    } else {
+                        None
+                    });
+                    (frac, reset)
+                }
+                _ => (None, if is_current { session.limit_reset_at } else { None }),
+            };
+            limit_states.push(nook_core::workspace::advice::LimitState {
+                provider,
+                profile_id: profile.id.clone(),
+                used_fraction,
+                reset_at,
+            });
+        }
+    }
+    if !seen_current {
+        limit_states.push(nook_core::workspace::advice::LimitState {
+            provider: session.provider,
+            profile_id: session.profile_id.clone(),
+            used_fraction: None,
+            reset_at: session.limit_reset_at,
+        });
+    }
+
+    let current = (session.provider, session.profile_id.as_str());
+    let options = nook_core::workspace::advice::LimitAdvisor::options(&limit_states, current, now);
+    let fallbacks = nook_core::workspace::advice::LimitAdvisor::fallbacks(&limit_states, current, now);
+
+    let last_event_at = events.last().map(|e| e.date);
+    let pending_request_since = events
+        .iter()
+        .rev()
+        .find(|e| e.kind == EventKind::Approval && e.state == Some(nook_core::workspace::models::EventState::Pending))
+        .map(|e| e.date);
+    let stuck = nook_core::workspace::advice::StuckDetector::detect(&nook_core::workspace::advice::StuckInput {
+        status: session.status,
+        last_activity: last_event_at.or(session.turn_started_at),
+        pending_request_since,
+        user_idle_seconds: 0.0,
+        limited_since: session.limited_at,
+        now,
+    });
+
+    Ok(RunAdviceSnapshot { options, fallbacks, stuck })
+}
+
+/// Reports whether a completed long session whose cache expired should offer a "Compact first" chip (`ReturnCompaction`, AG-32).
+#[tauri::command]
+pub fn workspace_offers_compact_first(state: State<'_, WorkspaceState>, run: String) -> Res<bool> {
+    Ok(state.manager.offers_compact_first(id(&run)?))
 }

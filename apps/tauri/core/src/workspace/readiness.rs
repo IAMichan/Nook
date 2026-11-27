@@ -1,33 +1,87 @@
-//! The projects half of the first-run flow's "Coding agents" step (`AgentReadiness.projectCandidates` on the Mac): which
-//! folders you worked in recently that could become projects. Whether each agent is ready is decided in the view
-//! (`src/lib/agent-readiness.ts`), from what it already reads. The folder check comes in as a closure, so tests use it
-//! without a disk.
+//! Coding agent readiness and recent repository discovery (`AgentReadiness` on macOS).
+//!
+//! Pure logic without processes or UI: classifies whether each coding agent is ready to start a session, what action a
+//! row offers (install / sign in / none), and which git repositories you worked in during the last 30 days.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-// Projects
+/// Where an agent stands, in the order the onboarding/readiness step sorts them: what needs you first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReadinessState {
+    /// Nook has not looked for the agent yet.
+    Checking,
+    /// Installing or signing in right now.
+    Connecting,
+    /// Installed, not signed in.
+    SignIn,
+    /// The program is not installed on this machine.
+    Missing,
+    /// Installed and signed in.
+    Ready,
+}
+
+/// What the row offers for a state. Nothing installs without an explicit click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReadinessAction {
+    None,
+    Install,
+    SignIn,
+}
+
+/// Classifies an agent's readiness from scan, executable, sign-in, and in-progress flags.
+pub fn classify(scanned: bool, installed: bool, signed_in: bool, connecting: bool) -> ReadinessState {
+    if connecting {
+        return ReadinessState::Connecting;
+    }
+    if installed {
+        return if signed_in { ReadinessState::Ready } else { ReadinessState::SignIn };
+    }
+    // A sign-in without the program (the program was removed) still needs the program first.
+    if scanned {
+        ReadinessState::Missing
+    } else {
+        ReadinessState::Checking
+    }
+}
+
+/// Action button offered for a given readiness state.
+pub fn action_for(state: ReadinessState) -> ReadinessAction {
+    match state {
+        ReadinessState::Missing => ReadinessAction::Install,
+        ReadinessState::SignIn => ReadinessAction::SignIn,
+        ReadinessState::Checking | ReadinessState::Connecting | ReadinessState::Ready => ReadinessAction::None,
+    }
+}
+
+/// Ready when at least one agent can start a session.
+pub fn any_ready(states: &[ReadinessState]) -> bool {
+    states.contains(&ReadinessState::Ready)
+}
+
+// MARK: Projects
 
 /// A folder you worked in recently, as a project you could add.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCandidate {
     /// The repository's root folder.
     pub path: String,
     pub name: String,
-    /// The folder it is in, for the line under the name.
+    /// The folder it is in, for the line under the name (`~/Developer/`).
     pub parent: String,
     /// How many sessions worked in it within the window.
     pub sessions: usize,
     pub last_active: DateTime<Utc>,
-    /// Already one of Nook's projects (favorite or recent).
+    /// Already one of Nook's projects (favorites or recent projects).
     pub added: bool,
 }
 
-/// One session's folder and when it was last active.
+/// One session's folder and when it was last active, as the first-run flow's view sends it.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionFolder {
@@ -35,154 +89,262 @@ pub struct SessionFolder {
     pub date: DateTime<Utc>,
 }
 
-pub const RECENT_DAYS: i64 = 30;
+/// How many recent folders the first-run flow offers.
 pub const LIMIT: usize = 8;
 
-/// A folder without trailing separators; the root of a drive or `/` stays as it is.
-pub fn normalize(path: &str) -> String {
-    let trimmed = path.trim();
-    let cut = trimmed.trim_end_matches(['/', '\\']);
-    if cut.is_empty() || cut.ends_with(':') {
-        trimmed.to_string()
+/// 30-day recency window for project discovery (`AgentReadiness.recentWindow` on macOS).
+pub const RECENT_WINDOW_SECS: i64 = 30 * 24 * 3600;
+
+/// Normalizes a filesystem path for comparison (trims whitespace and trailing slashes, preserving roots).
+pub fn normalize_path(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed == "/" || trimmed == "\\" {
+        return trimmed.to_string();
+    }
+    // Preserve Windows drive roots such as `C:\` or `C:/`.
+    let bytes = trimmed.as_bytes();
+    if bytes.len() == 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/') {
+        return trimmed.to_string();
+    }
+    let stripped = trimmed.trim_end_matches(['/', '\\']);
+    if stripped.is_empty() {
+        "/".to_string()
+    } else if stripped.len() == 2 && stripped.as_bytes()[0].is_ascii_alphabetic() && stripped.as_bytes()[1] == b':' {
+        // `C:\` trimmed down to `C:` -> restore trailing separator from original.
+        trimmed[..3].to_string()
     } else {
-        cut.to_string()
+        stripped.to_string()
     }
 }
 
-/// Folders compare the way the platform does: Windows paths ignore case and separator style.
-fn key(path: &str) -> String {
-    let p = normalize(path);
-    if p.contains('\\') || p.as_bytes().get(1) == Some(&b':') {
-        p.replace('/', "\\").to_lowercase()
-    } else {
-        p
+fn is_absolute_path(path: &str) -> bool {
+    if path.starts_with('/') || path.starts_with("\\\\") {
+        return true;
     }
+    let bytes = path.as_bytes();
+    bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn is_root_path(path: &str) -> bool {
+    if path == "/" || path == "\\" {
+        return true;
+    }
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
+fn join_git(dir: &str) -> String {
+    if dir.ends_with('/') || dir.ends_with('\\') {
+        format!("{dir}.git")
+    } else if dir.contains('\\') && !dir.contains('/') {
+        format!("{dir}\\.git")
+    } else {
+        format!("{dir}/.git")
+    }
+}
+
+fn parent_dir(path: &str) -> Option<String> {
+    if is_root_path(path) {
+        return None;
+    }
+    let idx = path.rfind(['/', '\\'])?;
+    if idx == 0 {
+        return Some(path[..1].to_string());
+    }
+    // Windows drive root: `C:\foo` -> `C:\`.
+    let bytes = path.as_bytes();
+    if idx == 2 && bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return Some(path[..3].to_string());
+    }
+    Some(path[..idx].to_string())
 }
 
 /// The git repositories you worked in during the last 30 days, most recently used first: every session's folder is
 /// taken up to its repository's root (`git_root`), so two subfolders of one checkout count once. Folders that are not
-/// in a repository, the home folder and sessions outside the window are left out.
-pub fn project_candidates(
-    sessions: &[SessionFolder],
+/// in a repository, the home folder, and sessions outside the window are left out.
+pub fn project_candidates<F>(
+    sessions: &[(String, DateTime<Utc>)],
     known: &[String],
     home: &str,
     now: DateTime<Utc>,
     limit: usize,
-    mut git_root: impl FnMut(&str) -> Option<String>,
-) -> Vec<ProjectCandidate> {
-    let cutoff = now - Duration::days(RECENT_DAYS);
-    let known: HashSet<String> = known.iter().map(|k| key(k)).collect();
-    let home_key = key(home);
-    let mut by_root: HashMap<String, (String, usize, DateTime<Utc>)> = HashMap::new();
-    let mut root_of: HashMap<String, Option<String>> = HashMap::new();
-    for session in sessions {
-        if session.date < cutoff || session.date > now {
+    git_root: F,
+) -> Vec<ProjectCandidate>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let cutoff = now - Duration::seconds(RECENT_WINDOW_SECS);
+    let home_norm = normalize_path(home);
+    let known_set: HashSet<String> = known.iter().map(|p| normalize_path(p)).collect();
+    let mut by_root: HashMap<String, (usize, DateTime<Utc>)> = HashMap::new();
+    let mut root_cache: HashMap<String, Option<String>> = HashMap::new();
+
+    for (raw_folder, date) in sessions {
+        if *date < cutoff || *date > now {
             continue;
         }
-        let folder = normalize(&session.folder);
-        let folder_key = key(&folder);
-        if folder.is_empty() || folder_key == home_key || folder == "/" {
+        let folder = normalize_path(raw_folder);
+        if folder.is_empty() || folder == home_norm || is_root_path(&folder) {
             continue;
         }
-        let root = root_of.entry(folder_key).or_insert_with(|| git_root(&folder).map(|r| normalize(&r))).clone();
+        let root = if let Some(cached) = root_cache.get(&folder) {
+            cached.clone()
+        } else {
+            let found = git_root(&folder).map(|r| normalize_path(&r));
+            root_cache.insert(folder.clone(), found.clone());
+            found
+        };
         let Some(root) = root else { continue };
-        let root_key = key(&root);
-        if root_key == home_key {
+        if root.is_empty() || root == home_norm {
             continue;
         }
-        let entry = by_root.entry(root_key).or_insert((root, 0, session.date));
-        entry.1 += 1;
-        entry.2 = entry.2.max(session.date);
+        let entry = by_root.entry(root).or_insert((0, DateTime::<Utc>::MIN_UTC));
+        entry.0 += 1;
+        if *date > entry.1 {
+            entry.1 = *date;
+        }
     }
-    let mut out: Vec<ProjectCandidate> = by_root
+
+    let mut candidates: Vec<ProjectCandidate> = by_root
         .into_iter()
-        .map(|(root_key, (root, sessions, last))| {
+        .map(|(root, (sessions, last_active))| {
             let (name, parent) = split_path(&root);
-            ProjectCandidate { added: known.contains(&root_key), path: root, name, parent, sessions, last_active: last }
+            let added = known_set.contains(&root);
+            ProjectCandidate { path: root, name, parent, sessions, last_active, added }
         })
         .collect();
-    out.sort_by(|a, b| b.last_active.cmp(&a.last_active).then_with(|| a.path.cmp(&b.path)));
-    out.truncate(limit);
-    out
+
+    candidates.sort_by(|a, b| b.last_active.cmp(&a.last_active).then_with(|| a.path.cmp(&b.path)));
+    candidates.truncate(limit);
+    candidates
 }
 
-/// The repository a folder belongs to: the nearest folder upward that holds `.git` (a folder, or a file in a worktree).
-pub fn git_root(folder: &str, exists: impl Fn(&Path) -> bool) -> Option<String> {
-    let mut current = Some(Path::new(folder));
-    while let Some(dir) = current {
-        if dir.as_os_str().is_empty() {
-            return None;
-        }
-        if exists(&dir.join(".git")) {
-            return Some(dir.to_string_lossy().into_owned());
-        }
-        current = dir.parent();
+/// The repository a folder belongs to: the nearest folder upward that holds `.git` (a directory, or a file in a
+/// worktree).
+pub fn git_root<F>(folder: &str, file_exists: F) -> Option<String>
+where
+    F: Fn(&str) -> bool,
+{
+    let mut current = normalize_path(folder);
+    if !is_absolute_path(&current) {
+        return None;
     }
-    None
+    loop {
+        if file_exists(&join_git(&current)) {
+            return Some(current);
+        }
+        match parent_dir(&current) {
+            Some(parent) if parent != current => current = parent,
+            _ => return None,
+        }
+    }
 }
 
-/// `C:\Users\me\Developer\app` → (`app`, `C:\Users\me\Developer\`).
+/// `"/Users/me/Developer/app"` -> `("app", "/Users/me/Developer/")`.
 pub fn split_path(path: &str) -> (String, String) {
-    let trimmed = normalize(path);
-    match trimmed.rfind(['/', '\\']) {
-        Some(at) if trimmed.len() > 1 => (trimmed[at + 1..].to_string(), trimmed[..=at].to_string()),
-        _ => (trimmed, String::new()),
+    let trimmed = normalize_path(path);
+    if is_root_path(&trimmed) {
+        return (trimmed, String::new());
     }
+    let Some(sep) = trimmed.rfind(['/', '\\']) else {
+        return (trimmed, String::new());
+    };
+    let name = trimmed[sep + 1..].to_string();
+    let parent = trimmed[..=sep].to_string();
+    (name, parent)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn at(days_ago: i64) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-11-27T12:00:00Z").unwrap().with_timezone(&Utc) - Duration::days(days_ago)
-    }
-
-    fn s(folder: &str, days_ago: i64) -> SessionFolder {
-        SessionFolder { folder: folder.into(), date: at(days_ago) }
+    #[test]
+    fn classification_matches_macos() {
+        assert_eq!(classify(false, false, false, false), ReadinessState::Checking);
+        assert_eq!(classify(true, false, false, false), ReadinessState::Missing);
+        assert_eq!(classify(true, false, true, false), ReadinessState::Missing);
+        assert_eq!(classify(true, true, false, false), ReadinessState::SignIn);
+        assert_eq!(classify(true, true, true, false), ReadinessState::Ready);
+        assert_eq!(classify(true, false, false, true), ReadinessState::Connecting);
+        // Found before the full scan finished: what is there counts.
+        assert_eq!(classify(false, true, true, false), ReadinessState::Ready);
     }
 
     #[test]
-    fn candidates_take_folders_up_to_their_repository() {
-        let roots = |f: &str| -> Option<String> {
-            if f.starts_with("/dev/app") {
-                Some("/dev/app".into())
-            } else if f.starts_with("/dev/site") {
-                Some("/dev/site/".into())
-            } else {
-                None
-            }
-        };
-        let sessions = [s("/dev/app/src", 3), s("/dev/app", 1), s("/dev/site", 5), s("/tmp/loose", 1), s("/home/me", 1), s("/dev/old", 40)];
-        let list = project_candidates(&sessions, &["/dev/site".into()], "/home/me", at(0), LIMIT, roots);
-        assert_eq!(list.len(), 2);
-        assert_eq!(list[0].path, "/dev/app");
-        assert_eq!(list[0].sessions, 2);
-        assert_eq!(list[0].name, "app");
-        assert_eq!(list[0].parent, "/dev/");
-        assert!(!list[0].added);
-        assert_eq!(list[1].path, "/dev/site");
-        assert!(list[1].added);
+    fn actions_and_any_ready() {
+        assert_eq!(action_for(ReadinessState::Missing), ReadinessAction::Install);
+        assert_eq!(action_for(ReadinessState::SignIn), ReadinessAction::SignIn);
+        for state in [ReadinessState::Checking, ReadinessState::Connecting, ReadinessState::Ready] {
+            assert_eq!(action_for(state), ReadinessAction::None);
+        }
+        assert!(any_ready(&[ReadinessState::Missing, ReadinessState::Ready]));
+        assert!(!any_ready(&[ReadinessState::Missing, ReadinessState::SignIn]));
     }
 
     #[test]
-    fn windows_paths_ignore_case_and_separators() {
-        let sessions = [s(r"C:\Dev\App\", 1), s("c:/dev/app", 2)];
-        let list = project_candidates(&sessions, &[r"C:\DEV\APP".into()], r"C:\Users\me", at(0), LIMIT, |f| Some(f.to_string()));
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].sessions, 2);
-        assert!(list[0].added);
-        assert_eq!(split_path(r"C:\Dev\App"), ("App".into(), r"C:\Dev\".into()));
+    fn git_root_walks_up_unix_and_windows() {
+        let repos: HashSet<&str> = ["/Users/me/app/.git", "/Users/me/app/vendor/lib/.git", "C:\\dev\\nook\\.git"].into_iter().collect();
+        let exists = |p: &str| repos.contains(p);
+        assert_eq!(git_root("/Users/me/app/src/ui", exists).as_deref(), Some("/Users/me/app"));
+        assert_eq!(git_root("/Users/me/app/", exists).as_deref(), Some("/Users/me/app"));
+        assert_eq!(git_root("/Users/me/app/vendor/lib/x", exists).as_deref(), Some("/Users/me/app/vendor/lib"));
+        assert_eq!(git_root("C:\\dev\\nook\\apps\\tauri", exists).as_deref(), Some("C:\\dev\\nook"));
+        assert_eq!(git_root("/Users/me/notes", exists), None);
+        assert_eq!(git_root("relative/path", |_| true), None);
     }
 
     #[test]
-    fn finds_the_git_root_upward() {
-        let root = std::env::temp_dir().join(format!("nook-readiness-{}", std::process::id()));
-        let deep = root.join("a").join("b");
-        std::fs::create_dir_all(&deep).unwrap();
-        std::fs::create_dir_all(root.join(".git")).unwrap();
-        let found = git_root(&deep.to_string_lossy(), |p| p.exists());
-        assert_eq!(found.as_deref(), Some(root.to_string_lossy().as_ref()));
-        let _ = std::fs::remove_dir_all(&root);
+    fn project_candidates_group_by_repository_and_skip_old_or_plain_folders() {
+        let now = DateTime::from_timestamp(10_000_000, 0).unwrap();
+        let day = |n: i64| now - Duration::days(n);
+        let roots: HashMap<&str, &str> = [
+            ("/Users/me/app", "/Users/me/app"),
+            ("/Users/me/app/web", "/Users/me/app"),
+            ("/Users/me/api", "/Users/me/api"),
+            ("/Users/me/old", "/Users/me/old"),
+            ("/Users/me", "/Users/me"),
+        ]
+        .into_iter()
+        .collect();
+        let sessions = vec![
+            ("/Users/me/app/web".into(), day(2)),
+            ("/Users/me/app".into(), day(5)),
+            ("/Users/me/api/".into(), day(1)),
+            ("/Users/me/old".into(), day(40)),
+            ("/Users/me/notes".into(), day(1)),
+            ("/Users/me".into(), day(1)),
+            (String::new(), now),
+        ];
+        let result =
+            project_candidates(&sessions, &["/Users/me/api/".into()], "/Users/me", now, 8, |p| roots.get(p).map(|s| (*s).to_string()));
+        let paths: Vec<&str> = result.iter().map(|c| c.path.as_str()).collect();
+        let counts: Vec<usize> = result.iter().map(|c| c.sessions).collect();
+        let added: Vec<bool> = result.iter().map(|c| c.added).collect();
+        assert_eq!(paths, vec!["/Users/me/api", "/Users/me/app"]);
+        assert_eq!(counts, vec![1, 2]);
+        assert_eq!(added, vec![true, false]);
+        assert_eq!(result[1].name, "app");
+        assert_eq!(result[1].parent, "/Users/me/");
+        assert_eq!(result[1].last_active, day(2));
+    }
+
+    #[test]
+    fn project_candidates_respect_limit() {
+        let now = DateTime::from_timestamp(10_000_000, 0).unwrap();
+        let sessions: Vec<(String, DateTime<Utc>)> = (0..20).map(|i| (format!("/r/p{i}"), now - Duration::minutes(i))).collect();
+        let result = project_candidates(&sessions, &[], "/Users/me", now, 3, |p| Some(p.to_string()));
+        let paths: Vec<&str> = result.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, vec!["/r/p0", "/r/p1", "/r/p2"]);
+    }
+
+    #[test]
+    fn split_path_handles_unix_windows_and_bare() {
+        assert_eq!(split_path("/Users/me/Developer/app/"), ("app".into(), "/Users/me/Developer/".into()));
+        assert_eq!(split_path("/Users/me/Developer/app"), ("app".into(), "/Users/me/Developer/".into()));
+        assert_eq!(split_path("C:\\Users\\me\\app\\"), ("app".into(), "C:\\Users\\me\\".into()));
+        assert_eq!(split_path("app"), ("app".into(), String::new()));
     }
 }
