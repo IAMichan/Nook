@@ -5,6 +5,7 @@
   import { agents } from "../../../lib/agents.svelte";
   import { tr } from "../../../lib/i18n.svelte";
   import { toast } from "../../../lib/toast.svelte";
+  import { buildSessionLink } from "../../../lib/workspace/session-link";
   import { ask } from "../../../lib/confirm.svelte";
   import { save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { sessionFileName, sessionMarkdown } from "../../../lib/workspace/session-export";
@@ -190,6 +191,19 @@
       toast.success(tr("Sessie gekopieerd", "Session copied"), tr("Tekst gekopieerd als Markdown.", "Text copied as Markdown."));
     } catch (e) {
       toast.error(tr("Kon de sessie niet kopiëren", "Could not copy the session"), e);
+    }
+  }
+
+  // `nook://session/<id>?title=…` (`SessionLink`): pasted on a composer it becomes this session's mention, opened
+  // elsewhere it opens this session.
+  async function copySessionLink() {
+    const link = run ? buildSessionLink(run.id, run.title) : null;
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success(tr("Sessielink gekopieerd", "Session link copied"), tr("Plak hem in een composer om naar deze sessie te verwijzen.", "Paste it in a composer to point at this session."));
+    } catch (e) {
+      toast.error(tr("Kon de link niet kopiëren", "Could not copy the link"), e);
     }
   }
 
@@ -502,6 +516,7 @@
             {/if}
             {#if run.repoRoot}<DropdownRow symbol="diff" title={tr("Wijzigingen bekijken", "View changes")} onclick={() => { close(); openChanges(); }} />{/if}
             <DropdownRow symbol="external-link" title={tr("Open in editor", "Open in editor")} onclick={() => { close(); workspaceApi.openIn(run.workingDirectory).catch((e) => toast.error(tr("Kon de map niet openen", "Could not open the folder"), e)); }} />
+            <DropdownRow symbol="link" title={tr("Kopieer sessielink", "Copy session link")} onclick={() => { close(); copySessionLink(); }} />
             <DropdownRow symbol="copy" title={tr("Kopieer als Markdown", "Copy as Markdown")} onclick={() => { close(); copyMarkdown(); }} />
             <DropdownRow symbol="download" title={tr("Exporteer…", "Export…")} onclick={() => { close(); exportMarkdown(); }} />
             <DropdownRow symbol="archive" title={run.archived ? tr("Haal uit archief", "Unarchive") : tr("Archiveer", "Archive")} disabledReason={busy}

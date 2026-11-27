@@ -538,6 +538,44 @@ pub fn workspace_keep_scratch(app: AppHandle, state: State<'_, WorkspaceState>, 
     Ok(())
 }
 
+/// The git folders you worked in recently (`AgentReadiness.projectCandidates` on the Mac), for the first-run flow's
+/// "Coding agents" step: every session's folder taken up to its repository's root, newest first, with whether it is
+/// already one of your projects. `sessions` are the folders and dates the view knows (past sessions and Nook's own).
+#[tauri::command]
+pub async fn workspace_project_candidates(
+    state: State<'_, WorkspaceState>,
+    sessions: Vec<nook_core::workspace::readiness::SessionFolder>,
+) -> Res<Vec<nook_core::workspace::readiness::ProjectCandidate>> {
+    use nook_core::workspace::readiness;
+    let known: Vec<String> = {
+        let s = lock(&state.settings);
+        s.favorite_projects.iter().chain(s.recent_projects.iter()).cloned().collect()
+    };
+    blocking(move || {
+        let home = dirs::home_dir().unwrap_or_default().to_string_lossy().into_owned();
+        let sessions: Vec<(String, DateTime<Utc>)> = sessions.into_iter().map(|s| (s.folder, s.date)).collect();
+        readiness::project_candidates(&sessions, &known, &home, Utc::now(), readiness::LIMIT, |folder| {
+            readiness::git_root(folder, |p| std::path::Path::new(p).exists())
+        })
+    })
+    .await
+}
+
+/// "Add" on a recent folder in the first-run flow: only remembers it as a project (a recent one); nothing runs.
+#[tauri::command]
+pub fn workspace_remember_project(app: AppHandle, state: State<'_, WorkspaceState>, path: String) -> Res<()> {
+    if path.trim().is_empty() || !std::path::Path::new(path.trim()).is_dir() {
+        return Err(tr("Deze map bestaat niet.", "This folder doesn't exist.").into());
+    }
+    {
+        let mut s = lock(&state.settings);
+        s.remember_project(path.trim());
+        s.save_to(&WorkspaceSettings::file());
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
 /// "Make it a git repository": `git init` in a session's folder, then git is read again for the sessions there.
 #[tauri::command]
 pub async fn workspace_init_git(state: State<'_, WorkspaceState>, path: String) -> Res<()> {

@@ -20,6 +20,9 @@
   import FilterMenu from "./FilterMenu.svelte";
   import PullGlyph from "./PullGlyph.svelte";
   import PullRequestView from "./PullRequestView.svelte";
+  import ConfirmedButton from "../../../components/ui/ConfirmedButton.svelte";
+  import { toast } from "../../../lib/toast.svelte";
+  import { closeSummary, pullsApi, type CloseReport } from "../../../lib/pulls";
 
   let refreshPulsing = $state(false);
   const refreshPulse = new RefreshPulse((on) => (refreshPulsing = on));
@@ -92,6 +95,46 @@
   }
 
   const visible = (a: AccountPullRequests) => !isActive(filter) || !isEmpty(a) || !!a.error;
+
+  // Closing several at once (`PullRequestBatchClose` on the Mac): Select shows a box on every open row, the bar under
+  // the list closes the chosen ones after a confirmation, with an optional comment that goes first.
+  let selecting = $state(false);
+  let chosen = $state<Record<string, { repo: string; number: number; account: string }>>({});
+  let closeComment = $state("");
+  let closing = $state(false);
+  const chosenCount = $derived(Object.keys(chosen).length);
+
+  function toggleChosen(item: PullRequestItem, account: string) {
+    const id = itemId(item);
+    if (chosen[id]) {
+      const { [id]: _, ...rest } = chosen;
+      chosen = rest;
+    } else {
+      chosen = { ...chosen, [id]: { repo: item.repo, number: item.number, account } };
+    }
+  }
+
+  function stopSelecting() {
+    selecting = false;
+    chosen = {};
+    closeComment = "";
+  }
+
+  async function closeChosen() {
+    closing = true;
+    try {
+      const report: CloseReport = await pullsApi.closeMany(Object.values(chosen), closeComment);
+      const summary = closeSummary(report);
+      if (report.failures.length) toast.warning(summary.title, summary.detail);
+      else toast.success(summary.title);
+      stopSelecting();
+      pullRequests.refresh(true);
+    } catch (e) {
+      toast.error(tr("Sluiten mislukt", "Closing failed"), e);
+    } finally {
+      closing = false;
+    }
+  }
 </script>
 
 <svelte:window onkeydown={keys} />
@@ -104,6 +147,7 @@
   <div class="pulls">
     <PageHeader title="Pull requests">
       {#if pullRequests.loading}<span class="faint small">{tr("Bezig…", "Loading…")}</span>{/if}
+      <button class="page-icon" class:on={selecting} title={selecting ? tr("Klaar met selecteren", "Done selecting") : tr("Selecteer pull requests om te sluiten", "Select pull requests to close")} aria-label={tr("Selecteren", "Select")} aria-pressed={selecting} onclick={() => (selecting ? stopSelecting() : (selecting = true))}><Ico name="list-checks" size={15} /></button>
       <button class="page-icon" title={tr("Organisaties en repositories volgen", "Follow organizations and repositories")} aria-label={tr("Volgen", "Follow")} onclick={openSettings}><Ico name="binoculars" size={15} /></button>
       <button class="page-icon" title={tr("Vernieuwen", "Refresh")} aria-label={tr("Vernieuwen", "Refresh")} disabled={pullRequests.loading} onclick={refreshList}><span class="nook-spin-glyph" class:nook-spin={pullRequests.loading || refreshPulsing}><Ico name="refresh-cw" size={15} /></span></button>
     </PageHeader>
@@ -193,6 +237,20 @@
             </section>
           {/each}
         </div>
+        {#if selecting}
+          <div class="selbar">
+            <span class="small">{chosenCount ? tr("{n} gekozen", "{n} chosen", { n: chosenCount }) : tr("Kies open pull requests om te sluiten", "Choose open pull requests to close")}</span>
+            <input class="comment" placeholder={tr("Reactie waarom (optioneel)", "Comment on why (optional)")} bind:value={closeComment} disabled={closing} />
+            <button class="ghost" onclick={stopSelecting} disabled={closing}>{tr("Annuleer", "Cancel")}</button>
+            <ConfirmedButton
+              disabled={!chosenCount || closing}
+              question={tr("{n} pull requests sluiten zonder samenvoegen?", "Close {n} pull requests without merging?", { n: chosenCount })}
+              detail={closeComment.trim() ? tr("Je reactie wordt eerst geplaatst; een pull request waar dat mislukt blijft open.", "Your comment is posted first; a pull request where that fails stays open.") : undefined}
+              confirmTitle={tr("Sluit {n}", "Close {n}", { n: chosenCount })}
+              onconfirm={closeChosen}
+            />
+          </div>
+        {/if}
       {/if}
     {/if}
     </div>
@@ -207,7 +265,9 @@
   <div class="group">
     <div class="title faint">{title}</div>
     {#each items as item (itemId(item))}
-      <button class="row" title={tr("Bekijk pull request", "View pull request")} onclick={() => (opened = { account, item })}>
+      {@const closable = item.state !== "merged" && item.state !== "closed"}
+      <button class="row" class:chosen={!!chosen[itemId(item)]} title={selecting && closable ? tr("Kies om te sluiten", "Choose to close") : tr("Bekijk pull request", "View pull request")} onclick={() => (selecting && closable ? toggleChosen(item, account) : (opened = { account, item }))}>
+        {#if selecting}<input type="checkbox" class="pick" tabindex="-1" disabled={!closable} checked={!!chosen[itemId(item)]} aria-label={tr("Kies om te sluiten", "Choose to close")} />{/if}
         <span class="mark">
           {#if item.state === "merged"}<span class="merged" title={stateNames.merged}><PullGlyph glyph="merged" size={13} /></span>
           {:else if item.state === "closed"}<span class="closed" title={stateNames.closed}><PullGlyph glyph="closed" size={13} /></span>
@@ -257,4 +317,9 @@
   .meta { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .expired { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--radius); background: rgba(255, 107, 107, 0.1); }
   .actions { display: flex; gap: 4px; }
+  .row.chosen { background: var(--row-selected); }
+  .pick { flex: none; pointer-events: none; }
+  .page-icon.on { color: var(--iris); }
+  .selbar { display: flex; align-items: center; gap: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--line); }
+  .selbar .comment { flex: 1; min-width: 0; font-size: var(--text-detail); }
 </style>

@@ -458,6 +458,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [ ] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M
 
 - [x] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M — ported `readiness.rs`, `advice.rs`, `token_savings.rs`, and `tuning.rs` in `nook-core`, wired prompt-cache tracking, idle/size/return compaction, `AutoCompactMark`, `ClaudeToolSearch`, and `AppliedTuning` into `Manager`/`CommandInput`, added Tauri commands (`workspace_tuning_scan`, `workspace_tuning_set`, `workspace_readiness`, `workspace_limit_advice`, `workspace_offers_compact_first`), and added `TokenSettingsSection.svelte` under Settings › Coding agents › Usage & costs.
+  - Also (2026-11-27): the first-run flow's "Coding agents" step (`components/OnboardingAgents.svelte`, `lib/agent-readiness.ts`) shows each agent ready, to sign in, or to install, and offers the git folders you worked in over the last 30 days as projects (`workspace_project_candidates`, `workspace_remember_project`).
 
 - [x] **AG-33** OpenTelemetry environment passed to agents Nook starts (`AgentTelemetry`; the exporter is SV-05) · S
   - Done (2026-11-21): every coding agent Nook starts gets the receiver from Settings › System › Maintenance (or `OTEL_EXPORTER_OTLP_*` in Nook's environment) at its next start: the standard `OTEL_EXPORTER_OTLP_*` variables for all, plus Claude Code's `CLAUDE_CODE_ENABLE_TELEMETRY`, Codex's `-c otel.*` overrides, Gemini's `GEMINI_TELEMETRY_*` and Grok's `GROK_EXTERNAL_OTEL` (`workspace::command::apply_telemetry`, wired in `Manager`); with no endpoint nothing is passed, as on the Mac.
@@ -555,6 +556,10 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-83** Search across sessions and the archive (`TimelineSearch`, #1498) · M
   - Done: the search field of the Agents list also finds sessions by what was said in them (`Manager::search`, user and agent messages, archived sessions too); sessions outside the list show under "Also found" with the words around the match.
 
+- [x] **AG-136** Coming back to a conversation: a line above what is new since your last visit, and the folds you had open are open again (`TimelineVisits`, `TimelineLanding`) · S Done (2026-11-27): `lib/workspace/timeline-visits.ts` (bounded to 200 sessions and 200 open folds each, kept on this computer) and `views/agents/run/Timeline.svelte`, which places `TimelineNewDivider` once where the conversation opened.
+
+- [x] **AG-137** The usage limit card proposes the account to go on with (`LimitAdvisor`, `UsageLimitCard.suggestions`) · S Done (2026-11-27): `lib/workspace/limit-advisor.ts` ranks the accounts with room left (same agent first, then the least used of the other signed-in agents; nearly full ones left out; else the least used that are not full) from `agents_limits`, and the card in `Timeline.svelte` names how much of each is used. Another agent's account hands the session over without its model.
+
 ### 4.5 Composer and new session
 
 - [x] **AG-90** Chips and attachments in `RunComposer.svelte`: files, folders, pictures, drop, paste, `@` file/session/PR/skill/model (`ComposerChips`) · L
@@ -576,6 +581,12 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-96** Picker shortcuts (effort, access), send-and-… shortcut, `OpenSessionActions` · S
   - Done: Ctrl+Shift+M (and E) opens the composer's model picker, Ctrl+Shift+A its access panel, Ctrl+Shift+S settles and Ctrl+Shift+P pins the open session, F2 renames it, Ctrl+Shift+C copies where it works, Ctrl+Alt+Return starts a new session and stays on the new-session screen (the Mac's `Keybindings` with Ctrl for ⌘). Since then: Ctrl+O opens the session's folder in the editor chosen in Settings › Editor & browser (`open_in.rs`: VS Code, Cursor, Windsurf, Zed, IntelliJ IDEA, Sublime Text when on the PATH, else Explorer), also as Open in editor in the session's menu.
+
+- [x] **AG-138** One prompt to several models, each in a worktree of its own (`ModelComparison`) · M Done (2026-11-27): "Compare models" next to the model picker in `NewSession.svelte` (up to 4 together), `lib/workspace/model-comparison.ts` makes one config per model (title with the model, effort only within the same agent, an access level the agent supports); what failed stays chosen with the prompt to try again. Open: the Agents list does not group them under the first one yet (no `RunLineage.comparison` on Windows).
+
+- [x] **AG-139** Session links: "Copy session link" in a session's menu, and a pasted `nook://session/…` becomes that session's mention in the composer (`SessionLink`) · S Done (2026-11-27): `lib/workspace/session-link.ts`, `RunPanel.svelte`, `RunComposer.svelte`; opening the link elsewhere was already `services/deep_link.rs`. Dragging a session row onto a composer is not ported.
+
+- [x] **AG-140** Markdown lists keep going in the composers: `- `, `- [ ] `, `8. ` on the next line, an empty item ends the list (`ComposerLists`) · S Done (2026-11-27): `lib/workspace/composer-lists.ts` on Shift+Enter in `RunComposer.svelte` and `NewSession.svelte`; it follows the caret, so it also works in the middle of a draft.
 
 ### 4.6 Side panel per session
 
@@ -609,6 +620,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [x] **AG-114** One notice per finished turn with logo and gist (`AgentStatusNotice`); `AgentAlerts.svelte` covers part · S
   - Done: the bar's card is the Mac's `AgentStatusNotice`: the agent's logo with "Claude Code is done" and the folder, what the session is about as the title and the gist of the reply under it, the changed lines; the system notification has the same headline and gist, with a reply field for sessions Nook runs (AG-51).
 
+- [x] **AG-141** The one-line undo notice under the session list: "3 sessions settled · Ctrl+Z" with Undo, for five seconds (`UndoLog`) · S Done (2026-11-27): `lib/undo-log.ts` (same kind in a row merges and restarts its five seconds) in `views/agents/AgentsTab.svelte`, on top of the list's existing undo stack; the key shown is the one `session.undo` is bound to.
+
 ### 4.8 Git and source control
 
 - [x] **AG-120** Auto-pull, publish, project archive, Settings › Source control (`SourceControl`, `SourceControlSettings`) · M Done (2026-11-27): added `core/src/workspace/source_control_rules.rs` (`AutoPull`, `CloneLayout`, `RepositoryPublish`, `CommitReference`, `store_project_icon`, `Git::auto_pull`, `Git::clone_with_layout`, `Git::prepare_publish`, `Git::publish`, `create_github_repository`), background auto-pull loop in `src-tauri/src/workspace/mod.rs`, host-layout & SSH→HTTPS clone fallback in `clones.rs`, `workspace_publish_plan` / `workspace_publish_repository` / `workspace_project_icon_save` commands, per-project source control controls (`autoPull`, `submodules`, `agentsOff`, `icon`, Publish to GitHub) in `Projects.svelte`, and `PublishRepositoryModal.svelte`.
@@ -622,6 +635,10 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 - [ ] **AG-124** Other forges for session PRs: GitLab, Gitea, Bitbucket, Azure DevOps (`ForgeSettings`) · L
 
 - [x] **AG-125** "Work on this PR" (`AppModel+PullRequestCheckout`) in `PullRequestView.svelte` · S Done (2026-11-23): "Work on this PR" checkout in a new worktree or local clone wired in `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/agents/pulls/PullRequestView.svelte`.
+
+- [x] **AG-142** A pull request's files in reading order: each source file followed by its tests, then other tests, docs, and generated files last (`PullRequestFileOrder`) · S Done (2026-11-27): `lib/pr-file-order.ts` in the Files tab of `views/agents/pulls/PullRequestView.svelte`, also for ↑/↓.
+
+- [x] **AG-143** Close several pull requests in one go, with an optional comment that goes first (`PullRequestBatchClose`) · S Done (2026-11-27): Select in the pull request list, then the selection bar's Close with a confirmation; `core/src/connectors/pull_batch_close.rs` runs them one after the other through `github_comment_pr` and `github_close_pr` (`github_close_pull_requests`), leaves one open whose comment was refused, and every call goes to the action log.
 
 ### 4.9 Automation and remote
 
@@ -849,6 +866,9 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 - [ ] **CH-102** Import sign-ins, history and saved passwords from another browser for Nook's browser (`BrowserImportSheet`, `BrowserMemorySettings`) · M
 
 - [ ] **CH-103** Portfolio (`PortfolioConnector`): off on the Mac too; port when it is switched on there · S
+
+- [x] **CH-104** The connections search ignores case and accents and wants every word (`ConnectorGallerySearch`) · S Done (2026-11-27): `matchesQuery` in `lib/connectors.ts`.
+
 ## 6. System services (SV)
 
 ### 6.1 Updates and telemetry
