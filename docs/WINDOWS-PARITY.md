@@ -618,7 +618,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-122** Commit style, removing agent credits from commits, PR body check against the template (`CommitStyle`, `PullRequestBodyCheck`, #1561) · S Done: added `core/src/workspace/commit_style.rs` (`CommitStyle`, `strip_agent_credits`, `launch_instructions`, `pr_body_problems`, `pr_body_refusal`, `find_pr_template`), persisted settings on `WorkspaceSettings`, wired template validation and credit stripping into `pull_request_create`, `workspace_start`, and `workspace_commit_all`, and added the Settings › Pull requests controls.
 
-- [ ] **AG-123** Skip approval for a PR the user asked for (#1602), PR news as a new turn (#1601), PR mentions · S
+- [x] **AG-123** Skip approval for a PR the user asked for (#1602), PR news as a new turn (#1601), PR mentions · S Done (2026-11-26): `pr_links` (`asked_in_events`, `mentions_in_command`, `mentions_in_message`, `mentions_in_events`) in `nook-core`, skip-approval wired into `pull_request_create`, `tool: "prwatch"` emitted on PR watch news in `bridge/pulls.rs` with `lastTurn` turn-splitting tests, and session PR mentions group in `PullRequests.svelte`.
 
 - [ ] **AG-124** Other forges for session PRs: GitLab, Gitea, Bitbucket, Azure DevOps (`ForgeSettings`) · L
 
