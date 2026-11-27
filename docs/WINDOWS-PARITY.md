@@ -432,7 +432,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-20** Pi agent (`AgentKind.pi`, `PiRPC`, `WorkspaceManager+Pi`, `PiRPCTurnDriver`): `pi --mode rpc` driver in `core/src/workspace/driver.rs` · L
 
-- [ ] **AG-21** Own ACP agents (`CustomAgents`, `AcpAgentsSettings`, `AcpInstaller`): profile store, adapter install, Settings › Agents page · M
+- [x] **AG-21** Own ACP agents (`CustomAgents`, `AcpAgentsSettings`, `AcpInstaller`): profile store, adapter install, Settings › Agents page · M
+  - Done: `core/src/workspace/custom_agents.rs` (`CustomAgent`, `CustomAgents`, `AcpRegistry`, `AcpInstaller`) with lossy JSON profile store, ACP registry parsing (`npx`/`uvx` pinned packages and platform binary downloads with SHA-256 verification and safe archive unpacking), `AgentKind::Acp` and `RunProvider::Acp` wired through `acp.rs`/`driver.rs`/`manager.rs`, Tauri commands (`workspace_custom_acp_*`), and Settings › Coding agents › ACP agents (`AcpAgentsSection.svelte`) with registry search/install and manual command entry + executable check.
 
 - [ ] **AG-22** OpenCode through `opencode serve` (`OpenCodeServerHost`, `OpenCodeServerTurnDriver`) instead of ACP only · M
 

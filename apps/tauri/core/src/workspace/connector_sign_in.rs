@@ -108,6 +108,8 @@ pub fn account_key(provider: RunProvider, profile_id: &str, machine: Option<&str
         RunProvider::Cursor => "cursor",
         RunProvider::Grok => "grok",
         RunProvider::Antigravity => "antigravity",
+        // The profile id names the custom ACP agent, so each one keeps its own sign-ins.
+        RunProvider::Acp => "acp",
     };
     format!("{kind}|{profile_id}|{}", machine.unwrap_or(""))
 }
@@ -361,6 +363,7 @@ mod tests {
     fn account_key_groups_provider_profile_and_machine() {
         assert_eq!(account_key(RunProvider::Claude, "work", None), "claude|work|");
         assert_eq!(account_key(RunProvider::Codex, "", Some("box-1")), "codex||box-1");
+        assert_eq!(account_key(RunProvider::Acp, "my-agent", None), "acp|my-agent|");
         assert_ne!(account_key(RunProvider::Claude, "work", None), account_key(RunProvider::Claude, "personal", None));
     }
 }

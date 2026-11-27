@@ -21,6 +21,7 @@ pub mod command;
 pub mod commit_style;
 pub mod connector_sign_in;
 pub mod context_usage;
+pub mod custom_agents;
 pub mod delegation;
 pub mod dev_stop;
 pub mod driver;

@@ -199,7 +199,7 @@ pub fn scan(home: &Path, now: DateTime<Utc>) -> Vec<TuningAdvice> {
             RunProvider::Antigravity => {
                 advice.extend(json_servers(RunProvider::Antigravity, &home.join(".gemini/antigravity/mcp_config.json")));
             }
-            RunProvider::Grok => {}
+            RunProvider::Grok | RunProvider::Acp => {}
         }
     }
     advice

@@ -27,17 +27,31 @@ pub fn arguments(provider: RunProvider, permission: PermissionPolicy) -> Vec<Str
         // Grok decides on approvals itself with --always-approve; otherwise it asks Nook.
         RunProvider::Grok if permission == PermissionPolicy::Bypass => &["agent", "--always-approve", "stdio"],
         RunProvider::Grok => &["agent", "stdio"],
-        // Antigravity's server takes no arguments; its account and harness come from the environment.
-        RunProvider::Antigravity | RunProvider::Claude | RunProvider::Codex => &[],
+        // Antigravity's server takes no arguments; custom ACP agents bring their own command & arguments.
+        RunProvider::Antigravity | RunProvider::Claude | RunProvider::Codex | RunProvider::Acp => &[],
     };
     list.iter().map(|s| s.to_string()).collect()
 }
 
 /// The process and its driver for one turn.
 pub fn launch(input: &CommandInput) -> Result<(LaunchSpec, AcpDriver), String> {
-    let mut environment = input.account_environment.clone();
-    environment.insert("NOOK_RUN_ID".into(), input.run_id.clone());
+    let mut environment = std::collections::BTreeMap::new();
     let mut executable = input.executable.clone();
+    let mut args = arguments(input.provider, input.permission);
+    if input.provider == RunProvider::Acp {
+        let agent = input.custom_agent.as_ref().ok_or_else(|| {
+            tr(
+                "Deze ACP-agent is niet meer ingesteld (Instellingen › Coding-agents).",
+                "This ACP agent is no longer set up (Settings › Coding agents).",
+            )
+            .to_string()
+        })?;
+        environment.extend(agent.environment.clone());
+        executable = super::custom_agents::CustomAgents::find_executable(&agent.command).unwrap_or_else(|| agent.command.clone());
+        args = agent.arguments.clone();
+    }
+    environment.extend(input.account_environment.clone());
+    environment.insert("NOOK_RUN_ID".into(), input.run_id.clone());
     if input.provider == RunProvider::Antigravity {
         let server = antigravity::server(&input.executable).ok_or_else(antigravity::not_installed)?;
         let prepared = antigravity::prepare(&input.profile_id, &server, &input.account_environment)?;
@@ -48,7 +62,7 @@ pub fn launch(input: &CommandInput) -> Result<(LaunchSpec, AcpDriver), String> {
     let first = driver.initialize();
     let spec = LaunchSpec {
         executable,
-        arguments: arguments(input.provider, input.permission),
+        arguments: args,
         extra_environment: environment,
         working_directory: input.working_directory.clone(),
         initial_input: vec![first],
@@ -911,6 +925,7 @@ mod tests {
             tool_search: None,
             tuning: Default::default(),
             omit_agent_credits: false,
+            custom_agent: None,
         }
     }
 

@@ -90,6 +90,7 @@
   const runnable = $derived(workspace.providers.filter((p) => p.supported));
   const enabledProfiles = $derived(pickableProfiles(profiles));
   const hasEnabledAccount = (p: RunProvider) => {
+    if (p === "acp") return enabledProfiles.some((x) => x.kind === "acp");
     const all = profiles.filter((x) => x.kind === p);
     return all.length === 0 || enabledProfiles.some((x) => x.kind === p);
   };

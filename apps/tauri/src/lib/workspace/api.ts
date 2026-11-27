@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { tr } from "../i18n.svelte";
 import type { RemoteTarget } from "./machines";
 
-export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity";
+export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity" | "acp";
 export type ExecutionMode = "agent" | "plan";
 export type PermissionPolicy = "ask" | "acceptEdits" | "bypass";
 export type IsolationMode = "folder" | "worktree";
@@ -552,7 +552,46 @@ export const workspaceApi = {
   initGit: (path: string) => invoke<void>("workspace_init_git", { path }),
   worktrees: (refresh = false) => invoke<WorktreeRow[]>("workspace_worktrees", { refresh }),
   removeWorktree: (repo: string, path: string, force: boolean) => invoke<void>("workspace_remove_worktree", { repo, path, force }),
+  /** Custom ACP agents (`CustomAgents`, `AcpRegistry`, `AcpInstaller`, AG-21). */
+  customAcpList: () => invoke<CustomAgent[]>("workspace_custom_acp_list"),
+  customAcpRegistry: () => invoke<RegistryEntry[]>("workspace_custom_acp_registry"),
+  customAcpCheckCommand: (command: string) => invoke<string | null>("workspace_custom_acp_check_command", { command }),
+  customAcpAddRegistry: (entry: RegistryEntry) => invoke<CustomAgent>("workspace_custom_acp_add_registry", { entry }),
+  customAcpAddManual: (name: string, command: string) => invoke<CustomAgent>("workspace_custom_acp_add_manual", { name, command }),
+  customAcpRemove: (profileId: string) => invoke<void>("workspace_custom_acp_remove", { profileId }),
 };
+
+export interface CustomAgent {
+  profileId: string;
+  name: string;
+  registryId?: string | null;
+  version?: string | null;
+  command: string;
+  arguments: string[];
+  environment: Record<string, string>;
+  installedAt?: string | null;
+}
+
+export interface RegistryBinary {
+  archive: string;
+  sha256: string;
+  command: string;
+  arguments: string[];
+  environment: Record<string, string>;
+}
+
+export interface RegistryEntry {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  website?: string | null;
+  command?: string | null;
+  arguments: string[];
+  environment: Record<string, string>;
+  binary?: RegistryBinary | null;
+  supported: boolean;
+}
 
 export const workspaceEvents = {
   onChanged: (cb: () => void): Promise<UnlistenFn> => listen("workspace-changed", () => cb()),

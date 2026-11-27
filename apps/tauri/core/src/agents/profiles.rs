@@ -117,6 +117,7 @@ pub fn profile_suggested_home(kind: AgentKind, slug: &str) -> PathBuf {
         AgentKind::Cursor => home.join(format!(".cursor-{slug}")),
         AgentKind::Grok => home.join(format!(".grok-{slug}")),
         AgentKind::Antigravity => kind.default_home(),
+        AgentKind::Acp => kind.default_home().join(slug),
     }
 }
 
@@ -350,14 +351,16 @@ impl ProfileStore {
     pub fn all(&self) -> Vec<AgentProfile> {
         let mut result = vec![];
         for kind in AgentKind::ALL {
-            result.push(
-                self.stored
-                    .profiles
-                    .iter()
-                    .find(|p| p.kind == kind && p.is_default())
-                    .cloned()
-                    .unwrap_or_else(|| AgentProfile::default_profile(kind)),
-            );
+            if kind != AgentKind::Acp {
+                result.push(
+                    self.stored
+                        .profiles
+                        .iter()
+                        .find(|p| p.kind == kind && p.is_default())
+                        .cloned()
+                        .unwrap_or_else(|| AgentProfile::default_profile(kind)),
+                );
+            }
             result.extend(self.stored.profiles.iter().filter(|p| p.kind == kind && !p.is_default()).cloned());
         }
         result
@@ -377,6 +380,7 @@ impl ProfileStore {
             .get(kind.id())
             .and_then(|id| self.profile(id))
             .or_else(|| self.profile(kind.id()))
+            .or_else(|| self.profiles(kind).into_iter().next())
             .unwrap_or_else(|| AgentProfile::default_profile(kind))
     }
 

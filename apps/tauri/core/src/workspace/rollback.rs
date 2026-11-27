@@ -175,7 +175,12 @@ pub enum Plan {
 pub fn can_roll_back(provider: RunProvider) -> bool {
     match provider {
         RunProvider::Claude | RunProvider::Codex => true,
-        RunProvider::Gemini | RunProvider::Opencode | RunProvider::Cursor | RunProvider::Grok | RunProvider::Antigravity => false,
+        RunProvider::Gemini
+        | RunProvider::Opencode
+        | RunProvider::Cursor
+        | RunProvider::Grok
+        | RunProvider::Antigravity
+        | RunProvider::Acp => false,
     }
 }
 

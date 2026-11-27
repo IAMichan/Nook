@@ -18,6 +18,7 @@
   import Ico from "../../components/ui/Ico.svelte";
   import ConnectionRow from "./ConnectionRow.svelte";
   import AccountOptionsSection from "./AccountOptionsSection.svelte";
+  import AcpAgentsSection from "./AcpAgentsSection.svelte";
   import AgentUpdates from "../agents/AgentUpdates.svelte";
 
   interface AgentVersionInfo {
@@ -134,6 +135,15 @@
       if (i.profileId || claimed.has(i.target)) continue;
       entries.push({ id: `follow:${i.target}`, name: i.title, provider: null, agentKind: i.agent, integrations: [i], extraIntegrations: [] });
     }
+    // Custom ACP agents the user adds from the ACP registry or manually (`SettingsAgent.all` on the Mac, AG-21).
+    entries.push({
+      id: "acp",
+      name: tr("ACP-agents", "ACP agents"),
+      provider: null,
+      agentKind: "acp",
+      integrations: [],
+      extraIntegrations: [],
+    });
     return entries;
   });
 
@@ -159,6 +169,9 @@
 
   /** Where the agent stands, in a word and a color: a link to renew, linked, found on this computer, or not yet. */
   function standing(entry: AgentEntry): { tone: Tone; label: string } {
+    if (entry.agentKind === "acp") {
+      return { tone: "idle", label: tr("Agents die je zelf toevoegt", "Agents you add yourself") };
+    }
     if (entry.integrations.some((i) => i.state.kind === "outdated")) return { tone: "attention", label: tr("Verouderd", "Outdated") };
     if (entry.integrations.some((i) => i.state.kind === "installed")) return { tone: "linked", label: tr("Gekoppeld", "Linked") };
     if (entry.integrations.length === 0 && entry.provider) {
@@ -438,7 +451,9 @@
             </div>
           {/if}
 
-          {#if !entry.provider}
+          {#if entry.agentKind === "acp"}
+            <AcpAgentsSection onchange={load} />
+          {:else if !entry.provider}
             <p class="note follow">{tr("Nook volgt {name} via zijn instellingenbestand: je ziet voortgang en vragen in Nook, terwijl sessies in de eigen app starten.", "Nook follows {name} through its settings file: you see its progress and questions in Nook, while its sessions start in its own app.", { name: entry.name })}</p>
           {:else}
             {@const provider = entry.provider}
