@@ -547,7 +547,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-80** Resume at limit reset with the account choice, and snooze until reset · S Done (2026-11-23): resume at limit reset with account selection and snooze-until-reset wired in `commands/workspace.rs`, `AgentsTab.svelte`, and `RunPanel.svelte`.
 
-- [ ] **AG-81** Read-only guest link for a session (`GuestShares`, `GuestLink`) · M
+- [x] **AG-81** Read-only guest link for a session (`GuestShares`, `GuestLink`) · M
 
 - [x] **AG-82** Session export (`SessionExport`) · S
   - Done: Copy as Markdown and Export… in the session's menu (`lib/workspace/session-export.ts`, the Mac's format: messages whole, the work folded per step list, no thinking; `workspace_save_markdown` writes only .md files).

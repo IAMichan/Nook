@@ -29,6 +29,8 @@ pub mod favicon;
 pub mod file_view;
 pub mod git;
 pub mod governor;
+pub mod guest_link;
+pub mod guest_shares;
 pub mod handoff;
 pub mod hunk;
 pub mod limits;
