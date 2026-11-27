@@ -4027,6 +4027,9 @@ impl Manager {
             profile_id: run.profile_id.clone(),
             bridge: (self.hooks.bridge)(),
             effort: run.effort.clone(),
+            tool_search: None,
+            tuning: super::tuning::AppliedTuning::default(),
+            omit_agent_credits: super::token_savings::omit_agent_credits(),
         }
     }
 
