@@ -15,6 +15,7 @@ describe("project-sources helpers (AG-113)", () => {
     expect(githubCloneUrl("https://github.com/acme/app/pull/42")).toBe("https://github.com/acme/app.git");
     expect(githubCloneUrl("git@github.com:acme/app.git")).toBe("git@github.com:acme/app.git");
     expect(githubCloneUrl("https://gitlab.com/acme/app")).toBeNull();
+    expect(githubCloneUrl("https://evil.example/github.com/acme/app")).toBeNull();
     expect(githubCloneUrl("single-word")).toBeNull();
     expect(githubCloneUrl("acme/..")).toBeNull();
   });

@@ -113,7 +113,12 @@ impl SessionProjects {
                                 if Path::new(target).is_absolute() { PathBuf::from(target) } else { current.join(target) };
                             let normalized = git_dir.to_string_lossy().replace('\\', "/");
                             if let Some(idx) = normalized.find("/.git/worktrees/") {
-                                let root = normalized[..idx].to_string();
+                                // Canonicalized like `checkout` above, so roots compare equal on Windows (`\\?\` prefix,
+                                // separators, short names).
+                                let raw_root = &normalized[..idx];
+                                let root = std::fs::canonicalize(raw_root)
+                                    .map(|p| p.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|_| raw_root.to_string());
                                 if !root.is_empty() {
                                     return Some(RepoLocation { checkout, root });
                                 }

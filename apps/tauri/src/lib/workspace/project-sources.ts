@@ -42,7 +42,7 @@ export function githubCloneUrl(typed: string): string | null {
   if (!text) return null;
   if (text.startsWith("https://") || text.startsWith("git@")) {
     const url = repositoryUrlFromPage(text);
-    return url.toLowerCase().includes("github.com") ? url : null;
+    return /^(https:\/\/(www\.)?github\.com\/|git@github\.com:)/i.test(url) ? url : null;
   }
   for (const prefix of ["http://", "www.", "github.com/"]) {
     if (text.toLowerCase().startsWith(prefix)) {
