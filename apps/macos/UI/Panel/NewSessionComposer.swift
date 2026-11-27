@@ -51,6 +51,9 @@ struct NewSessionComposer: View {
     /// On another machine over SSH (see RemoteMachines): which one, and the folder there.
     @State var remoteMachine: RemoteMachine?
     @State var remoteFolder = ""
+    /// "Automatic" under "Runs on": Nook picks this Mac or a machine the project is shared with as it starts
+    /// (`MachineBalance`), kept for the next session.
+    @AppStorage("agents.runsOnAutomatic") var autoPlace = false
     /// Held, not observed: only its suggestion list watches it (`ComposerSuggestionSlot`), so a key that changes the
     /// list does not redraw this whole panel.
     @State var composerModel = ComposerModel()

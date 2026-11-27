@@ -3,9 +3,13 @@
 //! which agents are there. Every change tells the interface (`machines-changed`).
 
 use nook_core::agents::AgentKind;
+use nook_core::workspace::balance::{self, BalanceLevel, Candidate};
+use nook_core::workspace::models::RunProvider;
 use nook_core::workspace::remote::{self, RemoteMachine, RemoteMachines, RemoteTarget};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
+
+use crate::workspace::WorkspaceState;
 
 type Res<T> = Result<T, String>;
 
@@ -74,4 +78,125 @@ pub async fn machines_test(app: AppHandle, id: String) -> Res<MachineCheck> {
     .map_err(|e| e.to_string())??;
     changed(&app);
     Ok(MachineCheck { agents: found })
+}
+
+/// Changes how often "Automatic" picks a machine.
+#[tauri::command]
+pub fn machines_set_balance(app: AppHandle, id: String, level: BalanceLevel) -> Res<()> {
+    edit(&app, |list| {
+        if let Some(m) = list.machines.iter_mut().find(|m| m.id == id) {
+            m.balance = Some(level);
+        }
+    })
+}
+
+/// This computer's own level for "Automatic".
+#[tauri::command]
+pub fn machines_local_balance() -> BalanceLevel {
+    RemoteMachines::load(&RemoteMachines::file()).local_balance.unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn machines_set_local_balance(app: AppHandle, level: BalanceLevel) -> Res<()> {
+    edit(&app, |list| list.local_balance = Some(level))
+}
+
+/// Keeps `folder` as the folder of this computer's `project` on the machine: the project is then shared with it.
+#[tauri::command]
+pub fn machines_share_project(app: AppHandle, id: String, project: String, folder: String) -> Res<()> {
+    edit(&app, |list| {
+        if let Some(m) = list.machines.iter_mut().find(|m| m.id == id) {
+            m.remember_folder(&project, &folder);
+        }
+    })
+}
+
+/// Stops sharing `project` with the machine.
+#[tauri::command]
+pub fn machines_forget_project(app: AppHandle, id: String, project: String) -> Res<()> {
+    edit(&app, |list| {
+        if let Some(m) = list.machines.iter_mut().find(|m| m.id == id) {
+            m.project_folders.remove(&remote::project_key(&project));
+        }
+    })
+}
+
+fn edit(app: &AppHandle, change: impl FnOnce(&mut RemoteMachines)) -> Res<()> {
+    let file = RemoteMachines::file();
+    let mut list = RemoteMachines::load(&file);
+    change(&mut list);
+    list.save_to(&file).map_err(|e| e.to_string())?;
+    changed(app);
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedPlace {
+    machine_id: String,
+    name: String,
+    folder: String,
+}
+
+/// Where "Automatic" starts a session of `project` with `provider` (`balance::pick`): a machine the project is shared
+/// with, or `None` for this computer. Asks those machines first, in parallel (at most about 25 seconds).
+/// `local_available`: the agent is on this computer.
+#[tauri::command]
+pub async fn machines_pick(
+    state: State<'_, WorkspaceState>,
+    project: String,
+    provider: RunProvider,
+    local_available: bool,
+) -> Res<Option<PickedPlace>> {
+    let runs = state.manager.runs();
+    tauri::async_runtime::spawn_blocking(move || {
+        let list = RemoteMachines::load(&RemoteMachines::file());
+        let shared: Vec<RemoteMachine> = list
+            .machines
+            .into_iter()
+            .filter(|m| m.folder_for(&project).is_some() && m.balance_level() != BalanceLevel::ManualOnly)
+            .collect();
+        if shared.is_empty() {
+            return None;
+        }
+        let command = provider.kind().command();
+        let commands: Vec<&str> = AgentKind::ALL.iter().map(|k| k.command()).collect();
+        let found: Vec<bool> = std::thread::scope(|scope| {
+            let handles: Vec<_> = shared
+                .iter()
+                .map(|m| {
+                    let commands = &commands;
+                    scope.spawn(move || {
+                        let target = RemoteTarget::new(m, "~");
+                        remote::run_ssh(&remote::check_arguments(&target, commands), std::time::Duration::from_secs(25))
+                            .map(|out| remote::found_agents(&out, commands).iter().any(|c| c == command))
+                            .unwrap_or(false)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap_or(false)).collect()
+        });
+        let active = |id: Option<&str>| -> u32 {
+            runs.iter().filter(|r| r.status.is_active() && r.remote.as_ref().map(|t| t.machine_id.as_str()) == id).count() as u32
+        };
+        let mut candidates = vec![Candidate {
+            machine_id: None,
+            level: list.local_balance.unwrap_or_default(),
+            active: active(None),
+            available: local_available,
+        }];
+        for (m, ok) in shared.iter().zip(&found) {
+            candidates.push(Candidate {
+                machine_id: Some(m.id.clone()),
+                level: m.balance_level(),
+                active: active(Some(&m.id)),
+                available: *ok,
+            });
+        }
+        let id = balance::pick(&candidates)?;
+        let m = shared.iter().find(|m| m.id == id)?;
+        Some(PickedPlace { machine_id: m.id.clone(), name: m.name.clone(), folder: m.folder_for(&project)?.to_string() })
+    })
+    .await
+    .map_err(|e| e.to_string())
 }

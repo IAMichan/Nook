@@ -155,6 +155,19 @@ Linux), one of the machines from Settings › Devices › Machines, or **Add a m
 heading asks for the folder there (typed, `~/code/app` or `/srv/app`), and the agent starts there over SSH with that
 machine's own login of the agent. On Windows and Linux only key logins and the folder itself work so far (AG-132).
 
+Each machine in **Runs on** has a dot for whether it answers (mint connected, amber connecting or waiting for a
+password, coral not reachable). Nothing polls: machines are asked when the menu opens and right before an automatic
+start, and an answer counts for two minutes (`MachineReachability`, `machine-status.svelte.ts`).
+
+**Automatic** (once a machine exists) lets Nook pick the place as the session starts, like t3code's Auto balance. A
+project on this computer is shared with a machine once a session of it ran there; the machine keeps the project's
+folder there (`projectFolders`, listed and removable per machine in Settings › Devices › Machines). Among this
+computer and the shared machines that answer and have the chosen agent, the place with the fewest working sessions for
+its level wins: **Prefer** (weight 4), **Normal** (2), **Less often** (1) or **Manual only** (never picked
+automatically), set per machine and for this computer under Settings › Devices › Machines. A tie stays on this
+computer; with no place left the session starts here (`MachineBalance`, `core/src/workspace/balance.rs`). t3code's own
+algorithm is not public in its sources, so this is Nook's reading of its four levels.
+
 A session over SSH gets Nook's browser, `render_page` and read access to its own session (`RemoteBridge`). Nook copies `nook-mcp`
 to `~/.nook` there (it needs Perl with `JSON::PP`) and ssh forwards a socket in that folder to `bridge-remote.sock` on the Mac.
 That socket is separate from `bridge.sock`: a call on it needs a token made for that run, works only while that session is at work, and every tool that acts on the Mac

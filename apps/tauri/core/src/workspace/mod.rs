@@ -8,6 +8,7 @@ pub mod antigravity_install;
 pub mod arrivals;
 pub mod attention;
 pub mod autonomy;
+pub mod balance;
 pub mod bridge;
 pub mod bridge_nook;
 pub mod bridge_sessions;

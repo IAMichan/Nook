@@ -688,6 +688,7 @@ targets:
       - path: Services/Workspace/Simulators.swift
       - path: Services/Workspace/DeviceHub.swift
       - path: Services/Workspace/RemoteMachines.swift
+      - path: Services/Workspace/MachineBalance.swift
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/SettleActions.swift

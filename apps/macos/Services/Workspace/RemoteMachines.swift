@@ -20,12 +20,17 @@ struct RemoteMachine: Codable, Equatable, Identifiable, Sendable {
     /// Logs in with a password: Nook asks for it before the first session, then keeps it in memory until it quits (or in
     /// the Keychain, when you chose that).
     var passwordLogin: Bool? = nil
+    /// How often "Automatic" picks this machine (`MachineBalance`); nil is Normal.
+    var balance: BalanceLevel? = nil
+    /// The folder here of each project on this Mac that ran a session here (project path → folder there): such a project
+    /// is shared with this machine, and "Automatic" may start it here.
+    var projectFolders: [String: String]? = nil
 
     var usesPassword: Bool { passwordLogin == true }
 }
 
 extension RemoteMachine {
-    private enum CodingKeys: String, CodingKey { case id, name, host, port, identityFile, lastUsedAt, passwordLogin }
+    private enum CodingKeys: String, CodingKey { case id, name, host, port, identityFile, lastUsedAt, passwordLogin, balance, projectFolders }
 
     /// A missing id (stored by an older version) gets a new one instead of failing the machine.
     init(from decoder: Decoder) throws {
@@ -36,6 +41,9 @@ extension RemoteMachine {
         identityFile = try container.decodeIfPresent(String.self, forKey: .identityFile)
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
         passwordLogin = try container.decodeIfPresent(Bool.self, forKey: .passwordLogin)
+        // A level this version does not know is left at Normal instead of failing the machine.
+        balance = (try? container.decodeIfPresent(String.self, forKey: .balance)).flatMap { $0.flatMap(BalanceLevel.init(rawValue:)) }
+        projectFolders = try? container.decodeIfPresent([String: String].self, forKey: .projectFolders)
     }
 }
 

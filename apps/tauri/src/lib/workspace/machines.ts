@@ -3,6 +3,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+/** How often "Automatic" picks a place (`BalanceLevel`). */
+export type BalanceLevel = "prefer" | "normal" | "lessOften" | "manualOnly";
+export const balanceLevels: BalanceLevel[] = ["prefer", "normal", "lessOften", "manualOnly"];
+
 export interface RemoteMachine {
   id: string;
   name: string;
@@ -10,6 +14,15 @@ export interface RemoteMachine {
   port?: number | null;
   identityFile?: string | null;
   lastUsedAt?: string | null;
+  balance?: BalanceLevel | null;
+  /** Project path on this computer → its folder on the machine: the projects shared with it. */
+  projectFolders?: Record<string, string>;
+}
+
+export interface PickedPlace {
+  machineId: string;
+  name: string;
+  folder: string;
 }
 
 export interface RemoteTarget {
@@ -33,7 +46,34 @@ export const machinesApi = {
   remove: (id: string) => invoke<void>("machines_remove", { id }),
   test: (id: string) => invoke<MachineCheck>("machines_test", { id }),
   onChanged: (f: () => void): Promise<UnlistenFn> => listen("machines-changed", () => f()),
+  setBalance: (id: string, level: BalanceLevel) => invoke<void>("machines_set_balance", { id, level }),
+  localBalance: () => invoke<BalanceLevel>("machines_local_balance"),
+  setLocalBalance: (level: BalanceLevel) => invoke<void>("machines_set_local_balance", { level }),
+  shareProject: (id: string, project: string, folder: string) => invoke<void>("machines_share_project", { id, project, folder }),
+  forgetProject: (id: string, project: string) => invoke<void>("machines_forget_project", { id, project }),
+  /** Where "Automatic" starts it: a machine the project is shared with, or null for this computer. */
+  pick: (project: string, provider: string, localAvailable: boolean) =>
+    invoke<PickedPlace | null>("machines_pick", { project, provider, localAvailable }),
 };
+
+/** A project path as a key, as the core keeps it (`project_key`): trimmed, without a trailing separator. */
+export function projectKey(project: string): string {
+  const t = project.trim();
+  const stripped = t.replace(/[\\/]+$/, "");
+  return stripped || t;
+}
+
+/** The project's folder on the machine, when a session of it ran there. */
+export function folderFor(machine: RemoteMachine, project: string): string | null {
+  const key = projectKey(project);
+  const folder = key ? machine.projectFolders?.[key] : undefined;
+  return folder && folder.trim() ? folder : null;
+}
+
+/** The machines "Automatic" may pick for a project: shared with it, and not set to Manual only. */
+export function sharedMachines(machines: RemoteMachine[], project: string): RemoteMachine[] {
+  return machines.filter((m) => folderFor(m, project) !== null && (m.balance ?? "normal") !== "manualOnly");
+}
 
 /** An ssh destination: an alias or user@host, never something ssh would read as an option (`is_valid_host`). */
 export function isValidHost(host: string): boolean {

@@ -31,6 +31,54 @@ pub struct RemoteMachine {
     /// When a connection test passed or a session started there last.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_used_at: Option<DateTime<Utc>>,
+    /// How often "Automatic" picks this machine (`balance`); `None` is Normal. A level from a newer version reads as
+    /// Normal instead of failing the machine.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "lenient_level")]
+    pub balance: Option<super::balance::BalanceLevel>,
+    /// The folder here of each project on this computer that ran a session here (project path → folder there): such
+    /// a project is shared with this machine, and "Automatic" may start it here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub project_folders: BTreeMap<String, String>,
+}
+
+fn lenient_level<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<super::balance::BalanceLevel>, D::Error> {
+    let raw = Option::<String>::deserialize(d)?;
+    Ok(raw.and_then(|r| serde_json::from_value(serde_json::Value::String(r)).ok()))
+}
+
+/// How a project path is kept as a key: trimmed, without a trailing separator.
+pub fn project_key(project: &str) -> String {
+    let t = project.trim();
+    let stripped = t.trim_end_matches(['/', '\\']);
+    if stripped.is_empty() {
+        t.to_string()
+    } else {
+        stripped.to_string()
+    }
+}
+
+impl RemoteMachine {
+    /// How often "Automatic" picks this machine.
+    pub fn balance_level(&self) -> super::balance::BalanceLevel {
+        self.balance.unwrap_or_default()
+    }
+
+    /// The project's folder on this machine, when a session of it ran here.
+    pub fn folder_for(&self, project: &str) -> Option<&str> {
+        let key = project_key(project);
+        if key.is_empty() {
+            return None;
+        }
+        self.project_folders.get(&key).map(String::as_str).filter(|f| !f.trim().is_empty())
+    }
+
+    /// Keeps `folder` as the project's folder on this machine.
+    pub fn remember_folder(&mut self, project: &str, folder: &str) {
+        let (key, folder) = (project_key(project), folder.trim());
+        if !key.is_empty() && !folder.is_empty() {
+            self.project_folders.insert(key, folder.to_string());
+        }
+    }
 }
 
 fn new_id() -> String {
@@ -65,6 +113,8 @@ impl RemoteMachine {
             port: port.filter(|p| *p != 0 && *p != 22),
             identity_file: (!key.is_empty()).then(|| key.into()),
             last_used_at: None,
+            balance: None,
+            project_folders: BTreeMap::new(),
         })
     }
 }
@@ -101,6 +151,9 @@ impl RemoteTarget {
 pub struct RemoteMachines {
     #[serde(default)]
     pub machines: Vec<RemoteMachine>,
+    /// This computer's own level for "Automatic"; `None` is Normal.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "localBalance", deserialize_with = "lenient_level")]
+    pub local_balance: Option<super::balance::BalanceLevel>,
 }
 
 impl RemoteMachines {
@@ -116,9 +169,14 @@ impl RemoteMachines {
         struct Stored {
             #[serde(default)]
             machines: Vec<serde_json::Value>,
+            #[serde(default, rename = "localBalance")]
+            local_balance: Option<serde_json::Value>,
         }
         match serde_json::from_slice::<Stored>(&bytes) {
-            Ok(s) => Self { machines: s.machines.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect() },
+            Ok(s) => Self {
+                machines: s.machines.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+                local_balance: s.local_balance.and_then(|v| serde_json::from_value(v).ok()),
+            },
             Err(_) => {
                 let _ = std::fs::copy(file, file.with_extension("json.unreadable"));
                 Self::default()
@@ -135,9 +193,14 @@ impl RemoteMachines {
     }
 
     /// Adds a machine, or changes the one with the same id where it is in the list (keeping when it was last used).
+    /// An edit from the form keeps what the form does not show: when it was last used, its level and its projects.
     pub fn upsert(&mut self, mut machine: RemoteMachine) {
         if let Some(existing) = self.machines.iter_mut().find(|m| m.id == machine.id) {
             machine.last_used_at = machine.last_used_at.or(existing.last_used_at);
+            machine.balance = machine.balance.or(existing.balance);
+            if machine.project_folders.is_empty() {
+                machine.project_folders = std::mem::take(&mut existing.project_folders);
+            }
             *existing = machine;
         } else {
             self.machines.push(machine);
