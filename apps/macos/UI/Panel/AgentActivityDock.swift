@@ -160,44 +160,65 @@ struct AgentActivityDock: View {
     // MARK: - One kind
 
     private func singleHeader(_ kind: Kind) -> some View {
-        let count = counts(kind)
-        return HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Button {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    mark(kind)
-                    Text(title(kind, short: false)).foregroundStyle(NookTheme.textTertiary)
-                    headline(kind, detailedActivity: false)
-                    Spacer(minLength: 6)
-                    if count.failed > 0 {
-                        Text(tr("ws.background.failedCount", count.failed))
-                            .font(NookTheme.TextStyle.caption)
-                            .foregroundStyle(NookTheme.coralSoft)
-                            .fixedSize()
+                // A narrow column (a side panel open beside the chat) drops the kind's name first, then what the command
+                // does now, so the line stays one line instead of wrapping word by word. `MeasuredOnce`: the composer
+                // under it grows on every key, and `ViewThatFits` would build each variant again each time.
+                MeasuredOnce {
+                    ViewThatFits(in: .horizontal) {
+                        singleLine(kind, showTitle: true, showActivity: true)
+                        singleLine(kind, showTitle: false, showActivity: true)
+                        singleLine(kind, showTitle: false, showActivity: false)
+                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                            .clipped()
                     }
-                    if kind == .tasks {
-                        Text("\(count.done)/\(count.total)")
-                            .font(NookTheme.mono(11, .medium))
-                            .foregroundStyle(NookTheme.textSecondary)
-                    } else {
-                        // "2 of 4 done" alone: the spinner already says that some run.
-                        Text(tr("ws.subagents.progress", count.done, count.total))
-                            .font(NookTheme.TextStyle.detail.monospacedDigit())
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .fixedSize()
-                    }
-                    segments(kind)
-                    DisclosureChevron(open: open, size: 8.5, style: .upward)
                 }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nookPlain)
             .accessibilityLabel(accessibility(kind))
             panelButton(kind)
         }
+    }
+
+    private func singleLine(_ kind: Kind, showTitle: Bool, showActivity: Bool) -> some View {
+        let count = counts(kind)
+        return HStack(spacing: NookTheme.Spacing.md) {
+            mark(kind)
+            if showTitle {
+                Text(title(kind, short: false))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            headline(kind, detailedActivity: false, showActivity: showActivity)
+            Spacer(minLength: 6)
+            if count.failed > 0 {
+                Text(tr("ws.background.failedCount", count.failed))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .fixedSize()
+            }
+            if kind == .tasks {
+                Text("\(count.done)/\(count.total)")
+                    .font(NookTheme.mono(11, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize()
+            } else {
+                // "2 of 4 done" alone: the spinner already says that some run.
+                Text(tr("ws.subagents.progress", count.done, count.total))
+                    .font(NookTheme.TextStyle.detail.monospacedDigit())
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize()
+            }
+            segments(kind)
+            DisclosureChevron(open: open, size: 8.5, style: .upward)
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textSecondary)
     }
 
     /// One short bar per step or subagent: lit while it runs, mint once done, coral when it failed.
@@ -291,48 +312,60 @@ struct AgentActivityDock: View {
                 open = true
             }
         } label: {
-            HStack(spacing: NookTheme.Spacing.md) {
-                switch kind {
-                case .tasks:
-                    Image(icon: "checklist").font(NookTheme.font(11, .semibold)).frame(width: 12)
-                case .subagents:
-                    if let agent = leadSubagent {
-                        SubagentStatusMark(agent: agent)
-                        Text(agent.kind)
-                            .font(NookTheme.mono(10.5, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .fixedSize()
-                    }
-                case .commands:
-                    if let command = leadCommand { SubagentStatusMark(command: command) }
-                }
-                headline(kind, detailedActivity: true)
-                Spacer(minLength: 6)
-                if failedCount > 0, !leadFailed(kind) {
-                    // What failed while this one runs: counted, so it is not lost behind the running work.
-                    Text(tr("ws.background.failedCount", failedCount))
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.coralSoft)
-                        .fixedSize()
-                }
-                switch kind {
-                case .tasks: EmptyView()
-                case .subagents: if let agent = leadSubagent { SubagentElapsed(agent: agent) }
-                case .commands: if let command = leadCommand { SubagentElapsed(command: command.reading(activity[command.id])) }
+            // Too narrow for what the command does now: it goes, so the line keeps to one line.
+            MeasuredOnce {
+                ViewThatFits(in: .horizontal) {
+                    leadRow(kind, showActivity: true)
+                    leadRow(kind, showActivity: false)
+                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                        .clipped()
                 }
             }
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textSecondary)
-            .frame(minHeight: 18)
             .contentShape(Rectangle())
         }
         .buttonStyle(.nookPlain)
     }
 
+    private func leadRow(_ kind: Kind, showActivity: Bool) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            switch kind {
+            case .tasks:
+                Image(icon: "checklist").font(NookTheme.font(11, .semibold)).frame(width: 12)
+            case .subagents:
+                if let agent = leadSubagent {
+                    SubagentStatusMark(agent: agent)
+                    Text(agent.kind)
+                        .font(NookTheme.mono(10.5, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize()
+                }
+            case .commands:
+                if let command = leadCommand { SubagentStatusMark(command: command) }
+            }
+            headline(kind, detailedActivity: true, showActivity: showActivity)
+            Spacer(minLength: 6)
+            if failedCount > 0, !leadFailed(kind) {
+                // What failed while this one runs: counted, so it is not lost behind the running work.
+                Text(tr("ws.background.failedCount", failedCount))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .fixedSize()
+            }
+            switch kind {
+            case .tasks: EmptyView()
+            case .subagents: if let agent = leadSubagent { SubagentElapsed(agent: agent) }
+            case .commands: if let command = leadCommand { SubagentElapsed(command: command.reading(activity[command.id])) }
+            }
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textSecondary)
+        .frame(minHeight: 18)
+    }
+
     /// What a kind's line names: the step the agent is on, the subagent at work, or the command that runs (with whether
     /// it still works).
     @ViewBuilder
-    private func headline(_ kind: Kind, detailedActivity: Bool) -> some View {
+    private func headline(_ kind: Kind, detailedActivity: Bool, showActivity: Bool = true) -> some View {
         switch kind {
         case .tasks:
             let current = RunTasks.progress(tasks).current
@@ -345,11 +378,13 @@ struct AgentActivityDock: View {
             }
             .lineLimit(1)
             .truncationMode(.tail)
+            .modifier(HeadlineWidth())
         case .subagents:
             Text(leadSubagent?.title ?? "")
                 .foregroundStyle(NookTheme.paper.opacity(0.85))
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .modifier(HeadlineWidth())
         case .commands:
             Text(leadCommand?.title ?? "")
                 .font(NookTheme.mono(11))
@@ -357,8 +392,9 @@ struct AgentActivityDock: View {
                                  ? NookTheme.coralSoft : NookTheme.paper.opacity(0.85))
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if let command = leadCommand, command.isRunning, let now = activity[command.id] {
-                BackgroundCommandActivityLabel(activity: now, detailed: false).fixedSize()
+                .modifier(HeadlineWidth())
+            if showActivity, let command = leadCommand, command.isRunning, let now = activity[command.id] {
+                BackgroundCommandActivityLabel(activity: now, detailed: false).lineLimit(1).fixedSize()
             }
         }
     }
@@ -451,6 +487,14 @@ struct AgentActivityDock: View {
 
 /// The dock's card: the composer tray's fill and hairline, the watch over its running commands, and the focus a
 /// command's call in the conversation sends.
+/// A line's headline asks for at most this much width when the dock measures which variant fits: a long step, subagent
+/// or command then still leaves room for the rest of the line, and truncates instead of pushing it out.
+private struct HeadlineWidth: ViewModifier {
+    func body(content: Content) -> some View {
+        content.frame(minWidth: 0, idealWidth: 140, maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct DockCard: ViewModifier {
     let watchKey: String
     let watch: () async -> Void
