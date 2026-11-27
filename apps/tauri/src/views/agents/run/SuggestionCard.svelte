@@ -34,9 +34,22 @@
         const config = suggestedConfig(suggestion, run, provider, workspace.provider(provider)?.capabilities.policies ?? ["ask"], {
           models: settings?.defaultModels ?? {},
           profiles: settings?.defaultProfiles ?? {},
+          efforts: settings?.defaultEfforts ?? {},
+          isolation: settings?.defaultIsolation,
+          permission: settings?.defaultPermission,
+          worktreeRoot: settings?.worktreeRoot,
+          folderChoices: settings?.folderChoices,
         });
+        if (config.isolation === "worktree" && !config.baseBranch && config.projectPath) {
+          const info = await workspaceApi.inspect(config.projectPath).catch(() => null);
+          config.baseBranch = info?.currentBranch || info?.defaultBase || info?.branches[0] || "";
+        }
         const id = await workspaceApi.start(config, true);
         await sessionCardsApi.chosen(run.id, event.id, "start", id);
+        toast.show(tr("Sessie gestart", "Session started"), "success", suggestion.title, {
+          label: tr("Openen", "Open"),
+          run: () => agents.select(`run:${id}`),
+        });
       } else if (choice === "here") {
         await workspaceApi.send(run.id, suggestion.prompt);
         await sessionCardsApi.chosen(run.id, event.id, "here");
@@ -49,7 +62,11 @@
         await sessionCardsApi.chosen(run.id, event.id, "dismiss");
       }
     } catch (e) {
-      toast.show(String(e));
+      if (choice === "start") {
+        toast.error(tr("Kon de sessie niet starten", "Couldn’t start the session"), e);
+      } else {
+        toast.show(String(e));
+      }
     } finally {
       starting = false;
     }
@@ -84,7 +101,7 @@
         {:else if event.state === "done"}
           <span class="ok"><Ico name="circle-check" size={13} /></span>
           <span class="line">{tr("“{title}” gestart als nieuwe sessie", "Started “{title}” as a new session", { title: suggestion.title })}</span>
-          {#if event.output}<button type="button" class="ghost small" onclick={() => agents.select(`run:${event.output}`)}>{tr("Openen", "Open")}</button>{/if}
+          {#if event.output && workspace.runs.some((r) => r.id === event.output)}<button type="button" class="ghost small" onclick={() => agents.select(`run:${event.output}`)}>{tr("Openen", "Open")}</button>{/if}
         {:else if event.state === "allowed"}
           <span class="faint"><Ico name="corner-down-left" size={13} /></span>
           <span class="line">{tr("“{title}” ging naar deze sessie", "“{title}” went to this session", { title: suggestion.title })}</span>

@@ -6,6 +6,7 @@
   // running session's composer use this one view.
   import { api } from "../../../lib/api";
   import type { AgentProfile } from "../../../lib/agents";
+  import { accountCustomModels, pickableProfiles } from "../../../lib/account-options";
   import { tr } from "../../../lib/i18n.svelte";
   import {
     effortLabels, effortLevels, permissionHelp, permissionLabels, type ExecutionMode, type PermissionPolicy, type ProviderInfo, type RunProvider,
@@ -47,9 +48,13 @@
   let open = $state(false);
   let hovered = $state<PermissionPolicy | null>(null);
 
-  const own = (p: RunProvider) => profiles.filter((x) => x.kind === p);
+  const visibleProfiles = $derived(pickableProfiles(profiles, profileId));
+  const own = (p: RunProvider) => visibleProfiles.filter((x) => x.kind === p);
   const placeEntries = $derived<PlaceEntry[]>(providers.flatMap((p) => {
+    const allForKind = profiles.filter((x) => x.kind === p.provider);
     const accounts = own(p.provider);
+    // If every configured account for this agent was explicitly switched off, omit it from the rail.
+    if (allForKind.length > 0 && accounts.length === 0) return [];
     return accounts.length > 1
       ? accounts.map((a) => ({ id: `${p.provider}/${a.id}`, provider: p, profile: a }))
       : [{ id: p.provider, provider: p, profile: accounts[0] ?? null }];
@@ -98,7 +103,9 @@
     const p = entry.provider.provider;
     const q = query.trim();
     const listed = catalog.byAgent[p] ?? [];
-    const known = knownModels(p).filter((m) => !catalog.find(p, m));
+    const custom = accountCustomModels(entry.profile).filter((m) => !catalog.find(p, m));
+    const customSet = new Set(custom);
+    const known = knownModels(p).filter((m) => !catalog.find(p, m) && !customSet.has(m));
     const chosenLegacy = listed.filter((m) => !m.current && p === provider && catalog.find(p, model)?.id === m.id);
     const isChosen = (m: string) =>
       entry.id === chosenId && (m === model || (!!m && catalog.find(provider, model)?.id === m));
@@ -111,6 +118,7 @@
         trailing: m.isNew ? tr("Nieuw", "New") : undefined,
         model: m.id,
       })),
+      ...custom.map((m) => ({ id: m, title: m, model: m })),
       ...known.map((m) => ({ id: m, title: m, model: m })),
     ];
     const modelRows: ModelPickerItem[] = candidates

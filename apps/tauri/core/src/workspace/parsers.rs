@@ -12,6 +12,8 @@ pub struct TokenCounts {
     pub output: u64,
     pub cache_read: u64,
     pub cache_write: u64,
+    /// Ephemeral prompt cache lifetime in seconds when reported (`usage.cache_creation`, AG-32).
+    pub cache_ttl: Option<u64>,
 }
 
 impl TokenCounts {
@@ -41,6 +43,10 @@ pub enum ClaudeEvent {
     Initialized {
         session_id: String,
         model: Option<String>,
+    },
+    /// A new model request started (`stream_event` `message_start`), carrying its prompt cache TTL when reported.
+    RequestStarted {
+        cache_ttl: Option<u64>,
     },
     /// Een stukje tekst terwijl het antwoord binnenkomt (`--include-partial-messages`).
     TextDelta(String),
@@ -126,6 +132,7 @@ pub fn tokens(usage: &Value) -> TokenCounts {
         output: n("output_tokens"),
         cache_read: n("cache_read_input_tokens"),
         cache_write: n("cache_creation_input_tokens"),
+        cache_ttl: super::token_savings::PromptCache::claude_ttl(usage).map(|s| s as u64),
     }
 }
 
@@ -171,6 +178,10 @@ pub fn parse_claude(line: &str) -> Vec<ClaudeEvent> {
         "stream_event" => {
             let Some(event) = object.get("event").filter(|_| !nested) else { return vec![] };
             match s(event, "type") {
+                Some("message_start") => {
+                    let ttl = event.pointer("/message/usage").and_then(super::token_savings::PromptCache::claude_ttl).map(|s| s as u64);
+                    vec![ClaudeEvent::RequestStarted { cache_ttl: ttl }]
+                }
                 Some("content_block_start") => {
                     let Some(block) = event.get("content_block").filter(|b| s(b, "type") == Some("thinking")) else { return vec![] };
                     vec![ClaudeEvent::ThinkingDelta { text: s(block, "thinking").unwrap_or("").into(), starts: true }]
@@ -642,8 +653,12 @@ mod tests {
             ClaudeEvent::ToolUse { id: "toolu_1".into(), name: "Bash".into(), input: json!({"command": "ls"}), nested: false }
         );
         let ClaudeEvent::Usage { tokens, .. } = &events[2] else { panic!() };
-        assert_eq!(*tokens, TokenCounts { input: 10, output: 5, cache_read: 100, cache_write: 20 });
+        assert_eq!(*tokens, TokenCounts { input: 10, output: 5, cache_read: 100, cache_write: 20, cache_ttl: None });
         assert_eq!(tokens.context(), 130);
+        let with_ttl = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1","usage":{"input_tokens":2,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":800}}}}}"#;
+        assert_eq!(parse_claude(with_ttl), vec![ClaudeEvent::RequestStarted { cache_ttl: Some(300) }]);
+        let ttl_usage = json!({"input_tokens": 2, "output_tokens": 5, "cache_read_input_tokens": 15_000, "cache_creation_input_tokens": 26_000, "cache_creation": {"ephemeral_1h_input_tokens": 26_000, "ephemeral_5m_input_tokens": 0}});
+        assert_eq!(super::tokens(&ttl_usage).cache_ttl, Some(3_600));
         let sub = r#"{"type":"assistant","parent_tool_use_id":"toolu_parent","message":{"id":"m","content":[{"type":"text","text":"sub"},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/a"}}],"usage":{"input_tokens":1,"output_tokens":1}}}"#;
         assert_eq!(
             parse_claude(sub),
