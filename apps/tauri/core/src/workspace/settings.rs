@@ -158,6 +158,8 @@ pub struct WorkspaceSettings {
     pub idle_compaction: bool,
     /// Automatically summarize a session once its context passes this token count (`ws.autoCompactTokens`, AG-32; `0` = off).
     pub auto_compact_tokens: u64,
+    /// OpenCode 2.0.18+ through its own `opencode serve` HTTP + SSE server (`ws.openCodeServer`, AG-22).
+    pub open_code_server: bool,
 }
 
 impl Default for WorkspaceSettings {
@@ -198,6 +200,7 @@ impl Default for WorkspaceSettings {
             text_generators: BTreeMap::new(),
             idle_compaction: true,
             auto_compact_tokens: super::token_savings::SizeCompaction::DEFAULT_TOKENS,
+            open_code_server: true,
         }
     }
 }

@@ -117,6 +117,8 @@ pub fn setup(app: &AppHandle) {
         let args = lock(&agents.profiles).profile(profile_id).map(|p| p.launch_arguments()).unwrap_or_default();
         args
     });
+    let oc_settings = settings.clone();
+    manager.set_open_code_server(move || lock(&oc_settings).open_code_server);
     if let Some(services) = app.try_state::<crate::services::Services>() {
         manager.recap.set(services.recap.clone());
     }

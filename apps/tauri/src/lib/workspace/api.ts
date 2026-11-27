@@ -199,6 +199,8 @@ export interface WorkspaceSettings {
   branchPrefix?: string;
   /// Keep what Nook and each agent send each other (Settings › System › Diagnostics).
   keepTraffic?: boolean;
+  /// OpenCode via its own `opencode serve` server (questions, deny with a reason, effort).
+  openCodeServer?: boolean;
   /// Instructions every agent gets at launch, in every project that does not set its own.
   agentInstructions?: string;
   /// The editor a session's folder opens in ("code", "cursor", …); empty: the file manager.

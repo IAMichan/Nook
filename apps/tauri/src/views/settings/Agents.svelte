@@ -225,6 +225,18 @@
     }
   }
 
+  async function saveOpenCodeServer(enabled: boolean) {
+    if (!wsSettings) return;
+    error = null;
+    wsSettings.openCodeServer = enabled;
+    try {
+      await workspaceApi.saveSettings($state.snapshot(wsSettings));
+      await workspace.refresh();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function copyCliPath(path: string) {
     try {
       await navigator.clipboard.writeText(path);
@@ -569,6 +581,23 @@
                 )}
               </p>
             {/if}
+          {/if}
+
+          {#if entry.provider === "opencode" && wsSettings}
+            <div class="section-head">
+              <h3>{tr("Hoe Nook ermee praat", "How Nook talks to it")}</h3>
+            </div>
+            <div class="group">
+              <label class="row">
+                <span>{tr("OpenCode via zijn eigen server (vragen, weigeren met reden, denkniveau)", "OpenCode via its own server (questions, deny with a reason, effort)")}</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={wsSettings.openCodeServer !== false}
+                  onchange={(e) => saveOpenCodeServer(e.currentTarget.checked)}
+                />
+              </label>
+            </div>
           {/if}
         {/key}
       </div>

@@ -138,6 +138,7 @@ export const SETTINGS_INDEX: readonly (readonly [string, string, SettingsSection
   ["Model van whisper.cpp", "whisper.cpp model", "dictation"],
   ["Je agents", "Your agents", "agents"],
   ["Accounts", "Accounts", "agents"],
+  ["OpenCode via zijn eigen server (vragen, weigeren met reden, denkniveau)", "OpenCode via its own server (questions, deny with a reason, effort)", "agents"],
   ["Waar skills komen", "Where skills go", "skills"],
   ["Skill-mappen", "Skill folders", "skills"],
   ["Weekoverzicht", "Weekly recap", "usage"],

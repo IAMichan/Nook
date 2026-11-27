@@ -180,8 +180,9 @@ impl RunProvider {
                 can_rollback_conversation: false,
                 // Antigravity restarts its agent session to switch models, which ends a running prompt.
                 live_settings: self != Self::Antigravity,
-                // Here OpenCode runs over ACP, whose reject outcome has no text (the Mac's `opencode serve` has one).
-                deny_reason_in_response: false,
+                // OpenCode 2.0.18+ over `opencode serve` carries your denial reason directly in the permission reply
+                // (`opencode_protocol::permission_reply`); 1.x ACP fallback delivers it via steer/queue.
+                deny_reason_in_response: self == Self::Opencode,
                 speed_tiers: false,
                 ultracode: false,
                 echoes_steers: false,

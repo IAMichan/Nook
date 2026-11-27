@@ -434,7 +434,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-21** Own ACP agents (`CustomAgents`, `AcpAgentsSettings`, `AcpInstaller`): profile store, adapter install, Settings › Agents page · M
 
-- [ ] **AG-22** OpenCode through `opencode serve` (`OpenCodeServerHost`, `OpenCodeServerTurnDriver`) instead of ACP only · M
+- [x] **AG-22** OpenCode through `opencode serve` (`OpenCodeServerHost`, `OpenCodeServerTurnDriver`) instead of ACP only · M
 
 - [x] **AG-23** Antigravity installer (`AntigravityInstaller`): pin a Windows/Linux build once one exists, or document why not · S
   - Done: Google publishes the same pinned 1.3.0 release for Windows (x64, arm64) and Linux (x64, arm64) as for macOS; `core/src/workspace/antigravity_install.rs` pins all six (size and SHA-256 per archive, the two members and their sizes), downloads with progress, checks before unpacking, unpacks exactly the two files, test-starts the server (`initialize` must answer as `antigravity-acp` with Google sign-in) and only then makes it active; the new-session screen shows the Mac's setup line with Install and progress when Antigravity is picked (`AntigravitySetup.svelte`). The Windows x64 archive was checked against the pin (`unpacks_a_real_release_when_given`).

@@ -39,6 +39,8 @@ pub mod model_manifest;
 pub mod models;
 pub mod nook_schedule;
 pub mod open_in;
+pub mod opencode_protocol;
+pub mod opencode_server;
 pub mod parsers;
 pub mod paths;
 pub mod pr_checkout;

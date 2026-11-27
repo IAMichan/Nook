@@ -248,7 +248,35 @@ struct Inner {
     remote_base_refreshed: HashMap<String, DateTime<Utc>>,
     /// Sessions currently running an automatic idle/size `/compact` turn (`idleCompacting` on macOS, AG-32).
     idle_compacting: HashSet<Uuid>,
+    /// Shared `opencode serve` hosts keyed by `executable|profile_id` (`openCodeHosts`, AG-22).
+    opencode_hosts: HashMap<String, Arc<super::opencode_server::OpenCodeServerHost>>,
+    /// Per-session links to a shared `opencode serve` host (`openCodeLinks`, AG-22).
+    opencode_links: HashMap<Uuid, super::opencode_server::OpenCodeLink>,
+    /// Pending OpenCode permission requests keyed by `oc-<id>`.
+    opencode_requests: HashMap<String, (Uuid, super::opencode_protocol::OpenCodePermission)>,
+    /// Pending OpenCode forms (questions) keyed by `ocform-<id>`.
+    opencode_forms: HashMap<String, (Uuid, super::opencode_protocol::OpenCodeForm)>,
+    /// Executables whose `opencode serve` is unsupported or failed to start; fall back to ACP until restart.
+    opencode_fallback: HashSet<String>,
+    /// Prompts waiting while a session's `opencode serve` host or session is opening.
+    opencode_warm_prompts: HashMap<Uuid, String>,
+    /// Idle-close timers for OpenCode server sessions.
+    opencode_idle_close: HashMap<Uuid, tokio::task::AbortHandle>,
+    /// Grace-period stop timers for idle OpenCode server hosts.
+    opencode_host_stops: HashMap<String, tokio::task::AbortHandle>,
 }
+
+impl Inner {
+    /// Whether `id` currently has an active turn driver (either a child process or an OpenCode server turn).
+    fn has_active_driver(&self, id: Uuid) -> bool {
+        self.processes.contains_key(&id)
+            || self.opencode_warm_prompts.contains_key(&id)
+            || (self.opencode_links.contains_key(&id) && self.turns.contains_key(&id))
+    }
+}
+
+#[path = "opencode_driver.rs"]
+mod opencode_driver;
 
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
 type TelemetryProvider = Arc<dyn Fn() -> crate::services::telemetry::OtlpConfig + Send + Sync>;
@@ -262,6 +290,8 @@ pub type AccountExecutable = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 pub type AccountArguments = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
 /// Runs right before an agent process is interrupted or terminated so paused child commands can receive the signal (`AgentGovernor`, AG-76).
 pub type BeforeStop = Arc<dyn Fn(u32) + Send + Sync>;
+/// Reports whether OpenCode should run through `opencode serve` (`ws.openCodeServer`, AG-22).
+pub type OpenCodeServerEnabled = Arc<dyn Fn() -> bool + Send + Sync>;
 
 pub struct Manager {
     inner: Mutex<Inner>,
@@ -282,6 +312,8 @@ pub struct Manager {
     account_arguments: Mutex<Option<AccountArguments>>,
     /// Optional callback fired right before interrupting an agent PID (`AgentGovernor`, AG-76).
     before_stop: Mutex<Option<BeforeStop>>,
+    /// Optional predicate for `ws.openCodeServer` (defaults to `true`, AG-22).
+    open_code_server: Mutex<Option<OpenCodeServerEnabled>>,
 }
 
 /// Verzamelt events en stuurt ze pas als de mutex los is.
@@ -317,6 +349,7 @@ impl Manager {
             account_executable: Mutex::new(None),
             account_arguments: Mutex::new(None),
             before_stop: Mutex::new(None),
+            open_code_server: Mutex::new(None),
         });
         manager.restore_waiting();
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
@@ -332,6 +365,15 @@ impl Manager {
         *self.before_stop.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
     }
 
+    /// Registers whether OpenCode 2.0.18+ should use its own `opencode serve` server (`ws.openCodeServer`, AG-22).
+    pub fn set_open_code_server(&self, enabled: impl Fn() -> bool + Send + Sync + 'static) {
+        *self.open_code_server.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(enabled));
+    }
+
+    fn open_code_server_enabled(&self) -> bool {
+        self.open_code_server.lock().unwrap_or_else(|e| e.into_inner()).clone().is_none_or(|f| f())
+    }
+
     fn notify_before_stop(&self, pid: Option<u32>) {
         if let Some(pid) = pid {
             if let Some(cb) = self.before_stop.lock().unwrap_or_else(|e| e.into_inner()).clone() {
@@ -343,7 +385,8 @@ impl Manager {
     /// Currently running agent processes with their session ID, OS PID, and turn start time (`AgentGovernor`, AG-76).
     pub fn running_agents(&self) -> Vec<(Uuid, u32, DateTime<Utc>)> {
         let s = self.lock();
-        s.processes
+        let mut out: Vec<(Uuid, u32, DateTime<Utc>)> = s
+            .processes
             .iter()
             .filter_map(|(&id, proc_)| {
                 let pid = proc_.pid?;
@@ -355,7 +398,22 @@ impl Manager {
                     .unwrap_or_else(Utc::now);
                 Some((id, pid, started))
             })
-            .collect()
+            .collect();
+        for (&id, link) in &s.opencode_links {
+            if !s.turns.contains_key(&id) {
+                continue;
+            }
+            if let Some(pid) = s.opencode_hosts.get(&link.host).and_then(|h| h.pid()) {
+                let started = s
+                    .turns
+                    .get(&id)
+                    .and_then(|t| t.started)
+                    .or_else(|| s.runs.iter().find(|r| r.id == id).map(|r| r.updated_at))
+                    .unwrap_or_else(Utc::now);
+                out.push((id, pid, started));
+            }
+        }
+        out
     }
 
     /// Registers a per-account executable override resolver (`accountExecutable` on the Mac, CH-98).
@@ -668,7 +726,7 @@ impl Manager {
     }
 
     pub fn is_running(&self, id: Uuid) -> bool {
-        self.lock().processes.contains_key(&id)
+        self.lock().has_active_driver(id)
     }
 
     pub fn usage_report(&self, filter: &UsageFilter) -> UsageReport {
@@ -1417,7 +1475,7 @@ impl Manager {
                 .find(|r| r.id == id)
                 .cloned()
                 .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-            let busy = !run.can_continue() || s.processes.contains_key(&id);
+            let busy = !run.can_continue() || s.has_active_driver(id);
             (run, busy)
         };
         if busy {
@@ -1496,7 +1554,7 @@ impl Manager {
     pub fn send_queued_now(self: &Arc<Self>, id: Uuid) {
         let next = {
             let mut s = self.lock();
-            let active = s.runs.iter().find(|r| r.id == id).is_none_or(|r| r.status.is_active()) || s.processes.contains_key(&id);
+            let active = s.runs.iter().find(|r| r.id == id).is_none_or(|r| r.status.is_active()) || s.has_active_driver(id);
             if active {
                 return;
             }
@@ -1620,6 +1678,10 @@ impl Manager {
         if self.wait_for_capacity(id, &prompt, &executable, show_prompt) {
             return;
         }
+        if self.uses_opencode_server(id, &executable) {
+            self.launch_opencode_turn(id, prompt, executable, show_prompt);
+            return;
+        }
         // Does this version of the agent have its server? Asked once per program, before the lock.
         if let Some(provider) = self.run(id).map(|r| r.provider) {
             driver::warm(provider, &executable);
@@ -1629,7 +1691,7 @@ impl Manager {
         let mut out = Out::default();
         let (spec, mut turn_driver, used_claude_rollback) = {
             let mut s = self.lock();
-            if s.processes.contains_key(&id) {
+            if s.has_active_driver(id) {
                 return;
             }
             // Een nieuwe beurt beëindigt elk wachten op een gebruikslimiet (van jou of het automatische).
@@ -2921,7 +2983,7 @@ impl Manager {
     fn send_queued(self: &Arc<Self>, id: Uuid) {
         let next = {
             let mut s = self.lock();
-            if s.processes.contains_key(&id) || s.runs.iter().find(|r| r.id == id).is_none_or(|r| r.status != RunStatus::Completed) {
+            if s.has_active_driver(id) || s.runs.iter().find(|r| r.id == id).is_none_or(|r| r.status != RunStatus::Completed) {
                 return;
             }
             let Some(q) = s.queues.get_mut(&id) else { return };
@@ -2937,6 +2999,9 @@ impl Manager {
     /// Stopt de lopende beurt. Claude Code krijgt eerst een nette vraag om te onderbreken, daarna SIGINT.
     pub fn stop(self: &Arc<Self>, id: Uuid) {
         if self.cancel_waiting_turn(id) {
+            return;
+        }
+        if self.stop_opencode_turn(id) {
             return;
         }
         let mut out = Out::default();
@@ -3018,19 +3083,23 @@ impl Manager {
 
     // MARK: Toestemming en vragen
 
-    pub fn decide(&self, run_id: Uuid, request_id: &str, decision: ApprovalDecision) -> Result<(), String> {
+    pub fn decide(self: &Arc<Self>, run_id: Uuid, request_id: &str, decision: ApprovalDecision) -> Result<(), String> {
         self.decide_with_reason(run_id, request_id, decision, None)
     }
 
-    /// Decides; with Deny and a reason the agent hears why. Claude Code takes it as the denial's message; the agents on
-    /// a driver (Codex, ACP) have no field for it, so it goes to them as a steer, or else first in the queue.
+    /// Decides; with Deny and a reason the agent hears why. Claude Code and OpenCode server take it as the denial's
+    /// message; the agents on a driver (Codex, ACP) have no field for it, so it goes to them as a steer, or else first
+    /// in the queue.
     pub fn decide_with_reason(
-        &self,
+        self: &Arc<Self>,
         run_id: Uuid,
         request_id: &str,
         decision: ApprovalDecision,
         reason: Option<&str>,
     ) -> Result<(), String> {
+        if self.decide_opencode(run_id, request_id, decision, reason) {
+            return Ok(());
+        }
         let reason = reason.map(str::trim).filter(|r| !r.is_empty() && decision == ApprovalDecision::Deny).map(String::from);
         let mut tell_after = None;
         let mut out = Out::default();
@@ -3140,6 +3209,13 @@ impl Manager {
                 drop(s);
                 self.emit(out);
                 return self.send(run_id, &text);
+            }
+            if s.opencode_forms.contains_key(request_id) {
+                drop(s);
+                if self.answer_opencode_question(run_id, request_id, selections) {
+                    return Ok(());
+                }
+                return Err(tr("Deze vraag bestaat niet meer.", "This question no longer exists.").into());
             }
             let input = s
                 .processes
@@ -3287,7 +3363,7 @@ impl Manager {
             tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
             let executable = {
                 let mut s = manager.lock();
-                if s.quitting || s.processes.contains_key(&id) || s.idle_compacting.contains(&id) {
+                if s.quitting || s.has_active_driver(id) || s.idle_compacting.contains(&id) {
                     return;
                 }
                 let Some(run) = s.runs.iter().find(|r| r.id == id) else { return };
@@ -3317,7 +3393,7 @@ impl Manager {
             let snapshot: Vec<WorkspaceRun> = s.runs.iter().filter(|r| r.prompt_cache.is_some()).cloned().collect();
             for run in snapshot {
                 let id = run.id;
-                if s.processes.contains_key(&id) || s.idle_compacting.contains(&id) {
+                if s.has_active_driver(id) || s.idle_compacting.contains(&id) {
                     continue;
                 }
                 let holds = !s.approvals.get(&id).is_none_or(Vec::is_empty)
@@ -3513,7 +3589,7 @@ impl Manager {
                 .find(|r| r.id == id)
                 .cloned()
                 .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-            if run.status.is_active() || s.processes.contains_key(&id) {
+            if run.status.is_active() || s.has_active_driver(id) {
                 return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
             }
             s.runs.retain(|r| r.id != id);
@@ -3531,6 +3607,7 @@ impl Manager {
             s.dirty_queues = true;
             run
         };
+        self.close_opencode_session(id);
         self.store.delete_events(id);
         if let (Some(root), Some(git)) = (&run.repo_root, &self.git) {
             if !run.checkpoints.is_empty() {
@@ -3785,6 +3862,9 @@ impl Manager {
             r.goal = None;
             r.compacting = false;
         });
+        if cleared {
+            self.close_opencode_session(id);
+        }
         let mut out = Out::default();
         let event = if cleared {
             RunEvent::new(EventKind::System, tr("Nieuw gesprek", "New conversation")).with_tool("clear")
@@ -3802,7 +3882,7 @@ impl Manager {
     /// `false` while it works or when it is gone; nothing changes then.
     pub fn update_between_turns(&self, id: Uuid, change: impl FnOnce(&mut WorkspaceRun)) -> bool {
         let mut s = self.lock();
-        let free = s.runs.iter().any(|r| r.id == id && !r.status.is_active()) && !s.processes.contains_key(&id);
+        let free = s.runs.iter().any(|r| r.id == id && !r.status.is_active()) && !s.has_active_driver(id);
         if free {
             Self::update(&mut s, id, change);
         }
@@ -3820,7 +3900,11 @@ impl Manager {
 
     /// The process of the agent working for a session now, for its CPU and memory (`agentPIDs` on the Mac).
     pub fn agent_pid(&self, id: Uuid) -> Option<u32> {
-        self.lock().processes.get(&id).and_then(|p| p.pid)
+        let s = self.lock();
+        s.processes
+            .get(&id)
+            .and_then(|p| p.pid)
+            .or_else(|| s.opencode_links.get(&id).and_then(|l| s.opencode_hosts.get(&l.host)).and_then(|h| h.pid()))
     }
 
     pub fn git(&self) -> Option<&Git> {
@@ -3842,7 +3926,7 @@ impl Manager {
             let s = self.lock();
             if s.runs
                 .iter()
-                .any(|r| (r.status.is_active() || s.processes.contains_key(&r.id)) && paths::normalize(&r.working_directory) == target)
+                .any(|r| (r.status.is_active() || s.has_active_driver(r.id)) && paths::normalize(&r.working_directory) == target)
             {
                 return Err(tr(
                     "Er werkt nog een sessie in deze worktree. Stop die eerst.",
@@ -3976,7 +4060,7 @@ impl Manager {
         let Some(run) = s.runs.iter().find(|r| r.id == id) else { return false };
         run.isolation == IsolationMode::Worktree
             && !run.status.is_active()
-            && !s.processes.contains_key(&id)
+            && !s.has_active_driver(id)
             && run.checkpoints.iter().any(|c| c.date <= before && !c.r#ref.is_empty())
             && Self::active_sharing(&s, &run.working_directory, Some(id)).is_none()
     }
@@ -3986,7 +4070,7 @@ impl Manager {
         let s = self.lock();
         let Some(run) = s.runs.iter().find(|r| r.id == id) else { return false };
         !run.status.is_active()
-            && !s.processes.contains_key(&id)
+            && !s.has_active_driver(id)
             && run
                 .checkpoints
                 .iter()
@@ -4324,7 +4408,10 @@ impl Manager {
     /// deadline, hoeveel agents er ook draaien. Wat de sessies bezighield (vragen) wordt bewaard, en de sessies die dit
     /// afbrak gaan na de volgende start verder als dat aan staat.
     pub fn shutdown(&self) {
-        let release_pids: Vec<u32> = self.lock().processes.values().filter_map(|p| p.pid).collect();
+        let release_pids: Vec<u32> = {
+            let s = self.lock();
+            s.processes.values().filter_map(|p| p.pid).chain(s.opencode_hosts.values().filter_map(|h| h.pid())).collect()
+        };
         for pid in release_pids {
             self.notify_before_stop(Some(pid));
         }
@@ -4354,6 +4441,7 @@ impl Manager {
             }
             cut
         };
+        self.shutdown_opencode_hosts();
         let running = self.lock().processes.len();
         let alive = || !self.lock().processes.is_empty();
         let pids = || -> Vec<Option<u32>> { self.lock().processes.values().map(|p| p.pid).collect() };
@@ -4571,7 +4659,7 @@ impl Manager {
                 .find(|r| r.id == id)
                 .cloned()
                 .ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-            if source.status.is_active() || s.processes.contains_key(&id) {
+            if source.status.is_active() || s.has_active_driver(id) {
                 return Err(tr(
                     "Dat kan niet terwijl de agent werkt. Wacht tot de beurt klaar is of stop hem.",
                     "Not while the agent works. Wait for the turn to finish, or stop it.",
@@ -4647,7 +4735,7 @@ impl Manager {
         while start.elapsed() < limit {
             let idle = {
                 let s = self.lock();
-                !s.processes.contains_key(&id) && s.runs.iter().find(|r| r.id == id).is_some_and(|r| !r.status.is_active())
+                !s.has_active_driver(id) && s.runs.iter().find(|r| r.id == id).is_some_and(|r| !r.status.is_active())
             };
             if idle {
                 return true;
