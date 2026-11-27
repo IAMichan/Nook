@@ -266,6 +266,7 @@ impl ChatHelper {
     pub fn run(
         self: &Arc<Self>,
         chats: Arc<InboxStore>,
+        beeper_import: Arc<nook_core::chats::beeper_import::BeeperImporter>,
         changed: impl Fn(&nook_core::chats::ChatInbox, &InboxStore) + Send + Sync + 'static,
     ) {
         let me = self.clone();
@@ -278,10 +279,32 @@ impl ChatHelper {
                     me.ensure_live();
                     // What the inbox held before the read, to tell what is new after it.
                     let before = chats.read(|inbox| inbox.clone());
-                    match chats.read_bridge(me.bridge.as_ref()).await {
-                        Ok(true) => changed(&before, &chats),
-                        Ok(false) => {}
-                        Err(error) => log::info!("Chats: reading nook-chatd failed: {error}"),
+                    let mut dirty = match chats.read_bridge(me.bridge.as_ref()).await {
+                        Ok(flag) => flag,
+                        Err(error) => {
+                            log::info!("Chats: reading nook-chatd failed: {error}");
+                            false
+                        }
+                    };
+                    if beeper_import.has_waiting_settings() {
+                        if let Some(client) = me.bridge.client() {
+                            let listed = me.bridge.listed_chats();
+                            if !listed.is_empty() {
+                                let archived = beeper_import.apply_settings(&listed, &client).await;
+                                if !archived.is_empty() {
+                                    chats.with(|inbox| {
+                                        for chat in listed.iter().filter(|c| archived.contains(&c.id)) {
+                                            let key = ChatInbox::key(&chat.app, &chat.id);
+                                            inbox.set_archived(&key, true);
+                                        }
+                                    });
+                                    dirty = true;
+                                }
+                            }
+                        }
+                    }
+                    if dirty {
+                        changed(&before, &chats);
                     }
                 }
                 let wait = if me.is_live() { LIVE_INTERVAL } else { me.bridge.interval() };
@@ -335,11 +358,15 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// Starts the helper's reading loop. Called from `connectors::setup`.
-pub fn setup(app: &AppHandle, chats: Arc<InboxStore>) -> Arc<ChatHelper> {
+pub fn setup(
+    app: &AppHandle,
+    chats: Arc<InboxStore>,
+    beeper_import: Arc<nook_core::chats::beeper_import::BeeperImporter>,
+) -> Arc<ChatHelper> {
     let helper = ChatHelper::new();
     *lock(&helper.app) = Some(app.clone());
     let handle = app.clone();
-    helper.run(chats, move |before, store| {
+    helper.run(chats, beeper_import, move |before, store| {
         let _ = handle.emit("chats-changed", ());
         // On a copy: nothing may wait for the inbox while the notices go out.
         let now = store.read(Clone::clone);

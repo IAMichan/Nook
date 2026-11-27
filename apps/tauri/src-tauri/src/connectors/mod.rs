@@ -25,6 +25,8 @@ pub struct Connectors {
     pub whatsapp_accounts: Arc<whatsapp::accounts::WhatsAppAccounts>,
     /// Nook's chat helper (Telegram, Signal, Messenger, Instagram, X, LinkedIn, Slack), read into the same inbox.
     pub chat_helper: Arc<crate::chats::helper::ChatHelper>,
+    /// One-time move from Beeper Desktop (`localhost:23373`, CH-20).
+    pub beeper_import: Arc<nook_core::chats::beeper_import::BeeperImporter>,
 }
 
 impl Connectors {
@@ -54,7 +56,7 @@ pub fn setup(app: &AppHandle) {
     // One inbox for every chat app, kept in `chat-inbox.json` (an app whose messages stay in the app, WhatsApp through
     // its gateway, is saved without them).
     let chats = Arc::new(nook_core::chats::InboxStore::open_default());
-    let env = Env::with_chats(secrets, Arc::new(ConnectorStore::open_default()), chats.clone());
+    let env = Env::with_chats(secrets.clone(), Arc::new(ConnectorStore::open_default()), chats.clone());
     let hub = ConnectorHub::new(env.store.clone());
     let github = GitHub::new(env.clone());
     let whatsapp = whatsapp::WhatsAppLink::new(env.clone(), cfg!(desktop));
@@ -79,7 +81,8 @@ pub fn setup(app: &AppHandle) {
     let weak = Arc::downgrade(&whatsapp_accounts);
     whatsapp_accounts.wire(move |link| wire_whatsapp(&app_for_wa, link, weak.clone()));
 
-    let chat_helper = crate::chats::helper::setup(app, env.chats.clone());
+    let beeper_import = nook_core::chats::beeper_import::BeeperImporter::open_default(secrets);
+    let chat_helper = crate::chats::helper::setup(app, env.chats.clone(), beeper_import.clone());
     app.manage(Connectors {
         env: env.clone(),
         hub: hub.clone(),
@@ -87,6 +90,7 @@ pub fn setup(app: &AppHandle) {
         whatsapp: whatsapp.clone(),
         whatsapp_accounts: whatsapp_accounts.clone(),
         chat_helper,
+        beeper_import,
     });
     crate::chats::follow_up::setup(app);
     crate::chats::system_notices::setup(app, chats.clone());

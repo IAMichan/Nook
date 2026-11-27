@@ -696,7 +696,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **CH-19** Snapchat through a hidden web session (`SnapchatBridge`, `SnapchatWebSession`) · M
 
-- [ ] **CH-20** Beeper import (`BeeperImport`, `BeeperImporter`, `BeeperImportSection`); Beeper Desktop runs on Windows on localhost:23373 · M
+- [x] **CH-20** Beeper import (`BeeperImport`, `BeeperImporter`, `BeeperImportSection`); Beeper Desktop runs on Windows on localhost:23373 · M
 
 - [ ] **CH-21** Chat apps list in Settings with numbered linking steps per app (QR, phone code, website, token) (`ChatAppsCatalog`, `ChatAppStates`, `ChatAppSheet`, `ChatBridgeSettings`) · M
 
