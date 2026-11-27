@@ -66,6 +66,8 @@
   let machines = $state<RemoteMachine[]>([]);
   let machine = $state<RemoteMachine | null>(null);
   let remoteFolder = $state("");
+  /// On a machine: the branch a new worktree starts from there; empty is the branch that folder is on.
+  let remoteBase = $state("");
   /// For each machine that logs in with a password: whether Nook has it in this run.
   let unlocked = $state<Record<string, boolean>>({});
   const needsPassword = $derived(!!machine?.passwordLogin && !unlocked[machine.id]);
@@ -465,7 +467,7 @@
         const place = await machinesApi.pick(config.projectPath, config.provider, !!provider?.executable);
         if (place) {
           const task = project_(compose(config.task, attached, mentions), pictures);
-          const id = await workspaceApi.start({ ...config, task, projectPath: place.folder, isolation: "folder", baseBranch: "", branchName: "", machineId: place.machineId }, false);
+          const id = await workspaceApi.start({ ...config, task, projectPath: place.folder, baseBranch: "", branchName: "", machineId: place.machineId }, false);
           toast.success(tr("Gestart op {machine}", "Started on {machine}", { machine: place.name }));
           attached = [];
           pictures = [];
@@ -495,7 +497,7 @@
     try {
       const task = project_(compose(config.task, attached, mentions), pictures);
       const id = machine
-        ? await workspaceApi.start({ ...config, task, projectPath: remoteFolder.trim(), isolation: "folder", baseBranch: "", branchName: "", machineId: machine.id }, false)
+        ? await workspaceApi.start({ ...config, task, projectPath: remoteFolder.trim(), baseBranch: config.isolation === "worktree" ? remoteBase.trim() : "", branchName: "", machineId: machine.id }, false)
         : await workspaceApi.start({ ...config, task, projectPath: noProject ? "" : config.projectPath, branchName: "", machineId: "" }, allowShared);
       if (machine) {
         rememberFolder(machine.id, remoteFolder);
@@ -561,7 +563,7 @@
   });
 
   const stop = (e: Event) => e.stopPropagation();
-  const startLabel = $derived(starting ? (config.isolation === "worktree" && !machine ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
+  const startLabel = $derived(starting ? (config.isolation === "worktree" ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
 
   // Markdown lists keep going (`ComposerLists`): a new line after "- item" or "7." starts the next item; one after an
   // empty item ends the list.
@@ -750,9 +752,7 @@
   <!-- Under the box, tucked against it (`ComposerTray`): where the agent works and from which branch. -->
   <div class="below">
     <RunsOnPicker {machines} chosen={machine} {automatic} onpick={pickMachine} onautomatic={() => { pickMachine(null); setAutomatic(true); }} />
-    {#if machine}
-      <span class="pill static"><Ico name="folder" size={15} /><span>{tr("Huidige map", "Current folder")}</span></span>
-    {:else if !noProject && (!project || project.repoRoot)}
+    {#if machine || (!noProject && (!project || project.repoRoot))}
       <Dropdown width={300} below label={tr("Waar de agent werkt", "Where the agent works")}>
         {#snippet trigger({ toggle, open })}
           <button class="pill" onclick={toggle} aria-expanded={open} title={worktreeAllowed ? "" : worktreeBlocked}>
@@ -764,13 +764,18 @@
           <DropdownRow symbol="folder" title={tr("Huidige map", "Current folder")} detail={tr("In de map zelf, op de branch die er nu staat.", "In the folder itself, on the branch that's checked out now.")}
             chosen={config.isolation === "folder"} onclick={() => { close(); config.isolation = "folder"; remember(); }} />
           <DropdownRow symbol="layers" title={tr("Nieuwe worktree", "New worktree")} detail={tr("De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn.", "The agent gets its own folder and branch. Your own checkout and branch stay exactly as they are.")}
-            chosen={config.isolation === "worktree"} disabledReason={worktreeAllowed ? undefined : worktreeBlocked} onclick={() => { close(); config.isolation = "worktree"; remember(); }} />
+            chosen={config.isolation === "worktree"} disabledReason={machine || worktreeAllowed ? undefined : worktreeBlocked} onclick={() => { close(); config.isolation = "worktree"; remember(); }} />
         {/snippet}
       </Dropdown>
     {/if}
     <span class="spacer"></span>
     {#if machine}
-      <span class="pill static faint-pill">{tr("via SSH · {host}", "via SSH · {host}", { host: machine.host })}</span>
+      {#if config.isolation === "worktree"}
+        <!-- The branches here mean nothing there: a worktree starts from the branch that folder is on, unless you type one. -->
+        <label class="pill branch"><Ico name="git-branch" size={15} /><input class="base" bind:value={remoteBase} placeholder={tr("huidige branch daar", "current branch there")} aria-label={tr("Basis-branch", "Base branch")} /></label>
+      {:else}
+        <span class="pill static faint-pill">{tr("via SSH · {host}", "via SSH · {host}", { host: machine.host })}</span>
+      {/if}
     {:else if noProject}
       <!-- A folder of its own: no branch to show. -->
     {:else if config.isolation === "worktree" && project?.branches.length}
@@ -842,6 +847,7 @@
   .remote input { flex: 1; min-width: 140px; font: var(--text-code); }
   .remote .ghost { flex: none; }
   .faint-pill { color: var(--text3); }
+  .base { width: 140px; padding: 0; border: 0; background: none; box-shadow: none; font: var(--text-control); color: var(--paper); }
   .clone { display: flex; gap: var(--space-6); }
   .clone input { flex: 1; }
   .box { position: relative; z-index: 1; border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); background: var(--composer); padding: var(--space-16) var(--space-8) var(--space-8) var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper) 6%, transparent); }

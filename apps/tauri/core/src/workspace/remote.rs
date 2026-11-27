@@ -439,6 +439,31 @@ pub fn run_ssh(target: &RemoteTarget, arguments: &[String], timeout: std::time::
     }
 }
 
+/// The ssh arguments for one program on the machine, in `directory` there, with `environment` exported: git and the
+/// small shell steps around it (`Git` on a machine). On macOS and Linux one shared connection per machine
+/// (ControlMaster) keeps the many small git calls fast; Windows' OpenSSH has no such connection sharing.
+pub fn command_arguments(
+    target: &RemoteTarget,
+    program: &str,
+    arguments: &[String],
+    directory: Option<&str>,
+    environment: &BTreeMap<String, String>,
+) -> Vec<String> {
+    let mut out = options(target, password_for(target).as_deref());
+    out.extend(["-o", "ConnectTimeout=10"].map(String::from));
+    if cfg!(unix) {
+        out.extend(["-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/nook-ssh-%C", "-o", "ControlPersist=120"].map(String::from));
+    }
+    let program_line =
+        std::iter::once(program.to_string()).chain(arguments.iter().cloned()).map(|w| quote(&w)).collect::<Vec<_>>().join(" ");
+    let mut line = format!("{}exec {program_line}", exports(environment));
+    if let Some(dir) = directory {
+        line = format!("cd {} && {line}", quoted_directory(dir));
+    }
+    out.extend(["--".into(), target.host.clone(), format!(r#"exec "${{SHELL:-/bin/sh}}" -lc {}"#, quote(&line))]);
+    out
+}
+
 /// The commands from the test's output, in the order they were asked for.
 pub fn found_agents(output: &str, asked: &[&str]) -> Vec<String> {
     let found: std::collections::HashSet<&str> = output.lines().map(str::trim).collect();

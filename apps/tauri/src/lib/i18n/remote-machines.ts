@@ -62,6 +62,7 @@ export const table: Table = {
     fr: "Connexion…",
     es: "Conectando…",
   },
+  "current branch there": { de: "aktueller Branch dort", fr: "branche actuelle là-bas", es: "rama actual allí" },
   "Folder on {machine}:": {
     de: "Ordner auf {machine}:",
     fr: "Dossier sur {machine} :",

@@ -153,7 +153,7 @@ remote access to it.
 A new session picks where it runs under the composer, with **Runs on**: this Mac (or this computer on Windows and
 Linux), one of the machines from Settings › Devices › Machines, or **Add a machine…**. With a machine chosen, the
 heading asks for the folder there (typed, `~/code/app` or `/srv/app`), and the agent starts there over SSH with that
-machine's own login of the agent. On Windows and Linux only key logins and the folder itself work so far (AG-132).
+machine's own login of the agent. On Windows and Linux, Nook's tools for the agent there are not available yet (AG-132).
 
 Each machine in **Runs on** has a dot for whether it answers (mint connected, amber connecting or waiting for a
 password, coral not reachable). Nothing polls: machines are asked when the menu opens and right before an automatic

@@ -389,6 +389,15 @@ impl Manager {
         (self.hooks.executable)(provider)
     }
 
+    /// Git for this session's folder: here, or for a session on another machine over ssh there
+    /// (`sessionGit(for:)` on the Mac).
+    pub fn git_for(&self, run: &WorkspaceRun) -> Option<Git> {
+        match &run.remote {
+            Some(target) => Some(Git::on(target.clone())),
+            None => self.git.clone(),
+        }
+    }
+
     /// The program a turn of `run` starts: on another machine the agent's own command there, else the one found here.
     fn turn_executable(&self, run: &WorkspaceRun) -> Option<String> {
         if run.remote.is_some() {
@@ -2868,8 +2877,11 @@ impl Manager {
         self.start_waiting_turns();
         self.maybe_compact_for_size(id, turn_compacted);
         let mark = Self::conversation_mark(&run);
-        if run.isolation == IsolationMode::Worktree && run.worktree_path.as_deref().is_some_and(|p| Path::new(p).exists()) {
-            if let Some(git) = self.git.clone() {
+        // A worktree on another machine is not on this computer to look at; git there says whether it is still there.
+        if run.isolation == IsolationMode::Worktree
+            && run.worktree_path.as_deref().is_some_and(|p| run.remote.is_some() || Path::new(p).exists())
+        {
+            if let Some(git) = self.git_for(&run) {
                 let index = run.checkpoints.len();
                 let dir = run.working_directory.clone();
                 let manager = self.clone();
@@ -3593,7 +3605,7 @@ impl Manager {
             run
         };
         self.store.delete_events(id);
-        if let (Some(root), Some(git)) = (&run.repo_root, &self.git) {
+        if let (Some(root), Some(git)) = (&run.repo_root, self.git_for(&run)) {
             if !run.checkpoints.is_empty() {
                 git.remove_checkpoints(root, &id.to_string());
             }
@@ -3628,8 +3640,8 @@ impl Manager {
     }
 
     pub fn refresh_git(self: &Arc<Self>, id: Uuid) {
-        let Some(git) = self.git.clone() else { return };
         let Some(run) = self.run(id).filter(|r| r.repo_root.is_some()) else { return };
+        let Some(git) = self.git_for(&run) else { return };
         {
             let mut s = self.lock();
             s.git.entry(id).or_default().loading = true;
@@ -3673,7 +3685,7 @@ impl Manager {
 
     pub fn diff(&self, id: Uuid, file: &git::FileChange) -> Result<String, String> {
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.diff(&run.working_directory, file).map_err(|e| e.0)
     }
 
@@ -3682,7 +3694,7 @@ impl Manager {
         if run.status.is_active() {
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let sha = git.commit(&run.working_directory, message, paths).map_err(|e| e.0)?;
         let mut out = Out::default();
         {
@@ -3702,7 +3714,7 @@ impl Manager {
 
     pub fn push(self: &Arc<Self>, id: Uuid) -> Result<String, String> {
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let branch = git.current_branch(dir).ok_or(tr("Er is geen branch uitgecheckt.", "No branch is checked out."))?;
         let remotes = git.remotes(dir);
@@ -3726,7 +3738,7 @@ impl Manager {
         if run.status.is_active() {
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let name = super::models::branch_name(topic, Uuid::new_v4());
         let cut = git.start_branch(dir, &name, &Self::push_remote(git, dir)).map_err(|e| e.0)?;
@@ -3756,7 +3768,7 @@ impl Manager {
     /// Alleen het nieuwe werk in de nieuwe pull request: de commits na `cut` op de basis van de sessie.
     pub fn move_onto_base(self: &Arc<Self>, id: Uuid, cut: &str) -> Result<bool, String> {
         let run = self.run(id).ok_or(tr("Deze sessie bestaat niet meer.", "This session no longer exists."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         let dir = &run.working_directory;
         let remote = Self::push_remote(git, dir);
         let base = git
@@ -3783,7 +3795,7 @@ impl Manager {
         if run.status.is_active() {
             return Err(tr("Kan niet terwijl de agent werkt.", "Not possible while the agent works.").into());
         }
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.pull_fast_forward(&run.working_directory).map_err(|e| e.0)?;
         self.note(id, tr("Gepulld (alleen fast-forward)", "Pulled (fast-forward only)"));
         self.refresh_git(id);
@@ -4740,7 +4752,7 @@ impl Manager {
             .find(|(_, c)| c.date <= before && !c.r#ref.is_empty())
             .map(|(i, c)| (i, c.clone()))
             .ok_or(tr("Geen eerder punt gevonden.", "No earlier point found."))?;
-        let git = self.git.as_ref().ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
+        let git = &self.git_for(&run).ok_or(tr("Git is niet gevonden.", "Git was not found."))?;
         git.restore(&run.working_directory, &checkpoint.r#ref).map_err(|e| e.0)?;
         let mut out = Out::default();
         let removed_refs = {
@@ -4801,7 +4813,7 @@ impl Manager {
             removed_refs
         };
         if !removed_refs.is_empty() {
-            if let Some(git) = &self.git {
+            if let Some(git) = self.git_for(&run) {
                 git.remove_checkpoint_refs(&run.working_directory, &removed_refs);
             }
         }

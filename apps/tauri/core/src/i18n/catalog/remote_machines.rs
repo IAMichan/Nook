@@ -10,12 +10,6 @@ pub const ROWS: &[Row] = &[
         "Un archivo de clave empieza por / o ~/ (por ejemplo ~/.ssh/id_ed25519).",
     ),
     (
-        "A new worktree on another machine is not available here yet. Choose the folder itself.",
-        "Ein neuer Worktree auf einem anderen Rechner ist hier noch nicht möglich. Wähle den Ordner selbst.",
-        "Un nouveau worktree sur une autre machine n’est pas encore disponible ici. Choisissez le dossier lui-même.",
-        "Un worktree nuevo en otra máquina aún no está disponible aquí. Elige la carpeta misma.",
-    ),
-    (
         "Could not start ssh: {e}",
         "ssh konnte nicht gestartet werden: {e}",
         "Impossible de lancer ssh : {e}",
@@ -62,6 +56,12 @@ pub const ROWS: &[Row] = &[
         "Das ist keine Adresse für ssh. Gib einen Alias aus deiner ssh-Konfiguration oder benutzer@host ein.",
         "Ce n’est pas une adresse pour ssh. Saisissez un alias de votre configuration ssh ou utilisateur@hôte.",
         "Esa no es una dirección para ssh. Escribe un alias de tu configuración de ssh o usuario@host.",
+    ),
+    (
+        "The home folder on the other machine cannot be found, so no worktree can be made there.",
+        "Der Benutzerordner auf dem anderen Rechner ist nicht zu finden, daher kann dort kein Worktree entstehen.",
+        "Le dossier personnel de l’autre machine est introuvable : impossible d’y créer un worktree.",
+        "No se encuentra la carpeta personal en la otra máquina, así que no se puede crear allí un worktree.",
     ),
     (
         "The machine could not be reached. Check that it is on and that the address is right.",
