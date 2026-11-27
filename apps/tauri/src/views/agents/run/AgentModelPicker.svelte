@@ -53,24 +53,34 @@
   const placeEntries = $derived<PlaceEntry[]>(providers.flatMap((p) => {
     const allForKind = profiles.filter((x) => x.kind === p.provider);
     const accounts = own(p.provider);
+    // Custom ACP agents only exist as added accounts; never show a bare "ACP" entry.
+    if (p.provider === "acp") {
+      return accounts.map((a) => ({ id: `${p.provider}/${a.id}`, provider: p, profile: a }));
+    }
     // If every configured account for this agent was explicitly switched off, omit it from the rail.
     if (allForKind.length > 0 && accounts.length === 0) return [];
     return accounts.length > 1
       ? accounts.map((a) => ({ id: `${p.provider}/${a.id}`, provider: p, profile: a }))
       : [{ id: p.provider, provider: p, profile: accounts[0] ?? null }];
   }));
-  const pickerPlaces = $derived<ModelPickerPlace[]>(placeEntries.map((entry) => ({
-    id: entry.id,
-    name: entry.provider.name,
-    detail: !entry.provider.executable
-      ? tr("{agent} staat niet op deze computer.", "{agent} isn't installed on this computer.", { agent: entry.provider.name })
-      : entry.profile?.label
-        ? entry.profile.label
-        : tr("Met je eigen aanmelding bij {agent}.", "With your own sign-in to {agent}.", { agent: entry.provider.name }),
-    help: entry.profile?.label ? `${entry.provider.name} · ${entry.profile.label}` : entry.provider.name,
-    dimmed: !entry.provider.executable,
-  })));
-  const chosenId = $derived(own(provider).length > 1 ? `${provider}/${profileId}` : provider);
+  const pickerPlaces = $derived<ModelPickerPlace[]>(placeEntries.map((entry) => {
+    const isAcp = entry.provider.provider === "acp";
+    const displayName = isAcp && entry.profile?.label ? entry.profile.label : entry.provider.name;
+    return {
+      id: entry.id,
+      name: displayName,
+      detail: !entry.provider.executable
+        ? tr("{agent} staat niet op deze computer.", "{agent} isn't installed on this computer.", { agent: displayName })
+        : isAcp
+          ? tr("ACP-agent", "ACP agent")
+          : entry.profile?.label
+            ? entry.profile.label
+            : tr("Met je eigen aanmelding bij {agent}.", "With your own sign-in to {agent}.", { agent: entry.provider.name }),
+      help: isAcp ? `${entry.provider.name} · ${displayName}` : entry.profile?.label ? `${entry.provider.name} · ${entry.profile.label}` : entry.provider.name,
+      dimmed: !entry.provider.executable,
+    };
+  }));
+  const chosenId = $derived(provider === "acp" || own(provider).length > 1 ? `${provider}/${profileId}` : provider);
   const info = $derived(providers.find((p) => p.provider === provider) ?? workspace.provider(provider));
   const agentName = $derived(info?.name ?? provider);
   const account = $derived(own(provider).length > 1 ? own(provider).find((a) => a.id === profileId) : undefined);

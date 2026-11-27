@@ -339,6 +339,11 @@ impl Manager {
                     return Some(own);
                 }
             }
+            if provider == RunProvider::Acp {
+                if let Some(agent) = super::custom_agents::CustomAgents::agent_for(profile_id) {
+                    return Some(super::custom_agents::CustomAgents::find_executable(&agent.command).unwrap_or(agent.command));
+                }
+            }
         }
         (self.hooks.executable)(provider)
     }
@@ -1644,6 +1649,11 @@ impl Manager {
                 tool_search,
                 tuning,
                 omit_agent_credits: super::token_savings::omit_agent_credits(),
+                custom_agent: if run.provider == RunProvider::Acp {
+                    super::custom_agents::CustomAgents::agent_for(&run.profile_id)
+                } else {
+                    None
+                },
             };
             if show_prompt {
                 s.idle_compacting.remove(&id);

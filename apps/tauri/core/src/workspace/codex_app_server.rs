@@ -689,6 +689,7 @@ mod tests {
             tool_search: None,
             tuning: Default::default(),
             omit_agent_credits: false,
+            custom_agent: None,
         }
     }
 

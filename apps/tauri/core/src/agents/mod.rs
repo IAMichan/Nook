@@ -39,10 +39,12 @@ pub enum AgentKind {
     Opencode,
     Cursor,
     Grok,
+    Acp,
 }
 
 impl AgentKind {
-    pub const ALL: [AgentKind; 7] = [Self::Claude, Self::Codex, Self::Gemini, Self::Antigravity, Self::Opencode, Self::Cursor, Self::Grok];
+    pub const ALL: [AgentKind; 8] =
+        [Self::Claude, Self::Codex, Self::Gemini, Self::Antigravity, Self::Opencode, Self::Cursor, Self::Grok, Self::Acp];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -53,6 +55,7 @@ impl AgentKind {
             Self::Opencode => "opencode",
             Self::Cursor => "cursor",
             Self::Grok => "grok",
+            Self::Acp => "acp",
         }
     }
 
@@ -69,6 +72,7 @@ impl AgentKind {
             Self::Opencode => "OpenCode",
             Self::Cursor => "Cursor",
             Self::Grok => "Grok",
+            Self::Acp => "ACP",
         }
     }
 
@@ -89,6 +93,7 @@ impl AgentKind {
             "OpenCode" => Some(Self::Opencode),
             "Cursor" => Some(Self::Cursor),
             "Grok" | "Grok Build" => Some(Self::Grok),
+            "ACP" => Some(Self::Acp),
             _ => None,
         }
     }
@@ -103,6 +108,7 @@ impl AgentKind {
             Self::Opencode => "opencode",
             Self::Cursor => "cursor-agent",
             Self::Grok => "grok",
+            Self::Acp => "npx",
         }
     }
 
@@ -115,6 +121,7 @@ impl AgentKind {
             Self::Opencode => 0xF5A742,
             Self::Cursor => 0x9AA4B2,
             Self::Grok => 0xD9D9DE,
+            Self::Acp => 0xB59CF5,
         }
     }
 
@@ -157,6 +164,7 @@ impl AgentKind {
         match self {
             Self::Claude => home.join(format!(".claude-{slug}")),
             Self::Codex => home.join(format!(".codex-{slug}")),
+            Self::Acp => Self::Acp.default_home().join(slug),
             _ => home.join(format!(".gemini-{slug}")).join(".gemini"),
         }
     }
@@ -175,7 +183,7 @@ impl AgentKind {
             Self::Antigravity => vec![Antigravity],
             Self::Opencode => vec![OpenCode],
             Self::Cursor => vec![Cursor],
-            Self::Grok => vec![],
+            Self::Grok | Self::Acp => vec![],
         }
     }
 
@@ -190,6 +198,7 @@ impl AgentKind {
                 Self::Opencode => "npm install -g opencode-ai",
                 Self::Cursor => "irm 'https://cursor.com/install?win32=true' | iex",
                 Self::Grok => "npm install -g @xai-official/grok",
+                Self::Acp => "",
             }
         } else {
             match self {
@@ -200,6 +209,7 @@ impl AgentKind {
                 Self::Opencode => "curl -fsSL https://opencode.ai/install | bash",
                 Self::Cursor => "curl https://cursor.com/install -fsS | bash",
                 Self::Grok => "npm install -g @xai-official/grok",
+                Self::Acp => "",
             }
         }
     }
@@ -214,6 +224,7 @@ impl AgentKind {
             Self::Opencode => "opencode auth login",
             Self::Cursor => "cursor-agent login",
             Self::Grok => "grok",
+            Self::Acp => "",
         }
     }
 
@@ -229,6 +240,7 @@ impl AgentKind {
             Self::Opencode => home.join(".local").join("share").join("opencode"),
             Self::Cursor => home.join(".cursor"),
             Self::Grok => home.join(".grok"),
+            Self::Acp => crate::paths::dot_nook().join("acp"),
         }
     }
 

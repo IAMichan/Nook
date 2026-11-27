@@ -19,11 +19,12 @@ pub enum RunProvider {
     Cursor,
     Grok,
     Antigravity,
+    Acp,
 }
 
 impl RunProvider {
-    pub const ALL: [RunProvider; 7] =
-        [Self::Claude, Self::Codex, Self::Gemini, Self::Opencode, Self::Cursor, Self::Grok, Self::Antigravity];
+    pub const ALL: [RunProvider; 8] =
+        [Self::Claude, Self::Codex, Self::Gemini, Self::Opencode, Self::Cursor, Self::Grok, Self::Antigravity, Self::Acp];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -34,6 +35,7 @@ impl RunProvider {
             Self::Cursor => "cursor",
             Self::Grok => "grok",
             Self::Antigravity => "antigravity",
+            Self::Acp => "acp",
         }
     }
 
@@ -46,6 +48,7 @@ impl RunProvider {
             Self::Cursor => "Cursor",
             Self::Grok => "Grok",
             Self::Antigravity => "Antigravity",
+            Self::Acp => "ACP",
         }
     }
 
@@ -59,6 +62,7 @@ impl RunProvider {
             Self::Cursor => K::Cursor,
             Self::Grok => K::Grok,
             Self::Antigravity => K::Antigravity,
+            Self::Acp => K::Acp,
         }
     }
 
@@ -72,6 +76,7 @@ impl RunProvider {
             K::Cursor => Self::Cursor,
             K::Grok => Self::Grok,
             K::Antigravity => Self::Antigravity,
+            K::Acp => Self::Acp,
         }
     }
 
@@ -83,7 +88,7 @@ impl RunProvider {
             K::Claude => Some(Self::Claude),
             K::Codex => Some(Self::Codex),
             K::Gemini => Some(Self::Gemini),
-            K::Opencode | K::Cursor | K::Grok | K::Antigravity => None,
+            K::Opencode | K::Cursor | K::Grok | K::Antigravity | K::Acp => None,
         }
     }
 
@@ -97,7 +102,7 @@ impl RunProvider {
         match self {
             Self::Claude => Transport::ClaudeStream,
             Self::Codex => Transport::CodexAppServer,
-            Self::Gemini | Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => Transport::Acp,
+            Self::Gemini | Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity | Self::Acp => Transport::Acp,
         }
     }
 
@@ -165,7 +170,7 @@ impl RunProvider {
                 echoes_steers: false,
                 reports_prompt_cache_lifetime: false,
             },
-            Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => ProviderCapabilities {
+            Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity | Self::Acp => ProviderCapabilities {
                 approvals: true,
                 interrupt: true,
                 streaming_text: true,

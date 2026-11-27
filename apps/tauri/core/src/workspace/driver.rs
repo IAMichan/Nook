@@ -159,6 +159,13 @@ pub fn plan(input: &CommandInput) -> Result<Planned, String> {
 pub fn session_executable(provider: RunProvider, found: Option<String>) -> Option<String> {
     match provider {
         RunProvider::Antigravity => super::antigravity::server(found.as_deref().unwrap_or("")),
+        RunProvider::Acp => {
+            if super::custom_agents::CustomAgents::load().is_empty() {
+                None
+            } else {
+                Some("acp".into())
+            }
+        }
         RunProvider::Claude
         | RunProvider::Codex
         | RunProvider::Gemini

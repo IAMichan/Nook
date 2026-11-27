@@ -70,6 +70,8 @@ pub struct CommandInput {
     pub tuning: super::tuning::AppliedTuning,
     /// Whether to omit Claude Code commit/PR co-author attribution via `--settings`.
     pub omit_agent_credits: bool,
+    /// Custom ACP agent command and environment when `provider == RunProvider::Acp` (AG-21).
+    pub custom_agent: Option<super::custom_agents::CustomAgent>,
 }
 
 /// Builds Claude Code's `--settings` JSON (`AgentCredits.claudeSettings` on macOS): thinking summaries, optional
@@ -320,7 +322,7 @@ pub fn telemetry_signals(provider: RunProvider) -> &'static [OtlpSignal] {
         RunProvider::Claude | RunProvider::Codex | RunProvider::Gemini => &[OtlpSignal::Traces, OtlpSignal::Metrics, OtlpSignal::Logs],
         RunProvider::Opencode => &[OtlpSignal::Traces, OtlpSignal::Logs],
         RunProvider::Grok => &[OtlpSignal::Metrics, OtlpSignal::Logs],
-        RunProvider::Cursor | RunProvider::Antigravity => &[],
+        RunProvider::Cursor | RunProvider::Antigravity | RunProvider::Acp => &[],
     }
 }
 
@@ -429,7 +431,7 @@ pub fn telemetry_launch(provider: RunProvider, config: &OtlpConfig) -> Telemetry
                 launch.environment.insert("GROK_EXTERNAL_OTEL".into(), "1".into());
             }
         }
-        RunProvider::Opencode | RunProvider::Cursor | RunProvider::Antigravity => {}
+        RunProvider::Opencode | RunProvider::Cursor | RunProvider::Antigravity | RunProvider::Acp => {}
     }
     launch
 }
@@ -477,6 +479,7 @@ mod tests {
             tool_search: None,
             tuning: Default::default(),
             omit_agent_credits: false,
+            custom_agent: None,
         }
     }
 

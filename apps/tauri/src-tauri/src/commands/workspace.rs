@@ -1599,6 +1599,123 @@ pub fn workspace_open_skills_folder(app: AppHandle, path: String) -> Res<String>
     Ok(folder.display().to_string())
 }
 
+// MARK: Custom ACP agents (`CustomAgents`, `AcpRegistry`, `AcpInstaller`, AG-21)
+
+#[tauri::command]
+pub fn workspace_custom_acp_list() -> Vec<nook_core::workspace::custom_agents::CustomAgent> {
+    nook_core::workspace::custom_agents::CustomAgents::load()
+}
+
+#[tauri::command]
+pub async fn workspace_custom_acp_registry() -> Res<Vec<nook_core::workspace::custom_agents::RegistryEntry>> {
+    nook_core::workspace::custom_agents::AcpRegistry::fetch().await
+}
+
+#[tauri::command]
+pub async fn workspace_custom_acp_check_command(command: String) -> Res<Option<String>> {
+    blocking(move || {
+        use nook_core::workspace::custom_agents::CustomAgents;
+        let (program, _) = CustomAgents::parse_command(&command).ok_or_else(|| {
+            tr("Vul een geldige opdracht in (geen open aanhalingstekens).", "Enter a valid command (no unclosed quotes).").to_string()
+        })?;
+        Ok(CustomAgents::find_executable(&program))
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn workspace_custom_acp_add_registry(
+    app: AppHandle,
+    entry: nook_core::workspace::custom_agents::RegistryEntry,
+) -> Res<nook_core::workspace::custom_agents::CustomAgent> {
+    use nook_core::workspace::custom_agents::{AcpInstaller, AcpRegistry, CustomAgents};
+    let installed_folder =
+        if entry.command.is_none() && entry.binary.is_some() { Some(AcpInstaller::install(&entry).await?) } else { None };
+    let agents_state = app.state::<AgentsState>();
+    let profile = lock(&agents_state.profiles).add(AgentKind::Acp, &entry.name, None);
+    let made = match installed_folder.as_deref() {
+        Some(folder) => AcpRegistry::agent_from_installed(&entry, folder, &profile.id),
+        None => AcpRegistry::agent_from_entry(&entry, &profile.id),
+    };
+    let Some(agent) = made else {
+        lock(&agents_state.profiles).remove(&profile.id);
+        if let Some(folder) = installed_folder {
+            AcpInstaller::uninstall(&folder);
+        }
+        return Err(tr(
+            "Deze vermelding uit het register kan niet op deze computer worden gestart.",
+            "This registry entry cannot be started on this computer.",
+        )
+        .to_string());
+    };
+    if let Err(err) = CustomAgents::upsert(agent.clone()) {
+        lock(&agents_state.profiles).remove(&profile.id);
+        if let Some(folder) = installed_folder {
+            AcpInstaller::uninstall(&folder);
+        }
+        return Err(err);
+    }
+    let _ = app.emit("agents-changed", ());
+    let _ = app.emit("workspace-changed", ());
+    Ok(agent)
+}
+
+#[tauri::command]
+pub fn workspace_custom_acp_add_manual(
+    app: AppHandle,
+    name: String,
+    command: String,
+) -> Res<nook_core::workspace::custom_agents::CustomAgent> {
+    use nook_core::workspace::custom_agents::{CustomAgent, CustomAgents};
+    let clean_name = name.trim().to_string();
+    if clean_name.is_empty() {
+        return Err(tr("Vul een naam in voor deze agent.", "Enter a name for this agent.").to_string());
+    }
+    let (program, arguments) = CustomAgents::parse_command(&command).ok_or_else(|| {
+        tr("Vul een geldige opdracht in (geen open aanhalingstekens).", "Enter a valid command (no unclosed quotes).").to_string()
+    })?;
+    let agents_state = app.state::<AgentsState>();
+    let profile = lock(&agents_state.profiles).add(AgentKind::Acp, &clean_name, None);
+    let agent = CustomAgent {
+        profile_id: profile.id.clone(),
+        name: clean_name,
+        registry_id: None,
+        version: None,
+        command: program,
+        arguments,
+        environment: Default::default(),
+        installed_at: None,
+    };
+    if let Err(err) = CustomAgents::upsert(agent.clone()) {
+        lock(&agents_state.profiles).remove(&profile.id);
+        return Err(err);
+    }
+    let _ = app.emit("agents-changed", ());
+    let _ = app.emit("workspace-changed", ());
+    Ok(agent)
+}
+
+#[tauri::command]
+pub fn workspace_custom_acp_remove(app: AppHandle, profile_id: String) -> Res<()> {
+    use nook_core::workspace::custom_agents::{AcpInstaller, CustomAgents};
+    if let Some(agent) = CustomAgents::agent_for(&profile_id) {
+        if let Some(folder) = agent.installed_at {
+            AcpInstaller::uninstall(&folder);
+        }
+    }
+    CustomAgents::remove(&profile_id)?;
+    let agents_state = app.state::<AgentsState>();
+    if let Some(keys) = lock(&agents_state.profiles).remove(&profile_id) {
+        let secrets = &app.state::<crate::state::AppState>().secrets;
+        for key in keys {
+            let _ = secrets.remove(&key);
+        }
+    }
+    let _ = app.emit("agents-changed", ());
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
 // MARK: Worktree cleanup (`WorktreeCleanupReportView` on the Mac)
 
 #[derive(Debug, Clone, Serialize)]
