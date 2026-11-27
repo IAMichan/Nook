@@ -360,7 +360,7 @@ pub mod feature {
 }
 
 /// A new session as the phone asks for it (`LaunchRequest`). The Mac decides the rest from its own defaults.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchRequest {
     pub agent: String,

@@ -425,6 +425,15 @@ Nook for Windows and Linux (`apps/tauri`) can be the computer the phone pairs wi
   requests are GitHub's, and *Work on this* is refused because the workspace cannot check a pull request out in a
   worktree yet.
 
+## A Headless Machine as the Server (`nook-host`)
+
+`nook-host` (`apps/tauri/host`) is Nook for a machine without a screen, as t3code's remote server: it runs coding agents in its own workspace (`~/.nook-host`, or `--data`/`NOOK_HOST_DATA`, apart from a desktop Nook on the same machine) and serves them over this same protocol. Pairing, sealing, device keys, scopes, the relay and the reach list are the Companion's own (`core/src/companion`); the host only adds its sessions (`host/src/backend.rs`) and a command line (`host/src/main.rs`):
+
+- `nook-host serve [--port N] [--public-host HOST] [--relay URL]` listens, and prints a one-time pairing code with a QR code in the terminal when nothing is paired yet; `nook-host pair` prints a fresh one. The code carries the LAN addresses first, then the `.local` name, the Tailscale addresses (`tailnet`), the public host when given, and the relay while its room is open (`host/src/reach.rs`); the host looks at its network every minute, so a client follows a new address without pairing again.
+- `nook-host devices` and `nook-host revoke <id>` list and unpair devices. Secrets (pairing and device keys) live in an owner-only file (`secrets.json`, 0600, in a 0700 folder), since a server has no keyring.
+- `nook-host project add|remove|list <folder>` shares a folder. A paired device starts sessions only in a shared folder, at most with "allow edits" (`phone_permission`), never with "allow everything"; it may list, approve, answer, send, stop and read a conversation (`start`, `timeline`). Each agent uses its own login on the host. Nook's browser and page tools are not offered there: those live in a desktop Nook.
+- Not yet: a desktop Nook pairing with a host and picking it under "Runs on" (Nook reaches other machines over SSH today, `docs/WORKSPACE-AGENTS.md`), diffs, terminals and files from a host, and running `nook-host` as a service (use systemd or Task Scheduler for now).
+
 ## Scope & Intentional Boundaries
 
 - Works on the same local network, over Tailscale or another VPN, and through a relay: Nook's own, or one on your own Cloudflare account (see *Away from Home*). Either way the relay only passes sealed bytes; without Tailscale or a relay, the Mac is reachable only at home. Using a relay is opt-in.

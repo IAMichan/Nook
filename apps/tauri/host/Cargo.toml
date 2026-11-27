@@ -1,0 +1,25 @@
+[package]
+name = "nook-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless Nook remote host server: runs coding agents, git, and worktrees over direct LAN/Tailscale/public TCP or Nook's sealed relay."
+
+[[bin]]
+name = "nook-host"
+path = "src/main.rs"
+
+[dependencies]
+nook-core = { path = "../core" }
+async-trait.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+if-addrs = "0.15"
+qrcode = { version = "0.14", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+uuid.workspace = true
+
+[lints]
+workspace = true
