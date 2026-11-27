@@ -95,6 +95,14 @@ pub fn setup(app: &AppHandle) {
     });
     #[cfg(desktop)]
     if desktop {
+        let script_app = app.clone();
+        manager.set_script_runner(move |folder, command, title| {
+            let state = script_app.try_state::<WorkspaceState>()?;
+            let info = state.terminals.open(&script_app, folder, Some(command), Some(title), None).ok()?;
+            let id = info.id;
+            let poll_app = script_app.clone();
+            Some(Box::new(move || poll_app.try_state::<WorkspaceState>().and_then(|ws| ws.terminals.find(&id)).is_some_and(|t| t.running)))
+        });
         bridge::listen(app);
     }
     automation::setup(app);

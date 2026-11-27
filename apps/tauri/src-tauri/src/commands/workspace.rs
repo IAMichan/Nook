@@ -56,6 +56,7 @@ pub struct Overview {
     git_available: bool,
     providers: Vec<ProviderInfo>,
     settings: WorkspaceSettings,
+    worktree_setups: std::collections::HashMap<Uuid, nook_core::workspace::worktree_setup::WorktreeSetupProgress>,
 }
 
 /// Connects `Manager` to Nook's live OpenTelemetry settings and keychain headers (AG-33 / SV-05).
@@ -103,7 +104,14 @@ pub fn workspace_overview(app: AppHandle, state: State<'_, WorkspaceState>) -> O
             }
         })
         .collect();
-    Overview { runs, running, git_available: m.git_available(), providers, settings: lock(&state.settings).clone() }
+    Overview {
+        runs,
+        running,
+        git_available: m.git_available(),
+        providers,
+        settings: lock(&state.settings).clone(),
+        worktree_setups: m.visible_setups(),
+    }
 }
 
 #[tauri::command]
