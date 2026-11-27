@@ -1,21 +1,22 @@
 <script lang="ts">
-  // De eerste keer: drie stappen (brein, wat Nook mag zien, koppelingen). Elke stap is over te slaan en er gaat niets
+  // De eerste keer: vier stappen (brein, wat Nook mag zien, coding agents, koppelingen). Elke stap is over te slaan en er gaat niets
   // aan zonder een klik. Klaar of Later zet `onboardingDone`, dan komt dit niet meer terug.
   import { api } from "../lib/api";
   import { brainApi, type SourceChoice } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
   import ModelAdvice from "./ModelAdvice.svelte";
+  import OnboardingAgents from "./OnboardingAgents.svelte";
   import { tr } from "../lib/i18n.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
   let step = $state(0);
   let sources = $state<SourceChoice[]>([]);
-  const steps = 3;
+  const steps = 4;
   const s = $derived(nook.settings!);
   const caps = $derived(nook.info?.capabilities);
 
   $effect(() => {
-    if (step === 2) brainApi.sourceChoices().then((c) => (sources = c));
+    if (step === 3) brainApi.sourceChoices().then((c) => (sources = c));
   });
 
   async function finish() {
@@ -61,6 +62,8 @@
           <label><input type="checkbox" checked={s.useMemory} onchange={(e) => nook.saveSettings({ useMemory: e.currentTarget.checked })} /> {tr("Onthouden wat je Nook vertelt", "Remember what you tell Nook")}</label>
           <label><input type="checkbox" checked={s.learnFromChats} onchange={(e) => nook.saveSettings({ learnFromChats: e.currentTarget.checked })} /> {tr("Zelf leren van je correcties en plannen", "Learn from your corrections and plans")}</label>
         </div>
+      {:else if step === 2}
+        <OnboardingAgents onsettings={() => openSettings("agents")} />
       {:else}
         <h3>{tr("Koppelingen (optioneel)", "Connections (optional)")}</h3>
         <p class="muted">{tr("Mail, agenda, GitHub, Notion en meer. Nu gekoppeld: {n}. Je kunt later altijd koppelen of overslaan.", "Mail, calendar, GitHub, Notion and more. Connected now: {n}. You can always connect later or skip this.", { n: connected.length })}</p>

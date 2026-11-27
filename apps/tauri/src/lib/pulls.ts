@@ -227,9 +227,34 @@ export const pullsApi = {
   /// Approves, asks for changes on or comments on a pull request (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`); only after a click.
   review: (account: string | null, repo: string, number: number, event: ReviewEvent, body: string) =>
     invoke<string>("github_review_pull_request", { account, repo, number, event, body }),
+  /// Closes several pull requests in one go (`PullRequestBatchClose`); only after the confirmation in the selection bar.
+  /// With a comment, it is posted first and a pull request whose comment was refused stays open.
+  closeMany: (targets: { repo: string; number: number; account: string | null }[], comment: string) =>
+    invoke<CloseReport>("github_close_pull_requests", { targets, comment: comment.trim() || null }),
   watchAdd: (text: string) => invoke<string[]>("pull_watch_add", { text }),
   watchRemove: (entry: string) => invoke<string[]>("pull_watch_remove", { entry }),
 };
+
+/** What a batch close did (`PullRequestBatchClose.Report`). */
+export interface CloseReport {
+  closed: number;
+  total: number;
+  failures: { name: string; reason: string; commentOnly: boolean }[];
+}
+
+/** The toast after a batch close: how many closed of how many, and each one that did not with its reason. */
+export function closeSummary(report: CloseReport): { title: string; detail?: string } {
+  const title = report.closed === report.total
+    ? tr("{n} pull requests gesloten", "{n} pull requests closed", { n: report.closed })
+    : tr("{closed} van {total} pull requests gesloten", "{closed} of {total} pull requests closed", { closed: report.closed, total: report.total });
+  if (!report.failures.length) return { title };
+  const detail = report.failures
+    .map((f) => (f.commentOnly
+      ? tr("{name}: reactie geweigerd, blijft open ({reason})", "{name}: comment refused, stays open ({reason})", { name: f.name, reason: f.reason })
+      : `${f.name}: ${f.reason}`))
+    .join("\n");
+  return { title, detail };
+}
 
 export const itemId = (item: { repo: string; number: number }) => `${item.repo}#${item.number}`;
 export const isEmpty = (a: AccountPullRequests) => !a.mine.length && !a.reviews.length && !a.watched.length;

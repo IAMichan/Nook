@@ -81,6 +81,17 @@ pub struct ProjectCandidate {
     pub added: bool,
 }
 
+/// One session's folder and when it was last active, as the first-run flow's view sends it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionFolder {
+    pub folder: String,
+    pub date: DateTime<Utc>,
+}
+
+/// How many recent folders the first-run flow offers.
+pub const LIMIT: usize = 8;
+
 /// 30-day recency window for project discovery (`AgentReadiness.recentWindow` on macOS).
 pub const RECENT_WINDOW_SECS: i64 = 30 * 24 * 3600;
 

@@ -46,6 +46,9 @@
     saveSettled as saveAutoSettled,
   } from "../../lib/auto-settle";
   import { toolsApi } from "../../lib/workspace/api";
+  import { describeChange, UNDO_WINDOW_MS, UndoLog, type UndoEntry } from "../../lib/undo-log";
+  import { keys as keyRules } from "../../lib/keybindings.svelte";
+  import { chordLabel, chordsFor } from "../../lib/keybindings";
   import { emptyState, needsYou, type Attention, type InboxEntry, type InboxState } from "../../lib/agent-inbox";
 
   let { compact = false }: { compact?: boolean } = $props();
@@ -172,10 +175,44 @@
 
   // The last list actions (settle, pin, snooze…), for `session.undo` (the Mac's `store.undo()`).
   const undoStack: InboxState[] = [];
+  // The one-line notice for the last of them (`UndoLog`): "3 sessions settled · Ctrl+Z", for five seconds.
+  const undoLog = new UndoLog();
+  let undoNotice = $state<UndoEntry | null>(null);
+  let undoTimer: ReturnType<typeof setTimeout> | null = null;
+  function showUndo() {
+    undoNotice = undoLog.current(Date.now());
+    if (undoTimer) clearTimeout(undoTimer);
+    undoTimer = undoNotice ? setTimeout(showUndo, Math.max(50, undoNotice.createdAt + UNDO_WINDOW_MS - Date.now())) : null;
+  }
+  function undoLast() {
+    const previous = undoStack.pop();
+    if (!previous) return false;
+    undoLog.undo(Date.now());
+    update(previous, false);
+    showUndo();
+  }
+  const undoKey = $derived(chordsFor("session.undo", keyRules.rules)[0]);
+  function undoText(e: UndoEntry): string {
+    const n = e.ids.length;
+    switch (e.kind) {
+      case "settled": return n === 1 ? tr("Sessie afgehandeld", "Session settled") : tr("{n} sessies afgehandeld", "{n} sessions settled", { n });
+      case "unsettled": return n === 1 ? tr("Sessie weer open", "Session reopened") : tr("{n} sessies weer open", "{n} sessions reopened", { n });
+      case "snoozed": return n === 1 ? tr("Sessie gesnoozed", "Session snoozed") : tr("{n} sessies gesnoozed", "{n} sessions snoozed", { n });
+      case "pinned": return n === 1 ? tr("Sessie vastgezet", "Session pinned") : tr("{n} sessies vastgezet", "{n} sessions pinned", { n });
+      case "unpinned": return n === 1 ? tr("Sessie losgemaakt", "Session unpinned") : tr("{n} sessies losgemaakt", "{n} sessions unpinned", { n });
+    }
+  }
   function update(next: InboxState, record = true) {
     const prevSettled = new Set(inboxState.settled);
     const newlySettled = next.settled.filter((id) => !prevSettled.has(id));
-    if (record && next !== inboxState) undoStack.push(inboxState);
+    if (record && next !== inboxState) {
+      undoStack.push(inboxState);
+      const change = describeChange(inboxState, next, Date.now());
+      if (change) {
+        undoLog.record(change.kind, change.ids, Date.now());
+        queueMicrotask(showUndo);
+      }
+    }
     if (undoStack.length > 20) undoStack.shift();
     inboxState = next;
     menuFor = null;
@@ -499,11 +536,7 @@
       if (!id) return false;
       update(inboxState.pinned.includes(id) ? inbox.unpin(inboxState, id) : inbox.pin(inboxState, id));
     },
-    "session.undo": () => {
-      const previous = undoStack.pop();
-      if (!previous) return false;
-      update(previous, false);
-    },
+    "session.undo": () => undoLast(),
     "session.copyReference": () => {
       const row = byId.get(currentId);
       if (!row) return false;
@@ -848,6 +881,13 @@
         {/if}
       {/if}
     </div>
+    {#if undoNotice}
+      <div class="undo-line" role="status">
+        <span>{undoText(undoNotice)}{#if undoKey} · <kbd>{chordLabel(undoKey)}</kbd>{/if}</span>
+        <span class="spacer"></span>
+        <button class="ghost" onclick={() => undoLast()}>{tr("Ongedaan maken", "Undo")}</button>
+      </div>
+    {/if}
     {#if picked.size || selecting}
       <!-- The selection bar (`SelectionBar`): Ctrl-click or Shift-click rows, then act on all of them at once. -->
       <div class="selection">
@@ -958,6 +998,8 @@
 </div>
 
 <style>
+  .undo-line { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-4) var(--space-8); padding: var(--space-6) var(--space-12); border-radius: var(--radius-card); background: var(--menu); border: 1px solid var(--line2); font: var(--text-detail); color: var(--text2); }
+  .undo-line .spacer { flex: 1; }
   .tab { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: 100%; min-height: 0; }
   .tab.compact { grid-template-columns: 250px 1fr; }
   .tab.docked { grid-template-columns: minmax(0, 1fr); }

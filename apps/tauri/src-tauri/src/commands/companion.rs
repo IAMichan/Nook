@@ -362,20 +362,28 @@ pub async fn companion_push_test(companion: State<'_, Companion>) -> Result<Stri
 
 /// Turns the relay on or off, and picks Nook's relay or your own (`address`).
 #[tauri::command]
-pub fn companion_set_relay(companion: State<'_, Companion>, enabled: bool, own: bool, address: String) -> Result<CompanionInfo, String> {
+pub fn companion_set_relay(
+    app: tauri::AppHandle,
+    companion: State<'_, Companion>,
+    enabled: bool,
+    own: bool,
+    address: String,
+) -> Result<CompanionInfo, String> {
     #[cfg(desktop)]
     {
+        use tauri::Emitter;
         let address = address.trim().to_string();
         if own && enabled && !address.is_empty() && nook_core::companion::transport::normalize_relay(&address).is_none() {
             return Err("That is not an https address.".into());
         }
         companion.server.store().set_relay(nook_core::companion::store::RelaySettings { enabled, own, address });
         companion::apply_relay(&companion);
+        let _ = app.emit("guest-shares-changed", ());
         Ok(info(&companion))
     }
     #[cfg(not(desktop))]
     {
-        let _ = (companion, enabled, own, address);
+        let _ = (app, companion, enabled, own, address);
         Err(NO_SERVER.into())
     }
 }
