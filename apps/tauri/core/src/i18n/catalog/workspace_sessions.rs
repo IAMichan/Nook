@@ -4,6 +4,7 @@
 use super::Row;
 
 pub const ROWS: &[Row] = &[
+    ("This message no longer exists.", "Diese Nachricht gibt es nicht mehr.", "Ce message n’existe plus.", "Este mensaje ya no existe."),
     ("Read it over first", "Lies es erst durch", "Relis-le d’abord", "Léelo antes"),
     (
         "Git was not found. Install git and try again.",

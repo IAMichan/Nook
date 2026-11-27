@@ -27,6 +27,14 @@ describe("catalogue filters", () => {
     expect(matchesQuery("", "anything")).toBe(true);
     expect(matchesQuery("stripe", "GitLab")).toBe(false);
   });
+
+  it("ignores accents and case, and wants every word (ConnectorGallerySearch)", () => {
+    expect(matchesQuery("cafe", "Café Agenda")).toBe(true);
+    expect(matchesQuery("CAFÉ", "cafe agenda")).toBe(true);
+    expect(matchesQuery("agenda work", "Work calendar · agenda")).toBe(true);
+    expect(matchesQuery("agenda mail", "Work calendar · agenda")).toBe(false);
+    expect(matchesQuery("merge-requests", "GitLab merge requests")).toBe(true);
+  });
 });
 
 describe("GitLab status", () => {
