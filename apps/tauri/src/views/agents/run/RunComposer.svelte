@@ -17,6 +17,7 @@
   import ComposerContext from "./ComposerContext.svelte";
   import ContextBreakdown from "./ContextBreakdown.svelte";
   import PromptTools from "./PromptTools.svelte";
+  import RunBranchTray from "./RunBranchTray.svelte";
   import { composerInbox } from "../../../lib/workspace/composer-inbox.svelte";
   import { merging } from "../../../lib/workspace/session-prompts";
   import { prompts } from "../../../lib/workspace/prompts.svelte";
@@ -468,6 +469,7 @@
 
 
 <div class="composer">
+  <RunBranchTray runId={run.id} directory={run.workingDirectory} branch={run.branch} />
   {#if queue && queue.messages.length}
     <div class="queue">
       <button class="qhead" onclick={() => (collapsed = !collapsed)}>

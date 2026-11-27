@@ -24,6 +24,7 @@ use nook_core::agents::profiles::AgentProfile;
 use nook_core::workspace::bridge::BridgeLaunch;
 use nook_core::workspace::manager::{Hooks, Manager, ManagerEvent};
 use nook_core::workspace::models::{RunStatus, WorkspaceRun};
+use nook_core::workspace::pull_requests::PullRequestSyncStore;
 use nook_core::workspace::settings::WorkspaceSettings;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager as _};
@@ -35,6 +36,7 @@ use crate::state::AppState;
 pub struct WorkspaceState {
     pub manager: Arc<Manager>,
     pub settings: Arc<Mutex<WorkspaceSettings>>,
+    pub pr_sync: Arc<Mutex<PullRequestSyncStore>>,
     #[cfg(desktop)]
     pub terminals: terminals::Terminals,
     #[cfg(desktop)]
@@ -97,9 +99,11 @@ pub fn setup(app: &AppHandle) {
     if let Some(services) = app.try_state::<crate::services::Services>() {
         manager.recap.set(services.recap.clone());
     }
+    let pr_sync = Arc::new(Mutex::new(PullRequestSyncStore::load()));
     app.manage(WorkspaceState {
         manager: manager.clone(),
         settings,
+        pr_sync,
         #[cfg(desktop)]
         terminals: Default::default(),
         #[cfg(desktop)]

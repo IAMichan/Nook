@@ -21,8 +21,12 @@
   import PastDetail from "./PastDetail.svelte";
   import Actions from "./actions/Actions.svelte";
   import PullRequests from "./pulls/PullRequests.svelte";
+  import PullRequestPill from "./PullRequestPill.svelte";
   import NewSession from "./run/NewSession.svelte";
   import RunPanel from "./run/RunPanel.svelte";
+  import { sidePanel } from "./run/side-panel.svelte";
+  import { prSync } from "../../lib/workspace/pull-requests.svelte";
+  import type { PullRequestLink } from "../../lib/workspace/pull-requests";
   import { ago, folderName } from "./time";
   import { openNewSessionIn } from "./new-session.svelte";
   import Ico from "../../components/ui/Ico.svelte";
@@ -32,7 +36,7 @@
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
-  import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { api } from "../../lib/api";
   import * as inbox from "../../lib/agent-inbox";
   import { untrack } from "svelte";
@@ -210,6 +214,7 @@
   $effect(() => {
     agents.start();
     workspace.start();
+    prSync.start();
     agents.loadHistory();
     const timer = setInterval(() => {
       agents.loadHistory();
@@ -217,6 +222,23 @@
     }, 30_000);
     return () => clearInterval(timer);
   });
+
+  // Periodically sync branch PR status for visible workspace sessions that have a branch (AG-104).
+  $effect(() => {
+    const runs = workspace.runs.filter((r) => !r.archived && r.branch && r.workingDirectory).slice(0, 12);
+    for (const r of runs) {
+      prSync.refresh({ run: r.id, directory: r.workingDirectory, branch: r.branch });
+    }
+  });
+
+  function openPrFromRow(sessionId: string, link: PullRequestLink) {
+    if (sessionId.startsWith("run:") && link.host.kind === "github") {
+      agents.select(sessionId);
+      sidePanel.openTool(sessionId.slice(4), "pullRequest");
+    } else if (link.url) {
+      openUrl(link.url).catch(() => {});
+    }
+  }
 
   type Status = "waiting" | "input" | "failed" | "limited" | "working" | "idle" | "finished";
   interface Item {
@@ -716,7 +738,8 @@
         {@const i = byId.get(entry.row.id)}
         {#if i}
           {@const badge = kind === "snoozed" || entry.woke ? null : badgeOf(i)}
-          {@const meta = !!i.branch || i.added + i.removed > 0}
+          {@const prSummary = prSync.forSession(i.id.startsWith("run:") ? i.id.slice(4) : null, i.path, i.branch)}
+          {@const meta = !!i.branch || i.added + i.removed > 0 || !!prSummary.badge}
           <div
             class="rowwrap"
             data-session-row={i.id}
@@ -756,8 +779,8 @@
                 <span class="compacting-line">{tr("Het gesprek wordt samengevat…", "Compacting the conversation…")}</span>
               {/if}
               {#if meta}
-                <!-- The branch, then what the session changed ("+120 −8", `changeCount`), then the agent's logo. -->
-                <span class="line2">{#if i.branch}<span class="branch">{i.branch}</span>{/if}<span class="spacer"></span>{#if i.added + i.removed > 0}<span class="lines" class:dim={i.status === "finished"}><span class="plus">+{i.added}</span><span class="minus">−{i.removed}</span></span>{/if}<span class="logo"><AgentMark agent={i.agent} size={14} /></span></span>
+                <!-- The branch, PR badge + hover card (AG-104), what the session changed ("+120 −8"), then the agent's logo. -->
+                <span class="line2">{#if i.branch}<span class="branch">{i.branch}</span>{/if}{#if prSummary.badge}<PullRequestPill badge={prSummary.badge} current={prSummary.current} earlier={prSummary.earlier} onopen={(link) => openPrFromRow(i.id, link)} />{/if}<span class="spacer"></span>{#if i.added + i.removed > 0}<span class="lines" class:dim={i.status === "finished"}><span class="plus">+{i.added}</span><span class="minus">−{i.removed}</span></span>{/if}<span class="logo"><AgentMark agent={i.agent} size={14} /></span></span>
               {/if}
             </button>
             <!-- On hover the status gives way to the row's buttons (`hoverActions`): snooze, pin and settle. -->

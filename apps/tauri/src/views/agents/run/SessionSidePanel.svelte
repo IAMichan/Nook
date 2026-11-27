@@ -4,6 +4,7 @@
   // (Plans/Outputs, Subagents, Terminal, Browser, Changes, Pull request, File), `+` to open a tool, hover close cross
   // on each tab, maximize/restore, and an empty-state launcher with keyboard shortcuts.
   import FileViewer from "./FileViewer.svelte";
+  import LinkedPullRequestsSection from "./LinkedPullRequestsSection.svelte";
   import OutputsPanel from "./OutputsPanel.svelte";
   import { collectOutputs } from "../../../lib/workspace/session-outputs";
   import Ico from "../../../components/ui/Ico.svelte";
@@ -413,8 +414,11 @@
           <Browser session={run.id} />
         </div>
       {:else if panel.active === "pullRequest"}
-        <div class="pane-fill">
-          <PullRequests session={run.id} />
+        <div class="pane-fill pane-pr">
+          <LinkedPullRequestsSection runId={run.id} directory={run.workingDirectory} branch={run.branch} />
+          <div class="pane-pr-rest">
+            <PullRequests session={run.id} />
+          </div>
         </div>
       {:else if panel.active === "outputs"}
         <OutputsPanel {outputs} selected={panel.outputId} onselect={(id) => sidePanel.setOutput(run.id, id)} folder={run.workingDirectory} live={isActive(run.status)} {onrun} runId={run.id} />
@@ -797,6 +801,17 @@
   }
   .pane-pad {
     padding: var(--space-12);
+  }
+  .pane-pr {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .pane-pr-rest {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
   }
   .pane-scroll {
     display: flex;

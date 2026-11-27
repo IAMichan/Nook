@@ -59,4 +59,16 @@ pub const ROWS: &[Row] = &[
         "Codex no inició ninguna conversación.",
     ),
     ("Apply file changes", "Dateiänderungen anwenden", "Appliquer les modifications de fichiers", "Aplicar cambios en archivos"),
+    (
+        "That isn't a pull request link or number.",
+        "Das ist kein Pull-Request-Link oder keine Nummer.",
+        "Ce n'est pas un lien ni un numéro de pull request.",
+        "No es un enlace ni un número de pull request.",
+    ),
+    (
+        "This session isn't in a repository with a remote.",
+        "Diese Sitzung befindet sich nicht in einem Repository mit Remote.",
+        "Cette session ne se trouve pas dans un dépôt avec un remote.",
+        "Esta sesión no está en un repositorio con un remoto.",
+    ),
 ];
