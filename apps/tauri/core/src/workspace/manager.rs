@@ -1066,7 +1066,8 @@ impl Manager {
     /// Runs `runOnWorktreeCreate` scripts in visible terminals and waits for any `"async": false` scripts to exit.
     /// Returns `None` on success (or if no script blocks), or an error string if a blocking script fails or is closed.
     async fn start_setup_scripts(&self, id: Uuid, path: &str, scripts: &[ProjectScript]) -> Option<String> {
-        let mut waiting: Vec<(String, std::path::PathBuf, Box<dyn Fn() -> bool + Send + Sync>)> = Vec::new();
+        type WaitingScript = (String, std::path::PathBuf, Box<dyn Fn() -> bool + Send + Sync>);
+        let mut waiting: Vec<WaitingScript> = Vec::new();
         for script in scripts {
             if script.async_run {
                 let _ = self.run_setup_script(path, &script.command, &script.name);
