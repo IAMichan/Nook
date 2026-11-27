@@ -908,6 +908,9 @@ mod tests {
             profile_id: "default".into(),
             bridge: None,
             effort: None,
+            tool_search: None,
+            tuning: Default::default(),
+            omit_agent_credits: false,
         }
     }
 

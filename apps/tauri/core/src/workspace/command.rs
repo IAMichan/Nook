@@ -64,6 +64,33 @@ pub struct CommandInput {
     pub bridge: Option<BridgeLaunch>,
     /// Redeneerniveau ("low", "medium", "high"); alleen Codex kent het.
     pub effort: Option<String>,
+    /// Claude Code's `ENABLE_TOOL_SEARCH` override (`ClaudeToolSearch`, AG-32).
+    pub tool_search: Option<String>,
+    /// Applied token-tuning overrides for sessions Nook starts (`AgentTuning.Applied`, AG-32).
+    pub tuning: super::tuning::AppliedTuning,
+    /// Whether to omit Claude Code commit/PR co-author attribution via `--settings`.
+    pub omit_agent_credits: bool,
+}
+
+/// Builds Claude Code's `--settings` JSON (`AgentCredits.claudeSettings` on macOS): thinking summaries, optional
+/// no-attribution flags, `ENABLE_TOOL_SEARCH` environment override, and applied token-tuning overrides.
+pub fn claude_settings(
+    omit_agent_credits: bool,
+    env: &BTreeMap<String, String>,
+    extra: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    let mut map: BTreeMap<String, serde_json::Value> = extra.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    map.insert("showThinkingSummaries".into(), serde_json::Value::Bool(true));
+    if omit_agent_credits {
+        map.insert("includeCoAuthoredBy".into(), serde_json::Value::Bool(false));
+        map.insert("attribution".into(), serde_json::json!({ "commit": "", "pr": "" }));
+    }
+    if !env.is_empty() {
+        let env_obj: serde_json::Map<String, serde_json::Value> =
+            env.iter().map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect();
+        map.insert("env".into(), serde_json::Value::Object(env_obj));
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| r#"{"showThinkingSummaries":true}"#.into())
 }
 
 pub fn spec(input: &CommandInput) -> LaunchSpec {
@@ -80,26 +107,28 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
     let resume = input.resume_session_id.clone().filter(|s| !s.is_empty());
     match input.provider {
         RunProvider::Claude => {
-            let mut args: Vec<String> = [
-                "-p",
-                "--input-format",
-                "stream-json",
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--include-partial-messages",
+            let mut settings_env = BTreeMap::new();
+            if let Some(ts) = input.tool_search.as_ref().filter(|s| !s.is_empty()) {
+                settings_env.insert("ENABLE_TOOL_SEARCH".into(), ts.clone());
+            }
+            let settings_json = claude_settings(input.omit_agent_credits, &settings_env, &input.tuning.claude_settings());
+            let mut args: Vec<String> = vec![
+                "-p".into(),
+                "--input-format".into(),
+                "stream-json".into(),
+                "--output-format".into(),
+                "stream-json".into(),
+                "--verbose".into(),
+                "--include-partial-messages".into(),
                 // Toestemmingsvragen komen als control_request op stdout; Nook antwoordt via stdin.
-                "--permission-prompt-tool",
-                "stdio",
-                "--permission-mode",
-                claude_permission_mode(input.mode, input.permission),
+                "--permission-prompt-tool".into(),
+                "stdio".into(),
+                "--permission-mode".into(),
+                claude_permission_mode(input.mode, input.permission).into(),
                 // Nieuwere modellen laten hun denken leeg tenzij om samenvattingen gevraagd wordt.
-                "--settings",
-                r#"{"showThinkingSummaries":true}"#,
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+                "--settings".into(),
+                settings_json,
+            ];
             if !input.model.is_empty() {
                 args.extend(["--model".into(), input.model.clone()]);
             }
@@ -445,11 +474,35 @@ mod tests {
             profile_id: "default".into(),
             bridge: None,
             effort: None,
+            tool_search: None,
+            tuning: Default::default(),
+            omit_agent_credits: false,
         }
     }
 
     fn value<'a>(flag: &str, args: &'a [String]) -> Option<&'a str> {
         args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).map(String::as_str)
+    }
+
+    #[test]
+    fn claude_settings_carry_env_credits_and_tuning() {
+        let mut i = input(RunProvider::Claude, "", None, "");
+        let bare = spec(&i).arguments;
+        let bare_json: serde_json::Value = serde_json::from_str(value("--settings", &bare).unwrap()).unwrap();
+        assert_eq!(bare_json.get("showThinkingSummaries").and_then(|v| v.as_bool()), Some(true));
+        assert!(bare_json.get("env").is_none());
+
+        i.tool_search = Some("true".into());
+        i.omit_agent_credits = true;
+        i.tuning.claude_plugins = vec!["sales@inline".into()];
+        i.tuning.claude_no_connectors = true;
+        let lean = spec(&i).arguments;
+        let lean_json: serde_json::Value = serde_json::from_str(value("--settings", &lean).unwrap()).unwrap();
+        assert_eq!(lean_json.pointer("/env/ENABLE_TOOL_SEARCH").and_then(|v| v.as_str()), Some("true"));
+        assert_eq!(lean_json.get("includeCoAuthoredBy").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(lean_json.pointer("/attribution/commit").and_then(|v| v.as_str()), Some(""));
+        assert_eq!(lean_json.pointer("/enabledPlugins/sales@inline").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(lean_json.get("disableClaudeAiConnectors").and_then(|v| v.as_bool()), Some(true));
     }
 
     #[test]

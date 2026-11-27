@@ -172,6 +172,12 @@ struct TurnState {
     steered_usage: Vec<TurnUsage>,
     /// Geblokkeerde limietvensters uit `rate_limit_event`, en wanneer elk vrijkomt.
     limit_windows: BTreeMap<String, Option<DateTime<Utc>>>,
+    /// When the latest Claude request started (`PromptCache` / AG-32).
+    last_request_at: Option<DateTime<Utc>>,
+    /// Cache lifetime reported during this turn in seconds (`PromptCache` / AG-32).
+    cache_ttl: Option<f64>,
+    /// True when the turn ran a compaction (`PromptCache` / `SizeCompaction` / AG-32).
+    compacted: bool,
 }
 
 /// A session a search found (`Manager::search`).
@@ -240,6 +246,8 @@ struct Inner {
     prepare_tasks: HashMap<Uuid, tokio::task::AbortHandle>,
     /// Last `git fetch` time per normalized `(repo_root, base_branch)` key so fetches happen at most once per 2 minutes.
     remote_base_refreshed: HashMap<String, DateTime<Utc>>,
+    /// Sessions currently running an automatic idle/size `/compact` turn (`idleCompacting` on macOS, AG-32).
+    idle_compacting: HashSet<Uuid>,
 }
 
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
@@ -829,6 +837,7 @@ impl Manager {
             compacting: false,
             tasks: None,
             restart: Default::default(),
+            prompt_cache: None,
         };
         if worktree.is_none() && rollback::can_roll_back(run.provider) {
             run.checkpoints.push(RunCheckpoint { r#ref: String::new(), date: Utc::now(), conversation: Some(ConversationMark::empty()) });
@@ -1224,6 +1233,7 @@ impl Manager {
             compacting: false,
             tasks: None,
             restart: Default::default(),
+            prompt_cache: None,
         };
         let mut out = Out::default();
         {
@@ -1559,6 +1569,21 @@ impl Manager {
                 None => (run.provider_session_id.clone(), s.fork_next.contains(&id), None, false),
             };
             let codex_rollback = run.pending_rollback.clone().filter(|p| p.is_codex());
+            let account_environment = (self.hooks.account_environment)(&run.profile_id);
+            let config_dir = account_environment.get("CLAUDE_CONFIG_DIR").map(String::as_str);
+            let tool_search = if run.provider == RunProvider::Claude {
+                let files = super::token_savings::ClaudeToolSearch::settings_files(&run.working_directory, config_dir);
+                let env_val = std::env::var("ENABLE_TOOL_SEARCH").ok();
+                let user_val = super::token_savings::ClaudeToolSearch::user_value(&files).or(env_val);
+                super::token_savings::ClaudeToolSearch::override_value(user_val.as_deref()).map(String::from)
+            } else {
+                None
+            };
+            let tuning = if config_dir.unwrap_or("").trim().is_empty() {
+                super::tuning::AppliedTuning::load_from(&super::tuning::AppliedTuning::file())
+            } else {
+                super::tuning::AppliedTuning::default()
+            };
             let input = CommandInput {
                 provider: run.provider,
                 executable: executable.clone(),
@@ -1572,13 +1597,17 @@ impl Manager {
                 fork_session,
                 resume_at,
                 pending_rollback: codex_rollback,
-                account_environment: (self.hooks.account_environment)(&run.profile_id),
+                account_environment,
                 run_id: id.to_string(),
                 profile_id: run.profile_id.clone(),
                 bridge: (self.hooks.bridge)(),
                 effort: run.effort.clone(),
+                tool_search,
+                tuning,
+                omit_agent_credits: super::token_savings::omit_agent_credits(),
             };
             if show_prompt {
+                s.idle_compacting.remove(&id);
                 Self::append(&mut s, id, RunEvent::new(EventKind::User, prompt.clone()), &mut out);
             }
             match driver::plan(&input) {
@@ -2102,10 +2131,24 @@ impl Manager {
                 Self::tool_event(s, id, &call, &name, &input, nested, out)
             }
             ClaudeEvent::ToolResult { id: call, output, is_error } => Self::tool_result(s, id, &call, &output, is_error, out),
+            ClaudeEvent::RequestStarted { cache_ttl } => {
+                if let Some(t) = s.turns.get_mut(&id) {
+                    t.last_request_at = Some(Utc::now());
+                    if let Some(ttl) = cache_ttl {
+                        t.cache_ttl = Some(ttl as f64);
+                    }
+                }
+            }
             ClaudeEvent::Usage { message_id, tokens, model } => {
                 if let Some(t) = s.turns.get_mut(&id) {
                     t.message_usage.insert(message_id, tokens);
                     t.last_context = Some(tokens.context() + tokens.output);
+                    if let Some(ttl) = tokens.cache_ttl {
+                        t.cache_ttl = Some(ttl as f64);
+                    }
+                    if t.last_request_at.is_none() {
+                        t.last_request_at = Some(Utc::now());
+                    }
                 }
                 if let Some(m) = model.filter(|m| !m.is_empty()) {
                     if s.runs.iter().find(|r| r.id == id).is_some_and(|r| r.resolved_model.is_none()) {
@@ -2211,6 +2254,7 @@ impl Manager {
                     }
                 }
                 let steered: Vec<TurnUsage> = turn.map(|t| t.steered_usage.clone()).unwrap_or_default();
+                let cache_inputs = turn.map(|t| (t.last_request_at, t.cache_ttl, t.compacted));
                 // Gestopt op een gebruikslimiet: onthoud wanneer hij vrijkomt, voor "Hervat bij reset".
                 if !stopping {
                     let windows = turn.map(|t| t.limit_windows.clone()).unwrap_or_default();
@@ -2239,6 +2283,13 @@ impl Manager {
                         r.usage.add(seg);
                     }
                     r.usage.add(&usage);
+                    if let Some((last_request_at, cache_ttl, compacted)) = cache_inputs {
+                        if let Some(window) =
+                            super::token_savings::PromptCache::window_after(last_request_at, cache_ttl, r.prompt_cache.as_ref(), compacted)
+                        {
+                            r.prompt_cache = Some(window);
+                        }
+                    }
                     if let Some(session) = &result.session_id {
                         r.provider_session_id = Some(session.clone());
                         r.conversation.get_or_insert_with(|| ConversationLog::new(None, r.provider)).note_session(session, r.provider);
@@ -2326,6 +2377,7 @@ impl Manager {
     fn compaction_finished(s: &mut Inner, id: Uuid, out: &mut Out) {
         if let Some(t) = s.turns.get_mut(&id) {
             t.last_context = None;
+            t.compacted = true;
         }
         Self::update(s, id, |r| {
             r.compacting = false;
@@ -2645,6 +2697,8 @@ impl Manager {
             let mut s = self.lock();
             let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
             let stopping = run.status == RunStatus::Stopped;
+            let was_idle_compacting = s.idle_compacting.remove(&id);
+            let turn_compacted = s.turns.get(&id).is_some_and(|t| t.compacted) || was_idle_compacting;
             if run.compacting {
                 if run.status == RunStatus::Completed {
                     Self::compaction_finished(&mut s, id, &mut out);
@@ -2670,10 +2724,12 @@ impl Manager {
                 .unwrap_or_default();
             out.push(ManagerEvent::TurnFinished(run.clone(), last));
             crate::services::nook_telemetry::shared().turn_finished(&run, Utc::now());
-            run
+            (run, turn_compacted)
         };
+        let (run, turn_compacted) = run;
         self.emit(out);
         self.start_waiting_turns();
+        self.maybe_compact_for_size(id, turn_compacted);
         let mark = Self::conversation_mark(&run);
         if run.isolation == IsolationMode::Worktree && run.worktree_path.as_deref().is_some_and(|p| Path::new(p).exists()) {
             if let Some(git) = self.git.clone() {
@@ -3078,9 +3134,9 @@ impl Manager {
         Ok(normalized)
     }
 
-    /// Computes the context window breakdown and compaction pressure for a session (AG-65 & AG-66).
+    /// Computes the context window breakdown and compaction pressure for a session (AG-65, AG-66 & AG-32).
     pub fn context_usage(&self, id: Uuid) -> Option<super::context_usage::ContextUsage> {
-        let (mut run, events) = {
+        let (mut run, events, offered_commands) = {
             let mut s = self.lock();
             Self::load_timeline(&self.store, &mut s, id);
             let run = s.runs.iter().find(|r| r.id == id)?.clone();
@@ -3090,13 +3146,149 @@ impl Manager {
                 run.usage.context_tokens = Some(live);
             }
             let events = s.events.get(&id).cloned().unwrap_or_default();
-            (run, events)
+            let offered_commands: Vec<String> =
+                s.commands.get(&id).map(|cmds| cmds.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
+            (run, events, offered_commands)
         };
         // If context_window is not yet reported on an active compaction turn, keep computing when window is known.
         if run.usage.context_window.is_none() && run.usage.context_tokens.is_some() {
             run.usage.context_window = None;
         }
-        super::context_usage::compute(&run, &events, super::context_usage::DEFAULT_AUTO_COMPACT_TOKENS)
+        let auto_compact_at = self.auto_compact_at(&run, &offered_commands);
+        super::context_usage::compute_with_mark(&run, &events, auto_compact_at)
+    }
+
+    /// Computes where automatic compaction happens for `run`, combining Nook's `SizeCompaction` limit with Claude Code's
+    /// own `autoCompactWindow` when present (`AutoCompactMark` / AG-32).
+    fn auto_compact_at(&self, run: &WorkspaceRun, offered_commands: &[String]) -> Option<u64> {
+        let nook_limit = if super::token_savings::can_compact(run.provider, offered_commands) {
+            super::token_savings::SizeCompaction::limit(super::token_savings::auto_compact_tokens(), run.usage.context_window)
+        } else {
+            None
+        };
+        let agent_threshold = match run.provider {
+            RunProvider::Claude => {
+                let env = (self.hooks.account_environment)(&run.profile_id);
+                let config_dir = env.get("CLAUDE_CONFIG_DIR").map(String::as_str);
+                let files = super::token_savings::ClaudeToolSearch::settings_files(&run.working_directory, config_dir);
+                let model = run.resolved_model.as_deref().unwrap_or(&run.model);
+                let window = super::token_savings::AutoCompactMark::claude_window(&files, model);
+                super::token_savings::AutoCompactMark::claude_threshold(window, run.usage.context_window)
+            }
+            _ => None,
+        };
+        super::token_savings::AutoCompactMark::tokens(nook_limit, agent_threshold)
+    }
+
+    /// Triggers a delayed quiet `/compact` turn after a completed turn whose context crossed `SizeCompaction` (AG-32).
+    fn maybe_compact_for_size(self: &Arc<Self>, id: Uuid, already_compacted: bool) {
+        let should = {
+            let s = self.lock();
+            let Some(run) = s.runs.iter().find(|r| r.id == id) else { return };
+            let offered: Vec<String> = s.commands.get(&id).map(|cmds| cmds.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
+            let holds = !s.approvals.get(&id).is_none_or(Vec::is_empty)
+                || !s.questions.get(&id).is_none_or(Vec::is_empty)
+                || run.pending_handoff.is_some()
+                || run.pending_rollback.is_some();
+            super::token_savings::SizeCompaction::should_compact(
+                super::token_savings::auto_compact_tokens(),
+                run.usage.context_tokens,
+                run.usage.context_window,
+                super::token_savings::can_compact(run.provider, &offered),
+                run.status == RunStatus::Completed,
+                holds,
+                false,
+                already_compacted,
+            )
+        };
+        if !should {
+            return;
+        }
+        let manager = self.clone();
+        self.runtime.spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
+            let executable = {
+                let mut s = manager.lock();
+                if s.quitting || s.processes.contains_key(&id) || s.idle_compacting.contains(&id) {
+                    return;
+                }
+                let Some(run) = s.runs.iter().find(|r| r.id == id) else { return };
+                if run.status != RunStatus::Completed {
+                    return;
+                }
+                let Some(exec) = (manager.hooks.executable)(run.provider) else { return };
+                s.idle_compacting.insert(id);
+                exec
+            };
+            manager.launch_turn(id, "/compact".into(), executable, false);
+        });
+    }
+
+    /// Scans idle sessions and sends a quiet `/compact` before their prompt cache expires (`IdleCompaction` / AG-32).
+    pub fn check_idle_compactions(self: &Arc<Self>) {
+        if !super::token_savings::idle_compaction_enabled() {
+            return;
+        }
+        let now = Utc::now();
+        let due: Vec<(Uuid, String)> = {
+            let mut s = self.lock();
+            if s.quitting {
+                return;
+            }
+            let mut due = Vec::new();
+            let snapshot: Vec<WorkspaceRun> = s.runs.iter().filter(|r| r.prompt_cache.is_some()).cloned().collect();
+            for run in snapshot {
+                let id = run.id;
+                if s.processes.contains_key(&id) || s.idle_compacting.contains(&id) {
+                    continue;
+                }
+                let holds = !s.approvals.get(&id).is_none_or(Vec::is_empty)
+                    || !s.questions.get(&id).is_none_or(Vec::is_empty)
+                    || !s.queues.get(&id).is_none_or(MessageQueue::is_empty)
+                    || run.pending_handoff.is_some()
+                    || run.pending_rollback.is_some();
+                let candidate = super::token_savings::IdleCandidate {
+                    agent_reports_cache_lifetime: run.provider.capabilities().reports_prompt_cache_lifetime,
+                    status: run.status,
+                    archived: run.archived,
+                    settled: false,
+                    snoozed_until: None,
+                    context_tokens: run.usage.context_tokens,
+                    cache: run.prompt_cache.clone(),
+                    holds_for_you: holds,
+                    is_remote: false,
+                };
+                if let Some(fire) = super::token_savings::IdleCompaction::fire_date(&candidate, now) {
+                    if fire <= now {
+                        if let Some(exec) = (self.hooks.executable)(run.provider) {
+                            s.idle_compacting.insert(id);
+                            due.push((id, exec));
+                        }
+                    }
+                }
+            }
+            due
+        };
+        for (id, exec) in due {
+            self.launch_turn(id, "/compact".into(), exec, false);
+        }
+    }
+
+    /// Whether the session should offer a "Compact first" chip before sending the next message (`ReturnCompaction` / AG-32).
+    pub fn offers_compact_first(&self, id: Uuid) -> bool {
+        let s = self.lock();
+        let Some(run) = s.runs.iter().find(|r| r.id == id) else { return false };
+        let offered: Vec<String> = s.commands.get(&id).map(|cmds| cmds.iter().map(|c| c.name.clone()).collect()).unwrap_or_default();
+        let candidate = super::token_savings::ReturnCandidate {
+            agent_reports_cache_lifetime: run.provider.capabilities().reports_prompt_cache_lifetime,
+            can_compact: super::token_savings::can_compact(run.provider, &offered),
+            enabled: super::token_savings::idle_compaction_enabled(),
+            status: run.status,
+            context_tokens: run.usage.context_tokens,
+            cache: run.prompt_cache.clone(),
+            is_remote: false,
+        };
+        super::token_savings::ReturnCompaction::offers(&candidate, Utc::now())
     }
 
     pub fn set_archived(&self, id: Uuid, archived: bool) {
@@ -4717,6 +4909,7 @@ read rest
             compacting: false,
             tasks: None,
             restart: Default::default(),
+            prompt_cache: None,
         };
         {
             let mut s = manager.lock();

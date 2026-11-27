@@ -228,6 +228,12 @@ fn active_window_events(events: &[RunEvent]) -> &[RunEvent] {
 /// Computes the context window breakdown for a run from its reported usage and timeline events.
 /// Returns `None` when the session has no known context window or has zero used tokens and is not compacting.
 pub fn compute(run: &WorkspaceRun, events: &[RunEvent], setting_tokens: u64) -> Option<ContextUsage> {
+    let window = run.usage.context_window.filter(|&w| w > 0)?;
+    compute_with_mark(run, events, auto_compact_threshold(Some(window), setting_tokens))
+}
+
+/// Computes the context window breakdown using an explicit `auto_compact_at` threshold (`AutoCompactMark` on macOS).
+pub fn compute_with_mark(run: &WorkspaceRun, events: &[RunEvent], auto_compact_at: Option<u64>) -> Option<ContextUsage> {
     let compacting = run.compacting || running_compaction_id(events).is_some();
     let window = run.usage.context_window.filter(|&w| w > 0)?;
     let used_raw = run.usage.context_tokens.unwrap_or(0);
@@ -236,7 +242,6 @@ pub fn compute(run: &WorkspaceRun, events: &[RunEvent], setting_tokens: u64) -> 
     }
 
     let used = used_raw.min(window);
-    let auto_compact_at = auto_compact_threshold(Some(window), setting_tokens);
     let fraction = (used as f64 / window as f64).min(1.0);
     let p = pressure(used, window, auto_compact_at);
     let level = ContextLevel::from_pressure(p);

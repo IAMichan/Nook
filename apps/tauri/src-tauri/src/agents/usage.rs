@@ -61,6 +61,10 @@ impl UsageState {
             cliproxy_busy: Mutex::new(HashSet::new()),
         }
     }
+
+    pub fn codex_snapshot(&self) -> BTreeMap<String, CodexUsage> {
+        lock(&self.codex).clone()
+    }
 }
 
 pub fn manage(app: &AppHandle) {
