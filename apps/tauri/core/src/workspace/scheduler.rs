@@ -313,16 +313,13 @@ impl Scheduler {
     /// Nook is awake again.
     pub fn tick<Tz: TimeZone>(&self, host: &dyn SessionHost, enabled: bool, profile: DefaultProfile<'_>, now: DateTime<Utc>, tz: &Tz) {
         self.check_runs(host, now, tz);
-        if !enabled {
-            return;
-        }
         let due: Vec<(Uuid, DateTime<Utc>, String)> = {
             let mut s = self.lock();
             let mut due = vec![];
             let mut changed = false;
             for i in 0..s.tasks.len() {
                 let t = s.tasks[i].clone();
-                if !t.enabled || t.rule.waits_for_event() || s.gate.is_running(t.id) || t.is_done() {
+                if !t.enabled || !t.may_run(enabled) || t.rule.waits_for_event() || s.gate.is_running(t.id) || t.is_done() {
                     continue;
                 }
                 let Some(at) = t.next_run else {
@@ -359,7 +356,7 @@ impl Scheduler {
                 tz,
             );
         }
-        self.drain_messages(host, profile, now, tz);
+        self.drain_messages(host, enabled, profile, now, tz);
     }
 
     // MARK: Messages
@@ -375,7 +372,7 @@ impl Scheduler {
         now: DateTime<Utc>,
         tz: &Tz,
     ) {
-        if !enabled || messages.is_empty() {
+        if messages.is_empty() {
             return;
         }
         {
@@ -383,7 +380,7 @@ impl Scheduler {
             let tasks: Vec<(Uuid, MessageTrigger)> = s
                 .tasks
                 .iter()
-                .filter(|t| t.enabled)
+                .filter(|t| t.enabled && t.may_run(enabled))
                 .filter_map(|t| t.rule.message_trigger().map(|trigger| (t.id, trigger.clone())))
                 .collect();
             for (id, trigger) in tasks {
@@ -394,18 +391,25 @@ impl Scheduler {
                 }
             }
         }
-        self.drain_messages(host, profile, now, tz);
+        self.drain_messages(host, enabled, profile, now, tz);
     }
 
     /// Starts a run with the next batch for every message task that is free and has messages waiting. A batch that
     /// could not start goes back first in line.
-    fn drain_messages<Tz: TimeZone>(&self, host: &dyn SessionHost, profile: DefaultProfile<'_>, now: DateTime<Utc>, tz: &Tz) {
+    fn drain_messages<Tz: TimeZone>(
+        &self,
+        host: &dyn SessionHost,
+        enabled: bool,
+        profile: DefaultProfile<'_>,
+        now: DateTime<Utc>,
+        tz: &Tz,
+    ) {
         let batches: Vec<(Uuid, String, Vec<ArrivedMessage>)> = {
             let mut s = self.lock();
             let free: Vec<(Uuid, MessageTrigger, String)> = s
                 .tasks
                 .iter()
-                .filter(|t| t.enabled && !s.gate.is_running(t.id))
+                .filter(|t| t.enabled && t.may_run(enabled) && !s.gate.is_running(t.id))
                 .filter_map(|t| t.rule.message_trigger().map(|trigger| (t.id, trigger.clone(), t.prompt.clone())))
                 .collect();
             free.into_iter()
@@ -443,7 +447,7 @@ impl Scheduler {
         now: DateTime<Utc>,
         tz: &Tz,
     ) -> RunNow {
-        let Some(task) = self.task(id).filter(|_| enabled) else { return RunNow::NotAvailable };
+        let Some(task) = self.task(id).filter(|t| t.may_run(enabled)) else { return RunNow::NotAvailable };
         if self.is_running(id) {
             return RunNow::Busy;
         }
@@ -908,9 +912,8 @@ mod tests {
         let task = s.save_task(task, now, &Utc);
         assert_eq!(task.next_run, None, "a message task never runs on a timer");
         let host = NookHost(Mutex::default());
-        s.messages_arrived(&host, false, &[arrived("Lisa", "hoi", "1")], &profile, now, &Utc);
-        assert!(host.0.lock().unwrap().is_empty(), "nothing runs while scheduled tasks are off");
-        s.messages_arrived(&host, true, &[arrived("Jan", "hoi", "2"), arrived("Lisa", "hoi", "1")], &profile, now, &Utc);
+        // Nook's own message-triggered tasks run on their own switch even while global agent tasks are off.
+        s.messages_arrived(&host, false, &[arrived("Jan", "hoi", "2"), arrived("Lisa", "hoi", "1")], &profile, now, &Utc);
         {
             let runs = host.0.lock().unwrap();
             assert_eq!(runs.len(), 1);
@@ -919,15 +922,44 @@ mod tests {
             assert_eq!(runs[0].autonomy, crate::workspace::autonomy::NookAutonomy::Decide, "someone else's message never skips the judge");
         }
         // While it runs, a new message waits; the same message again is not new.
-        s.messages_arrived(&host, true, &[arrived("Lisa", "hoi", "1"), arrived("Lisa", "nog iets", "3")], &profile, now, &Utc);
+        s.messages_arrived(&host, false, &[arrived("Lisa", "hoi", "1"), arrived("Lisa", "nog iets", "3")], &profile, now, &Utc);
         assert_eq!(host.0.lock().unwrap().len(), 1);
         assert_eq!(s.waiting_messages(task.id), 1);
         s.finish_run(task.id, ScheduledRunStatus::Succeeded, None, utc("2026-03-02T08:01:00Z"), &Utc);
         assert_eq!(s.task(task.id).unwrap().next_run, None);
-        s.tick(&host, true, &profile, utc("2026-03-02T08:01:30Z"), &Utc);
+        s.tick(&host, false, &profile, utc("2026-03-02T08:01:30Z"), &Utc);
         let runs = host.0.lock().unwrap();
         assert_eq!(runs.len(), 2);
         assert!(runs[1].prompt.contains("nog iets"));
+    }
+
+    #[test]
+    fn nook_scheduled_tasks_run_without_global_agent_switch_while_sessions_and_webhooks_wait() {
+        let dir = TempDir::new();
+        let s = scheduler(dir.path());
+        let now = utc("2026-03-02T08:00:00Z");
+        let nook_task = s.save_task(
+            ScheduledTask::new("Morning", "Check mail", ScheduleRule::Interval { seconds: 600 }, ScheduledTaskTarget::Nook, now),
+            now,
+            &Utc,
+        );
+        let nook_webhook =
+            s.save_task(ScheduledTask::new("Hook", "Handle hook", ScheduleRule::Webhook, ScheduledTaskTarget::Nook, now), now, &Utc);
+        let session_task =
+            s.save_task(ScheduledTask::new("Agent", "Check repo", ScheduleRule::Interval { seconds: 600 }, target(), now), now, &Utc);
+        assert!(nook_task.may_run(false));
+        assert!(!nook_webhook.may_run(false));
+        assert!(!session_task.may_run(false));
+
+        let host = NookHost(Mutex::default());
+        s.tick(&host, false, &profile, utc("2026-03-02T08:15:00Z"), &Utc);
+        assert_eq!(host.0.lock().unwrap().len(), 1, "Nook's own scheduled task runs even with global agent tasks off");
+        assert_eq!(host.0.lock().unwrap()[0].task, nook_task.id);
+        assert!(!s.is_running(session_task.id), "agent session tasks stay off until globally enabled");
+        assert_eq!(s.run_now(&host, false, session_task.id, &profile, now, &Utc), RunNow::NotAvailable);
+        assert_eq!(s.run_now(&host, false, nook_webhook.id, &profile, now, &Utc), RunNow::NotAvailable);
+        s.finish_run(nook_task.id, ScheduledRunStatus::Succeeded, None, utc("2026-03-02T08:16:00Z"), &Utc);
+        assert_eq!(s.run_now(&host, false, nook_task.id, &profile, utc("2026-03-02T08:17:00Z"), &Utc), RunNow::Started);
     }
 
     #[test]

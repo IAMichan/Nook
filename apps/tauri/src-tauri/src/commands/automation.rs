@@ -91,6 +91,25 @@ pub fn automation_set_task_enabled(app: AppHandle, state: State<'_, AutomationSt
     Ok(())
 }
 
+/// Adds any missing presets of the personal secretary (morning briefing, quiet midday check, end of day).
+#[tauri::command]
+pub fn automation_add_secretary(app: AppHandle, state: State<'_, AutomationState>) -> usize {
+    let existing = state.scheduler.tasks();
+    let mut added = 0usize;
+    let now = Utc::now();
+    for draft in nook_core::workspace::nook_schedule::secretary() {
+        if existing.iter().any(|t| t.preset.is_some() && t.preset == draft.preset) {
+            continue;
+        }
+        state.scheduler.save_task(draft.task(now), now, &Local);
+        added += 1;
+    }
+    if added > 0 {
+        let _ = app.emit("automation-changed", ());
+    }
+    added
+}
+
 /// "Run now": the task's own prompt, once, if it is free.
 #[tauri::command]
 pub async fn automation_run_task(app: AppHandle, task: String) -> Res<RunNow> {

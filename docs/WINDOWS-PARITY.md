@@ -642,7 +642,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.9 Automation and remote
 
-- [ ] **AG-130** Scheduled tasks that act on their own without a session (#1676); Nook Chat as a target is BR-15…BR-17 · M
+- [x] **AG-130** Scheduled tasks that act on their own without a session (#1676); Nook Chat as a target is BR-15…BR-17 · M
 
 - [ ] **AG-131** Webhook filters, duplicate key, coalescing, deliveries log, public relay, deliveries kept across a quit (`WebhookRelay`, #1677) · M
 

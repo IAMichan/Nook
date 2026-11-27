@@ -362,6 +362,12 @@ impl ScheduledTask {
         self.rule.is_once() && self.last_run.is_some() && self.last_status != Some(ScheduledRunStatus::Running)
     }
 
+    /// Whether this task may run now (`ScheduledTaskStore.mayRun` on the Mac, #1676): agent tasks and webhooks wait
+    /// for the global Automation switch; Nook Chat's own scheduled/message tasks run on their own per-task switch.
+    pub fn may_run(&self, global_enabled: bool) -> bool {
+        global_enabled || (matches!(self.target, ScheduledTaskTarget::Nook) && !self.rule.is_webhook())
+    }
+
     /// One key per task, due time and trigger: a retry of the same firing is recognised and does not start twice.
     pub fn fire_key(task: Uuid, scheduled_for: DateTime<Utc>, trigger: ScheduleTrigger) -> String {
         format!("scheduled-task:{task}:{}:{}", scheduled_for.timestamp_millis(), trigger.id())

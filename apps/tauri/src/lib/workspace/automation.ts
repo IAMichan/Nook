@@ -57,8 +57,20 @@ export function autonomyLevels(): { id: NookAutonomy; label: string; detail: str
   return [
     { id: "ask", label: tr("Vraag mij", "Ask me"), detail: tr("Nook zet antwoorden, afspraken en andere stappen klaar; elke stap wacht op jouw klik.", "Nook prepares replies, appointments and other steps; each one waits for your click.") },
     { id: "decide", label: tr("Nook beslist", "Nook decides"), detail: tr("Nook voert wat duidelijk routine is zelf uit (een kort antwoord aan wie schreef, een herinnering) en laat de rest voor jou staan, met een korte reden.", "Nook carries out what is clearly routine by itself (a quick reply to someone who wrote, a reminder) and leaves the rest for you, with a short reason.") },
-    { id: "auto", label: tr("Gewoon doen", "Do it"), detail: tr("Nook verstuurt de berichten die het klaarzette en voert de wijzigingen zelf uit. Jij leest achteraf alleen wat het deed.", "Nook sends the messages it prepared and makes the changes by itself. You only read afterwards what it did.") },
+    { id: "auto", label: tr("Gewoon doen", "Do it"), detail: tr("Nook verstuurt de berichten en mail die het klaarzette en voert de wijzigingen zelf uit. Jij leest achteraf alleen wat het deed.", "Nook sends the messages and mail it prepared and makes the changes by itself. You only read afterwards what it did.") },
   ];
+}
+
+/** The short label for an autonomous level ("Nook decides" / "Do it"); null for "ask" so ordinary tasks stay quiet. */
+export function autonomyLabel(level?: NookAutonomy | null): string | null {
+  if (!level || level === "ask") return null;
+  return autonomyLevels().find((l) => l.id === level)?.label ?? null;
+}
+
+/** Whether a task may run now: Nook's own non-webhook tasks run on their own switch; agent sessions and webhooks wait
+ *  for the global "Allow scheduled tasks" switch (`ScheduledTask::may_run` in Rust). */
+export function mayRunTask(task: Pick<ScheduledTask, "target" | "rule">, globalEnabled: boolean): boolean {
+  return globalEnabled || (task.target.type === "nook" && task.rule.type !== "webhook");
 }
 
 export interface TaskView extends ScheduledTask {
@@ -90,6 +102,7 @@ export const automationApi = {
   saveTask: (task: ScheduledTask) => invoke<ScheduledTask>("automation_save_task", { task }),
   deleteTask: (task: string) => invoke<void>("automation_delete_task", { task }),
   setEnabled: (task: string, enabled: boolean) => invoke<void>("automation_set_task_enabled", { task, enabled }),
+  addSecretary: () => invoke<number>("automation_add_secretary"),
   runNow: (task: string) => invoke<RunNow>("automation_run_task", { task }),
   secret: (task: string, rotate = false) => invoke<string>("automation_webhook_secret", { task, rotate }),
   handOff: (run: string, provider: RunProvider, profileId: string, model = "") =>

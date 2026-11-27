@@ -620,6 +620,7 @@ pub fn run() {
             commands::automation::automation_save_task,
             commands::automation::automation_delete_task,
             commands::automation::automation_set_task_enabled,
+            commands::automation::automation_add_secretary,
             commands::automation::automation_run_task,
             commands::automation::automation_webhook_secret,
             commands::automation::workspace_hand_off,
