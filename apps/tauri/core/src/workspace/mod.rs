@@ -60,3 +60,4 @@ pub mod text_generation;
 pub mod titles;
 pub mod traffic;
 pub mod webhook;
+pub mod worktree_setup;

@@ -256,12 +256,34 @@ export interface ProjectSettingsView {
   defaults: ProjectDefaults;
 }
 
+export type SetupStep = "fetchBase" | "checkOut" | "runSetup" | "startAgent";
+
+export type StepState =
+  | { kind: "pending" }
+  | { kind: "running"; since: string }
+  | { kind: "done"; seconds: number }
+  | { kind: "skipped" }
+  | { kind: "failed"; message: string };
+
+export interface SetupNote {
+  id: number;
+  step: SetupStep;
+  text: string;
+}
+
+export interface WorktreeSetupProgress {
+  states: Partial<Record<SetupStep, StepState>>;
+  notes: SetupNote[];
+  startedAt: string;
+}
+
 export interface WorkspaceOverview {
   runs: WorkspaceRun[];
   running: string[];
   gitAvailable: boolean;
   providers: ProviderInfo[];
   settings: WorkspaceSettings;
+  worktreeSetups?: Record<string, WorktreeSetupProgress>;
 }
 
 export type PathVerdict = "ok" | "missing" | "notDirectory" | "unreadable" | "forbidden";
@@ -565,7 +587,17 @@ export interface TerminalInfo {
   created: string;
 }
 
-export interface ProjectScript { id: string; name: string; command: string; runOnWorktreeCreate: boolean; previewUrl: string | null; autoOpenPreview: boolean }
+export interface ProjectScript {
+  id: string;
+  name: string;
+  command: string;
+  runOnWorktreeCreate: boolean;
+  previewUrl: string | null;
+  autoOpenPreview: boolean;
+  stopOnSettle?: boolean;
+  runOnSettle?: boolean;
+  async?: boolean;
+}
 export interface DevServer { pid: number; command: string; port: number; url: string; /** Started by Nook: only such a server can be stopped from here (AG-134). */ startedByNook?: boolean }
 export interface BrowserState { open: boolean; url: string; title: string; loading: boolean; openedBy: string | null; lastError: string | null; unavailable?: string }
 

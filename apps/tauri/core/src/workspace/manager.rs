@@ -29,6 +29,8 @@ use super::paths::{self, Verdict};
 use super::queue::MessageQueue;
 use super::rollback::{self, ConversationLog, ConversationMark, Plan};
 use super::store::{RunStore, UsageFilter, UsageReport, EVENT_LIMIT};
+use super::terminal::{self, ProjectScript};
+use super::worktree_setup::{SetupStep, WorktreeSetupProgress, REMOTE_BASE_REFRESH_TTL, START_FETCH_TIMEOUT};
 use crate::agents::models::{
     approval_title, AgentApproval, ApprovalDecision, ApprovalOrigin, QuestionItem, QuestionOption, QuestionRequest,
 };
@@ -232,10 +234,19 @@ struct Inner {
     commands: HashMap<Uuid, Vec<driver::SlashCommand>>,
     /// FIFO queue of turns waiting for a free concurrency slot (`CapacityScheduler` on macOS, AG-75).
     capacity: super::capacity::CapacityScheduler,
+    /// Live worktree setup checklist progress per session (in memory only, AG-94).
+    worktree_setups: HashMap<Uuid, WorktreeSetupProgress>,
+    /// In-flight background worktree preparation task handles, aborted when stopped or deleted (AG-94).
+    prepare_tasks: HashMap<Uuid, tokio::task::AbortHandle>,
+    /// Last `git fetch` time per normalized `(repo_root, base_branch)` key so fetches happen at most once per 2 minutes.
+    remote_base_refreshed: HashMap<String, DateTime<Utc>>,
 }
 
 type Notify = Box<dyn Fn(ManagerEvent) + Send + Sync>;
 type TelemetryProvider = Arc<dyn Fn() -> crate::services::telemetry::OtlpConfig + Send + Sync>;
+/// Opens a terminal in `folder` running `command` with tab title `title`, returning a closure that reports whether
+/// the terminal is still running (`runScript` on macOS, AG-94).
+pub type ScriptRunner = Arc<dyn Fn(&str, &str, &str) -> Option<Box<dyn Fn() -> bool + Send + Sync>> + Send + Sync>;
 
 pub struct Manager {
     inner: Mutex<Inner>,
@@ -248,6 +259,8 @@ pub struct Manager {
     pub recap: RecapSink,
     /// Optional resolver for active OTLP telemetry config (AG-33 / SV-05); falls back to settings + process env.
     telemetry_provider: Mutex<Option<TelemetryProvider>>,
+    /// Optional runner that opens a visible terminal for `nook.json` `runOnWorktreeCreate` scripts (AG-94).
+    script_runner: Mutex<Option<ScriptRunner>>,
 }
 
 /// Verzamelt events en stuurt ze pas als de mutex los is.
@@ -279,6 +292,7 @@ impl Manager {
             runtime,
             recap: RecapSink::default(),
             telemetry_provider: Mutex::new(None),
+            script_runner: Mutex::new(None),
         });
         manager.restore_waiting();
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
@@ -287,6 +301,108 @@ impl Manager {
             manager.arm_limit_resume(id);
         }
         manager
+    }
+
+    /// Registers the host app's terminal launcher for `runOnWorktreeCreate` project scripts (AG-94).
+    pub fn set_script_runner(
+        &self,
+        runner: impl Fn(&str, &str, &str) -> Option<Box<dyn Fn() -> bool + Send + Sync>> + Send + Sync + 'static,
+    ) {
+        *self.script_runner.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(runner));
+    }
+
+    fn run_setup_script(&self, folder: &str, command: &str, title: &str) -> Option<Box<dyn Fn() -> bool + Send + Sync>> {
+        let runner = self.script_runner.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
+        runner(folder, command, title)
+    }
+
+    /// The worktree setup checklist currently visible for `id`, matching macOS `visibleSetup(_:)`.
+    pub fn visible_setup(&self, id: Uuid) -> Option<WorktreeSetupProgress> {
+        let s = self.lock();
+        let run = s.runs.iter().find(|r| r.id == id)?;
+        Self::visible_setup_in(&s, run)
+    }
+
+    /// All currently visible worktree setup checklists keyed by session id (sent in `workspace_overview`).
+    pub fn visible_setups(&self) -> HashMap<Uuid, WorktreeSetupProgress> {
+        let s = self.lock();
+        let mut out = HashMap::new();
+        for run in &s.runs {
+            if let Some(progress) = Self::visible_setup_in(&s, run) {
+                out.insert(run.id, progress);
+            }
+        }
+        out
+    }
+
+    fn visible_setup_in(s: &Inner, run: &WorkspaceRun) -> Option<WorktreeSetupProgress> {
+        let progress = s.worktree_setups.get(&run.id)?;
+        if run.status.is_active() || run.status == RunStatus::Failed || run.status == RunStatus::Stopped {
+            return Some(progress.clone());
+        }
+        None
+    }
+
+    /// Whether `base` in `root` needs a fresh `git fetch` (at most once every two minutes per repo & base).
+    pub fn should_refresh_remote_base(&self, root: &str, base: &str, now: DateTime<Utc>) -> bool {
+        let key = format!("{}\n{base}", paths::normalize(root));
+        let mut s = self.lock();
+        if let Some(&last) = s.remote_base_refreshed.get(&key) {
+            let elapsed = (now - last).to_std().unwrap_or_default();
+            if elapsed < REMOTE_BASE_REFRESH_TTL {
+                return false;
+            }
+        }
+        s.remote_base_refreshed.insert(key, now);
+        true
+    }
+
+    fn setup_step(&self, id: Uuid, change: impl FnOnce(&mut WorktreeSetupProgress)) {
+        let changed = {
+            let mut s = self.lock();
+            if let Some(progress) = s.worktree_setups.get_mut(&id) {
+                change(progress);
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            self.emit(Out(vec![ManagerEvent::Changed]));
+        }
+    }
+
+    /// Called when an event is appended to `id`: the agent's first real output ends `StartAgent` and clears the checklist.
+    fn note_setup_event(s: &mut Inner, id: Uuid, event: &RunEvent, out: &mut Out) {
+        let Some(progress) = s.worktree_setups.get_mut(&id) else { return };
+        if !progress.is_running(SetupStep::StartAgent) {
+            return;
+        }
+        match event.kind {
+            EventKind::Assistant
+            | EventKind::Thinking
+            | EventKind::Tool
+            | EventKind::FileChange
+            | EventKind::Approval
+            | EventKind::Result => {
+                s.worktree_setups.remove(&id);
+                out.push(ManagerEvent::Changed);
+            }
+            EventKind::Error => {
+                progress.fail(SetupStep::StartAgent, event.text.clone());
+                out.push(ManagerEvent::Changed);
+            }
+            EventKind::User | EventKind::System => {}
+        }
+    }
+
+    /// Clears a finished/failed/stopped setup checklist when a later turn begins; keeps it for the initial preparing turn.
+    fn drop_finished_setup(s: &mut Inner, id: Uuid) {
+        let keep = s.worktree_setups.get(&id).is_some_and(|p| p.is_running(SetupStep::StartAgent))
+            && s.runs.iter().find(|r| r.id == id).is_some_and(|r| r.status == RunStatus::Preparing);
+        if !keep {
+            s.worktree_setups.remove(&id);
+        }
     }
 
     /// Registers a live resolver for OpenTelemetry export settings (including keychain headers from the host app).
@@ -604,13 +720,23 @@ impl Manager {
             let parent = Path::new(&common).parent().map(|p| paths::normalize(&p.to_string_lossy())).unwrap_or_default();
             info.is_worktree = parent != paths::normalize(&root);
         }
+        if let Some(base) = info.default_base.clone().filter(|b| b.contains('/')) {
+            if self.should_refresh_remote_base(&root, &base, Utc::now()) {
+                let git = Clone::clone(git);
+                let root = root.clone();
+                self.runtime.spawn_blocking(move || {
+                    let _ = git.refresh_remote_base(&base, &root, Duration::from_secs(20));
+                });
+            }
+        }
         info
     }
 
     // MARK: Nieuwe sessie
 
-    /// Controleert de invoer, zet map of worktree klaar en start de agent. Lukt de worktree niet, dan komt er geen
-    /// sessie bij, zodat je het opnieuw kunt proberen.
+    /// Controleert de invoer, zet map of worktree klaar en start de agent. Voor een worktree opent de sessie direct
+    /// met een live checklist (`WorktreeSetupProgress`, AG-94): ophalen van de basisbranch (max 5 s), uitchecken,
+    /// eventuele setup-scripts (`nook.json`), en daarna de agent.
     pub fn start(self: &Arc<Self>, config: NewRunConfig, allow_shared_folder: bool) -> Result<Uuid, String> {
         if let Some(problem) = config.problem() {
             return Err(problem.message().into());
@@ -630,17 +756,17 @@ impl Manager {
         let mut branch = None;
         let mut worktree = None;
         if config.isolation == IsolationMode::Worktree {
-            let git = self.git.as_ref().ok_or(tr(
+            let _git = self.git.as_ref().ok_or(tr(
                 "Git is niet gevonden. Installeer git en probeer het opnieuw.",
                 "Git was not found. Install git and try again.",
             ))?;
             let root = repo_root.clone().ok_or(tr("Deze map is geen git-repository.", "This folder is not a git repository."))?;
             let root_folder = if config.worktree_root.is_empty() { (self.hooks.worktree_root)() } else { config.worktree_root.clone() };
             let repo_name = crate::agents::text::project_name(&root);
+            let reserved: HashSet<String> = self.lock().runs.iter().filter_map(|r| r.worktree_path.clone()).collect();
             let path = worktree_path(&paths::normalize(&root_folder), &repo_name, &slug(&config.branch_name.replace('/', "-"), 60), |p| {
-                Path::new(p).exists()
+                reserved.contains(p) || Path::new(p).exists()
             });
-            git.add_worktree(&root, &path, &config.branch_name, &config.base_branch).map_err(|e| e.0)?;
             working = path.clone();
             worktree = Some(path);
             branch = Some(config.branch_name.clone());
@@ -673,7 +799,7 @@ impl Manager {
             isolation: config.isolation,
             project_path: repo_root.clone().unwrap_or_else(|| project.clone()),
             working_directory: working,
-            repo_root,
+            repo_root: repo_root.clone(),
             branch: branch.clone(),
             base_branch: (config.isolation == IsolationMode::Worktree).then(|| config.base_branch.clone()),
             worktree_path: worktree.clone(),
@@ -685,7 +811,7 @@ impl Manager {
             updated_at: now,
             archived: false,
             usage: RunUsage::default(),
-            turn_started_at: None,
+            turn_started_at: Some(now),
             reviewed_at: None,
             last_change_at: None,
             changed_files: None,
@@ -704,14 +830,7 @@ impl Manager {
             tasks: None,
             restart: Default::default(),
         };
-        if let (Some(path), Some(git)) = (&worktree, &self.git) {
-            // De eerste momentopname, voor de agent iets doet: "terug naar hier" bij het eerste bericht.
-            let r = git::checkpoint_ref(&id.to_string(), 0);
-            if git.checkpoint_head(path, &r).is_ok() {
-                run.checkpoints.push(RunCheckpoint { r#ref: r, date: Utc::now(), conversation: Some(ConversationMark::empty()) });
-            }
-        }
-        if run.checkpoints.is_empty() && rollback::can_roll_back(run.provider) {
+        if worktree.is_none() && rollback::can_roll_back(run.provider) {
             run.checkpoints.push(RunCheckpoint { r#ref: String::new(), date: Utc::now(), conversation: Some(ConversationMark::empty()) });
         }
         let mut out = Out::default();
@@ -721,6 +840,7 @@ impl Manager {
             s.events.insert(id, vec![]);
             s.dirty_runs = true;
             if let Some(path) = &worktree {
+                s.worktree_setups.insert(id, WorktreeSetupProgress::new(now));
                 Self::append(
                     &mut s,
                     id,
@@ -729,16 +849,288 @@ impl Manager {
                         trf(
                             "Worktree gemaakt: branch {branch} in {path}",
                             "Worktree created: branch {branch} in {path}",
-                            &[("branch", &branch.unwrap_or_default()), ("path", &crate::agents::tilde(path))],
+                            &[("branch", &branch.clone().unwrap_or_default()), ("path", &crate::agents::tilde(path))],
                         ),
                     ),
                     &mut out,
                 );
+                if !config.task.trim().is_empty() {
+                    Self::append(&mut s, id, RunEvent::new(EventKind::User, config.task.clone()), &mut out);
+                }
             }
+            out.push(ManagerEvent::Changed);
         }
         self.emit(out);
-        self.launch_turn(id, config.task.clone(), executable, true);
+        if let (Some(path), Some(root)) = (worktree, repo_root) {
+            self.prepare_worktree_and_launch(id, root, path, branch.unwrap_or_default(), config.base_branch, config.task, executable);
+        } else {
+            self.launch_turn(id, config.task.clone(), executable, true);
+        }
         Ok(id)
+    }
+
+    /// Creates the session's worktree asynchronously, updating [`WorktreeSetupProgress`] after each real step:
+    /// 5-second capped remote-base fetch, `git worktree add`, `nook.json` setup scripts (blocking when `async: false`),
+    /// initial checkpoint, and launching the first turn (`prepareWorktreeAndLaunch` on macOS, AG-94).
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_worktree_and_launch(
+        self: &Arc<Self>,
+        id: Uuid,
+        root: String,
+        path: String,
+        branch: String,
+        base: String,
+        prompt: String,
+        executable: String,
+    ) {
+        let Some(git) = self.git.clone() else { return };
+        let refresh_base = self.should_refresh_remote_base(&root, &base, Utc::now());
+        let manager = self.clone();
+        let handle = self.runtime.spawn(async move {
+            let fetches = refresh_base && base.contains('/');
+            if fetches {
+                manager.setup_step(id, |p| p.begin(SetupStep::FetchBase, Utc::now()));
+                let git_fetch = Clone::clone(&git);
+                let base_fetch = base.clone();
+                let root_fetch = root.clone();
+                let fetched =
+                    tokio::task::spawn_blocking(move || git_fetch.refresh_remote_base(&base_fetch, &root_fetch, START_FETCH_TIMEOUT)).await;
+                if let Ok(result) = fetched {
+                    let checkout_start = Utc::now();
+                    manager.setup_step(id, |p| {
+                        p.record_fetch(&result, &base, checkout_start);
+                        p.begin(SetupStep::CheckOut, checkout_start);
+                    });
+                } else {
+                    manager.setup_step(id, |p| p.begin(SetupStep::CheckOut, Utc::now()));
+                }
+            } else {
+                let now = Utc::now();
+                manager.setup_step(id, |p| {
+                    p.skip(SetupStep::FetchBase);
+                    if base.contains('/') {
+                        p.note_fetched_recently(&base);
+                    } else {
+                        p.note_local_base(&base);
+                    }
+                    p.begin(SetupStep::CheckOut, now);
+                });
+            }
+
+            let git_wt = Clone::clone(&git);
+            let root_wt = root.clone();
+            let path_wt = path.clone();
+            let branch_wt = branch.clone();
+            let base_wt = base.clone();
+            let created = tokio::task::spawn_blocking(move || git_wt.add_worktree(&root_wt, &path_wt, &branch_wt, &base_wt)).await;
+            let err = match created {
+                Ok(Ok(())) => None,
+                Ok(Err(e)) => Some(e.0),
+                Err(e) => Some(e.to_string()),
+            };
+            if let Some(message) = err {
+                let mut out = Out::default();
+                {
+                    let mut s = manager.lock();
+                    s.prepare_tasks.remove(&id);
+                    if !s.runs.iter().any(|r| r.id == id) {
+                        return;
+                    }
+                    if let Some(progress) = s.worktree_setups.get_mut(&id) {
+                        let step = if progress.is_running(SetupStep::FetchBase) { SetupStep::FetchBase } else { SetupStep::CheckOut };
+                        progress.fail(step, message.clone());
+                    }
+                    Self::update(&mut s, id, |r| {
+                        r.worktree_path = None;
+                        r.working_directory = root.clone();
+                        r.move_to(RunStatus::Failed, Some(message.clone()), Utc::now());
+                    });
+                    Self::append(&mut s, id, RunEvent::new(EventKind::Error, message), &mut out);
+                    out.push(ManagerEvent::Changed);
+                }
+                manager.emit(out);
+                return;
+            }
+
+            manager.setup_step(id, |p| {
+                p.finish(SetupStep::CheckOut, Utc::now());
+                p.note_checkout(&branch, &base, &crate::agents::tilde(&path));
+            });
+
+            if !manager.run(id).is_some_and(|r| r.status == RunStatus::Preparing) {
+                return;
+            }
+
+            let path_scripts = path.clone();
+            let loaded = tokio::task::spawn_blocking(move || terminal::load_scripts(&path_scripts)).await.unwrap_or_default();
+            let (scripts, holds_agent) = terminal::setup_scripts(&loaded);
+
+            if !manager.run(id).is_some_and(|r| r.status == RunStatus::Preparing) {
+                return;
+            }
+
+            let holds = holds_agent && !prompt.trim().is_empty();
+            manager.setup_step(id, |p| {
+                if scripts.is_empty() {
+                    p.skip(SetupStep::RunSetup);
+                    p.note_no_script();
+                } else {
+                    p.begin(SetupStep::RunSetup, Utc::now());
+                    for script in &scripts {
+                        p.note_script(&script.name, script.async_run);
+                    }
+                }
+            });
+
+            if !holds {
+                manager.lock().prepare_tasks.remove(&id);
+                manager.start_first_turn(id, prompt.clone(), executable.clone());
+            }
+
+            // Capture the initial checkpoint at HEAD before the agent modifies files.
+            let cp_ref = git::checkpoint_ref(&id.to_string(), 0);
+            let git_cp = Clone::clone(&git);
+            let path_cp = path.clone();
+            let cp_ref_run = cp_ref.clone();
+            let made_cp = tokio::task::spawn_blocking(move || git_cp.checkpoint_head(&path_cp, &cp_ref_run).is_ok()).await.unwrap_or(false);
+            if made_cp {
+                let mut s = manager.lock();
+                Self::update(&mut s, id, |r| {
+                    if !r.checkpoints.iter().any(|c| c.r#ref == cp_ref) {
+                        r.checkpoints
+                            .insert(0, RunCheckpoint { r#ref: cp_ref, date: Utc::now(), conversation: Some(ConversationMark::empty()) });
+                    }
+                });
+            }
+
+            if manager.run(id).is_none() {
+                return;
+            }
+
+            let failure = manager.start_setup_scripts(id, &path, &scripts).await;
+            manager.setup_step(id, |p| {
+                if !p.is_running(SetupStep::RunSetup) {
+                    return;
+                }
+                if let Some(msg) = &failure {
+                    p.fail(SetupStep::RunSetup, msg.clone());
+                } else {
+                    p.finish(SetupStep::RunSetup, Utc::now());
+                }
+            });
+
+            if !holds || !manager.run(id).is_some_and(|r| r.status == RunStatus::Preparing) {
+                return;
+            }
+            manager.lock().prepare_tasks.remove(&id);
+            if let Some(msg) = failure {
+                let mut out = Out::default();
+                {
+                    let mut s = manager.lock();
+                    Self::update(&mut s, id, |r| {
+                        r.move_to(RunStatus::Failed, Some(msg.clone()), Utc::now());
+                    });
+                    Self::append(&mut s, id, RunEvent::new(EventKind::Error, msg), &mut out);
+                    out.push(ManagerEvent::Changed);
+                }
+                manager.emit(out);
+                return;
+            }
+            manager.start_first_turn(id, prompt, executable);
+        });
+        let mut s = self.lock();
+        if let Some(prev) = s.prepare_tasks.insert(id, handle.abort_handle()) {
+            prev.abort();
+        }
+    }
+
+    fn start_first_turn(self: &Arc<Self>, id: Uuid, prompt: String, executable: String) {
+        if prompt.trim().is_empty() {
+            self.setup_step(id, |p| p.skip(SetupStep::StartAgent));
+            let mut out = Out::default();
+            {
+                let mut s = self.lock();
+                Self::update(&mut s, id, |r| {
+                    r.status = RunStatus::Completed;
+                    r.turn_started_at = None;
+                });
+                out.push(ManagerEvent::Changed);
+            }
+            self.emit(out);
+        } else {
+            self.setup_step(id, |p| p.begin(SetupStep::StartAgent, Utc::now()));
+            self.launch_turn(id, prompt, executable, false);
+        }
+    }
+
+    /// Runs `runOnWorktreeCreate` scripts in visible terminals and waits for any `"async": false` scripts to exit.
+    /// Returns `None` on success (or if no script blocks), or an error string if a blocking script fails or is closed.
+    async fn start_setup_scripts(&self, id: Uuid, path: &str, scripts: &[ProjectScript]) -> Option<String> {
+        let mut waiting: Vec<(String, std::path::PathBuf, Box<dyn Fn() -> bool + Send + Sync>)> = Vec::new();
+        for script in scripts {
+            if script.async_run {
+                let _ = self.run_setup_script(path, &script.command, &script.name);
+                let mut out = Out::default();
+                Self::append(
+                    &mut self.lock(),
+                    id,
+                    RunEvent::new(
+                        EventKind::System,
+                        trf("Setup-script gestart: {name}", "Setup script started: {name}", &[("name", &script.name)]),
+                    ),
+                    &mut out,
+                );
+                self.emit(out);
+                continue;
+            }
+            let status_path = std::env::temp_dir().join(format!("nook-setup-{}", Uuid::new_v4()));
+            let wrapped = terminal::blocking_command(&script.command, &status_path.to_string_lossy(), cfg!(windows));
+            let Some(is_open) = self.run_setup_script(path, &wrapped, &script.name) else {
+                continue;
+            };
+            let mut out = Out::default();
+            Self::append(
+                &mut self.lock(),
+                id,
+                RunEvent::new(
+                    EventKind::System,
+                    trf("Wacht op setup-script: {name}", "Waiting for setup script: {name}", &[("name", &script.name)]),
+                ),
+                &mut out,
+            );
+            self.emit(out);
+            waiting.push((script.name.clone(), status_path, is_open));
+        }
+        let mut failure: Option<String> = None;
+        for (name, status_path, is_open) in waiting {
+            loop {
+                let still_open = is_open();
+                let bytes = std::fs::read(&status_path).ok();
+                if let Some(code) = terminal::exit_status(bytes.as_deref()) {
+                    if code != 0 && failure.is_none() {
+                        failure = Some(trf(
+                            "Setup-script '{name}' mislukte (afsluitcode {code}).",
+                            "Setup script '{name}' failed (exit code {code}).",
+                            &[("name", &name), ("code", &code)],
+                        ));
+                    }
+                    break;
+                }
+                if !still_open {
+                    if failure.is_none() {
+                        failure = Some(trf(
+                            "Setup-script '{name}' is gesloten voordat het klaar was.",
+                            "Setup script '{name}' was closed before it finished.",
+                            &[("name", &name)],
+                        ));
+                    }
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            let _ = std::fs::remove_file(&status_path);
+        }
+        failure
     }
 
     /// Every agent runs here: Claude Code over its stream, Codex over app-server, the rest over ACP (`driver`).
@@ -1156,6 +1548,7 @@ impl Manager {
             }
             // Een nieuwe beurt beëindigt elk wachten op een gebruikslimiet (van jou of het automatische).
             Self::clear_usage_limit(&mut s, id);
+            Self::drop_finished_setup(&mut s, id);
             Self::load_timeline(&self.store, &mut s, id);
             let Some(run) = s.runs.iter().find(|r| r.id == id).cloned() else { return };
             let claude_rollback =
@@ -1531,6 +1924,7 @@ impl Manager {
 
     fn append(s: &mut Inner, id: Uuid, event: RunEvent, out: &mut Out) {
         let notable = !(event.kind == EventKind::System && event.tool.as_deref() == Some("launch"));
+        Self::note_setup_event(s, id, &event, out);
         let list = s.events.entry(id).or_default();
         list.push(event);
         // Only the last EVENT_LIMIT events are ever saved; trimming in batches keeps a long session from growing
@@ -2414,6 +2808,9 @@ impl Manager {
         let mut out = Out::default();
         let target = {
             let mut s = self.lock();
+            if let Some(handle) = s.prepare_tasks.remove(&id) {
+                handle.abort();
+            }
             let Some(proc_) = s.processes.get(&id) else {
                 Self::update(&mut s, id, |r| {
                     r.move_to(RunStatus::Stopped, None, Utc::now());
@@ -2854,6 +3251,10 @@ impl Manager {
             s.questions.remove(&id);
             s.queues.remove(&id);
             s.capacity.forget(id);
+            s.worktree_setups.remove(&id);
+            if let Some(handle) = s.prepare_tasks.remove(&id) {
+                handle.abort();
+            }
             s.git.remove(&id);
             s.dirty_runs = true;
             s.dirty_queues = true;
@@ -3673,6 +4074,9 @@ impl Manager {
                 }
             }
             s.capacity.clear();
+            for (_, handle) in s.prepare_tasks.drain() {
+                handle.abort();
+            }
             cut
         };
         let running = self.lock().processes.len();
@@ -4238,6 +4642,120 @@ read rest
         manager.stop(a);
         assert_eq!(manager.run(a).unwrap().status, RunStatus::Stopped);
         assert!(!manager.is_waiting_for_capacity(c), "C should be dequeued and launched once A stops");
+
+        manager.shutdown();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn worktree_setup_progress_and_blocking_scripts() {
+        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+        let root = std::env::temp_dir().join(format!("nook-wt-setup-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let hooks = Hooks {
+            executable: Box::new(|_| Some("/nonexistent-agent".into())),
+            account_environment: Box::new(|_| BTreeMap::new()),
+            bridge: Box::new(|| None),
+            worktree_root: Box::new({
+                let wt = root.join("wt");
+                move || wt.to_string_lossy().into_owned()
+            }),
+            auto_resume_limited: Box::new(|| false),
+        };
+        let manager = Manager::new(root.join("store"), hooks, rt.handle().clone(), |_| {});
+
+        // 1. Remote-base refresh cache throttles repeat fetches within 2 minutes.
+        let t0 = Utc::now();
+        assert!(manager.should_refresh_remote_base("/repo", "origin/main", t0));
+        assert!(!manager.should_refresh_remote_base("/repo", "origin/main", t0 + chrono::Duration::seconds(60)));
+        assert!(manager.should_refresh_remote_base("/repo", "origin/main", t0 + chrono::Duration::seconds(121)));
+        assert!(manager.should_refresh_remote_base("/repo", "origin/dev", t0));
+
+        // 2. Setup checklist visibility & clearing on first agent output or error.
+        let id = Uuid::new_v4();
+        let run = WorkspaceRun {
+            id,
+            title: "Setup test".into(),
+            task: "Do work".into(),
+            provider: RunProvider::Claude,
+            profile_id: String::new(),
+            model: String::new(),
+            resolved_model: None,
+            mode: ExecutionMode::Agent,
+            permission: PermissionPolicy::Ask,
+            isolation: IsolationMode::Worktree,
+            project_path: root.to_string_lossy().into_owned(),
+            working_directory: root.to_string_lossy().into_owned(),
+            repo_root: None,
+            branch: Some("nook/test".into()),
+            base_branch: Some("main".into()),
+            worktree_path: None,
+            instructions: String::new(),
+            status: RunStatus::Preparing,
+            status_detail: None,
+            provider_session_id: None,
+            created_at: t0,
+            updated_at: t0,
+            archived: false,
+            usage: RunUsage::default(),
+            turn_started_at: Some(t0),
+            reviewed_at: None,
+            last_change_at: None,
+            changed_files: None,
+            lines_added: None,
+            lines_removed: None,
+            checkpoints: vec![],
+            limited_at: None,
+            limit_reset_at: None,
+            auto_resume: false,
+            effort: None,
+            pending_handoff: None,
+            conversation: None,
+            pending_rollback: None,
+            goal: None,
+            compacting: false,
+            tasks: None,
+            restart: Default::default(),
+        };
+        {
+            let mut s = manager.lock();
+            s.runs.push(run);
+            s.events.insert(id, vec![]);
+            let mut progress = WorktreeSetupProgress::new(t0);
+            progress.begin(SetupStep::StartAgent, t0);
+            s.worktree_setups.insert(id, progress);
+        }
+        assert!(manager.visible_setup(id).is_some());
+
+        // User/system events keep the checklist alive; assistant output clears it.
+        {
+            let mut out = Out::default();
+            let mut s = manager.lock();
+            Manager::append(&mut s, id, RunEvent::new(EventKind::System, "still starting"), &mut out);
+        }
+        assert!(manager.visible_setup(id).is_some());
+        {
+            let mut out = Out::default();
+            let mut s = manager.lock();
+            Manager::append(&mut s, id, RunEvent::new(EventKind::Assistant, "Hello!"), &mut out);
+        }
+        assert!(manager.visible_setup(id).is_none());
+
+        // 3. Blocking setup script reports failure when terminal closes without writing exit status.
+        manager.set_script_runner(|_, _, _| Some(Box::new(|| false)));
+        let blocking_script = ProjectScript {
+            id: "setup".into(),
+            name: "Install deps".into(),
+            command: "pnpm install".into(),
+            run_on_worktree_create: true,
+            preview_url: None,
+            auto_open_preview: false,
+            stop_on_settle: false,
+            run_on_settle: false,
+            async_run: false,
+        };
+        let err = rt.block_on(manager.start_setup_scripts(id, &root.to_string_lossy(), &[blocking_script]));
+        assert!(err.is_some(), "closing a blocking setup script terminal before exit code must fail setup");
 
         manager.shutdown();
         let _ = std::fs::remove_dir_all(root);
