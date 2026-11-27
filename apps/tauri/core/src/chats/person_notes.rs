@@ -72,11 +72,38 @@ impl PersonNotes {
     pub fn birthdays_on(&self, date: NaiveDate) -> Vec<String> {
         self.entries.iter().filter(|(_, e)| e.birthday.as_deref().is_some_and(|b| falls_on(b, date))).map(|(k, _)| k.clone()).collect()
     }
+
+    /// Whether anything is still kept under a name alone (`"name:..."`), from before a person was known by their
+    /// number or address across apps (`InboxThread::identity`).
+    pub fn has_name_keys(&self) -> bool {
+        self.entries.keys().any(|k| k.starts_with("name:"))
+    }
+
+    /// Moves what you kept under a person's name to their key now, when that is their number or address and nothing
+    /// is kept there yet (`ChatPersonNotes.carryOver` on the Mac). Returns `true` when any entry moved.
+    pub fn carry_over(&mut self, people: &[super::ChatPerson]) -> bool {
+        if !self.has_name_keys() {
+            return false;
+        }
+        let mut changed = false;
+        for person in people {
+            if person.id.starts_with("name:") || self.entries.contains_key(&person.id) {
+                continue;
+            }
+            let old = format!("name:{}", super::ChatText::words(&person.name));
+            if let Some(entry) = self.entries.remove(&old) {
+                self.entries.insert(person.id.clone(), entry);
+                changed = true;
+            }
+        }
+        changed
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chats::{ChatPerson, ChatText};
 
     #[test]
     fn keeps_a_birthday_and_finds_it_on_the_day() {
@@ -91,5 +118,31 @@ mod tests {
         assert!(notes.birthdays_on(NaiveDate::from_ymd_opt(2028, 2, 28).unwrap()).is_empty());
         notes.set("telegram#anna", "", None);
         assert!(!notes.entries.contains_key("telegram#anna"));
+    }
+
+    #[test]
+    fn name_note_moves_to_the_address_key() {
+        let mut notes = PersonNotes::default();
+        notes.set(&format!("name:{}", ChatText::words("Anna Smit")), "Met at the conference", None);
+        notes.set(&format!("name:{}", ChatText::words("Jan")), "Snap friend", None);
+        assert!(notes.has_name_keys());
+        let anna = ChatPerson { id: "mail:anna@example.com".into(), name: "Anna Smit".into(), chats: vec![] };
+        let jan = ChatPerson { id: format!("name:{}", ChatText::words("Jan")), name: "Jan".into(), chats: vec![] };
+        assert!(notes.carry_over(&[anna.clone(), jan.clone()]));
+        assert_eq!(notes.get(&anna.id).note, "Met at the conference");
+        assert_eq!(notes.get(&jan.id).note, "Snap friend");
+        assert_eq!(notes.entries.len(), 2);
+    }
+
+    #[test]
+    fn carry_over_does_not_overwrite_an_existing_entry() {
+        let mut notes = PersonNotes::default();
+        let old_key = format!("name:{}", ChatText::words("Anna"));
+        notes.set(&old_key, "old", None);
+        notes.set("tel:612345678", "new", None);
+        let anna = ChatPerson { id: "tel:612345678".into(), name: "Anna".into(), chats: vec![] };
+        assert!(!notes.carry_over(&[anna]));
+        assert_eq!(notes.get("tel:612345678").note, "new");
+        assert_eq!(notes.get(&old_key).note, "old");
     }
 }

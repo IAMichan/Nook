@@ -701,34 +701,61 @@ export interface ChatPerson {
   primaryChat: ChatEntry;
 }
 
-/** Name folding matching Mac `ChatPeople` / Rust `fold`: diacritics & invisible marks stripped, lowercased, collapsed. */
+/** Name folding matching Mac `ChatText.words` / Rust `ChatText::words`: diacritics, width & invisible marks stripped, lowercased, non-alphanumeric runs collapsed to one space. */
 export function foldPersonName(name: string): string {
   const visible = name.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "");
   return visible
     .normalize("NFKD")
     .replace(/\p{M}+/gu, "")
     .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ");
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
-function normalizedHandle(handle: string | null | undefined): string | null {
+function isWhatsAppNumberId(text: string): boolean {
+  const at = text.indexOf("@");
+  if (at < 0) return false;
+  const host = text.slice(at + 1).trim().toLowerCase();
+  return host.endsWith("whatsapp.net") || host === "c.us";
+}
+
+/** Extracts ASCII digits (stripping `@server`, multi-account `account~`, and `:device`), matching `ChatHandle::digits`. */
+function phoneDigits(text: string): string {
+  let user = text;
+  const at = user.indexOf("@");
+  if (at >= 0) {
+    let beforeAt = user.slice(0, at);
+    if (isWhatsAppNumberId(text)) {
+      const tilde = beforeAt.lastIndexOf("~");
+      if (tilde >= 0) beforeAt = beforeAt.slice(tilde + 1);
+    }
+    const colon = beforeAt.indexOf(":");
+    user = colon >= 0 ? beforeAt.slice(0, colon) : beforeAt;
+  }
+  return user.normalize("NFKD").replace(/\D+/g, "");
+}
+
+/** Normalized handle matching `ChatHandle::key` (`tel:<last 9 digits>` or `mail:<lowercased>`). */
+export function normalizedHandle(handle: string | null | undefined): string | null {
   if (!handle) return null;
-  const trimmed = handle.trim().toLowerCase();
+  const trimmed = handle.trim();
   if (!trimmed) return null;
-  if (trimmed.includes("@")) return trimmed;
-  const digits = trimmed.replace(/\D+/g, "");
-  return digits.length >= 7 ? `tel:${digits}` : null;
+  if (trimmed.includes("@") && !isWhatsAppNumberId(trimmed)) {
+    return `mail:${trimmed.toLowerCase()}`;
+  }
+  const digits = phoneDigits(trimmed);
+  if (digits.length < 6) return null;
+  return `tel:${digits.slice(-9)}`;
 }
 
-const looksLikePhone = (name: string) => /^[\d\s+().-]+$/.test(name.trim()) && name.replace(/\D+/g, "").length >= 7;
+const looksLikePhone = (name: string) => /^[\d\s+().-]+$/.test(name.trim()) && phoneDigits(name).length >= 6;
 
-/** Stable grouping key for a person across apps (`ChatPeople`). */
+/** Stable grouping key for a person across apps (`ChatIdentity::key`): `tel:`, else `mail:`, else `name:`. */
 export function personKey(name: string, handle?: string | null): string {
-  const folded = foldPersonName(name);
   const h = normalizedHandle(handle);
-  if ((!folded || looksLikePhone(name)) && h) return h;
-  return folded || h || "";
+  if (h) return h;
+  const folded = foldPersonName(name);
+  return folded ? `name:${folded}` : "";
 }
 
 /** Aggregates private chats across apps into deduplicated people, newest interaction first (`ChatPeople`). */
@@ -737,21 +764,37 @@ export function aggregatePeople(entries: ChatEntry[]): ChatPerson[] {
     .filter((e) => !e.isGroup && e.listKind === "chats" && e.name.trim().length > 0)
     .sort((a, b) => (b.last?.getTime() ?? 0) - (a.last?.getTime() ?? 0));
 
-  const groups: { key: string; handleKey: string | null; chats: ChatEntry[] }[] = [];
+  const groups: { key: string; nameKey: string; handleKey: string | null; chats: ChatEntry[] }[] = [];
   const byKey = new Map<string, number>();
   const byHandle = new Map<string, number>();
+  const byNameOnly = new Map<string, number>();
 
   for (const chat of privateChats) {
     const k = personKey(chat.name, chat.handle);
     if (!k) continue;
     const h = normalizedHandle(chat.handle);
+    const nameKey = foldPersonName(chat.name);
     let idx = byKey.get(k);
     if (idx === undefined && h) idx = byHandle.get(h);
+    // Bridge a chat that has no handle yet with an existing person who shares the exact folded name (e.g. WhatsApp + Telegram without phone).
+    if (idx === undefined && !h && nameKey && !looksLikePhone(chat.name)) {
+      idx = byNameOnly.get(nameKey);
+    }
+    // Or upgrade a name-only group when a later chat for the exact same name arrives with a handle.
+    if (idx === undefined && h && nameKey && !looksLikePhone(chat.name)) {
+      const existing = byNameOnly.get(nameKey);
+      if (existing !== undefined && groups[existing].handleKey === null) {
+        idx = existing;
+        groups[idx].key = k;
+        groups[idx].handleKey = h;
+      }
+    }
     if (idx === undefined) {
       idx = groups.length;
-      groups.push({ key: k, handleKey: h, chats: [chat] });
+      groups.push({ key: k, nameKey, handleKey: h, chats: [chat] });
       byKey.set(k, idx);
       if (h) byHandle.set(h, idx);
+      if (nameKey && !looksLikePhone(chat.name) && !byNameOnly.has(nameKey)) byNameOnly.set(nameKey, idx);
     } else {
       const g = groups[idx];
       g.chats.push(chat);

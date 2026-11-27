@@ -103,8 +103,10 @@ fn items(json: &Value) -> &[Value] {
 }
 
 /// The chats of `/v1/chats`, without archived ones, merged ones and those of networks Nook does not know.
+/// Two different chats with the same title in one app are told apart via [`super::ChatNames::unique`], while two
+/// threads with the same person keep one name.
 pub fn chats(json: &Value) -> Vec<ServiceChat> {
-    items(json)
+    let mut listed: Vec<ServiceChat> = items(json)
         .iter()
         .filter_map(|chat| {
             let id = chat.get("id")?.as_str()?.to_string();
@@ -154,7 +156,33 @@ pub fn chats(json: &Value) -> Vec<ServiceChat> {
                 profile: super::ChatProfile::helper(chat, &people, is_group),
             })
         })
-        .collect()
+        .collect();
+    let named_inputs: Vec<super::NamedChat> = listed
+        .iter()
+        .map(|chat| {
+            let person = if chat.is_group {
+                None
+            } else {
+                let mut others: Vec<&str> =
+                    chat.people.keys().filter(|id| Some(id.as_str()) != chat.me.as_deref()).map(String::as_str).collect();
+                others.sort_unstable();
+                others.first().copied()
+            };
+            super::NamedChat {
+                id: chat.id.clone(),
+                app: chat.app.clone(),
+                name: chat.title.clone(),
+                same: person.map(|p| format!("{}|{p}", chat.account.as_deref().unwrap_or(""))),
+            }
+        })
+        .collect();
+    let unique = super::ChatNames::unique(&named_inputs);
+    for chat in &mut listed {
+        if let Some(name) = unique.get(&chat.id) {
+            chat.title = name.clone();
+        }
+    }
+    listed
 }
 
 /// Whether a message was seen: `true`, a time, or (in a group) by anyone.

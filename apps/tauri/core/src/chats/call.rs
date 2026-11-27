@@ -196,29 +196,11 @@ pub fn display_name(app: &str) -> &str {
     }
 }
 
-/// "+31 6 1234 5678" → "+31612345678"; `None` for what is no phone number (6 to 15 digits, `ChatHandle.e164`).
+/// `"+31 6 1234 5678"` -> `"+31612345678"`; `None` for what is no phone number (6 to 15 digits, `ChatHandle.e164`).
 /// Also reads WhatsApp number JIDs (`31612345678@s.whatsapp.net`, `31612345678:3@s.whatsapp.net`, `31612345678@c.us`,
 /// and multi-account keys `nook-abc123~31612345678@s.whatsapp.net`).
 pub fn phone_digits(text: &str) -> Option<String> {
-    let mut raw = text.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    if let Some((before_at, host)) = raw.split_once('@') {
-        let host = host.to_ascii_lowercase();
-        if !host.ends_with("whatsapp.net") && host != "c.us" {
-            return None;
-        }
-        // Multi-account WhatsApp key (`nook-abc123~31612345678@s.whatsapp.net`) and device suffix (`:3`).
-        let user = before_at.rsplit_once('~').map_or(before_at, |(_, jid)| jid);
-        raw = user.split_once(':').map_or(user, |(num, _)| num);
-    }
-    if !raw.chars().all(|c| c.is_ascii_digit() || "+-() .".contains(c)) {
-        return None;
-    }
-    let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
-    let digits = if raw.starts_with("00") { digits.strip_prefix("00").map(str::to_string).unwrap_or(digits) } else { digits };
-    (6..=15).contains(&digits.len()).then(|| format!("+{digits}"))
+    super::identity::ChatHandle::e164(text)
 }
 
 fn clean_username(text: &str) -> Option<String> {

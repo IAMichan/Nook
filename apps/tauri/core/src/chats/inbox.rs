@@ -477,6 +477,47 @@ impl InboxThread {
         self.kind.unwrap_or(if self.is_group() { ChatKind::Group } else { ChatKind::Person })
     }
 
+    /// A bot in a private chat is automated (not a person in People).
+    pub fn is_automated(&self) -> bool {
+        self.profile.as_ref().is_some_and(|p| p.bot) && self.notice_kind() != ChatKind::Group
+    }
+
+    /// The other person's phone number as their app says it: the chat's profile, else its handle when that is a number.
+    pub fn phone(&self) -> Option<&str> {
+        if let Some(phone) = self.profile.as_ref().and_then(|p| p.phone.as_deref()).map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(phone);
+        }
+        let handle = self.handle.as_deref()?.trim();
+        if super::ChatHandle::phone_key(handle).is_some() && (!handle.contains('@') || super::ChatHandle::is_number_id(handle)) {
+            Some(handle)
+        } else {
+            None
+        }
+    }
+
+    /// The other person's address as their app says it: the chat's profile, else its handle when that is one.
+    pub fn email(&self) -> Option<&str> {
+        if let Some(email) = self.profile.as_ref().and_then(|p| p.email.as_deref()).map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(email);
+        }
+        let handle = self.handle.as_deref()?.trim();
+        if handle.contains('@') && !super::ChatHandle::is_number_id(handle) {
+            Some(handle)
+        } else {
+            None
+        }
+    }
+
+    /// Who the chat is with across apps (`ChatIdentity::key`): the same person in WhatsApp, Telegram, Slack and Mail is one.
+    pub fn identity(&self) -> String {
+        super::ChatIdentity::key(&self.name, self.phone(), self.email())
+    }
+
+    /// What finds the person in Contacts and People (a number, else an address): what the app said of them.
+    pub fn contact_handle(&self) -> Option<&str> {
+        self.phone().or_else(|| self.email())
+    }
+
     /// Read here, read in Nook only, or read in the app too: the same three states for every chat app.
     pub fn read_state(&self) -> ChatReadState {
         ChatReadState::of(self.unread, self.app_unread, self.newest_incoming(), self.read_in_nook, self.read_in_app, self.waits_in_app)
@@ -820,6 +861,7 @@ impl ChatInbox {
                 || !chat.deleted.is_empty()
                 || !chat.read_details.is_empty()
                 || chat.avatar.as_ref().is_some_and(|a| Some(a) != k.avatar.as_ref())
+                || chat.profile.as_ref().is_some_and(|p| Some(p) != k.profile.as_ref())
                 || chat.account.as_ref().is_some_and(|a| Some(a) != k.account.as_ref())
                 || chat.kind.is_some_and(|c| Some(c) != k.kind)
                 || chat.handle.as_ref().is_some_and(|h| Some(h) != k.handle.as_ref())
@@ -833,6 +875,13 @@ impl ChatInbox {
         });
         if messages.is_empty() && !described && !(known.is_none() && gone.is_none() && chat.listed) {
             return false;
+        }
+        // Two chats that shared a row now each have their own: the old row held both, and their app has their messages.
+        if known.is_none() && chat.chat_id.is_none() {
+            if let Some(shared) = super::ChatNames::unmarked(&chat.name) {
+                let old = Self::key_by_name(&chat.app, shared);
+                self.threads.remove(&old);
+            }
         }
         let mut thread = known.clone().unwrap_or_else(|| InboxThread::new(&key, &chat.app, &chat.name));
         thread.chat_id = chat.chat_id.clone();
@@ -1003,6 +1052,12 @@ impl ChatInbox {
         }
         if chat.handle.is_some() {
             thread.handle = chat.handle;
+        } else if thread.handle.is_none() && thread.notice_kind() == ChatKind::Person {
+            // An app that names the person by a number or address in what it says of them (Telegram, Slack, Teams,
+            // the chat helper) finds them in People as WhatsApp's handle does.
+            if let Some(known_handle) = thread.contact_handle().map(str::to_string) {
+                thread.handle = Some(known_handle);
+            }
         }
         if chat.has_older.is_some() {
             thread.has_older = chat.has_older;
@@ -1385,6 +1440,35 @@ impl ChatInbox {
             .collect();
         list.sort_by_key(|(_, d)| *d);
         list.into_iter().map(|(k, _)| k).collect()
+    }
+
+    /// The chat a name, number or id means, in one app or any (`ChatRecipients::pick`): by its id, by the person's
+    /// number, else by name (exact, a whole word, a part >= 3 chars, a typo). Two different chats that fit equally
+    /// well are [`super::ChatPick::Several`]: an answer never goes to a guess.
+    pub fn pick<'a>(&'a self, name: &str, app: Option<&str>, shown: impl Fn(&InboxThread) -> bool) -> super::ChatPick<&'a InboxThread> {
+        let candidates: Vec<&'a InboxThread> = self.sorted().into_iter().filter(|t| app.is_none_or(|a| t.app == a) && shown(t)).collect();
+        match super::ChatRecipients::pick(
+            name,
+            &candidates,
+            |t| t.id.as_str(),
+            |t| t.name.as_str(),
+            |t| t.phone(),
+            |wanted, t| t.id == wanted || t.chat_id.as_deref() == Some(wanted),
+        ) {
+            super::ChatPick::One(t) => super::ChatPick::One(t),
+            super::ChatPick::Several(list) => super::ChatPick::Several(list.into_iter().copied().collect()),
+            super::ChatPick::None => super::ChatPick::None,
+        }
+    }
+
+    /// The one chat a name means (`pick`); `None` when none does, or when several do equally well.
+    pub fn thread_named<'a>(&'a self, name: &str, app: Option<&str>, shown: impl Fn(&InboxThread) -> bool) -> Option<&'a InboxThread> {
+        self.pick(name, app, shown).found()
+    }
+
+    /// What Nook says when a name fits several chats (`ChatInbox.which` on the Mac).
+    pub fn which(name: &str, among: &[&InboxThread]) -> String {
+        super::tools::which(name, among)
     }
 }
 
