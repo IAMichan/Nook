@@ -39,6 +39,10 @@ pub struct RemoteMachine {
     /// a project is shared with this machine, and "Automatic" may start it here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub project_folders: BTreeMap<String, String>,
+    /// Logs in with a password: Nook asks for it before the first session, then keeps it in memory until it quits (or
+    /// in the secret store, when you chose that; `remote_passwords`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub password_login: bool,
 }
 
 fn lenient_level<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<super::balance::BalanceLevel>, D::Error> {
@@ -115,6 +119,7 @@ impl RemoteMachine {
             last_used_at: None,
             balance: None,
             project_folders: BTreeMap::new(),
+            password_login: false,
         })
     }
 }
@@ -301,8 +306,18 @@ pub fn quoted_directory(path: &str) -> String {
 
 /// Without a password ssh never prompts (`BatchMode`), so a missing key fails at once instead of waiting for a prompt
 /// nobody sees. The port and key file every call to a machine takes; with its own key file ssh offers only that key.
-fn options(target: &RemoteTarget) -> Vec<String> {
-    let mut out: Vec<String> = ["-T", "-o", "BatchMode=yes"].map(String::from).to_vec();
+/// The password Nook has for the target's machine (typed in this run, or kept), if any.
+pub fn password_for(target: &RemoteTarget) -> Option<String> {
+    super::remote_passwords::RemotePasswords::shared().password(&target.machine_id)
+}
+
+/// With a password ssh may ask once, through `SSH_ASKPASS`, so a wrong password fails at once instead of locking the
+/// account; without one it never prompts.
+fn options(target: &RemoteTarget, password: Option<&str>) -> Vec<String> {
+    let mut out: Vec<String> = match password {
+        None => ["-T", "-o", "BatchMode=yes"].map(String::from).to_vec(),
+        Some(_) => ["-T", "-o", "BatchMode=no", "-o", "NumberOfPasswordPrompts=1"].map(String::from).to_vec(),
+    };
     if let Some(port) = target.port {
         out.extend(["-p".into(), port.to_string()]);
     }
@@ -335,13 +350,15 @@ pub fn command(program: &str, arguments: &[String], directory: &str, environment
 /// `ssh -T … -- host 'exec "$SHELL" -lc "cd … && exec agent …"'`. `program` is the agent's command there (`claude`);
 /// `environment` is what goes along (an account folder on this computer means nothing over there, so it stays here).
 pub fn wrap(spec: LaunchSpec, target: &RemoteTarget, program: &str, environment: &BTreeMap<String, String>) -> LaunchSpec {
-    let mut arguments = options(target);
+    let password = password_for(target);
+    let mut arguments = options(target, password.as_deref());
     arguments.extend(["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4"].map(String::from));
     arguments.extend(["--".into(), target.host.clone(), command(program, &spec.arguments, &target.directory, environment)]);
     LaunchSpec {
         executable: ssh_program(),
         arguments,
-        extra_environment: BTreeMap::new(),
+        // Only what ssh needs for the password; this computer's account folders stay here.
+        extra_environment: super::remote_passwords::askpass_environment(password.as_deref()),
         working_directory: dirs::home_dir().unwrap_or_else(std::env::temp_dir).to_string_lossy().into_owned(),
         initial_input: spec.initial_input,
         keeps_input_open: spec.keeps_input_open,
@@ -358,7 +375,7 @@ pub fn check_arguments(target: &RemoteTarget, commands: &[&str]) -> Vec<String> 
     } else {
         format!(r#"for c in {}; do command -v "$c" >/dev/null 2>&1 && printf '%s\n' "$c"; done; true"#, names.join(" "))
     };
-    let mut arguments = options(target);
+    let mut arguments = options(target, password_for(target).as_deref());
     arguments.extend(["-o", "ConnectTimeout=10"].map(String::from));
     arguments.extend(["--".into(), target.host.clone(), format!(r#"exec "${{SHELL:-/bin/sh}}" -lc {}"#, quote(&script))]);
     arguments
@@ -367,7 +384,7 @@ pub fn check_arguments(target: &RemoteTarget, commands: &[&str]) -> Vec<String> 
 /// The ssh arguments that check the folder there and answer its full path (`cd … && pwd`): `~/code/app` becomes
 /// `/home/me/code/app`, which Codex's app-server and ACP agents need as their folder.
 pub fn folder_arguments(target: &RemoteTarget) -> Vec<String> {
-    let mut arguments = options(target);
+    let mut arguments = options(target, password_for(target).as_deref());
     arguments.extend(["-o", "ConnectTimeout=10"].map(String::from));
     let line = format!("cd {} && pwd", quoted_directory(&target.directory));
     arguments.extend(["--".into(), target.host.clone(), format!(r#"exec "${{SHELL:-/bin/sh}}" -lc {}"#, quote(&line))]);
@@ -376,9 +393,11 @@ pub fn folder_arguments(target: &RemoteTarget) -> Vec<String> {
 
 /// Runs ssh once with `arguments` and waits at most `timeout`: its output, or what went wrong in a line you can act
 /// on. Blocks: call it off the interface's thread.
-pub fn run_ssh(arguments: &[String], timeout: std::time::Duration) -> Result<String, String> {
+pub fn run_ssh(target: &RemoteTarget, arguments: &[String], timeout: std::time::Duration) -> Result<String, String> {
     use std::io::Read;
+    let password = password_for(target);
     let mut cmd = std::process::Command::new(ssh_program());
+    cmd.envs(super::remote_passwords::askpass_environment(password.as_deref()));
     cmd.args(arguments).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     #[cfg(windows)]
     {
@@ -413,7 +432,7 @@ pub fn run_ssh(arguments: &[String], timeout: std::time::Duration) -> Result<Str
     if status.success() {
         Ok(stdout)
     } else if status.code() == Some(255) || stderr.to_lowercase().contains("ssh:") || stderr.contains("Permission denied") {
-        Err(explain_failure(&stderr))
+        Err(explain_failure(&stderr, password.is_some()))
     } else {
         // ssh got in; the command there failed (a folder that is not there, for one).
         Err(stderr.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("").chars().take(300).collect())
@@ -426,14 +445,31 @@ pub fn found_agents(output: &str, asked: &[&str]) -> Vec<String> {
     asked.iter().filter(|c| found.contains(*c)).map(|c| c.to_string()).collect()
 }
 
+/// The server takes a password and no key got in: worth asking for one.
+pub fn needs_password(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("permission denied") && (lower.contains("password") || lower.contains("keyboard-interactive"))
+}
+
 /// What ssh's error says in a line you can act on: no key let you in, the host key changed or is new, or the
 /// machine could not be reached. Anything else is shown as ssh wrote it (its last line, shortened).
-pub fn explain_failure(stderr: &str) -> String {
+/// `with_password`: Nook gave ssh a password, so a refusal means that password is wrong.
+pub fn explain_failure(stderr: &str, with_password: bool) -> String {
     let lower = stderr.to_lowercase();
     if lower.contains("permission denied") {
+        if with_password {
+            return crate::i18n::tr("Het wachtwoord klopt niet.", "The password is not right.").into();
+        }
+        if needs_password(stderr) {
+            return crate::i18n::tr(
+                "Deze machine vraagt een wachtwoord. Typ het bij Instellingen › Apparaten › Machines.",
+                "This machine asks for a password. Type it in Settings › Devices › Machines.",
+            )
+            .into();
+        }
         return crate::i18n::tr(
-            "Geen sleutel kwam binnen. Zet je sleutel in je ssh-agent of kies een sleutelbestand; inloggen met een wachtwoord kan hier nog niet.",
-            "No key got in. Add your key to your ssh agent or choose a key file; logging in with a password is not available here yet.",
+            "Geen sleutel kwam binnen. Zet je sleutel in je ssh-agent, kies een sleutelbestand, of log in met een wachtwoord.",
+            "No key got in. Add your key to your ssh agent, choose a key file, or log in with a password.",
         )
         .into();
     }
@@ -572,8 +608,10 @@ mod tests {
 
     #[test]
     fn explains_what_ssh_said() {
-        assert!(explain_failure("me@h: Permission denied (publickey).").contains("key"));
-        assert!(explain_failure("ssh: Could not resolve hostname nope").contains("reached"));
-        assert_eq!(explain_failure("weird\nlast line\n"), "last line");
+        assert!(explain_failure("me@h: Permission denied (publickey).", false).contains("key"));
+        assert!(explain_failure("me@h: Permission denied (publickey,password).", false).contains("password"));
+        assert!(explain_failure("me@h: Permission denied (publickey,password).", true).contains("not right"));
+        assert!(explain_failure("ssh: Could not resolve hostname nope", false).contains("reached"));
+        assert_eq!(explain_failure("weird\nlast line\n", false), "last line");
     }
 }

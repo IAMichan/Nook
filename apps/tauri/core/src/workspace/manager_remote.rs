@@ -41,9 +41,17 @@ impl Manager {
             .into());
         }
         self.check_supported(config.provider)?;
+        // A machine that logs in with a password needs it typed once in this run of Nook (or kept) before it starts.
+        if machine.password_login && super::super::remote_passwords::RemotePasswords::shared().password(&machine.id).is_none() {
+            return Err(trf(
+                "Typ eerst het wachtwoord van {machine} bij Instellingen › Apparaten › Machines.",
+                "Type the password for {machine} in Settings › Devices › Machines first.",
+                &[("machine", &machine.name)],
+            ));
+        }
         let mut target = RemoteTarget::new(&machine, folder);
         // The folder's full path there: Codex's app-server and ACP agents need one, and a missing folder fails here.
-        let resolved = remote::run_ssh(&remote::folder_arguments(&target), Duration::from_secs(25))?;
+        let resolved = remote::run_ssh(&target, &remote::folder_arguments(&target), Duration::from_secs(25))?;
         let resolved = resolved.lines().map(str::trim).rfind(|l| l.starts_with('/')).unwrap_or(folder).to_string();
         target.directory = resolved.clone();
         machines.mark_used(&machine.id, Utc::now());

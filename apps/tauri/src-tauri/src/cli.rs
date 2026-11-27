@@ -17,6 +17,22 @@ use nook_core::agents::{installer, ipc};
 /// Behandelt de hulpstanden. `Some(exitcode)` als Nook niet als app hoeft te starten.
 pub fn dispatch() -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
+    // Nook as ssh's askpass program (`remote_passwords`): it answers a password prompt with the password Nook put in
+    // ssh's environment, and nothing else.
+    {
+        use nook_core::workspace::remote_passwords::{askpass_answer, ASKPASS_MODE, PASSWORD_VARIABLE};
+        let mode = std::env::var(ASKPASS_MODE).ok();
+        let password = std::env::var(PASSWORD_VARIABLE).ok();
+        if let Some(answer) = askpass_answer(args.get(1).map(String::as_str).unwrap_or(""), mode.as_deref(), password.as_deref()) {
+            return Some(match answer {
+                Ok(p) => {
+                    println!("{p}");
+                    0
+                }
+                Err(()) => 1,
+            });
+        }
+    }
     let invoked = args.first().map(|a| std::path::Path::new(a).file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default());
     let rest = args.get(1..).unwrap_or(&[]).to_vec();
     if invoked.as_deref() == Some("nook-hook") || rest.first().map(String::as_str) == Some("--hook") {

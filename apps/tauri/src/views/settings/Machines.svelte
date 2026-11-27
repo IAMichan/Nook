@@ -4,12 +4,13 @@
   // lists the agents found there. A session picks one under the composer ("Runs on").
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { tr } from "../../lib/i18n.svelte";
-  import { machinesApi, balanceLevels, isValidHost, suggestedName, type BalanceLevel, type RemoteMachine } from "../../lib/workspace/machines";
+  import { machinesApi, balanceLevels, isValidHost, suggestedName, type BalanceLevel, type MachineSuggestion, type RemoteMachine } from "../../lib/workspace/machines";
   import { agentNames } from "../../lib/agents";
   import ConfirmedButton from "../../components/ui/ConfirmedButton.svelte";
   import Ico from "../../components/ui/Ico.svelte";
   import { tip } from "../../components/ui/tip";
   import SettingNote from "./SettingNote.svelte";
+  import MachinePasswordField from "./MachinePasswordField.svelte";
 
   let machines = $state<RemoteMachine[]>([]);
   /** The machine being edited, or "new" for the form to add one; null with the form closed. */
@@ -18,12 +19,37 @@
   let name = $state("");
   let port = $state("");
   let keyFile = $state("");
+  let passwordLogin = $state(false);
+  /// For each machine that logs in with a password: whether Nook has it now, and whether it is kept.
+  let passwords = $state<Record<string, { unlocked: boolean; kept: boolean }>>({});
   let saving = $state(false);
   let error = $state<string | null>(null);
   /** Per machine: testing, what was found, or what went wrong. */
   let checks = $state<Record<string, { busy: boolean; agents?: string[]; error?: string }>>({});
 
   let localBalance = $state<BalanceLevel>("normal");
+  /// Machines found on this computer (`~/.ssh/config`, `known_hosts`, the tailnet), offered while none is added yet.
+  let found = $state<MachineSuggestion[]>([]);
+  $effect(() => {
+    if (machines.length) return;
+    machinesApi.discover().then((list) => (found = list)).catch(() => (found = []));
+  });
+
+  function sourceName(s: MachineSuggestion["source"]): string {
+    switch (s) {
+      case "sshConfig": return tr("uit je ssh-config", "from your ssh config");
+      case "knownHosts": return tr("eerder verbonden", "connected before");
+      case "tailscale": return "Tailscale";
+    }
+  }
+
+  /// Fills the form with a found machine; nothing is saved until you add it.
+  function useSuggestion(s: MachineSuggestion) {
+    openForm(null);
+    host = s.host;
+    name = s.name;
+    port = s.port ? String(s.port) : "";
+  }
 
   /** The levels of "Automatic", as the Mac names them. */
   function levelName(l: BalanceLevel): string {
@@ -41,6 +67,7 @@
   async function load() {
     localBalance = await machinesApi.localBalance().catch(() => "normal" as BalanceLevel);
     machines = await machinesApi.list().catch(() => []);
+    passwords = await machinesApi.passwords().catch(() => ({}));
   }
 
   $effect(() => {
@@ -55,6 +82,7 @@
     name = machine?.name ?? "";
     port = machine?.port ? String(machine.port) : "";
     keyFile = machine?.identityFile ?? "";
+    passwordLogin = !!machine?.passwordLogin;
     error = null;
   }
 
@@ -67,7 +95,7 @@
     saving = true;
     error = null;
     try {
-      const saved = await machinesApi.save({ id: editing === "new" ? null : editing, name, host, port: portValue, identityFile: keyFile.trim() || null });
+      const saved = await machinesApi.save({ id: editing === "new" ? null : editing, name, host, port: portValue, identityFile: keyFile.trim() || null, passwordLogin });
       editing = null;
       await load();
       // A new machine is tested at once, so you see whether ssh gets in and which agents are there.
@@ -164,6 +192,11 @@
         </select>
       </label>
       <span class="actions">
+        {#if m.passwordLogin && passwords[m.id]?.unlocked}
+          <!-- Forgets the password, in memory and in the secret store. -->
+          <button class="ghost" title={passwords[m.id]?.kept ? tr("Het wachtwoord staat in de sleutelkluis.", "The password is in the secret store.") : undefined}
+            onclick={() => machinesApi.lock(m.id).then(load)}>{tr("Vergrendel", "Lock")}</button>
+        {/if}
         <button class="ghost" disabled={check?.busy} onclick={() => test(m.id)}>{tr("Test verbinding", "Test connection")}</button>
         <button class="ghost" onclick={() => openForm(m)}>{tr("Wijzig", "Edit")}</button>
         <span use:tip={tr("Machine verwijderen", "Remove machine")}>
@@ -182,9 +215,21 @@
         </span>
       </span>
     </div>
+    {#if m.passwordLogin && !passwords[m.id]?.unlocked}
+      <div class="row stacked"><MachinePasswordField machine={m} onunlocked={load} /></div>
+    {/if}
   {:else}
     {#if editing === null}
       <p class="empty-note">{tr("Nog geen machine. Voeg er een toe met een ssh-alias of gebruiker@host.", "No machine yet. Add one with an ssh alias or user@host.")}</p>
+      {#if found.length}
+        <p class="empty-note">{tr("Gevonden op deze computer:", "Found on this computer:")}</p>
+        {#each found.slice(0, 6) as s (`${s.host}:${s.port ?? 22}`)}
+          <div class="row">
+            <span>{s.name}<span class="faint small"> · {[s.detail ?? s.host, sourceName(s.source)].join(" · ")}</span></span>
+            <button class="ghost" onclick={() => useSuggestion(s)}>{tr("Voeg deze toe", "Add this one")}</button>
+          </div>
+        {/each}
+      {/if}
     {/if}
   {/each}
 
@@ -211,6 +256,7 @@
           </span>
         </label>
       </div>
+      <label class="check"><input type="checkbox" bind:checked={passwordLogin} /> {tr("Logt in met een wachtwoord", "Logs in with a password")}</label>
       {#if !portOk}
         <SettingNote tone="error" text={tr("Een poort is een getal van 1 tot 65535.", "A port is a number from 1 to 65535.")} />
       {/if}
@@ -219,8 +265,8 @@
       {/if}
       <SettingNote
         text={tr(
-          "Nook logt in met een sleutel (uit je ssh-agent, je ssh-config of het sleutelbestand). Inloggen met een wachtwoord kan hier nog niet. Verbind de eerste keer zelf met ssh in een terminal, zodat ssh de machine kent.",
-          "Nook logs in with a key (from your ssh agent, your ssh config or the key file). Logging in with a password is not available here yet. Connect once yourself with ssh in a terminal first, so ssh knows the machine.",
+          "Nook logt in met een sleutel (uit je ssh-agent, je ssh-config of het sleutelbestand), of met een wachtwoord dat je één keer per keer dat Nook draait typt. Verbind de eerste keer zelf met ssh in een terminal, zodat ssh de machine kent.",
+          "Nook logs in with a key (from your ssh agent, your ssh config or the key file), or with a password you type once each time Nook runs. Connect once yourself with ssh in a terminal first, so ssh knows the machine.",
         )}
       />
       <span class="buttons">
@@ -250,6 +296,7 @@
 
 <style>
   .level { flex: none; }
+  .check { flex-direction: row !important; align-items: center; gap: var(--space-6) !important; }
   .shared { display: inline-flex; align-items: center; gap: var(--space-4); }
   .unshare { padding: 0 var(--space-4); border: 0; background: none; color: var(--text3); font: var(--text-detail); }
   .unshare:hover { background: none; color: var(--paper); }

@@ -8,6 +8,7 @@
   import ComposerContext from "./ComposerContext.svelte";
   import PromptTools from "./PromptTools.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
+  import MachinePasswordField from "../../settings/MachinePasswordField.svelte";
   import { machinesApi, folderFor, isValidRemoteFolder, machineFolderLabel, rememberFolder, rememberedFolder, sharedMachines, type RemoteMachine } from "../../../lib/workspace/machines";
   import { prompts } from "../../../lib/workspace/prompts.svelte";
   import { compose, project as project_, type ContextRef } from "../../../lib/workspace/context-refs";
@@ -65,6 +66,9 @@
   let machines = $state<RemoteMachine[]>([]);
   let machine = $state<RemoteMachine | null>(null);
   let remoteFolder = $state("");
+  /// For each machine that logs in with a password: whether Nook has it in this run.
+  let unlocked = $state<Record<string, boolean>>({});
+  const needsPassword = $derived(!!machine?.passwordLogin && !unlocked[machine.id]);
   /// "Automatic" under "Runs on": Nook picks this computer or a machine the project is shared with as it starts
   /// (`balance` in the core); kept for the next session.
   let automatic = $state((() => { try { return localStorage.getItem("nook.runsOn.automatic") === "1"; } catch { return false; } })());
@@ -74,7 +78,8 @@
   }
 
   $effect(() => {
-    const load = () => machinesApi.list().then((list) => {
+    const load = () => machinesApi.list().then(async (list) => {
+      unlocked = await machinesApi.passwords().then((p) => Object.fromEntries(Object.entries(p).map(([id, s]) => [id, s.unlocked]))).catch(() => ({}));
       machines = list;
       // A machine removed in Settings while it was chosen: back to this computer.
       if (machine && !list.some((m) => m.id === machine!.id)) machine = null;
@@ -186,6 +191,7 @@
     if (!config.task.trim() && !attached.length && !pictures.length) return tr("Schrijf eerst een opdracht.", "Write a task first.");
     if (machine) {
       // On another machine: the agent must be there, not here; ssh and the folder are checked as it starts.
+      if (needsPassword) return tr("Typ eerst het wachtwoord van {machine}.", "Type the password for {machine} first.", { machine: machine.name });
       if (!isValidRemoteFolder(remoteFolder)) return tr("Typ de map op {machine}: vanaf / of ~/.", "Type the folder on {machine}: from / or ~/.", { machine: machine.name });
       if (!policies.includes(config.permission)) return tr("Deze agent ondersteunt die rechten niet.", "This agent doesn't support that permission.");
       if (!provider?.supported) return tr("Nook kan {agent} op dit platform niet zelf aansturen; dat kan op een computer.", "Nook can't drive {agent} itself on this platform; it can on a computer.", { agent: provider?.name ?? config.provider });
@@ -586,6 +592,10 @@
         <input bind:value={remoteFolder} placeholder="~/code/app" spellcheck="false" autocomplete="off" aria-label={tr("Map op {machine}:", "Folder on {machine}:", { machine: machine.name })} />
         <button class="ghost" title={tr("Terug naar deze computer", "Back to this computer")} aria-label={tr("Terug naar deze computer", "Back to this computer")} onclick={() => pickMachine(null)}>✕</button>
       </label>
+      {#if needsPassword}
+        <!-- A machine that logs in with a password asks for it once, before its first session in this run of Nook. -->
+        <div class="remote"><MachinePasswordField {machine} onunlocked={() => (unlocked = { ...unlocked, [machine!.id]: true })} /></div>
+      {/if}
     {:else if noProject}
       <h2 class="heading">{tr("Waar zullen we aan werken?", "What should we work on?")}</h2>
       <span class="pop">

@@ -1,7 +1,11 @@
-// "Automatic" under "Runs on" and the machines' status: levels, notices and the dots' words.
+// "Automatic" under "Runs on", the machines' status, and machines found on this computer.
 import type { Table } from "./catalog";
 
 export const table: Table = {
+  "Add this one": { de: "Diesen hinzufügen", fr: "Ajouter celle-ci", es: "Añadir esta" },
+  "connected before": { de: "früher verbunden", fr: "déjà connectée", es: "conectada antes" },
+  "Found on this computer:": { de: "Auf diesem Computer gefunden:", fr: "Trouvées sur cet ordinateur :", es: "Encontradas en este ordenador:" },
+  "from your ssh config": { de: "aus deiner ssh-Konfiguration", fr: "de votre configuration ssh", es: "de tu configuración de ssh" },
   "connected": { de: "verbunden", fr: "connectée", es: "conectada" },
   "connecting…": { de: "verbinden…", fr: "connexion…", es: "conectando…" },
   "Less often": { de: "Seltener", fr: "Moins souvent", es: "Con menos frecuencia" },

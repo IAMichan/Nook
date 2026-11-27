@@ -22,10 +22,28 @@ pub const ROWS: &[Row] = &[
         "No se pudo iniciar ssh: {e}",
     ),
     (
-        "No key got in. Add your key to your ssh agent or choose a key file; logging in with a password is not available here yet.",
-        "Kein Schlüssel kam durch. Füge deinen Schlüssel deinem ssh-Agent hinzu oder wähle eine Schlüsseldatei; die Anmeldung mit Passwort ist hier noch nicht möglich.",
-        "Aucune clé n’a été acceptée. Ajoutez votre clé à votre agent ssh ou choisissez un fichier de clé ; la connexion par mot de passe n’est pas encore disponible ici.",
-        "Ninguna clave fue aceptada. Añade tu clave a tu agente ssh o elige un archivo de clave; iniciar sesión con contraseña aún no está disponible aquí.",
+        "No key got in. Add your key to your ssh agent, choose a key file, or log in with a password.",
+        "Kein Schlüssel kam durch. Füge deinen Schlüssel deinem ssh-Agent hinzu, wähle eine Schlüsseldatei oder melde dich mit einem Passwort an.",
+        "Aucune clé n’a été acceptée. Ajoutez votre clé à votre agent ssh, choisissez un fichier de clé ou connectez-vous avec un mot de passe.",
+        "Ninguna clave fue aceptada. Añade tu clave a tu agente ssh, elige un archivo de clave o inicia sesión con una contraseña.",
+    ),
+    (
+        "The password is not right.",
+        "Das Passwort stimmt nicht.",
+        "Le mot de passe n’est pas correct.",
+        "La contraseña no es correcta.",
+    ),
+    (
+        "This machine asks for a password. Type it in Settings › Devices › Machines.",
+        "Dieser Rechner fragt nach einem Passwort. Gib es unter Einstellungen › Geräte › Rechner ein.",
+        "Cette machine demande un mot de passe. Saisissez-le dans Réglages › Appareils › Machines.",
+        "Esta máquina pide una contraseña. Escríbela en Ajustes › Dispositivos › Máquinas.",
+    ),
+    (
+        "Type the password for {machine} in Settings › Devices › Machines first.",
+        "Gib zuerst das Passwort für {machine} unter Einstellungen › Geräte › Rechner ein.",
+        "Saisissez d’abord le mot de passe de {machine} dans Réglages › Appareils › Machines.",
+        "Escribe primero la contraseña de {machine} en Ajustes › Dispositivos › Máquinas.",
     ),
     (
         "Runs on {name} ({host}) in {folder}",
