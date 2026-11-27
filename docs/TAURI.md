@@ -321,6 +321,10 @@ game. Events can also be logged by hand.
 
 - Versions (`CompanionCompatibility`, `CompanionWire`): answers compressed for a phone that can open them, `protocolVersion`, `appVersion` and `oldestPhone` on `hello`, `list` and `subscribe`; the computer keeps what each phone runs, and Settings › Companion shows its app version and says when it is too old or a version behind. **Tauri:** ✓ (behaviour; drawn as lines under the phone in the current Tauri Companion page, not yet as the Mac's `ConnectionRow` with its status and an expanded note: UI-88). **Where:** `core/src/companion/models.rs` (`phone_supported`, `phone_behind`), `server.rs`, `store.rs`, `src/views/settings/Companion.svelte`
 
+## Headless host (`nook-host`)
+
+- A headless Nook server for a machine without a screen. **Tauri:** ◐ (serve, pair with code and QR, devices, shared folders, start/list/approve/answer/send/stop/timeline over the Companion protocol; tested with a real client pairing over TCP, not yet with a desktop Nook as client). **Where:** `host/` (`backend.rs`, `main.rs`, `reach.rs`, `qr.rs`, `secrets.rs`); see "A Headless Machine as the Server" in `docs/COMPANION.md`.
+
 ## To do
 
 The full list of what is still missing for a 1:1 match with the Mac, as numbered items to work through one by one, is
