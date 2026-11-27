@@ -35,21 +35,6 @@
   "setupDetail": {
     "message": "Erweiterungs-ID: $1"
   },
-  "siteNone": {
-    "message": "Keine Seite"
-  },
-  "siteRestricted": {
-    "message": "Der Browser behält seine eigenen Seiten für sich; Nook kann sie nicht lesen oder bedienen."
-  },
-  "siteAllowed": {
-    "message": "Nook darf auf dieser Seite lesen und arbeiten, wenn du darum bittest."
-  },
-  "siteBlocked": {
-    "message": "Für diese Seite aus: Nook liest und berührt sie nicht."
-  },
-  "siteSwitch": {
-    "message": "Nook auf $1"
-  },
   "activeNote": {
     "message": "Nook darf diesen Browser verwenden."
   },
@@ -263,11 +248,14 @@
   "pickFailed": {
     "message": "Auswählen hat nicht geklappt. Lade die Seite neu und versuche es erneut."
   },
-  "trustName": {
-    "message": "Ohne Nachfrage handeln"
+  "accessTitle": {
+    "message": "Zugriff auf $1"
   },
-  "trustSwitch": {
-    "message": "Nook auf $1 ohne Nachfrage handeln lassen"
+  "accessAsk": {
+    "message": "Erst fragen"
+  },
+  "accessTrust": {
+    "message": "Ohne zu fragen"
   },
   "trustOn": {
     "message": "Nook klickt und tippt hier, ohne vorher zu fragen. Bezahlen, Senden und Löschen fragt es weiterhin."

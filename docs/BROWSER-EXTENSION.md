@@ -86,8 +86,8 @@ every fillable field with its label, value and focus, the text around the fields
 and the selection). The field's suggestions and the line above it ("Google Chrome · 4 empty fields · Via your browser")
 come from that, and "fill in the form" fills every field in one more call (`fill`), with React-safe value setters, and
 puts the cursor back where it was. Undo writes the old values back; Send clicks the form's own button, only from the
-result card. Both commands go through the same brakes as every other: while Nook is paused in that browser, or the site
-is switched off in the side panel, Double Tap leaves the page alone and says so. Which connected browser is the one in front is
+result card. Both commands go through the same brakes as every other: while Nook is paused in that browser, Double Tap
+leaves the page alone and says so. Which connected browser is the one in front is
 decided by process, not by name: the browser starts the extension's host, the host's client id begins with its pid,
 and Nook checks that the host runs below the app in front (`ProcessTree`). So Chrome and Arc (which often says hello as
 Chrome) running side by side each get their own form, and a browser without the extension never borrows another's.
@@ -127,7 +127,7 @@ the browser keeps extensions off.
   where it is. Pasting text only (in a terminal with ⌘V) leaves the picture out; paste it as an image where the agent
   takes pictures.
 - **It is yours alone.** Nothing selected goes to Nook: it only goes to your clipboard. That is why it works while Nook
-  is paused or switched off for the site, and on local files once the browser's "Allow access to file URLs" is on for
+  is paused, and on local files once the browser's "Allow access to file URLs" is on for
   the extension. The browser's own pages and its web store stay off limits.
 
 How: `page/pick.js` is injected only when you start selecting. It outlines and takes the element (or the spot) and
@@ -166,9 +166,10 @@ Nook does, and every step lands in the audit log.
   shows a card with that line and **Allow**, **Always on <site>** and **Don't allow**; Nook's deadline for the command
   moves on while you decide (up to 5 minutes, `extend`). The service worker keeps the waiting steps in session storage,
   so a panel you open later shows them too.
-- **Acting without asking.** Under the site's own switch, **Act without asking** lets Nook take steps on that site (and
-  its subdomains) without the card; **Always on <site>** turns it on from a card. It is stored in the extension
-  (`trusted` in `chrome.storage.local`), next to the sites you switched Nook off for.
+- **Acting without asking.** The composer's model menu holds the access on the site in front, as the Mac's model picker
+  holds an agent's access: **Ask first** or **Without asking**. Without asking lets Nook take steps on that site (and its
+  subdomains) without the card; **Always on <site>** turns it on from a card. It is stored in the extension (`trusted`
+  in `chrome.storage.local`).
 - **What always asks.** A step that cannot be undone always shows the card, also on such a site, and then offers no
   **Always**: typing that submits a form (`submits` from Nook), and a click or Enter whose button says it pays, orders,
   sends, deletes, books, publishes, confirms or cancels, in any of Nook's five languages. The page agent reads the
@@ -181,7 +182,7 @@ Nook does, and every step lands in the audit log.
   run and comes back with `approval` (its site, and whether it is final). Nook then shows its own approval card, which
   also offers **Always** (*steps in your browser on <site>*) unless the step is final. **Always** sends the step again
   with `trust: <site>`: the extension puts the site in `trusted` (only when it is the step's own site and the step is
-  not final) and runs it. So one "Always" per site is enough, and the side panel's switch and Nook's card share one
+  not final) and runs it. So one "Always" per site is enough, and the side panel's access and Nook's card share one
   list. Only an extension of 1.5 or newer gets `ask.trusted` (`BrowserTask.firstTrustedVersion`); with an older one
   every step asks in Nook as before.
 - **Only from the side panel, only a new extension.** Steps from anywhere else (Nook Chat on the Mac, Think Along)
@@ -205,8 +206,7 @@ Nook does, and every step lands in the audit log.
   otherwise keep every step waiting for the full limit.
 - **Usable, not finished.** A new page counts as loaded once its document is parsed (`interactive`), not when every
   picture, font and advert is in. Only a document newer than the action counts (`performance.timeOrigin`), so the old
-  page still showing is never taken for the new one. A site you switched off is never asked; there the browser's own
-  `complete` decides.
+  page still showing is never taken for the new one.
 - **The right element.** By text, what you can see wins: an exact name before one that starts with it before one that
   contains it, in view before off screen, a button or link before a label. Refs, selectors and text also reach into
   web components (open shadow roots).
@@ -223,10 +223,10 @@ Nook does, and every step lands in the audit log.
 - **Approval for every action.** Opening, clicking, typing, pressing keys and closing tabs are actions
   (`ToolSpec.Kind.action`). They go through Nook's approval card and the audit log, whoever asks: Nook Chat, a
   Think-Along card or a coding agent. A task you give in the side panel asks there instead, step by step. On a site you
-  let Nook act on without asking (the side panel's switch, or **Always** on a card), a side panel task's and a coding
+  let Nook act on without asking (the access in the side panel's model menu, or **Always** on a card), a side panel task's and a coding
   agent's steps run without a card; paying, sending and deleting always ask (see "A task from the side panel").
-- **Your brakes in the browser.** The side panel has a switch per site ("Nook on github.com"). A site you switch off is
-  never read or touched, including its subdomains. **Pause** stops Nook in the whole browser until you resume, and the
+- **Your brakes in the browser.** Nook may read every site (the browser's own pages and its web store stay off limits);
+  acting on one asks first unless you chose **Without asking** for it. **Pause** stops Nook in the whole browser until you resume, and the
   toolbar icon shows a badge while it is paused. While Nook acts on a page, its edges glow and a strip with **Stop**
   shows at the bottom. When a coding agent drives the page (`nook_use`, or `browser_*` with `in: "user"`), the glow
   breathes in the colors of that agent's logo, the cursor that shows its clicks and typing takes the first of them,
@@ -291,7 +291,7 @@ Nook's commands ─────────┘                                  
   `ToolSpec`s.
 - **Side panel.** A question becomes `app.ask(…, in: conversation, reveal: false, note:, page:)`, the same path the
   iPhone companion uses. The page in front goes along as a note that is never shown in the chat
-  (`BrowserExtensionPanel.note`). When Nook may use the site (not paused, not switched off), the extension also reads
+  (`BrowserExtensionPanel.note`). When Nook may use the site (not paused), the extension also reads
   the page's text and the user's selection as the question is asked (at most 16,000 characters, and only when the page
   answers within 1.5 s). That text goes to the brain like a dropped file (`ReplyContext.page`), so Nook answers about
   the page without first spending a round on `chrome_read`. It goes only to a brain that may see the browser

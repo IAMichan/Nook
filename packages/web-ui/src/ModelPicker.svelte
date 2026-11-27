@@ -26,6 +26,7 @@
   // Mac's models first, then one logo per agent) and the shown place's column on the right: its name, a search field and
   // its models, each with its maker's mark, the chosen one with a faint fill. ↑/↓ move over the models while the search
   // keeps the keyboard and Return picks. Colors come from the surface as the composer's `--nc-*` variables.
+  import type { Snippet } from "svelte";
   import AgentMark from "./AgentMark.svelte";
   import { brandFor } from "./brands";
 
@@ -37,6 +38,7 @@
     onchoose,
     onopen,
     disabled = false,
+    footer,
   }: {
     label: string;
     group?: string;
@@ -46,6 +48,8 @@
     /** The menu opens: the surface can fetch the newest list. */
     onopen?: () => void;
     disabled?: boolean;
+    /** Under the rail and the models, across the panel: the session's options, as `ModelPickerOptions` on the Mac. */
+    footer?: Snippet;
   } = $props();
 
   /** The panel's width on the Mac (`ModelPickerStyle.width`), and the room it keeps from the window's edges. */
@@ -153,6 +157,7 @@
   </button>
   {#if open}
     <div class="mp-panel" role="dialog" aria-label={texts.button} style:left="{shift}px" style:width="min({width}px, calc(100vw - {2 * margin}px))">
+      <div class="mp-body">
       <div class="mp-rail">
         {#each places as p, i (p.name)}
           {#if i > 0 && places[i - 1].local && !p.local}<span class="mp-rail-line" aria-hidden="true"></span>{/if}
@@ -183,6 +188,8 @@
           {/each}
         </div>
       </div>
+      </div>
+      {#if footer}<div class="mp-footer">{@render footer()}</div>{/if}
     </div>
   {/if}
 </div>
@@ -216,7 +223,7 @@
     bottom: calc(100% + 8px);
     z-index: 20;
     display: flex;
-    align-items: stretch;
+    flex-direction: column;
     padding: 4px;
     border: 1px solid var(--nc-line, #e4e4e7);
     border-radius: var(--nc-menu-radius, 12px);
@@ -225,6 +232,9 @@
     box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
     overflow: hidden;
   }
+
+  .mp-body { display: flex; align-items: stretch; min-height: 0; }
+  .mp-footer { border-top: 1px solid var(--nc-line, #e4e4e7); }
 
   .mp-rail {
     flex-shrink: 0;

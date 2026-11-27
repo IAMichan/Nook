@@ -32,9 +32,11 @@ let cachedSettings = null;
 async function settings() {
   if (cachedSettings) return cachedSettings;
   const stored = await chrome.storage.local.get({ paused: false, blocked: [], trusted: [] });
+  // Nook may read and use every site: the switch per site is gone, so a site switched off before is on again.
+  if (Array.isArray(stored.blocked) && stored.blocked.length) await chrome.storage.local.remove('blocked');
   cachedSettings = {
     paused: !!stored.paused,
-    blocked: Array.isArray(stored.blocked) ? stored.blocked : [],
+    blocked: [],
     // The sites the user lets Nook act on without asking first (a task from the side panel; see `approve`).
     trusted: Array.isArray(stored.trusted) ? stored.trusted : []
   };
@@ -912,14 +914,6 @@ async function handlePanel(message) {
       await remember({ icon: message.paused ? 'pause' : 'resume', text: message.paused ? 'Paused Nook in this browser' : 'Nook may use this browser again', ok: true });
       return { ok: true };
     }
-    case 'site': {
-      const site = siteOf(message.url);
-      if (!site) return { ok: false };
-      const { blocked } = await settings();
-      const next = message.allowed ? blocked.filter((entry) => entry !== site) : [...new Set([...blocked, site])];
-      await chrome.storage.local.set({ blocked: next });
-      return { ok: true };
-    }
     case 'ask': {
       const tab = await activeTab(message.windowId);
       const page = await pageForQuestion(tab);
@@ -945,7 +939,7 @@ async function handlePanel(message) {
     // A step of a task waiting for the user: once, always on this site, or no.
     case 'decide':
       return { ok: decide(String(message.id || ''), String(message.decision || '')) };
-    // Acting on a site without asking first (the side panel's second switch).
+    // Acting on a site without asking first (the access choice in the composer's model menu).
     case 'trust': {
       const site = siteOf(message.url);
       if (!site) return { ok: false };
