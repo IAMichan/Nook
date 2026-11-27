@@ -848,6 +848,11 @@ impl ChatdBridge {
         Self::lock(&self.state).chats.get(chat_id).cloned()
     }
 
+    /// Snapshot of all chats currently listed by the helper (used to apply waiting Beeper import settings).
+    pub fn listed_chats(&self) -> Vec<ServiceChat> {
+        Self::lock(&self.state).chats.values().cloned().collect()
+    }
+
     /// Older messages of one chat (scrolling back, `ChatHistoryBridge`): the app is asked for them, then `limit` of the
     /// newest are read, as history (never new). `None` when the helper does not know the chat.
     pub async fn older(&self, app: &str, chat_id: &str, limit: usize) -> Result<Option<BridgedChat>, String> {

@@ -6,6 +6,7 @@
 
 pub mod abilities;
 pub mod apps;
+pub mod beeper_import;
 pub mod bridge;
 pub mod call;
 pub mod chatd;

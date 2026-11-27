@@ -24,6 +24,7 @@
   import GitLabRow from "../connectors/GitLabRow.svelte";
   import GitLabSheet from "../connectors/GitLabSheet.svelte";
   import MailAccounts from "../connectors/MailAccounts.svelte";
+  import BeeperImportSection from "../connectors/BeeperImportSection.svelte";
   import ChatOptions from "../connectors/ChatOptions.svelte";
   import Sheet from "../../components/ui/Sheet.svelte";
   import Spinner from "../../components/ui/Spinner.svelte";
@@ -912,6 +913,7 @@
       {/each}
     </div>
   </div>
+  <BeeperImportSection {isChatLinked} onOpenChatApp={(app) => openChatSetup(app, true)} />
   <ChatOptions />
 {:else if overview}
   <label class="search-card conn-search">
