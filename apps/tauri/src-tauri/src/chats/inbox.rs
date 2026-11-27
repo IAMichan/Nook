@@ -62,7 +62,8 @@ pub struct ChatThread {
     profile: Option<nook_core::chats::ChatProfile>,
 }
 
-fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSummary {
+fn summary(thread: &InboxThread, links: &Links, mut typing: Vec<String>) -> ChatSummary {
+    let sends = links.sends(&thread.app);
     for who in &thread.typing {
         if !who.is_empty() && !typing.iter().any(|existing| existing.eq_ignore_ascii_case(who)) {
             typing.push(who.clone());
@@ -74,7 +75,7 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
     let mut abilities = ChatAbilities::for_app(&thread.app, sends, pinned, muted, archived);
     if thread.app == whatsapp::APP {
         // Voting is the gateway's: OpenWA votes, GOWA has no call for it.
-        abilities.vote = wa_votes(thread);
+        abilities.vote = links.can_vote(thread.chat_id.as_deref().unwrap_or(""));
     }
     let scored = super::notify::score_thread(thread);
     let priority = (scored.raises || (thread.unread > 0 && scored.score > 0)).then_some(scored);
@@ -99,17 +100,42 @@ fn summary(thread: &InboxThread, sends: bool, mut typing: Vec<String>) -> ChatSu
     }
 }
 
-type WaVotesFn = Box<dyn Fn(&str) -> bool + Send + Sync>;
-
-static WA_VOTES: std::sync::OnceLock<WaVotesFn> = std::sync::OnceLock::new();
-
-/// Whether the WhatsApp account of this chat can vote on a poll (set once the connectors are up).
-fn wa_votes(thread: &InboxThread) -> bool {
-    WA_VOTES.get().is_some_and(|f| f(thread.chat_id.as_deref().unwrap_or("")))
+/// What the linked apps can do, asked before the inbox is locked. A WhatsApp link reads the inbox while it holds its own
+/// lock, so asking a link from inside `InboxStore::read` or `with` can leave both waiting for each other forever, and on
+/// the interface thread that leaves Nook "not responding".
+pub(crate) struct Links {
+    whatsapp: bool,
+    helper: bool,
+    /// Per WhatsApp account (the first one's id is empty), whether its gateway can vote on a poll.
+    votes: Vec<(String, bool)>,
 }
 
-pub(crate) fn set_wa_votes(f: impl Fn(&str) -> bool + Send + Sync + 'static) {
-    let _ = WA_VOTES.set(Box::new(f));
+impl Links {
+    pub(crate) fn now(c: &Connectors) -> Self {
+        let accounts = c.whatsapp_accounts.links();
+        Self {
+            whatsapp: accounts.iter().any(|l| l.is_connected()),
+            helper: c.chat_helper.bridge.client().is_some(),
+            votes: accounts.iter().map(|l| (l.account().to_string(), l.can_vote())).collect(),
+        }
+    }
+
+    /// Whether Nook can write in this app's chats.
+    pub(crate) fn sends(&self, app: &str) -> bool {
+        if app == whatsapp::APP {
+            self.whatsapp
+        } else {
+            // Only the helper's own networks: a chat Nook knows from a notification (Discord) has no link to write in.
+            nook_core::chats::chatd::APPS.contains(&app) && self.helper
+        }
+    }
+
+    /// Whether the gateway of this WhatsApp chat's account can vote; an unknown account counts as the first one, as
+    /// `WhatsAppAccounts::route` does.
+    fn can_vote(&self, chat: &str) -> bool {
+        let (account, _) = whatsapp::accounts::split(chat);
+        self.votes.iter().find(|(id, _)| id == account).or_else(|| self.votes.first()).is_some_and(|(_, can)| *can)
+    }
 }
 
 /// The app's own id of the chat behind a key, for asking its app.
@@ -117,19 +143,17 @@ pub(crate) fn chat_id(c: &Connectors, key: &str) -> Option<(String, String)> {
     c.env.chats.read(|inbox| inbox.threads.get(key).map(|t| (t.app.clone(), t.chat_id.clone().unwrap_or_default())))
 }
 
+/// [`Links::sends`] for one app. Not from inside an inbox lock: see [`Links`].
 pub(crate) fn sends(c: &Connectors, app: &str) -> bool {
-    if app == whatsapp::APP {
-        c.whatsapp_accounts.is_connected()
-    } else {
-        c.chat_helper.bridge.client().is_some()
-    }
+    Links::now(c).sends(app)
 }
 
 /// Computes `ChatAbilities` for a thread key in the shared inbox (or a WhatsApp chat key).
 pub(crate) fn abilities_for(c: &Connectors, key: &str) -> Option<ChatAbilities> {
+    let links = Links::now(c);
     c.env.chats.read(|inbox| {
         inbox.threads.get(key).map(|t| {
-            let connected = sends(c, &t.app);
+            let connected = links.sends(&t.app);
             let pinned = t.pinned || t.pinned_in_app.unwrap_or(false);
             let muted = t.muted_in_app.unwrap_or(false);
             ChatAbilities::for_app(&t.app, connected, pinned, muted, t.archived)
@@ -145,15 +169,14 @@ pub(crate) fn changed(app: &AppHandle) {
 #[tauri::command]
 pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
     let now = Utc::now();
-    let helper = c.chat_helper.bridge.client().is_some();
-    let wa = c.whatsapp_accounts.is_connected();
+    let links = Links::now(&c);
     c.env.chats.read(|inbox| {
         inbox
             .sorted()
             .into_iter()
             // A chat Nook knows only from disk, without a message, shows once its app lists it or brings one again.
             .filter(|t| !t.messages.is_empty() || ChatInbox::is_listed(t, now))
-            .map(|t| summary(t, if t.app == whatsapp::APP { wa } else { helper }, c.chat_helper.typing_in(&t.id)))
+            .map(|t| summary(t, &links, c.chat_helper.typing_in(&t.id)))
             .collect()
     })
 }
@@ -161,11 +184,11 @@ pub fn chat_inbox_list(c: State<'_, Connectors>) -> Vec<ChatSummary> {
 /// One chat with its messages; `None` once it is gone.
 #[tauri::command]
 pub fn chat_inbox_thread(c: State<'_, Connectors>, key: String) -> Option<ChatThread> {
-    let can = chat_id(&c, &key).is_some_and(|(app, _)| sends(&c, &app));
+    let links = Links::now(&c);
     let typing = c.chat_helper.typing_in(&key);
     c.env.chats.read(|inbox| {
         inbox.threads.get(&key).map(|t| ChatThread {
-            summary: summary(t, can, typing),
+            summary: summary(t, &links, typing),
             messages: t.filled_messages(),
             people: t.members.clone().unwrap_or_default(),
             has_older: t.has_older.unwrap_or(false),
@@ -715,4 +738,30 @@ pub async fn chat_suggest_reply(app: AppHandle, c: State<'_, Connectors>, key: S
 
 fn helper_off() -> String {
     "Nook's chat helper is not running, so this app cannot be reached right now.".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn links(votes: &[(&str, bool)]) -> Links {
+        Links { whatsapp: true, helper: false, votes: votes.iter().map(|(id, can)| (id.to_string(), *can)).collect() }
+    }
+
+    #[test]
+    fn a_chat_votes_through_its_own_whatsapp_account() {
+        let links = links(&[("", false), ("nook-work", true)]);
+        assert!(links.can_vote("nook-work~31600000000@s.whatsapp.net"));
+        assert!(!links.can_vote("31600000000@s.whatsapp.net"));
+        // An account that is gone counts as the first one.
+        assert!(!links.can_vote("nook-gone~31600000000@s.whatsapp.net"));
+    }
+
+    #[test]
+    fn only_linked_apps_can_be_written_in() {
+        let links = links(&[("", false)]);
+        assert!(links.sends(whatsapp::APP));
+        assert!(!links.sends("telegram"));
+        assert!(!links.sends("discord"));
+    }
 }

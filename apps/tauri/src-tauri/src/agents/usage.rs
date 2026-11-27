@@ -254,7 +254,7 @@ pub struct AccountLimits {
 }
 
 /// Every relevant agent account with what is known of its limits.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agents_limits(app: AppHandle) -> Vec<AccountLimits> {
     let (Some(agents), Some(state)) = (app.try_state::<AgentsState>(), app.try_state::<UsageState>()) else { return vec![] };
     let profiles = lock(&agents.profiles).all();

@@ -74,7 +74,7 @@ fn ensure_telemetry_provider(app: &AppHandle, manager: &Arc<Manager>) {
 }
 
 /// Sessies, welke er lopen, welke agents er zijn en de voorkeuren.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn workspace_overview(app: AppHandle, state: State<'_, WorkspaceState>) -> Overview {
     let m = &state.manager;
     ensure_telemetry_provider(&app, m);

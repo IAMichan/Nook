@@ -22,6 +22,7 @@ pub mod poll;
 pub mod priority;
 pub mod profile;
 pub mod store;
+pub mod system_notices;
 pub mod tools;
 pub mod typing;
 pub mod voice;

@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::{text, ToolCtx, ToolSource};
+use crate::chats::inbox::{sends, Links};
 use crate::connectors::Connectors;
 
 pub const ID: &str = "chats";
@@ -27,15 +28,6 @@ fn withheld() -> Vec<String> {
 }
 
 pub struct Chats;
-
-/// Whether Nook can write in this app's chats now.
-fn sends(c: &Connectors, app: &str) -> bool {
-    if app == nook_core::connectors::whatsapp::APP {
-        c.whatsapp_accounts.is_connected()
-    } else {
-        c.chat_helper.bridge.client().is_some()
-    }
-}
 
 fn has_chats(c: &Connectors) -> bool {
     c.env.chats.read(|inbox| !inbox.threads.is_empty())
@@ -140,12 +132,13 @@ impl ToolSource for Chats {
     async fn context(&self, ctx: &ToolCtx) -> Option<String> {
         let c = ctx.app.try_state::<Connectors>()?;
         let hidden = withheld();
+        let links = Links::now(&c);
         let (unread, writable) = c.env.chats.read(|inbox| {
             let shown = chat::shown(inbox, &hidden);
             let mut apps: Vec<String> = vec![];
             for t in &shown {
                 let name = chat::app_name(&t.app);
-                if !apps.contains(&name) && sends(&c, &t.app) {
+                if !apps.contains(&name) && links.sends(&t.app) {
                     apps.push(name);
                 }
             }

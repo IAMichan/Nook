@@ -23,7 +23,7 @@ pub struct MaintenanceInfo {
     arch: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn maintenance_info(app: AppHandle) -> MaintenanceInfo {
     let support = paths::support_directory();
     MaintenanceInfo {
@@ -48,7 +48,7 @@ pub fn open_data_folder(app: AppHandle) -> Res<String> {
 }
 
 /// Empties the caches; returns the bytes freed.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn clear_caches() -> u64 {
     maintenance::clear_caches(&paths::support_directory())
 }
