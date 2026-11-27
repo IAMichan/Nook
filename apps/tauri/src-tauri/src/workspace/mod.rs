@@ -115,7 +115,7 @@ pub fn setup(app: &AppHandle) {
                 {
                     guest_relay_app
                         .try_state::<crate::companion::Companion>()
-                        .and_then(|c| crate::companion::current_relay(&c.server.store()))
+                        .and_then(|c| crate::companion::current_relay(c.server.store()))
                 }
                 #[cfg(not(desktop))]
                 {
