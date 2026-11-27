@@ -207,8 +207,10 @@ pub async fn workspace_start(
     mut config: NewRunConfig,
     allow_shared: bool,
 ) -> Res<String> {
+    // On another machine the folder is a path there: it stays out of this computer's projects and folder choices.
+    let elsewhere = !config.machine_id.trim().is_empty();
     // "Or start without a project": an empty folder of its own under ~/.nook/scratch, named after the task.
-    let scratch = config.project_path.trim().is_empty();
+    let scratch = !elsewhere && config.project_path.trim().is_empty();
     if scratch {
         config.project_path = nook_core::workspace::scratch::create(&config.task).map_err(|e| {
             trf("Nook kon er geen map voor maken: {error}", "Nook could not make a folder for it: {error}", &[("error", &e.to_string())])
@@ -252,7 +254,7 @@ pub async fn workspace_start(
     crate::workspace::automation::title_new_session(&app, id, !chosen.title.trim().is_empty());
     let mut s = lock(&state.settings);
     // A folder without a project stays out of Recent until you turn it into a project.
-    if !scratch {
+    if !scratch && !elsewhere {
         s.remember_project(&chosen.project_path);
     }
     s.default_provider = chosen.provider;
@@ -263,11 +265,11 @@ pub async fn workspace_start(
         None => s.default_efforts.remove(chosen.provider.id()),
     };
     s.default_mode = chosen.mode;
-    if !scratch {
+    if !scratch && !elsewhere {
         s.default_isolation = chosen.isolation;
     }
     s.default_permission = chosen.permission;
-    if !scratch {
+    if !scratch && !elsewhere {
         s.remember_folder_choices(&chosen, picked_permission);
     }
     s.save_to(&WorkspaceSettings::file());

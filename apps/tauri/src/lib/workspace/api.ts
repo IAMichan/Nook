@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { tr } from "../i18n.svelte";
+import type { RemoteTarget } from "./machines";
 
 export type RunProvider = "claude" | "codex" | "gemini" | "opencode" | "cursor" | "grok" | "antigravity";
 export type ExecutionMode = "agent" | "plan";
@@ -78,6 +79,8 @@ export interface WorkspaceRun {
   tasks?: { text: string; status: "pending" | "active" | "done" | "cancelled" }[] | null;
   /** Claude Code: how long the prompt cache of the session's last request stays warm (`IdleCompaction`, AG-32). */
   promptCache?: PromptCacheWindow | null;
+  /** The machine the agent runs on over SSH, with its folder there; absent on this computer (`RemoteTarget`). */
+  remote?: RemoteTarget | null;
 }
 
 export type ContextLevel = "normal" | "warning" | "critical";
@@ -346,6 +349,8 @@ export interface NewRunConfig {
   worktreeRoot: string;
   instructions: string;
   effort: string | null;
+  /** The saved machine to run on (`RemoteMachine.id`); empty or absent runs it on this computer. */
+  machineId?: string;
 }
 
 export type ChangeKind = "added" | "modified" | "deleted" | "renamed" | "copied" | "untracked" | "conflicted" | "typeChanged";

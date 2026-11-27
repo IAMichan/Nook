@@ -338,6 +338,7 @@ mod tests {
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            remote: None,
         }
     }
 

@@ -471,6 +471,7 @@ pub const SECTIONS: &[&str] = &[
     "chats",
     "connections",
     "iphone",
+    "machines",
     "privacy",
     "permissions",
     "activityLog",
