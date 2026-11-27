@@ -11,6 +11,7 @@ use nook_core::connectors::github;
 use nook_core::connectors::hub::Connector;
 use nook_core::connectors::hub::ConnectorInfo;
 use nook_core::connectors::mcp::{self, connector as mcp_store, McpServerConfig, McpTool, Pasted, Transport};
+use nook_core::connectors::pull_batch_close;
 use nook_core::connectors::pulls::{self, CiLog, PullRequestDetail, PullRequestList};
 use nook_core::connectors::whatsapp::{link::LinkView, Conversation, WhatsAppSettings};
 use nook_core::connectors::ConnectorError;
@@ -456,6 +457,74 @@ pub async fn github_review_pull_request(
             Err(e.message)
         }
     }
+}
+
+/// One pull request of a batch close: its repository, number and the account it is listed under.
+#[derive(serde::Deserialize, Clone)]
+pub struct CloseTarget {
+    repo: String,
+    number: i64,
+    account: Option<String>,
+}
+
+/// Closes several pull requests one after the other (`PullRequestBatchClose` on the Mac), only after the confirmation in
+/// the list's selection bar. With a comment, it is posted first and a pull request whose comment was refused stays open.
+/// Every comment and close is written to the action log.
+#[tauri::command]
+pub async fn github_close_pull_requests(
+    c: State<'_, Connectors>,
+    state: State<'_, AppState>,
+    targets: Vec<CloseTarget>,
+    comment: Option<String>,
+) -> Res<pull_batch_close::Report> {
+    if targets.is_empty() || targets.len() > pull_batch_close::LIMIT {
+        return Err(format!("Choose between 1 and {} pull requests.", pull_batch_close::LIMIT));
+    }
+    for t in &targets {
+        pull_target(&t.repo, t.number)?;
+    }
+    let github = &c.github;
+    let store = &state.store;
+    let outcomes = pull_batch_close::run(
+        targets,
+        comment.as_deref(),
+        |t, body| {
+            let input = serde_json::json!({"repo": t.repo, "number": t.number, "body": body, "account": t.account});
+            let args = format!("{}#{} · {}", t.repo, t.number, t.account.clone().unwrap_or_default());
+            async move {
+                let result = github.execute("github_comment_pr", &input).await.unwrap_or_else(|| Err(ConnectorError::not_set_up("GitHub")));
+                match result {
+                    Ok(text) => {
+                        store.audit("github_comment_pr", &args, &text);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        store.audit("github_comment_pr", &args, &format!("FOUT: {}", e.message));
+                        Err(e.message)
+                    }
+                }
+            }
+        },
+        |t| {
+            let input = serde_json::json!({"repo": t.repo, "number": t.number, "account": t.account});
+            let args = format!("{}#{} · {}", t.repo, t.number, t.account.clone().unwrap_or_default());
+            async move {
+                let result = github.execute("github_close_pr", &input).await.unwrap_or_else(|| Err(ConnectorError::not_set_up("GitHub")));
+                match result {
+                    Ok(text) => {
+                        store.audit("github_close_pr", &args, &text);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        store.audit("github_close_pr", &args, &format!("FOUT: {}", e.message));
+                        Err(e.message)
+                    }
+                }
+            }
+        },
+    )
+    .await;
+    Ok(pull_batch_close::report(&outcomes, |t| format!("{}#{}", t.repo, t.number)))
 }
 
 // GitHub Actions (Agents › Actions)
