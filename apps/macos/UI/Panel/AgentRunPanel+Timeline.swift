@@ -545,7 +545,8 @@ extension AgentRunPanel {
     func rememberVisit(_ id: UUID) {
         // Left before its timeline was read: the earlier visit still says where you were.
         guard workspace.run(id) != nil, workspace.isTimelineLoaded(id) else { return }
-        TimelineVisitStore.shared.remember(sessionID: Self.visitKey(id), visit: TimelineVisit(open: openBlocks, lastViewedAt: Date()))
+        TimelineVisitStore.shared.remember(sessionID: Self.visitKey(id), visit: TimelineVisit(open: openBlocks, lastViewedAt: Date(),
+                                                                                                     olderBranchesOpen: showsOlderBranches))
     }
 
     @ViewBuilder
