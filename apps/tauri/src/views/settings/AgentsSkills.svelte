@@ -36,7 +36,7 @@
   interface SkillsCatalogView { skills: SkillCatalogEntry[]; folders: SkillFolderInfo[] }
   interface SkillDocument { path: string; name: string; description: string; content: string; scripts: string[] }
 
-  const PROVIDERS: RunProvider[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok"];
+  const PROVIDERS: RunProvider[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok", "pi"];
 
   const local = $derived(nook.info?.capabilities.localAgents ?? false);
 

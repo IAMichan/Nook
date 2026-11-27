@@ -42,6 +42,7 @@ pub mod nook_schedule;
 pub mod open_in;
 pub mod parsers;
 pub mod paths;
+pub mod pi_rpc;
 pub mod pr_checkout;
 pub mod pr_links;
 pub mod project_files;

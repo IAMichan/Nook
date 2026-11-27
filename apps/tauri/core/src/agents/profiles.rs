@@ -116,6 +116,7 @@ pub fn profile_suggested_home(kind: AgentKind, slug: &str) -> PathBuf {
         AgentKind::Opencode => home.join(format!(".opencode-{slug}")),
         AgentKind::Cursor => home.join(format!(".cursor-{slug}")),
         AgentKind::Grok => home.join(format!(".grok-{slug}")),
+        AgentKind::Pi => home.join(format!(".pi-{slug}")).join("agent"),
         AgentKind::Antigravity => kind.default_home(),
     }
 }

@@ -28,7 +28,7 @@ pub fn arguments(provider: RunProvider, permission: PermissionPolicy) -> Vec<Str
         RunProvider::Grok if permission == PermissionPolicy::Bypass => &["agent", "--always-approve", "stdio"],
         RunProvider::Grok => &["agent", "stdio"],
         // Antigravity's server takes no arguments; its account and harness come from the environment.
-        RunProvider::Antigravity | RunProvider::Claude | RunProvider::Codex => &[],
+        RunProvider::Antigravity | RunProvider::Claude | RunProvider::Codex | RunProvider::Pi => &[],
     };
     list.iter().map(|s| s.to_string()).collect()
 }

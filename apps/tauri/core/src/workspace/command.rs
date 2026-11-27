@@ -320,7 +320,7 @@ pub fn telemetry_signals(provider: RunProvider) -> &'static [OtlpSignal] {
         RunProvider::Claude | RunProvider::Codex | RunProvider::Gemini => &[OtlpSignal::Traces, OtlpSignal::Metrics, OtlpSignal::Logs],
         RunProvider::Opencode => &[OtlpSignal::Traces, OtlpSignal::Logs],
         RunProvider::Grok => &[OtlpSignal::Metrics, OtlpSignal::Logs],
-        RunProvider::Cursor | RunProvider::Antigravity => &[],
+        RunProvider::Cursor | RunProvider::Antigravity | RunProvider::Pi => &[],
     }
 }
 
@@ -429,7 +429,7 @@ pub fn telemetry_launch(provider: RunProvider, config: &OtlpConfig) -> Telemetry
                 launch.environment.insert("GROK_EXTERNAL_OTEL".into(), "1".into());
             }
         }
-        RunProvider::Opencode | RunProvider::Cursor | RunProvider::Antigravity => {}
+        RunProvider::Opencode | RunProvider::Cursor | RunProvider::Antigravity | RunProvider::Pi => {}
     }
     launch
 }

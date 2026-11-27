@@ -20,7 +20,7 @@ export const updatesApi = {
 };
 
 /** The agents whose program Nook can update. */
-export const updatable = (kind: string) => ["claude", "codex", "gemini", "opencode", "cursor", "grok"].includes(kind);
+export const updatable = (kind: string) => ["claude", "codex", "gemini", "opencode", "cursor", "grok", "pi"].includes(kind);
 
 const REJECTION = [
   "requires a newer version of", "upgrade to the latest app or cli", "please upgrade to the latest version",

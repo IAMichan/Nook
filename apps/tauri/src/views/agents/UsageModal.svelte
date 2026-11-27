@@ -246,7 +246,7 @@
     const present = new Set<AgentKind>();
     for (const a of accountLimits ?? []) present.add(a.kind);
     for (const k of hiddenList) present.add(k as AgentKind);
-    const order: AgentKind[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok"];
+    const order: AgentKind[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok", "pi"];
     return order.filter((k) => present.has(k));
   });
 

@@ -39,10 +39,12 @@ pub enum AgentKind {
     Opencode,
     Cursor,
     Grok,
+    Pi,
 }
 
 impl AgentKind {
-    pub const ALL: [AgentKind; 7] = [Self::Claude, Self::Codex, Self::Gemini, Self::Antigravity, Self::Opencode, Self::Cursor, Self::Grok];
+    pub const ALL: [AgentKind; 8] =
+        [Self::Claude, Self::Codex, Self::Gemini, Self::Antigravity, Self::Opencode, Self::Cursor, Self::Grok, Self::Pi];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -53,6 +55,7 @@ impl AgentKind {
             Self::Opencode => "opencode",
             Self::Cursor => "cursor",
             Self::Grok => "grok",
+            Self::Pi => "pi",
         }
     }
 
@@ -69,6 +72,7 @@ impl AgentKind {
             Self::Opencode => "OpenCode",
             Self::Cursor => "Cursor",
             Self::Grok => "Grok",
+            Self::Pi => "Pi",
         }
     }
 
@@ -89,6 +93,7 @@ impl AgentKind {
             "OpenCode" => Some(Self::Opencode),
             "Cursor" => Some(Self::Cursor),
             "Grok" | "Grok Build" => Some(Self::Grok),
+            "Pi" => Some(Self::Pi),
             _ => None,
         }
     }
@@ -103,6 +108,7 @@ impl AgentKind {
             Self::Opencode => "opencode",
             Self::Cursor => "cursor-agent",
             Self::Grok => "grok",
+            Self::Pi => "pi",
         }
     }
 
@@ -115,6 +121,7 @@ impl AgentKind {
             Self::Opencode => 0xF5A742,
             Self::Cursor => 0x9AA4B2,
             Self::Grok => 0xD9D9DE,
+            Self::Pi => 0x7FD1E8,
         }
     }
 
@@ -125,6 +132,7 @@ impl AgentKind {
             Self::Codex => Some("CODEX_HOME"),
             // Gemini CLI's variable stands in for your home folder: it keeps its data in `$GEMINI_CLI_HOME/.gemini`.
             Self::Gemini => Some("GEMINI_CLI_HOME"),
+            Self::Pi => Some("PI_CODING_AGENT_DIR"),
             _ => None,
         }
     }
@@ -151,12 +159,13 @@ impl AgentKind {
         value.to_string()
     }
 
-    /// Suggested folder for an extra account: `~/.claude-werk`, or for Gemini CLI `~/.gemini-werk/.gemini`.
+    /// Suggested folder for an extra account: `~/.claude-werk`, `~/.gemini-werk/.gemini`, or `~/.pi-werk/agent`.
     pub fn suggested_home(self, slug: &str) -> PathBuf {
         let home = home_dir();
         match self {
             Self::Claude => home.join(format!(".claude-{slug}")),
             Self::Codex => home.join(format!(".codex-{slug}")),
+            Self::Pi => home.join(format!(".pi-{slug}")).join("agent"),
             _ => home.join(format!(".gemini-{slug}")).join(".gemini"),
         }
     }
@@ -175,7 +184,7 @@ impl AgentKind {
             Self::Antigravity => vec![Antigravity],
             Self::Opencode => vec![OpenCode],
             Self::Cursor => vec![Cursor],
-            Self::Grok => vec![],
+            Self::Grok | Self::Pi => vec![],
         }
     }
 
@@ -190,6 +199,7 @@ impl AgentKind {
                 Self::Opencode => "npm install -g opencode-ai",
                 Self::Cursor => "irm 'https://cursor.com/install?win32=true' | iex",
                 Self::Grok => "npm install -g @xai-official/grok",
+                Self::Pi => "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
             }
         } else {
             match self {
@@ -200,6 +210,7 @@ impl AgentKind {
                 Self::Opencode => "curl -fsSL https://opencode.ai/install | bash",
                 Self::Cursor => "curl https://cursor.com/install -fsS | bash",
                 Self::Grok => "npm install -g @xai-official/grok",
+                Self::Pi => "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
             }
         }
     }
@@ -214,6 +225,7 @@ impl AgentKind {
             Self::Opencode => "opencode auth login",
             Self::Cursor => "cursor-agent login",
             Self::Grok => "grok",
+            Self::Pi => "pi",
         }
     }
 
@@ -229,6 +241,11 @@ impl AgentKind {
             Self::Opencode => home.join(".local").join("share").join("opencode"),
             Self::Cursor => home.join(".cursor"),
             Self::Grok => home.join(".grok"),
+            Self::Pi => std::env::var("PI_CODING_AGENT_DIR")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".pi").join("agent")),
         }
     }
 

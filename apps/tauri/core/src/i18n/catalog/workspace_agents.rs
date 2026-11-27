@@ -71,4 +71,16 @@ pub const ROWS: &[Row] = &[
         "{name} existe déjà et n'est pas vide.",
         "{name} ya existe y no está vacía.",
     ),
+    (
+        "Retrying after an error…",
+        "Neuer Versuch nach einem Fehler …",
+        "Nouvelle tentative après une erreur…",
+        "Reintentando tras un error…",
+    ),
+    (
+        "An extension asks for an answer.",
+        "Eine Erweiterung bittet um eine Antwort.",
+        "Une extension demande une réponse.",
+        "Una extensión pide una respuesta.",
+    ),
 ];

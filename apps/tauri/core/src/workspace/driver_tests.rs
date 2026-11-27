@@ -321,3 +321,144 @@ read rest
     assert!(!timeline.iter().any(|e| e.text.contains("sign in")), "a link that is not Google's sign-in page is ignored");
     assert_eq!(w.manager.last_answer(id), "Gedaan.");
 }
+
+const PI_RPC: &str = r#"#!/bin/sh
+here="$(dirname "$0")"
+echo "perm=$NOOK_PI_PERMISSION args=$*" >> "$here/pi.log"
+read state
+echo "$state" >> "$here/pi.log"
+echo '{"id":"nook-state","type":"response","command":"get_state","success":true,"data":{"model":{"provider":"openrouter","id":"deepseek/deepseek-v4-flash","contextWindow":1048576},"sessionFile":"/tmp/pi-session-1.jsonl"}}'
+read prompt
+echo "$prompt" >> "$here/pi.log"
+echo '{"type":"response","command":"prompt","success":true}'
+echo '{"type":"agent_start"}'
+case "$*" in
+*--session*)
+  echo '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Verder."}}'
+  echo '{"type":"message_update","assistantMessageEvent":{"type":"text_end","content":"Verder."}}'
+  echo '{"type":"message_end","message":{"role":"assistant","usage":{"input":10,"output":4,"cacheRead":50,"cacheWrite":0,"totalTokens":64,"cost":{"total":0.001}},"stopReason":"stop"}}'
+  echo '{"type":"agent_end"}'
+  echo '{"type":"agent_settled"}'
+  read rest
+  exit 0 ;;
+esac
+echo '{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Ruim op"}]}}'
+echo '{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"Even "}}'
+echo '{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"kijken"}}'
+echo '{"type":"message_update","assistantMessageEvent":{"type":"thinking_end","content":"Even kijken"}}'
+echo '{"type":"tool_execution_start","toolCallId":"t1","toolName":"bash","args":{"command":"rm -rf build"}}'
+echo '{"type":"extension_ui_request","id":"c-1","method":"confirm","title":"Allow bash?","message":"{\"command\":\"rm -rf build\"}"}'
+read answer
+echo "$answer" | grep -q '"confirmed":true' || exit 3
+echo '{"type":"tool_execution_update","toolCallId":"t1","partialResult":{"content":[{"type":"text","text":"bezig..."}]}}'
+echo '{"type":"tool_execution_end","toolCallId":"t1","toolName":"bash","result":{"content":[{"type":"text","text":"weg"}]},"isError":false}'
+echo '{"type":"tool_execution_start","toolCallId":"t2","toolName":"edit","args":{"path":"'"$PWD"'/a.txt"}}'
+echo '{"type":"tool_execution_end","toolCallId":"t2","toolName":"edit","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}'
+echo '{"type":"extension_ui_request","id":"d-1","method":"select","title":"Target","message":"Pick env","options":["staging","prod"]}'
+read dialog
+echo "$dialog" | grep -q '"value":"prod"' || exit 4
+echo '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Klaar."}}'
+echo '{"type":"message_update","assistantMessageEvent":{"type":"text_end","content":"Klaar."}}'
+echo '{"type":"message_end","message":{"role":"assistant","usage":{"input":120,"output":30,"cacheRead":0,"cacheWrite":0,"totalTokens":150,"cost":{"total":0.0025}},"stopReason":"stop"}}'
+echo '{"type":"agent_end"}'
+echo '{"type":"agent_settled"}'
+read rest
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pi_rpc_approval_dialog_file_change_and_resume() {
+    let w = World::new(|dir| script(dir, "pi", PI_RPC));
+    let id = w.start(RunProvider::Pi);
+    let approval = w.approval().await;
+    assert_eq!((approval.tool.as_str(), approval.agent_name.as_str()), ("bash", "Pi"));
+    assert!(!approval.can_always, "Pi confirm has no always option");
+    w.manager.decide(id, "c-1", ApprovalDecision::Allow).unwrap();
+
+    // Wait for the select dialog question.
+    let mut asked = false;
+    for _ in 0..400 {
+        if w.manager.pending_questions().iter().any(|q| q.id.ends_with(":pidialog-d-1")) {
+            asked = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(asked, "expected Pi select dialog question; timeline: {:?}", w.manager.timeline(id));
+    w.manager.answer_question(id, "pidialog-d-1", &[vec!["prod".into()]]).unwrap();
+
+    assert!(w.manager.wait_idle(id, Duration::from_secs(10)).await);
+    let run = w.manager.run(id).unwrap();
+    assert_eq!(run.status, RunStatus::Completed, "{:?}", w.manager.timeline(id));
+    assert_eq!(run.provider_session_id.as_deref(), Some("/tmp/pi-session-1.jsonl"));
+    assert_eq!(run.resolved_model.as_deref(), Some("openrouter/deepseek/deepseek-v4-flash"));
+    assert_eq!(
+        (run.usage.input_tokens, run.usage.output_tokens, run.usage.context_tokens, run.usage.context_window),
+        (Some(120), Some(30), Some(150), Some(1_048_576))
+    );
+    assert!(run.usage.reported_cost_usd.unwrap() > 0.0);
+    let timeline = w.manager.timeline(id);
+    assert!(timeline.iter().any(|e| e.kind == EventKind::Thinking && e.text == "Even kijken"));
+    assert!(timeline.iter().any(|e| e.kind == EventKind::Tool && e.output.as_deref() == Some("weg")));
+    assert!(timeline.iter().any(|e| e.kind == EventKind::FileChange && e.text == "a.txt"));
+    assert_eq!(w.manager.last_answer(id), "Klaar.");
+    let log = w.log("pi.log");
+    assert!(log.contains("perm=acceptEdits"), "{log}");
+    assert!(log.contains("--mode rpc") && log.contains("--extension"), "{log}");
+
+    // Second turn resumes using --session /tmp/pi-session-1.jsonl.
+    w.manager.send(id, "Nog iets").unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(w.manager.wait_idle(id, Duration::from_secs(10)).await);
+    assert!(w.log("pi.log").contains("--session /tmp/pi-session-1.jsonl"), "{}", w.log("pi.log"));
+    assert_eq!(w.manager.last_answer(id), "Verder.");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pi_rpc_steer_receipt_and_stop() {
+    let w = World::new(|dir| {
+        script(
+            dir,
+            "pi",
+            r#"#!/bin/sh
+read state
+echo '{"id":"nook-state","type":"response","command":"get_state","success":true,"data":{"sessionFile":"/tmp/pi-steer.jsonl"}}'
+read prompt
+echo '{"type":"response","command":"prompt","success":true}'
+echo '{"type":"agent_start"}'
+echo '{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Ruim op"}]}}'
+echo '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Bezig"}}'
+read steer
+echo "$steer" | grep -q '"streamingBehavior":"steer"' || exit 5
+echo '{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"Bijsturen"}]}}'
+read abort
+echo "$abort" | grep -q '"type":"abort"' || exit 6
+echo '{"type":"message_end","message":{"role":"assistant","usage":{"input":5,"output":1,"totalTokens":6},"stopReason":"error","errorMessage":"This operation was aborted"}}'
+echo '{"type":"agent_end"}'
+echo '{"type":"agent_settled","aborted":true}'
+read rest
+"#,
+        )
+    });
+    let id = w.start(RunProvider::Pi);
+    for _ in 0..400 {
+        if w.manager.timeline(id).iter().any(|e| e.text.contains("Bezig")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(w.manager.steer(id, "Bijsturen"));
+    for _ in 0..400 {
+        if w.manager.timeline(id).iter().any(|e| e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Done)) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        w.manager.timeline(id).iter().any(|e| e.tool.as_deref() == Some("steer") && e.state == Some(EventState::Done)),
+        "expected steer receipt to flip Done; timeline: {:?}",
+        w.manager.timeline(id)
+    );
+    w.manager.stop(id);
+    assert!(w.manager.wait_idle(id, Duration::from_secs(10)).await);
+    assert_eq!(w.manager.run(id).unwrap().status, RunStatus::Stopped, "{:?}", w.manager.timeline(id));
+}

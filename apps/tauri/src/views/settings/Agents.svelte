@@ -52,7 +52,7 @@
 
   type Tone = "linked" | "attention" | "idle";
 
-  const RUNNABLE_ORDER: RunProvider[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok"];
+  const RUNNABLE_ORDER: RunProvider[] = ["claude", "codex", "gemini", "antigravity", "opencode", "cursor", "grok", "pi"];
 
   /** Nil until you pick one, which shows the first linked agent (as on the Mac). */
   let selectedId = $state<string | null>(null);

@@ -84,7 +84,16 @@ impl UpdateCommand {
 
 /// The agents whose program Nook can update. Antigravity's ACP server is a release Nook downloads and checks itself.
 pub fn updatable(kind: AgentKind) -> bool {
-    matches!(kind, AgentKind::Claude | AgentKind::Codex | AgentKind::Gemini | AgentKind::Opencode | AgentKind::Cursor | AgentKind::Grok)
+    matches!(
+        kind,
+        AgentKind::Claude
+            | AgentKind::Codex
+            | AgentKind::Gemini
+            | AgentKind::Opencode
+            | AgentKind::Cursor
+            | AgentKind::Grok
+            | AgentKind::Pi
+    )
 }
 
 /// The npm package an agent is published as, for its newest version.
@@ -95,6 +104,7 @@ pub fn npm_package(kind: AgentKind) -> Option<&'static str> {
         AgentKind::Gemini => Some("@google/gemini-cli"),
         AgentKind::Opencode => Some("opencode-ai"),
         AgentKind::Grok => Some("@xai-official/grok"),
+        AgentKind::Pi => Some("@earendil-works/pi-coding-agent"),
         _ => None,
     }
 }
