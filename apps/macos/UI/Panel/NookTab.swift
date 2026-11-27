@@ -816,5 +816,6 @@ private extension View {
     func readableChat(_ on: Bool) -> some View {
         frame(maxWidth: on ? PanelLayout.readableChat : nil)
             .frame(maxWidth: on ? .infinity : nil)
+            .reportsColumnMargin(column: on ? PanelLayout.readableChat : .infinity)
     }
 }
