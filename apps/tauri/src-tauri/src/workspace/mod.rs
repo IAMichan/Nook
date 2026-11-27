@@ -78,6 +78,8 @@ pub fn setup(app: &AppHandle) {
     };
     let handle = app.clone();
     let archive_settings = settings.clone();
+    let auto_pull_app = app.clone();
+    let auto_pull_settings = settings.clone();
     let directory = nook_core::paths::support_directory().join("workspace");
     let manager = Manager::new(directory, hooks, runtime, move |event| on_event(&handle, event));
     if let Some(services) = app.try_state::<crate::services::Services>() {
@@ -109,6 +111,7 @@ pub fn setup(app: &AppHandle) {
     // Wegschrijven als er iets veranderde, en de worktrees af en toe opnieuw lezen.
     tauri::async_runtime::spawn(async move {
         let mut tick = 0u64;
+        let mut last_auto_pull: std::collections::HashMap<String, std::time::Instant> = std::collections::HashMap::new();
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             tick += 1;
@@ -118,6 +121,75 @@ pub fn setup(app: &AppHandle) {
             if tick % 60 == 5 {
                 let m = manager.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || m.refresh_worktrees()).await;
+            }
+            // Auto-pull default branches roughly every 15 minutes per repo, when enabled globally or per project.
+            if tick % 30 == 15 {
+                let global_auto_pull =
+                    auto_pull_app.try_state::<AppState>().map(|s| s.settings().worktrees.auto_pull_default_branch).unwrap_or(false);
+                let due: Vec<String> = {
+                    let ws = lock(&auto_pull_settings);
+                    if !nook_core::workspace::source_control_rules::AutoPull::enabled_anywhere(global_auto_pull, &ws.project_overrides) {
+                        Vec::new()
+                    } else {
+                        let now = std::time::Instant::now();
+                        let interval = Duration::from_secs(nook_core::workspace::source_control_rules::AUTO_PULL_INTERVAL_SECS);
+                        let mut seen = std::collections::HashSet::new();
+                        let mut candidates = Vec::new();
+                        for run in manager.runs() {
+                            if let Some(p) = run.repo_root.as_deref().or(Some(run.project_path.as_str())) {
+                                candidates.push(p.to_string());
+                            }
+                        }
+                        candidates.extend(ws.favorite_projects.iter().cloned());
+                        candidates.extend(ws.recent_projects.iter().take(12).cloned());
+                        candidates
+                            .into_iter()
+                            .filter_map(|raw| {
+                                let clean = nook_core::workspace::paths::normalize(&raw);
+                                if clean.is_empty()
+                                    || nook_core::workspace::scratch::is_scratch(&clean)
+                                    || !seen.insert(clean.clone())
+                                    || ws.is_archived_project(&clean)
+                                    || !ws.auto_pull_enabled(&clean, global_auto_pull)
+                                {
+                                    return None;
+                                }
+                                let ready = last_auto_pull.get(&clean).is_none_or(|at| now.duration_since(*at) >= interval);
+                                if ready {
+                                    last_auto_pull.insert(clean.clone(), now);
+                                    Some(clean)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    }
+                };
+                if !due.is_empty() {
+                    let working: std::collections::HashSet<String> = manager
+                        .runs()
+                        .into_iter()
+                        .filter(|r| r.status.is_active() && r.isolation == nook_core::workspace::models::IsolationMode::Folder)
+                        .map(|r| nook_core::workspace::paths::normalize(&r.working_directory))
+                        .collect();
+                    let m = manager.clone();
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        let Some(git) = m.git() else { return };
+                        let mut done = std::collections::HashSet::new();
+                        for path in due {
+                            let Some(checkout) = git.main_checkout(&path) else { continue };
+                            let key = nook_core::workspace::paths::normalize(&checkout);
+                            if !done.insert(key.clone()) {
+                                continue;
+                            }
+                            let busy = working
+                                .iter()
+                                .any(|w| *w == key || w.starts_with(&format!("{key}/")) || w.starts_with(&format!("{key}\\")));
+                            let _ = git.auto_pull(&checkout, busy);
+                        }
+                    })
+                    .await;
+                }
             }
             // Sessies die zo lang niet gebruikt zijn, gaan vanzelf naar het archief (als je dat instelde).
             if tick % 600 == 30 {

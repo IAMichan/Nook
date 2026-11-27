@@ -235,6 +235,10 @@ export interface ProjectOverride {
   branchPrefix?: string | null;
   titleInstructions?: string | null;
   agentInstructions?: string | null;
+  autoPull?: boolean | null;
+  submodules?: "recursive" | "topLevel" | "skip" | null;
+  agentsOff?: string[];
+  icon?: string | null;
   archived?: boolean;
 }
 
@@ -247,6 +251,10 @@ export interface ProjectDefaults {
   branchPrefix: string;
   titleInstructions: string;
   agentInstructions: string;
+  autoPull: boolean;
+  submodules: "recursive" | "topLevel" | "skip";
+  agentsOff: string[];
+  icon: string | null;
   own: string[];
 }
 
@@ -275,6 +283,13 @@ export interface WorktreeSetupProgress {
   states: Partial<Record<SetupStep, StepState>>;
   notes: SetupNote[];
   startedAt: string;
+}
+
+export interface PublishPlan {
+  folder: string;
+  name: string;
+  needsRepository: boolean;
+  needsFirstCommit: boolean;
 }
 
 export interface WorkspaceOverview {
@@ -457,6 +472,10 @@ export const workspaceApi = {
     invoke<void>("workspace_apply_hunk", { run: run(id), file, index, action }),
   commit: (id: string, message: string, paths: string[]) => invoke<string>("workspace_commit", { run: run(id), message, paths }),
   clone: (url: string, near: string | null) => invoke<string>("workspace_clone", { url, near }),
+  publishPlan: (folder: string) => invoke<PublishPlan | null>("workspace_publish_plan", { folder }),
+  publishRepository: (folder: string, name: string, owner: string | null, isPrivate: boolean) =>
+    invoke<string>("workspace_publish_repository", { folder, name, owner, isPrivate }),
+  saveProjectIcon: (sourcePath: string) => invoke<string>("workspace_project_icon_save", { sourcePath }),
   quick: (id: string) => invoke<QuickView>("workspace_quick", { run: run(id) }),
   pull: (id: string) => invoke<void>("workspace_pull", { run: run(id) }),
   startBranch: (id: string, topic: string) => invoke<{ branch: string; cut: string | null }>("workspace_start_branch", { run: run(id), topic }),

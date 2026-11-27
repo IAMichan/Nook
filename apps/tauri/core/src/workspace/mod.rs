@@ -54,6 +54,7 @@ pub mod session_cards;
 pub mod settings;
 pub mod skills;
 pub mod source_control;
+pub mod source_control_rules;
 pub mod store;
 pub mod tasks;
 pub mod terminal;
