@@ -235,6 +235,10 @@ export interface ProjectOverride {
   branchPrefix?: string | null;
   titleInstructions?: string | null;
   agentInstructions?: string | null;
+  autoPull?: boolean | null;
+  submodules?: "recursive" | "topLevel" | "skip" | null;
+  agentsOff?: string[];
+  icon?: string | null;
   archived?: boolean;
 }
 
@@ -247,6 +251,10 @@ export interface ProjectDefaults {
   branchPrefix: string;
   titleInstructions: string;
   agentInstructions: string;
+  autoPull: boolean;
+  submodules: "recursive" | "topLevel" | "skip";
+  agentsOff: string[];
+  icon: string | null;
   own: string[];
 }
 
@@ -256,12 +264,41 @@ export interface ProjectSettingsView {
   defaults: ProjectDefaults;
 }
 
+export type SetupStep = "fetchBase" | "checkOut" | "runSetup" | "startAgent";
+
+export type StepState =
+  | { kind: "pending" }
+  | { kind: "running"; since: string }
+  | { kind: "done"; seconds: number }
+  | { kind: "skipped" }
+  | { kind: "failed"; message: string };
+
+export interface SetupNote {
+  id: number;
+  step: SetupStep;
+  text: string;
+}
+
+export interface WorktreeSetupProgress {
+  states: Partial<Record<SetupStep, StepState>>;
+  notes: SetupNote[];
+  startedAt: string;
+}
+
+export interface PublishPlan {
+  folder: string;
+  name: string;
+  needsRepository: boolean;
+  needsFirstCommit: boolean;
+}
+
 export interface WorkspaceOverview {
   runs: WorkspaceRun[];
   running: string[];
   gitAvailable: boolean;
   providers: ProviderInfo[];
   settings: WorkspaceSettings;
+  worktreeSetups?: Record<string, WorktreeSetupProgress>;
 }
 
 export type PathVerdict = "ok" | "missing" | "notDirectory" | "unreadable" | "forbidden";
@@ -435,6 +472,10 @@ export const workspaceApi = {
     invoke<void>("workspace_apply_hunk", { run: run(id), file, index, action }),
   commit: (id: string, message: string, paths: string[]) => invoke<string>("workspace_commit", { run: run(id), message, paths }),
   clone: (url: string, near: string | null) => invoke<string>("workspace_clone", { url, near }),
+  publishPlan: (folder: string) => invoke<PublishPlan | null>("workspace_publish_plan", { folder }),
+  publishRepository: (folder: string, name: string, owner: string | null, isPrivate: boolean) =>
+    invoke<string>("workspace_publish_repository", { folder, name, owner, isPrivate }),
+  saveProjectIcon: (sourcePath: string) => invoke<string>("workspace_project_icon_save", { sourcePath }),
   quick: (id: string) => invoke<QuickView>("workspace_quick", { run: run(id) }),
   pull: (id: string) => invoke<void>("workspace_pull", { run: run(id) }),
   startBranch: (id: string, topic: string) => invoke<{ branch: string; cut: string | null }>("workspace_start_branch", { run: run(id), topic }),
@@ -565,7 +606,17 @@ export interface TerminalInfo {
   created: string;
 }
 
-export interface ProjectScript { id: string; name: string; command: string; runOnWorktreeCreate: boolean; previewUrl: string | null; autoOpenPreview: boolean }
+export interface ProjectScript {
+  id: string;
+  name: string;
+  command: string;
+  runOnWorktreeCreate: boolean;
+  previewUrl: string | null;
+  autoOpenPreview: boolean;
+  stopOnSettle?: boolean;
+  runOnSettle?: boolean;
+  async?: boolean;
+}
 export interface DevServer { pid: number; command: string; port: number; url: string; /** Started by Nook: only such a server can be stopped from here (AG-134). */ startedByNook?: boolean }
 export interface BrowserState { open: boolean; url: string; title: string; loading: boolean; openedBy: string | null; lastError: string | null; unavailable?: string }
 

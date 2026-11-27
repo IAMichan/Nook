@@ -449,7 +449,7 @@ pub fn bar_moved(app: AppHandle, state: State<'_, AppState>) {
 
 /// Maak (of herstel) de snelkoppeling "Nook" in het Startmenu, zodat die rechtstreeks naar het draaiende Nook.exe wijst.
 /// An existing "Nook" shortcut on the desktop (for example an old one that points at a loose start script) is repaired too.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn repair_start_menu_shortcut() -> Res<String> {
     #[cfg(windows)]
     {

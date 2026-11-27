@@ -158,7 +158,7 @@ fn profile_home(state: &AgentsState, profile_id: Option<&str>) -> Option<PathBuf
 }
 
 /// Elke koppeling met zijn stand, ook per extra account van Claude Code en Codex.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn agents_integrations(state: State<'_, AgentsState>) -> Vec<Integration> {
     let agent_of = |t: Target| AgentKind::ALL.into_iter().find(|k| k.targets().contains(&t));
     let mut list: Vec<Integration> = Target::ALL

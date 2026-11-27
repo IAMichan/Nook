@@ -178,6 +178,10 @@ pub fn strip_ansi(text: &str) -> String {
 
 // MARK: Scripts van het project
 
+fn default_true() -> bool {
+    true
+}
+
 /// Een commando dat een project voor zijn sessies definieert, in `nook.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,6 +193,14 @@ pub struct ProjectScript {
     pub run_on_worktree_create: bool,
     pub preview_url: Option<String>,
     pub auto_open_preview: bool,
+    #[serde(default)]
+    pub stop_on_settle: bool,
+    #[serde(default)]
+    pub run_on_settle: bool,
+    /// Only for `runOnWorktreeCreate`: `true` (default) launches the agent while the script runs; `"async": false`
+    /// holds the agent's first turn until the script ends, and fails the start if the script exits non-zero.
+    #[serde(rename = "async", default = "default_true")]
+    pub async_run: bool,
 }
 
 pub const SCRIPT_FILE: &str = "nook.json";
@@ -243,9 +255,39 @@ pub fn parse_scripts(bytes: &[u8]) -> Vec<ProjectScript> {
             run_on_worktree_create: item.get("runOnWorktreeCreate").and_then(Value::as_bool).unwrap_or(false),
             preview_url: item.get("previewUrl").and_then(Value::as_str).and_then(super::bridge::allowed_url),
             auto_open_preview: item.get("autoOpenPreview").and_then(Value::as_bool).unwrap_or(false),
+            stop_on_settle: item.get("stopOnSettle").and_then(Value::as_bool).unwrap_or(false),
+            run_on_settle: item.get("runOnSettle").and_then(Value::as_bool).unwrap_or(false),
+            async_run: item.get("async").and_then(Value::as_bool).unwrap_or(true),
         });
     }
     out
+}
+
+/// The setup scripts of a new worktree, and whether any of them holds the agent until it ends (`"async": false`).
+pub fn setup_scripts(scripts: &[ProjectScript]) -> (Vec<ProjectScript>, bool) {
+    let setup: Vec<ProjectScript> = scripts.iter().filter(|s| s.run_on_worktree_create).cloned().collect();
+    let holds = setup.iter().any(|s| !s.async_run);
+    (setup, holds)
+}
+
+/// Wraps a blocking setup script so it writes its exit code to `status_file` and closes its terminal on success
+/// (while staying open with the error output when it fails). Matches macOS `ProjectScripts.blockingCommand`.
+pub fn blocking_command(command: &str, status_file: &str, windows: bool) -> String {
+    if windows {
+        let escaped_file = status_file.replace('\'', "''");
+        return format!(
+            "& {{ $global:LASTEXITCODE = 0; try {{ {command}; if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {{ $__nook_status = [int]$LASTEXITCODE }} elseif ($?) {{ $__nook_status = 0 }} else {{ $__nook_status = 1 }} }} catch {{ Write-Error $_; $__nook_status = 1 }}; [System.IO.File]::WriteAllText('{escaped_file}', [string]$__nook_status); if ($__nook_status -eq 0) {{ exit 0 }} }}"
+        );
+    }
+    let script =
+        format!("(\n{command}\n)\n__nook_status=$?\nprintf '%s' \"$__nook_status\" > {}\nexit \"$__nook_status\"", quote(status_file));
+    format!("/bin/sh -c {} && exit 0", quote(&script))
+}
+
+/// Parses the exit code written by [`blocking_command`]; returns `None` while the script is still running.
+pub fn exit_status(bytes: Option<&[u8]>) -> Option<i32> {
+    let data = bytes?;
+    String::from_utf8_lossy(data).trim().parse::<i32>().ok()
 }
 
 // MARK: Dev-servers
@@ -479,5 +521,42 @@ mod tests {
         let long = command_request(&long_cmd, "~/proj", "/home/alice").unwrap();
         assert_eq!(long.folder, "/home/alice/proj");
         assert_eq!(long.title.chars().count(), 40);
+    }
+
+    #[test]
+    fn setup_scripts_and_blocking_command() {
+        let json = br#"{"scripts":[
+            {"name":"Install","command":"pnpm install","runOnWorktreeCreate":true,"async":false},
+            {"name":"Warm","command":"pnpm warm","runOnWorktreeCreate":true},
+            {"name":"Dev","command":"pnpm dev","stopOnSettle":true,"runOnSettle":false}
+        ]}"#;
+        let all = parse_scripts(json);
+        assert_eq!(all.len(), 3);
+        assert!(!all[0].async_run);
+        assert!(all[1].async_run);
+        assert!(all[2].stop_on_settle);
+
+        let (setup, holds) = setup_scripts(&all);
+        assert_eq!(setup.len(), 2);
+        assert!(holds);
+
+        let (bg_only, holds_bg) = setup_scripts(&all[1..]);
+        assert_eq!(bg_only.len(), 1);
+        assert!(!holds_bg);
+
+        assert_eq!(exit_status(None), None);
+        assert_eq!(exit_status(Some(b"")), None);
+        assert_eq!(exit_status(Some(b"0\n")), Some(0));
+        assert_eq!(exit_status(Some(b" 42 ")), Some(42));
+
+        let unix = blocking_command("echo hi && exit 7", "/tmp/status file", false);
+        assert!(unix.starts_with("/bin/sh -c "));
+        assert!(unix.ends_with(" && exit 0"));
+        assert!(unix.contains("/tmp/status file"));
+
+        let win = blocking_command("npm ci", r"C:\Temp\nook's-status", true);
+        assert!(win.contains("npm ci"));
+        assert!(win.contains("WriteAllText"));
+        assert!(win.contains("nook''s-status"));
     }
 }

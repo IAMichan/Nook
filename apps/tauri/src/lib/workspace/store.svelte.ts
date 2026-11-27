@@ -1,5 +1,13 @@
 // De staat van de werkruimte in de interface (Svelte 5 runes). De waarheid staat in Rust; dit volgt de events.
-import { workspaceApi, workspaceEvents, type MessageQueue, type RunEvent, type WorkspaceOverview, type WorkspaceRun } from "./api";
+import {
+  workspaceApi,
+  workspaceEvents,
+  type MessageQueue,
+  type RunEvent,
+  type WorkspaceOverview,
+  type WorkspaceRun,
+  type WorktreeSetupProgress,
+} from "./api";
 
 class WorkspaceStore {
   overview = $state<WorkspaceOverview | null>(null);
@@ -56,6 +64,11 @@ class WorkspaceStore {
   run(id: string): WorkspaceRun | undefined {
     const key = id.replace(/^run:/, "");
     return this.runs.find((r) => r.id === key);
+  }
+
+  worktreeSetup(id: string): WorktreeSetupProgress | undefined {
+    const key = id.replace(/^run:/, "");
+    return this.overview?.worktreeSetups?.[key];
   }
 
   isRunning(id: string): boolean {

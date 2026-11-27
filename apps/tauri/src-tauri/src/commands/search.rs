@@ -954,7 +954,7 @@ pub struct VoiceModelsView {
     pub linked_path: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn voice_reusable_models(reuse_model_id: Option<String>, snapshot_path: Option<String>) -> Res<VoiceModelsView> {
     let models_dir = transcribe::speech_models_dir();
     let mut linked_path = None;

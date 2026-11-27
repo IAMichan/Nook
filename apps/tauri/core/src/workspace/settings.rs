@@ -35,6 +35,14 @@ pub struct ProjectOverride {
     pub title_instructions: Option<String>,
     /// Instructions every agent in this project gets, instead of the ones for all projects.
     pub agent_instructions: Option<String>,
+    /// Per-project override for auto-pulling the default branch (`None` = Inherited, `Some(true)` = On, `Some(false)` = Off).
+    pub auto_pull: Option<bool>,
+    /// Per-project override for worktree submodules (`None` = Inherited, `Some("recursive" | "topLevel" | "skip")`).
+    pub submodules: Option<String>,
+    /// Coding agent ids disabled for this project (empty = all agents enabled).
+    pub agents_off: Vec<String>,
+    /// Stored project icon (`"emoji:🚀"`, `"monogram:NK:mint"`, `"image:/abs/path.png"`).
+    pub icon: Option<String>,
     /// Archived: kept, but no longer offered in the lists (`ArchivedProjectsSection`).
     pub archived: bool,
 }
@@ -56,6 +64,10 @@ pub struct ProjectDefaults {
     pub branch_prefix: String,
     pub title_instructions: String,
     pub agent_instructions: String,
+    pub auto_pull: bool,
+    pub submodules: String,
+    pub agents_off: Vec<String>,
+    pub icon: Option<String>,
     /// The fields this project sets itself ("provider", "mode", …); the others are inherited.
     pub own: Vec<&'static str>,
 }
@@ -272,6 +284,11 @@ impl WorkspaceSettings {
         }
         value.name = value.name.filter(|n| !n.trim().is_empty());
         value.branch_prefix = value.branch_prefix.filter(|p| !p.trim().is_empty()).map(|p| super::models::normalized_branch_prefix(&p));
+        value.submodules = value.submodules.filter(|s| matches!(s.as_str(), "recursive" | "topLevel" | "skip"));
+        value.icon = value.icon.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        value.agents_off.retain(|a| !a.trim().is_empty());
+        value.agents_off.sort();
+        value.agents_off.dedup();
         if value.is_empty() {
             self.project_overrides.remove(&key);
         } else {
@@ -279,8 +296,22 @@ impl WorkspaceSettings {
         }
     }
 
-    /// The values a new session in `path` starts with: the project's own where it sets them, else the ones for all.
+    pub fn is_archived_project(&self, path: &str) -> bool {
+        self.project(path).archived
+    }
+
+    /// Whether auto-pull is enabled for `path`, falling back to the global setting when inherited.
+    pub fn auto_pull_enabled(&self, path: &str, global_auto_pull: bool) -> bool {
+        self.project(path).auto_pull.unwrap_or(global_auto_pull)
+    }
+
+    /// The values a new session in `path` starts with, falling back to default `WorktreeSettings` for global source-control flags.
     pub fn defaults_for(&self, path: &str) -> ProjectDefaults {
+        self.defaults_for_with_worktrees(path, &crate::settings::WorktreeSettings::default())
+    }
+
+    /// The values a new session in `path` starts with: the project's own where it sets them, else the ones for all.
+    pub fn defaults_for_with_worktrees(&self, path: &str, worktrees: &crate::settings::WorktreeSettings) -> ProjectDefaults {
         let o = self.project(path);
         let mut own = vec![];
         let mut pick = |set: bool, name: &'static str| {
@@ -295,6 +326,8 @@ impl WorkspaceSettings {
         pick(o.branch_prefix.is_some(), "branchPrefix");
         pick(o.title_instructions.is_some(), "titleInstructions");
         pick(o.agent_instructions.is_some(), "agentInstructions");
+        pick(o.auto_pull.is_some(), "autoPull");
+        pick(o.submodules.is_some(), "submodules");
         ProjectDefaults {
             provider: o.provider.unwrap_or(self.default_provider),
             mode: o.mode.unwrap_or(self.default_mode),
@@ -303,6 +336,10 @@ impl WorkspaceSettings {
             branch_prefix: super::models::normalized_branch_prefix(o.branch_prefix.as_deref().unwrap_or(&self.branch_prefix)),
             title_instructions: o.title_instructions.unwrap_or_default(),
             agent_instructions: o.agent_instructions.unwrap_or_else(|| self.agent_instructions.clone()),
+            auto_pull: o.auto_pull.unwrap_or(worktrees.auto_pull_default_branch),
+            submodules: o.submodules.unwrap_or_else(|| worktrees.submodules.clone()),
+            agents_off: o.agents_off,
+            icon: o.icon,
             own,
         }
     }

@@ -276,6 +276,23 @@ impl Git {
         fallback.or_else(|| self.current_branch(repo))
     }
 
+    /// Brings a remote-tracking base (`origin/main`) up to date right before a worktree starts from it.
+    /// Best effort: offline or on timeout, the worktree starts from the last fetched state. Local bases are left alone.
+    pub fn refresh_remote_base(&self, base: &str, repo: &str, timeout: Duration) -> super::worktree_setup::RemoteBaseRefresh {
+        use super::worktree_setup::RemoteBaseRefresh;
+        let Some((remote, branch)) = base.split_once('/') else {
+            return RemoteBaseRefresh::Local;
+        };
+        if branch.is_empty() || !self.remotes(repo).iter().any(|r| r == remote) || !self.ref_exists(&format!("refs/remotes/{base}"), repo) {
+            return RemoteBaseRefresh::Local;
+        }
+        let refspec = format!("+refs/heads/{branch}:refs/remotes/{base}");
+        match self.run_with(&["fetch", "--quiet", "--no-tags", remote, &refspec], repo, timeout, &[0], &BTreeMap::new()) {
+            Ok(_) => RemoteBaseRefresh::Fetched,
+            Err(err) => RemoteBaseRefresh::Failed(err.0),
+        }
+    }
+
     pub fn ref_exists(&self, r: &str, repo: &str) -> bool {
         self.run(&["rev-parse", "--verify", "--quiet", &format!("{r}^{{commit}}")], repo).is_ok()
     }
@@ -1051,6 +1068,28 @@ mod tests {
         assert_eq!(std::fs::read_to_string(p.join("secret.txt")).unwrap(), "geheim");
         git.remove_checkpoints(&repo, "abc");
         assert!(git.run(&["rev-parse", "--verify", "-q", &r], &repo).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refresh_remote_base_handles_local_fetched_and_failed() {
+        use super::super::worktree_setup::RemoteBaseRefresh;
+        let Some((git, root, repo)) = setup() else { return };
+        // Local branch or unknown remote: nothing to fetch.
+        assert_eq!(git.refresh_remote_base("main", &repo, Duration::from_secs(5)), RemoteBaseRefresh::Local);
+        assert_eq!(git.refresh_remote_base("origin/main", &repo, Duration::from_secs(5)), RemoteBaseRefresh::Local);
+
+        // Real bare remote: fetch updates origin/main.
+        let bare = root.join("origin.git").to_string_lossy().into_owned();
+        git.raw(&["init".into(), "--bare".into(), bare.clone()], None, Duration::from_secs(15)).unwrap();
+        git.run(&["remote", "add", "origin", &bare], &repo).unwrap();
+        git.run(&["push", "-q", "origin", "main"], &repo).unwrap();
+        assert_eq!(git.refresh_remote_base("origin/main", &repo, Duration::from_secs(5)), RemoteBaseRefresh::Fetched);
+
+        // Broken remote URL: returns Failed so worktree setup can fall back to the last fetched state.
+        let missing = root.join("does-not-exist.git").to_string_lossy().into_owned();
+        git.run(&["remote", "set-url", "origin", &missing], &repo).unwrap();
+        assert!(matches!(git.refresh_remote_base("origin/main", &repo, Duration::from_secs(5)), RemoteBaseRefresh::Failed(_)));
         let _ = std::fs::remove_dir_all(root);
     }
 }

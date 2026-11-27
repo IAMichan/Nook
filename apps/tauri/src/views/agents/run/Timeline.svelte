@@ -20,6 +20,7 @@
   import Ico from "../../../components/ui/Ico.svelte";
   import EventRow from "./EventRow.svelte";
   import PlanCard from "./PlanCard.svelte";
+  import WorktreeSetupChecklist from "./WorktreeSetupChecklist.svelte";
   import { sessionFind } from "../../../lib/session-find.svelte";
   import { EndFollow } from "../../../lib/end-follow.svelte";
   import { firstNew, loadVisit, saveVisit } from "../../../lib/workspace/timeline-visits";
@@ -57,7 +58,7 @@
   let open = $state(new Set<string>());
   let expanded = $state(new Set<string>());
   let scroller = $state<HTMLDivElement>();
-  const follow = new EndFollow("[data-event], .summary, .live, .recovery");
+  const follow = new EndFollow("[data-event], .summary, .live, .setup-checklist, .recovery");
   let finding = $state(false);
   let query = $state("");
   let findIndex = $state<number | null>(null);
@@ -66,6 +67,7 @@
 
   const shown = $derived(events.filter((e) => !(e.kind === "system" && e.tool === "launch")));
   const active = $derived(isActive(run.status));
+  const setup = $derived(workspace.worktreeSetup(run.id));
   // Settings › Sessions › "Agent's work in the timeline" (`TimelineDetail` on the Mac, `lib/workspace/timeline-detail.ts`):
   // the blocks leave out the steps it hides; while the find bar is open every event shows, so every match can be reached.
   const detail = $derived(timelineDetail(workspace.settings?.timelineDetail));
@@ -385,7 +387,9 @@
 
     {#each list as b (b.id)}{#if b.id === newFrom}<TimelineNewDivider />{/if}{@render blockView(b)}{/each}
 
-    {#if active}
+    {#if setup}
+      <WorktreeSetupChecklist progress={setup} {active} oncancel={() => workspace.act(() => workspaceApi.stop(run.id))} />
+    {:else if active}
       {@const waiting = run.status === "waitingApproval" || asking}
       {@const compacting = !!run.compacting && !waiting}
       <div class="live">

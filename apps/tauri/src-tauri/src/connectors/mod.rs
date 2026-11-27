@@ -79,10 +79,6 @@ pub fn setup(app: &AppHandle) {
     let weak = Arc::downgrade(&whatsapp_accounts);
     whatsapp_accounts.wire(move |link| wire_whatsapp(&app_for_wa, link, weak.clone()));
 
-    {
-        let accounts = whatsapp_accounts.clone();
-        crate::chats::inbox::set_wa_votes(move |chat| accounts.route(chat).can_vote());
-    }
     let chat_helper = crate::chats::helper::setup(app, env.chats.clone());
     app.manage(Connectors {
         env: env.clone(),
@@ -93,6 +89,7 @@ pub fn setup(app: &AppHandle) {
         chat_helper,
     });
     crate::chats::follow_up::setup(app);
+    crate::chats::system_notices::setup(app, chats.clone());
     // Verversen en luisteren draaien op de runtime van Tauri.
     tauri::async_runtime::spawn(async move {
         // Saved at most every few seconds, and only when something changed.

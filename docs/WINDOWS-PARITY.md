@@ -575,7 +575,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
   - Done: the prompt library (`core/src/workspace/prompts.rs`, `prompts.json`, the Mac's `SavedPrompt` rules: `{{variables}}` with defaults asked in a strip, one trigger per prompt): "+" in both composers saves what you typed as a prompt and lists your prompts, and a prompt's `/trigger` is in the `/` list; beside a session, the side panel's pull request offers Explain, Ask and Fix failing checks, which land above what you wrote in that session's composer (`session-prompts.ts`, `composer-inbox.svelte.ts`). Skills come with the `$` list (AG-90).
   - Part done: saved prompts live in Settings › Instructions (`core/src/prompt_library.rs`, as on the Mac, which uses them nowhere else). The skill index: `$` in a session composer lists the skills on disk that the session's agent reads, project before user, each agent's own folders (`core/src/workspace/skills.rs`, `workspace_skills`, front matter only, 64 KB at most). Open: Explain/Fix from the side panel (`SessionPrompts`, `ComposerInbox`), which needs the side panel (AG-100).
 
-- [ ] **AG-94** Worktree setup checklist and progress, blocking setup scripts, 5 s base-fetch cap (`WorktreeSetupChecklist`, `WorktreeSetupProgress`, #1518) · M
+- [x] **AG-94** Worktree setup checklist and progress, blocking setup scripts, 5 s base-fetch cap (`WorktreeSetupChecklist`, `WorktreeSetupProgress`, #1518) · M
 
 - [x] **AG-95** Sessions without a project, "Turn into project" (`ScratchProjects`) · S
   - Done: "or start without a project" under the new-session question ("What should we work on?" / "No project ⌄" to pick a project again); `workspace_start` with no folder makes ~/.nook/scratch/<day>-<task>-<id> (`core/src/workspace/scratch.rs`) and keeps it out of Recent; the list shows "No project" with the dashed mark; the session's menu has Turn into project (`workspace_keep_scratch`, a favorite) and Make it a git repository (`workspace_init_git`, the sessions there get the repository).
@@ -605,7 +605,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-105** Browser element snippets into the composer (#1570) · S Done (2026-11-23): interactive browser element picker (`src-tauri/src/workspace/browser.rs`, `views/workspace/Browser.svelte`) inserts picked element snippets into the composer.
 
-- [ ] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
+- [x] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
 
 ### 4.7 Agents list
 
@@ -625,7 +625,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 ### 4.8 Git and source control
 
-- [ ] **AG-120** Auto-pull, publish, project archive, Settings › Source control (`SourceControl`, `SourceControlSettings`) · M
+- [x] **AG-120** Auto-pull, publish, project archive, Settings › Source control (`SourceControl`, `SourceControlSettings`) · M Done (2026-11-27): added `core/src/workspace/source_control_rules.rs` (`AutoPull`, `CloneLayout`, `RepositoryPublish`, `CommitReference`, `store_project_icon`, `Git::auto_pull`, `Git::clone_with_layout`, `Git::prepare_publish`, `Git::publish`, `create_github_repository`), background auto-pull loop in `src-tauri/src/workspace/mod.rs`, host-layout & SSH→HTTPS clone fallback in `clones.rs`, `workspace_publish_plan` / `workspace_publish_repository` / `workspace_project_icon_save` commands, per-project source control controls (`autoPull`, `submodules`, `agentsOff`, `icon`, Publish to GitHub) in `Projects.svelte`, and `PublishRepositoryModal.svelte`.
 
 - [x] **AG-121** Worktree cleanup with report, archive, move, build leftovers (#1616), disk usage warning (`WorktreeCleanup`, `WorktreeCleanupReportView`, `WorktreeArchive`, `WorktreeMove`, `BuildLeftovers`) · M Done (2026-11-23): `core/src/workspace/pr_checkout.rs`, `commands/workspace_tools.rs`, and `views/settings/Worktrees.svelte` add cleanup report, `.scratch` archive, worktree move detection, build leftovers sweep, and low-disk warning.
 

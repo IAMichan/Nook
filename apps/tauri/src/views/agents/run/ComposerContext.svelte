@@ -196,8 +196,11 @@
         <button class="x" aria-label={tr("Verwijder", "Remove")} onclick={() => (pictures = pictures.filter((p) => p !== path))}><Ico name="x" size={11} stroke={2.6} /></button></span>
     {/each}
     {#each attached as ref (ref.id)}
-      <span class="tile" title={ref.id}><Ico name={/\.[a-z0-9]{1,6}$/i.test(ref.id) ? "file" : "folder"} size={14} /><span class="tname">{ref.label}</span>
-        <button class="x" aria-label={tr("Verwijder", "Remove")} onclick={() => (attached = attached.filter((a) => a.id !== ref.id))}><Ico name="x" size={11} stroke={2.6} /></button></span>
+      <span class="tile" title={ref.kind === "element" ? ref.label : ref.id}>
+        <Ico name={ref.kind === "element" ? "crosshair" : /\.[a-z0-9]{1,6}$/i.test(ref.id) ? "file" : "folder"} size={14} />
+        <span class="tname">{ref.label}</span>
+        <button class="x" aria-label={tr("Verwijder", "Remove")} onclick={() => (attached = attached.filter((a) => a.id !== ref.id))}><Ico name="x" size={11} stroke={2.6} /></button>
+      </span>
     {/each}
   </div>
 {/if}
