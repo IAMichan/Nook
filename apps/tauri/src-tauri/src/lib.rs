@@ -597,6 +597,7 @@ pub fn run() {
             commands::workspace::workspace_continue_live,
             commands::workspace::workspace_quick,
             commands::workspace::workspace_clone,
+            commands::workspace::workspace_create_project,
             commands::workspace::workspace_publish_plan,
             commands::workspace::workspace_publish_repository,
             commands::workspace::workspace_project_icon_save,

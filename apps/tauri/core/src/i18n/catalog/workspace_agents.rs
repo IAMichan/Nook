@@ -59,4 +59,16 @@ pub const ROWS: &[Row] = &[
         "Codex no inició ninguna conversación.",
     ),
     ("Apply file changes", "Dateiänderungen anwenden", "Appliquer les modifications de fichiers", "Aplicar cambios en archivos"),
+    (
+        "Give the project a name.",
+        "Gib dem Projekt einen Namen.",
+        "Donnez un nom au projet.",
+        "Ponle un nombre al proyecto.",
+    ),
+    (
+        "{name} already exists and is not empty.",
+        "{name} existiert bereits und ist nicht leer.",
+        "{name} existe déjà et n'est pas vide.",
+        "{name} ya existe y no está vacía.",
+    ),
 ];

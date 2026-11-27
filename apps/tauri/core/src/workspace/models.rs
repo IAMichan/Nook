@@ -498,6 +498,9 @@ pub struct WorkspaceRun {
     /// Prompt cache expiry window from the last model request (Claude Code `usage.cache_creation`, AG-32).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_cache: Option<super::token_savings::PromptCacheWindow>,
+    /// Other git repositories this session has edited besides its own (`SessionProjects`, #1549, AG-113).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other_projects: Vec<String>,
 }
 
 impl WorkspaceRun {
@@ -968,6 +971,7 @@ pub(crate) mod tests {
             tasks: None,
             restart: Default::default(),
             prompt_cache: None,
+            other_projects: vec![],
         }
     }
 

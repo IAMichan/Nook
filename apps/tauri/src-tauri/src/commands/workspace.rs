@@ -835,6 +835,32 @@ pub async fn workspace_clone(app: AppHandle, state: State<'_, WorkspaceState>, u
     .await?
 }
 
+/// Creates a new project folder with an empty Git repository (`AddProjectPalette`, #1482, AG-113), pins it as a
+/// favorite project, and returns its path.
+#[tauri::command]
+pub async fn workspace_create_project(app: AppHandle, state: State<'_, WorkspaceState>, name: String, near: Option<String>) -> Res<String> {
+    use nook_core::workspace::{session_projects::AddProjectSource, source_control_rules::CloneLayout};
+
+    let m = state.manager.clone();
+    let folder = blocking(move || {
+        let developer = nook_core::agents::home_dir().join("Developer");
+        let parent = CloneLayout::clone_parent(near.as_deref().map(std::path::Path::new), false, &developer);
+        AddProjectSource::create_project(m.git(), &parent, &name)
+    })
+    .await??;
+
+    {
+        let mut s = lock(&state.settings);
+        if !s.favorite_projects.iter().any(|p| p == &folder) {
+            s.favorite_projects.push(folder.clone());
+        }
+        s.remember_project(&folder);
+        s.save_to(&WorkspaceSettings::file());
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(folder)
+}
+
 /// What publishing a local folder to GitHub would do, shown before confirmation (`PublishPlan` on macOS).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
