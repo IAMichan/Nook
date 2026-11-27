@@ -11,6 +11,7 @@
     formatUpcomingTime,
     usagePageUrl,
     type AccountLimits,
+    type CliProxyHubSnapshot,
     type ResetOutcome,
   } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
@@ -34,6 +35,8 @@
   import UsageModal from "../agents/UsageModal.svelte";
   import AgentMark from "../companion/ui/AgentMark.svelte";
   import UsagePage from "../workspace/UsagePage.svelte";
+  import CliProxyHubs from "./CliProxyHubs.svelte";
+  import SettingsSection from "./SettingsSection.svelte";
 
   // Period and agent of the sessions' figures, as rows of the card (the Mac's Period and Agent pickers).
   let range = $state<UsageRange>((localStorage.getItem("ws.usage.range") as UsageRange) || "week");
@@ -45,8 +48,17 @@
   let refreshing = $state(false);
   let now = $state(new Date());
   let accountLimits = $state<AccountLimits[]>([]);
+  let cliproxyHubs = $state<CliProxyHubSnapshot[]>([]);
   let creditOutcomes = $state<Record<string, ResetOutcome | null>>({});
   let redeemingLocal = $state<Record<string, boolean>>({});
+
+  async function loadCliProxyHubs() {
+    try {
+      cliproxyHubs = await agentApi.cliproxyHubs();
+    } catch {
+      cliproxyHubs = [];
+    }
+  }
 
   async function loadLimits() {
     try {
@@ -77,10 +89,12 @@
     workspace.start();
     let active = true;
     void loadLimits();
+    void loadCliProxyHubs();
     void agentApi.usageRefresh(false).catch(() => {});
 
     const unlisteners: Array<() => void> = [];
     void agentEvents.onUsage(() => { if (active) void loadLimits(); }).then((u) => unlisteners.push(u)).catch(() => {});
+    void agentEvents.onCliProxy(() => { if (active) void loadCliProxyHubs(); }).then((u) => unlisteners.push(u)).catch(() => {});
     void agentEvents.onCodexUsage(() => { if (active) void loadLimits(); }).then((u) => unlisteners.push(u)).catch(() => {});
     void agentEvents.onHistory(() => { if (active) void loadLimits(); }).then((u) => unlisteners.push(u)).catch(() => {});
 
@@ -108,8 +122,11 @@
   async function refreshLimits() {
     refreshing = true;
     try {
-      await agentApi.usageRefresh(true).catch(() => {});
-      await Promise.all([loadLimits(), agents.refresh(), agents.loadHistory(true)]);
+      await Promise.all([
+        agentApi.usageRefresh(true).catch(() => {}),
+        agentApi.cliproxyRefresh(true).catch(() => {}),
+      ]);
+      await Promise.all([loadLimits(), loadCliProxyHubs(), agents.refresh(), agents.loadHistory(true)]);
       now = new Date();
     } finally {
       refreshing = false;
@@ -358,6 +375,16 @@
     <p class="note">{tr("Nog geen accounts met limieten gevonden.", "No accounts with limits found yet.")}</p>
   {/each}
 </div>
+
+<SettingsSection
+  title={tr("CLIProxyAPI-hubs", "CLIProxyAPI hubs")}
+  info={tr(
+    "Een CLIProxyAPI-hub bundelt de logins van meerdere accounts achter één adres. Nook leest alleen wat de hub zelf meldt: welke accounts erin zitten, of ze nu requests aannemen, hoe lang een cooldown nog duurt en de limieten die de hub in de headers van zijn laatste requests zag. Nook vraagt de hub nooit om een provider met het token van een account aan te roepen. Zonder requests via de hub zijn er dus nog geen limieten te zien. De beheersleutel staat in de sleutelhanger en gaat alleen naar het adres van de hub.",
+    "A CLIProxyAPI hub pools the sign-ins of several accounts behind one address. Nook only reads what the hub itself reports: which accounts are in it, whether they take requests right now, how long a cooldown lasts and the limits the hub saw in the headers of its last requests. Nook never asks the hub to call a provider with an account's token, so no limits show until requests have gone through the hub. The management key stays in the keychain and goes only to the hub's address.",
+  )}
+>
+  <CliProxyHubs hubs={cliproxyHubs} editable={true} {now} onchanged={loadCliProxyHubs} />
+</SettingsSection>
 
 <h3>{tr("Sessies gestart in Nook", "Sessions started in Nook")}</h3>
 <p class="section-info">{tr("Alleen sessies die Nook in de werkruimte startte. Sessies in je eigen terminal zie je in de Agents-tab.", "Only sessions Nook started in the workspace. Sessions in your own terminal are in the Agents tab.")}</p>

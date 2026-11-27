@@ -488,7 +488,8 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-47** Active usage polling and reset credits (`ClaudeUsage`, `CodexUsage`, `CodexRateLimits`, `QuotaService`) in `core/src/agents/usage.rs` · M
 
-- [ ] **AG-48** Antigravity quota and CLIProxyAPI hubs (`AntigravityUsage`, `CLIProxyUsage`, `CLIProxyHub`) · M Partly done (2026-11-21): Antigravity quota and CLIProxyAPI hub parsing in `core/src/agents/usage.rs` and `src-tauri/src/agents/usage.rs`. Open: CLIProxyAPI hub management UI in Settings.
+- [x] **AG-48** Antigravity quota and CLIProxyAPI hubs (`AntigravityUsage`, `CLIProxyUsage`, `CLIProxyHub`) · M
+  - Done: Antigravity quota and CLIProxyAPI hub store, no-redirect `/v0/management/auth-files` polling, secret-store management keys, and settled windows (`core/src/agents/usage.rs`, `src-tauri/src/agents/usage.rs`), with editable hub management in Settings › Coding agents › Usage & costs (`CliProxyHubs.svelte`, `AgentsUsage.svelte`) and read-only hub display in the Usage modal Limits tab (`UsageModal.svelte`).
 
 - [x] **AG-49** Usage modal like the Mac (`LimitPool`, `UsageLedger`, `PriceTable`, `UsageLimitCard`: pooling by plan, cost and token tabs, costliest chats, agent filter, Manage usage) · M
 
