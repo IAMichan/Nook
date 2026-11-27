@@ -3,12 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use super::bridge::{self, BridgeLaunch};
+use super::bridge::BridgeLaunch;
 use super::models::{ExecutionMode, PermissionPolicy, RunProvider};
 use super::parsers::claude_user_message;
 use crate::services::telemetry::{OtlpConfig, OtlpHeader, OtlpProtocol, OtlpSignal, BASE_ENDPOINT_ENV, HEADERS_ENV, PROTOCOL_ENV};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LaunchSpec {
     pub executable: String,
     pub arguments: Vec<String>,
@@ -19,6 +19,10 @@ pub struct LaunchSpec {
     pub initial_input: Vec<String>,
     /// Blijft stdin open (voor toestemming en onderbreken)? Anders krijgt de agent een lege invoer.
     pub keeps_input_open: bool,
+    /// One secret line written to stdin before `initial_input`, never recorded in traffic logs (a remote session's bridge token).
+    pub secret_input: Option<String>,
+    /// Close stdin right after `secret_input` and `initial_input` (for a one-shot remote agent that only needed stdin for its token).
+    pub closes_input_after_start: bool,
 }
 
 impl LaunchSpec {
@@ -98,8 +102,8 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
     environment.insert("NOOK_RUN_ID".into(), input.run_id.clone());
     let instructions = {
         let own = input.instructions.trim().to_string();
-        if input.bridge.is_some() {
-            [own, bridge::INSTRUCTIONS.to_string()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
+        if let Some(b) = &input.bridge {
+            [own, b.instructions().to_string()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
         } else {
             own
         }
@@ -158,6 +162,7 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
                 working_directory: input.working_directory.clone(),
                 initial_input: if input.prompt.is_empty() { vec![] } else { vec![claude_user_message(&input.prompt, false)] },
                 keeps_input_open: true,
+                ..Default::default()
             }
         }
         RunProvider::Codex => {
@@ -201,6 +206,7 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
                 working_directory: input.working_directory.clone(),
                 initial_input: vec![],
                 keeps_input_open: false,
+                ..Default::default()
             }
         }
         _ => {
@@ -230,6 +236,7 @@ pub fn spec(input: &CommandInput) -> LaunchSpec {
                 working_directory: input.working_directory.clone(),
                 initial_input: vec![],
                 keeps_input_open: false,
+                ..Default::default()
             }
         }
     }
@@ -574,7 +581,7 @@ mod tests {
     #[test]
     fn bridge_goes_on_the_command_line() {
         let mut i = input(RunProvider::Claude, "", None, "");
-        i.bridge = Some(BridgeLaunch { script: "/h/.nook/nook-mcp".into() });
+        i.bridge = Some(BridgeLaunch { script: "/h/.nook/nook-mcp".into(), ..Default::default() });
         let a = spec(&i).arguments;
         assert!(value("--mcp-config", &a).unwrap().contains("nook-mcp"));
         assert!(value("--append-system-prompt", &a).unwrap().contains("running inside Nook"));

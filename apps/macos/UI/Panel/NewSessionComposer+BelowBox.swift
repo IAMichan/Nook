@@ -101,6 +101,15 @@ extension NewSessionComposer {
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, NookTheme.Spacing.md)
+        } else if startsAutomatically {
+            // "Automatic": say where it may go, or that it stays here until the project is shared with a machine.
+            let shared = MachineBalance.sharedMachines(RemoteMachines.load(), project: config.projectPath)
+                .filter { $0.balanceLevel != .manualOnly }.map(\.name)
+            Text(shared.isEmpty ? tr("ws.remote.autoNone") : tr("ws.remote.autoNotice", shared.joined(separator: ", ")))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, NookTheme.Spacing.md)
         } else if config.provider == .antigravity, antigravity.installed == nil {
             AntigravitySetupRow().padding(.horizontal, NookTheme.Spacing.md)
         } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {

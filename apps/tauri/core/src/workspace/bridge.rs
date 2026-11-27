@@ -679,7 +679,7 @@ pub fn describe_tool(tool: &str, input: &Value) -> Option<(String, Option<String
 }
 
 /// Wie de brug aanroept: een sessie die Nook draait, of een agent in een terminal die de brug zelf koppelde.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BridgeCaller {
     /// Het id van de sessie in Nook, of `None` voor een agent in een terminal.
@@ -689,6 +689,9 @@ pub struct BridgeCaller {
     pub directory: String,
     pub mode: Option<ExecutionMode>,
     pub permission: Option<PermissionPolicy>,
+    /// A session on another machine: only `remote_bridge::allows` applies to it.
+    #[serde(default)]
+    pub remote: bool,
 }
 
 impl BridgeCaller {
@@ -884,17 +887,38 @@ pub fn terminal_tail(text: &str, lines: usize, limit: usize) -> String {
 pub const INSTRUCTIONS: &str = "You are running inside Nook, a desktop app the user is watching while you work. Nook's workspace is available through the `nook` MCP tools: start long-running processes such as dev servers or watchers with terminal_run (the user sees them in Nook's terminal; check their output with terminal_read), open local or https pages in Nook's browser with browser_open and verify them with browser_read (its text and console), and when the work is committed and ready, propose a pull request with pull_request_create (the user approves it in Nook). You can check or watch a pull request with get_pull_request_status and watch_pull_request, search/organize/inspect other sessions with session_search, session_organize and session_questions, manage scheduled tasks with schedule_task / list_scheduled_tasks / update_scheduled_task / run_scheduled_task_now (changes always ask the user), and ask the user for API keys or tokens safely with request_secret (delivered as an owner-only file by default so the value stays out of chat history). nook_tools and nook_use reach Nook's own tools and connectors (actions wait for the user's approval), chat_list, chat_read and chat_send reach the user's chat apps, nook_chat_list, nook_chat_read and nook_chat_send reach Nook Chat, and take_over_screen lets you read the user's screen for a while. Always open pull requests that way, never with `gh pr create --web` or by opening GitHub's page in the user's browser; when `gh` reports a rate limit, call pull_request_create, which uses GitHub's API instead. Short commands whose output you need right away can still run in your own shell.";
 
 /// Hoe een sessie die Nook draait de brug krijgt: de MCP-server op de opdrachtregel van de agent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BridgeLaunch {
     /// Pad van `nook-mcp`.
     pub script: String,
+    /// More variables for the server: on another machine the socket ssh forwards and the file with the session's token
+    /// (`remote_bridge`).
+    pub env: std::collections::BTreeMap<String, String>,
+    /// The session runs on another machine: it gets the tools for that, and the instructions that say so.
+    pub remote: bool,
 }
 
 impl BridgeLaunch {
+    /// The server's environment: the session's id and what `env` adds.
+    pub fn server_env(&self, run_id: &str) -> std::collections::BTreeMap<String, String> {
+        let mut env = self.env.clone();
+        env.insert("NOOK_RUN_ID".into(), run_id.into());
+        env
+    }
+
+    /// What the agent is told about Nook's tools: all of them here, the few for another machine there.
+    pub fn instructions(&self) -> &'static str {
+        if self.remote {
+            super::remote_bridge::INSTRUCTIONS
+        } else {
+            INSTRUCTIONS
+        }
+    }
+
     /// Claude Code: de server als `--mcp-config` (naast je eigen servers) en zijn tools vooraf toegestaan, omdat Nook
     /// zelf over elke aanroep beslist.
     pub fn claude_arguments(&self, run_id: &str) -> Vec<String> {
-        let config = json!({"mcpServers": {SERVER_NAME: {"type": "stdio", "command": self.script, "args": ["--agent", "claude-code"], "env": {"NOOK_RUN_ID": run_id}}}});
+        let config = json!({"mcpServers": {SERVER_NAME: {"type": "stdio", "command": self.script, "args": ["--agent", "claude-code"], "env": self.server_env(run_id)}}});
         vec!["--mcp-config".into(), config.to_string(), "--allowedTools".into(), format!("mcp__{SERVER_NAME}")]
     }
 
@@ -907,7 +931,10 @@ impl BridgeLaunch {
             "-c".into(),
             format!("{prefix}.args=[{}, {}]", toml("--agent"), toml("codex")),
             "-c".into(),
-            format!("{prefix}.env={{ NOOK_RUN_ID = {} }}", toml(run_id)),
+            format!(
+                "{prefix}.env={{ {} }}",
+                self.server_env(run_id).iter().map(|(k, v)| format!("{k} = {}", toml(v))).collect::<Vec<_>>().join(", ")
+            ),
             "-c".into(),
             format!("{prefix}.tool_timeout_sec=900"),
         ]
@@ -978,6 +1005,12 @@ pub enum RpcAction {
 }
 
 pub fn handle_rpc(message: &Value) -> RpcAction {
+    handle_rpc_for(message, false)
+}
+
+/// Same as [`handle_rpc`], with `remote == true` exposing only the tools allowed for a session on another machine
+/// (`remote_bridge::allows`) and the remote instructions.
+pub fn handle_rpc_for(message: &Value, remote: bool) -> RpcAction {
     let Some(id) = message.get("id").filter(|v| !v.is_null()).cloned() else { return RpcAction::Ignore };
     let method = message.get("method").and_then(Value::as_str).unwrap_or("");
     let params = message.get("params").cloned().unwrap_or(json!({}));
@@ -990,11 +1023,15 @@ pub fn handle_rpc(message: &Value) -> RpcAction {
                 "protocolVersion": requested,
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": SERVER_NAME, "title": "Nook workspace", "version": "1"},
-                "instructions": INSTRUCTIONS
+                "instructions": if remote { super::remote_bridge::INSTRUCTIONS } else { INSTRUCTIONS }
             }))
         }
         "ping" => result(json!({})),
-        "tools/list" => result(json!({"tools": BridgeTool::ALL.iter().map(|t| t.definition()).collect::<Vec<_>>()})),
+        "tools/list" => {
+            let tools: Vec<Value> =
+                BridgeTool::ALL.iter().filter(|t| !remote || super::remote_bridge::allows(**t)).map(|t| t.definition()).collect();
+            result(json!({"tools": tools}))
+        }
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             match BridgeTool::named(name) {
@@ -1631,7 +1668,28 @@ mod tests {
     use super::*;
 
     fn caller(mode: Option<ExecutionMode>, permission: Option<PermissionPolicy>) -> BridgeCaller {
-        BridgeCaller { run: Some("r".into()), agent: "Claude Code".into(), title: "t".into(), directory: "/w".into(), mode, permission }
+        BridgeCaller {
+            run: Some("r".into()),
+            agent: "Claude Code".into(),
+            title: "t".into(),
+            directory: "/w".into(),
+            mode,
+            permission,
+            remote: false,
+        }
+    }
+
+    #[test]
+    fn remote_rpc_lists_only_allowed_tools() {
+        let RpcAction::Reply(init) = handle_rpc_for(&json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}), true) else { panic!() };
+        assert!(init["result"]["instructions"].as_str().unwrap().contains("another machine over SSH"));
+        let RpcAction::Reply(list) = handle_rpc_for(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}), true) else { panic!() };
+        let names: Vec<&str> = list["result"]["tools"].as_array().unwrap().iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"browser_open"));
+        assert!(names.contains(&"render_page"));
+        assert!(names.contains(&"session_read"));
+        assert!(!names.contains(&"terminal_run"));
+        assert!(!names.contains(&"request_secret"));
     }
 
     #[test]
@@ -1744,7 +1802,7 @@ mod tests {
 
     #[test]
     fn launch_arguments() {
-        let b = BridgeLaunch { script: "/h/.nook/nook-mcp".into() };
+        let b = BridgeLaunch { script: "/h/.nook/nook-mcp".into(), ..Default::default() };
         let c = b.claude_arguments("run-1");
         assert_eq!(c[0], "--mcp-config");
         let config: Value = serde_json::from_str(&c[1]).unwrap();

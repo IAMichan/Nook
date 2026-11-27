@@ -8,7 +8,8 @@
   import ComposerContext from "./ComposerContext.svelte";
   import PromptTools from "./PromptTools.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
-  import { machinesApi, isValidRemoteFolder, machineFolderLabel, rememberFolder, rememberedFolder, type RemoteMachine } from "../../../lib/workspace/machines";
+  import MachinePasswordField from "../../settings/MachinePasswordField.svelte";
+  import { machinesApi, folderFor, isValidRemoteFolder, machineFolderLabel, rememberFolder, rememberedFolder, sharedMachines, type RemoteMachine } from "../../../lib/workspace/machines";
   import { prompts } from "../../../lib/workspace/prompts.svelte";
   import { compose, project as project_, type ContextRef } from "../../../lib/workspace/context-refs";
   // Een sessie starten (`NewSessionComposer` op de Mac): één vraag, één veld en een paar rustige keuzes eronder.
@@ -65,9 +66,22 @@
   let machines = $state<RemoteMachine[]>([]);
   let machine = $state<RemoteMachine | null>(null);
   let remoteFolder = $state("");
+  /// On a machine: the branch a new worktree starts from there; empty is the branch that folder is on.
+  let remoteBase = $state("");
+  /// For each machine that logs in with a password: whether Nook has it in this run.
+  let unlocked = $state<Record<string, boolean>>({});
+  const needsPassword = $derived(!!machine?.passwordLogin && !unlocked[machine.id]);
+  /// "Automatic" under "Runs on": Nook picks this computer or a machine the project is shared with as it starts
+  /// (`balance` in the core); kept for the next session.
+  let automatic = $state((() => { try { return localStorage.getItem("nook.runsOn.automatic") === "1"; } catch { return false; } })());
+  function setAutomatic(on: boolean) {
+    automatic = on;
+    try { localStorage.setItem("nook.runsOn.automatic", on ? "1" : "0"); } catch { /* a convenience only */ }
+  }
 
   $effect(() => {
-    const load = () => machinesApi.list().then((list) => {
+    const load = () => machinesApi.list().then(async (list) => {
+      unlocked = await machinesApi.passwords().then((p) => Object.fromEntries(Object.entries(p).map(([id, s]) => [id, s.unlocked]))).catch(() => ({}));
       machines = list;
       // A machine removed in Settings while it was chosen: back to this computer.
       if (machine && !list.some((m) => m.id === machine!.id)) machine = null;
@@ -80,9 +94,12 @@
 
   /// Picks where the agent runs; a machine starts in the folder you last used there.
   function pickMachine(m: RemoteMachine | null) {
+    setAutomatic(false);
+    // The project's folder there when it is shared with this machine, else the folder used there last.
+    const shared = m && !machine && !noProject ? folderFor(m, config.projectPath) : null;
     machine = m;
     error = null;
-    if (m) remoteFolder = rememberedFolder(m.id) || remoteFolder || "~";
+    if (m) remoteFolder = shared || rememberedFolder(m.id) || remoteFolder || "~";
     requestAnimationFrame(() => textarea?.focus());
   }
 
@@ -176,6 +193,7 @@
     if (!config.task.trim() && !attached.length && !pictures.length) return tr("Schrijf eerst een opdracht.", "Write a task first.");
     if (machine) {
       // On another machine: the agent must be there, not here; ssh and the folder are checked as it starts.
+      if (needsPassword) return tr("Typ eerst het wachtwoord van {machine}.", "Type the password for {machine} first.", { machine: machine.name });
       if (!isValidRemoteFolder(remoteFolder)) return tr("Typ de map op {machine}: vanaf / of ~/.", "Type the folder on {machine}: from / or ~/.", { machine: machine.name });
       if (!policies.includes(config.permission)) return tr("Deze agent ondersteunt die rechten niet.", "This agent doesn't support that permission.");
       if (!provider?.supported) return tr("Nook kan {agent} op dit platform niet zelf aansturen; dat kan op een computer.", "Nook can't drive {agent} itself on this platform; it can on a computer.", { agent: provider?.name ?? config.provider });
@@ -434,10 +452,39 @@
     }
   }
 
+  /// Whether "Automatic" decides where this session starts: a project on this computer, not "No project" and not while
+  /// comparing models, which needs worktrees here.
+  const startsAutomatically = $derived(automatic && !machine && !noProject && !!config.projectPath && !comparing && !isScratch(config.projectPath));
+  const autoShared = $derived(startsAutomatically ? sharedMachines(machines, config.projectPath) : []);
+
   async function start(background = false) {
     if (starting || blockingReason) return;
     starting = true;
     error = null;
+    if (startsAutomatically && autoShared.length) {
+      // "Automatic": this computer, or the shared machine with the most room for its level.
+      try {
+        const place = await machinesApi.pick(config.projectPath, config.provider, !!provider?.executable);
+        if (place) {
+          const task = project_(compose(config.task, attached, mentions), pictures);
+          const id = await workspaceApi.start({ ...config, task, projectPath: place.folder, baseBranch: "", branchName: "", machineId: place.machineId }, false);
+          toast.success(tr("Gestart op {machine}", "Started on {machine}", { machine: place.name }));
+          attached = [];
+          pictures = [];
+          mentions = [];
+          try { localStorage.removeItem(draftKey(config.projectPath, null)); } catch { /* nothing kept */ }
+          config.task = "";
+          await workspace.refresh();
+          if (!background) onstarted(id);
+          starting = false;
+          return;
+        }
+      } catch (e) {
+        error = String(e);
+        starting = false;
+        return;
+      }
+    }
     if (comparing) {
       try {
         await startComparison(project_(compose(config.task, attached, mentions), pictures), background);
@@ -450,9 +497,13 @@
     try {
       const task = project_(compose(config.task, attached, mentions), pictures);
       const id = machine
-        ? await workspaceApi.start({ ...config, task, projectPath: remoteFolder.trim(), isolation: "folder", baseBranch: "", branchName: "", machineId: machine.id }, false)
+        ? await workspaceApi.start({ ...config, task, projectPath: remoteFolder.trim(), baseBranch: config.isolation === "worktree" ? remoteBase.trim() : "", branchName: "", machineId: machine.id }, false)
         : await workspaceApi.start({ ...config, task, projectPath: noProject ? "" : config.projectPath, branchName: "", machineId: "" }, allowShared);
-      if (machine) rememberFolder(machine.id, remoteFolder);
+      if (machine) {
+        rememberFolder(machine.id, remoteFolder);
+        // The project on this computer is now shared with the machine: "Automatic" may start it there.
+        if (!noProject && config.projectPath && !isScratch(config.projectPath)) machinesApi.shareProject(machine.id, config.projectPath, remoteFolder.trim()).catch(() => {});
+      }
       attached = [];
       pictures = [];
       mentions = [];
@@ -512,7 +563,7 @@
   });
 
   const stop = (e: Event) => e.stopPropagation();
-  const startLabel = $derived(starting ? (config.isolation === "worktree" && !machine ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
+  const startLabel = $derived(starting ? (config.isolation === "worktree" ? tr("Worktree maken en agent starten…", "Creating worktree and starting agent…") : tr("Agent starten…", "Starting agent…")) : tr("Start sessie", "Start session"));
 
   // Markdown lists keep going (`ComposerLists`): a new line after "- item" or "7." starts the next item; one after an
   // empty item ends the list.
@@ -543,6 +594,10 @@
         <input bind:value={remoteFolder} placeholder="~/code/app" spellcheck="false" autocomplete="off" aria-label={tr("Map op {machine}:", "Folder on {machine}:", { machine: machine.name })} />
         <button class="ghost" title={tr("Terug naar deze computer", "Back to this computer")} aria-label={tr("Terug naar deze computer", "Back to this computer")} onclick={() => pickMachine(null)}>✕</button>
       </label>
+      {#if needsPassword}
+        <!-- A machine that logs in with a password asks for it once, before its first session in this run of Nook. -->
+        <div class="remote"><MachinePasswordField {machine} onunlocked={() => (unlocked = { ...unlocked, [machine!.id]: true })} /></div>
+      {/if}
     {:else if noProject}
       <h2 class="heading">{tr("Waar zullen we aan werken?", "What should we work on?")}</h2>
       <span class="pop">
@@ -696,10 +751,8 @@
 
   <!-- Under the box, tucked against it (`ComposerTray`): where the agent works and from which branch. -->
   <div class="below">
-    <RunsOnPicker {machines} chosen={machine} onpick={pickMachine} />
-    {#if machine}
-      <span class="pill static"><Ico name="folder" size={15} /><span>{tr("Huidige map", "Current folder")}</span></span>
-    {:else if !noProject && (!project || project.repoRoot)}
+    <RunsOnPicker {machines} chosen={machine} {automatic} onpick={pickMachine} onautomatic={() => { pickMachine(null); setAutomatic(true); }} />
+    {#if machine || (!noProject && (!project || project.repoRoot))}
       <Dropdown width={300} below label={tr("Waar de agent werkt", "Where the agent works")}>
         {#snippet trigger({ toggle, open })}
           <button class="pill" onclick={toggle} aria-expanded={open} title={worktreeAllowed ? "" : worktreeBlocked}>
@@ -711,13 +764,18 @@
           <DropdownRow symbol="folder" title={tr("Huidige map", "Current folder")} detail={tr("In de map zelf, op de branch die er nu staat.", "In the folder itself, on the branch that's checked out now.")}
             chosen={config.isolation === "folder"} onclick={() => { close(); config.isolation = "folder"; remember(); }} />
           <DropdownRow symbol="layers" title={tr("Nieuwe worktree", "New worktree")} detail={tr("De agent krijgt een eigen map en branch. Je eigen checkout en branch blijven precies zoals ze zijn.", "The agent gets its own folder and branch. Your own checkout and branch stay exactly as they are.")}
-            chosen={config.isolation === "worktree"} disabledReason={worktreeAllowed ? undefined : worktreeBlocked} onclick={() => { close(); config.isolation = "worktree"; remember(); }} />
+            chosen={config.isolation === "worktree"} disabledReason={machine || worktreeAllowed ? undefined : worktreeBlocked} onclick={() => { close(); config.isolation = "worktree"; remember(); }} />
         {/snippet}
       </Dropdown>
     {/if}
     <span class="spacer"></span>
     {#if machine}
-      <span class="pill static faint-pill">{tr("via SSH · {host}", "via SSH · {host}", { host: machine.host })}</span>
+      {#if config.isolation === "worktree"}
+        <!-- The branches here mean nothing there: a worktree starts from the branch that folder is on, unless you type one. -->
+        <label class="pill branch"><Ico name="git-branch" size={15} /><input class="base" bind:value={remoteBase} placeholder={tr("huidige branch daar", "current branch there")} aria-label={tr("Basis-branch", "Base branch")} /></label>
+      {:else}
+        <span class="pill static faint-pill">{tr("via SSH · {host}", "via SSH · {host}", { host: machine.host })}</span>
+      {/if}
     {:else if noProject}
       <!-- A folder of its own: no branch to show. -->
     {:else if config.isolation === "worktree" && project?.branches.length}
@@ -745,6 +803,12 @@
 
   {#if error}
     <p class="err">{error}</p>
+  {:else if startsAutomatically}
+    <p class="faint small">
+      {autoShared.length
+        ? tr("Nook kiest bij het starten waar hij draait: deze computer of {machines}.", "Nook picks where it runs as it starts: this computer or {machines}.", { machines: autoShared.map((m) => m.name).join(", ") })
+        : tr("Dit project staat nog op geen andere machine, dus hij start op deze computer. Start het één keer op een machine om het daar te delen.", "This project is not on another machine yet, so it starts on this computer. Start it once on a machine to share it there.")}
+    </p>
   {:else if machine}
     <p class="faint small">{tr("De agent gebruikt zijn eigen login op {machine}. Hij moet daar geïnstalleerd zijn, en ssh moet er met een sleutel in kunnen.", "The agent uses its own login on {machine}. It must be installed there, and ssh must get in with a key.", { machine: machine.name })}</p>
   {:else if sharing.length && config.isolation === "folder"}
@@ -783,6 +847,7 @@
   .remote input { flex: 1; min-width: 140px; font: var(--text-code); }
   .remote .ghost { flex: none; }
   .faint-pill { color: var(--text3); }
+  .base { width: 140px; padding: 0; border: 0; background: none; box-shadow: none; font: var(--text-control); color: var(--paper); }
   .clone { display: flex; gap: var(--space-6); }
   .clone input { flex: 1; }
   .box { position: relative; z-index: 1; border: 1px solid var(--field-stroke); border-radius: var(--radius-composer); background: var(--composer); padding: var(--space-16) var(--space-8) var(--space-8) var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper) 6%, transparent); }

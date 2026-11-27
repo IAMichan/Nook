@@ -66,6 +66,8 @@ pub fn run() {
             }
             // A new build that crashed before it proved healthy is rolled back here, before the database opens.
             update_runner::at_launch();
+            // ssh passwords you chose to keep live in the same secret store (`remote_passwords`).
+            nook_core::workspace::remote_passwords::RemotePasswords::shared().set_store(platform::secrets::system_store());
             app.manage(state::AppState::new(platform::secrets::system_store()));
             app.manage(commands::instructions::InstructionsState::load());
             app.manage(services::attention::Attention::load());
@@ -520,8 +522,18 @@ pub fn run() {
             commands::workspace::workspace_queue,
             commands::workspace::workspace_inspect,
             commands::workspace::workspace_start,
+            commands::machines::machines_discover,
+            commands::machines::machines_forget_project,
             commands::machines::machines_list,
+            commands::machines::machines_local_balance,
+            commands::machines::machines_lock,
+            commands::machines::machines_passwords,
+            commands::machines::machines_pick,
             commands::machines::machines_save,
+            commands::machines::machines_set_balance,
+            commands::machines::machines_set_local_balance,
+            commands::machines::machines_share_project,
+            commands::machines::machines_unlock,
             commands::machines::machines_remove,
             commands::machines::machines_test,
             commands::workspace::workspace_keep_scratch,

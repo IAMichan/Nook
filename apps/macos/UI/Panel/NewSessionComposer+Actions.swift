@@ -340,8 +340,10 @@ extension NewSessionComposer {
     }
 
     private func chooseMachine(_ machine: RemoteMachine) {
+        // The project's folder there when it is shared with this machine, else the folder used there last.
+        let shared = remoteMachine == nil ? machine.folder(for: config.projectPath) : nil
         remoteMachine = machine
-        remoteFolder = UserDefaults.standard.string(forKey: "agents.remoteFolder." + machine.id) ?? "~"
+        remoteFolder = shared ?? UserDefaults.standard.string(forKey: "agents.remoteFolder." + machine.id) ?? "~"
         config.isolation = .folder
         // The branches here mean nothing there: a worktree starts from the branch that folder is on, unless you type one.
         config.baseBranch = ""
@@ -514,14 +516,24 @@ extension NewSessionComposer {
         request.task = composerModel.outgoing(request.task).send
         // In Plan mode the agent is read-only; the safest permissions go along for when you continue later.
         if request.mode == .plan { request.permission = request.provider.capabilities.policies.first ?? .acceptEdits }
-        let finalConfig = request
+        let automatic = startsAutomatically
+        let localProject = config.projectPath
         let shared = allowShared
         let key = draftKey
         Task {
             do {
+                var finalConfig = request
+                // "Automatic": this Mac, or the shared machine with the most room for its level (`MachineBalance`).
+                if automatic, let place = await automaticPlace(for: request) {
+                    finalConfig.remote = place
+                    // The branches here mean nothing there: it starts from the branch that folder is on.
+                    finalConfig.baseBranch = ""
+                    ToastCenter.shared.success(tr("ws.remote.autoPicked", place.name))
+                }
                 let id = try await workspace.start(finalConfig, allowSharedFolder: shared)
                 if let remote = finalConfig.remote {
                     UserDefaults.standard.set(remote.directory, forKey: "agents.remoteFolder." + remote.machineID)
+                    rememberSharedFolder(remote, project: localProject)
                 }
                 remember()
                 ComposerDraftStore.shared.save(sessionID: key, text: "")

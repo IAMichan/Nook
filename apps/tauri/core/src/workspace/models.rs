@@ -728,7 +728,8 @@ impl NewRunConfig {
             return Some(ConfigProblem::UnsupportedPolicy);
         }
         if self.isolation == IsolationMode::Worktree {
-            if self.base_branch.is_empty() {
+            // On another machine an empty base is the branch that folder is on there.
+            if self.base_branch.is_empty() && self.machine_id.trim().is_empty() {
                 return Some(ConfigProblem::MissingBaseBranch);
             }
             if !is_plausible_branch_name(&self.branch_name) {

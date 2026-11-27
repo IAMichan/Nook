@@ -16,11 +16,12 @@ use nook_core::agents::models::{AgentApproval, ApprovalOrigin};
 use nook_core::agents::risk::{self, RiskLevel};
 use nook_core::i18n::{tr, trf};
 use nook_core::workspace::bridge::{
-    allowed_url, call_response, handle_rpc, page_verdict, verdict, BridgeCaller, BridgeTool, Reason, RpcAction, ToolResult, Verdict,
+    allowed_url, call_response, handle_rpc_for, page_verdict, verdict, BridgeCaller, BridgeTool, Reason, RpcAction, ToolResult, Verdict,
 };
 use nook_core::workspace::browser_script;
 use nook_core::workspace::models::{EventKind, PermissionPolicy, WorkspaceRun};
 use nook_core::workspace::paths::{self, Verdict as PathVerdict};
+use nook_core::workspace::remote_bridge;
 use nook_core::workspace::source_control::{RemoteRepository, SourceControlHost};
 use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, Manager};
@@ -78,6 +79,8 @@ struct Context {
     cwd: String,
     env: Map<String, Value>,
     connection: String,
+    /// True when the request arrived on the loopback TCP listener forwarded from another machine via SSH.
+    remote: bool,
 }
 
 impl Bridge {
@@ -198,21 +201,44 @@ pub fn bridge_submit_secret(app: AppHandle, id: String, value: String, remember:
     }
 }
 
-/// Luistert op `bridge`, alleen op desktop en als agents lokaal kunnen draaien.
+/// Luistert op `bridge` (lokaal) en op een loopback-poort op `127.0.0.1` voor sessies op een andere machine (via ssh `-R`).
 pub fn listen(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let h = handle.clone();
         let on_connection: Arc<dyn Fn(BoxStream) + Send + Sync> = Arc::new(move |stream| {
-            tauri::async_runtime::spawn(serve(h.clone(), stream));
+            tauri::async_runtime::spawn(serve(h.clone(), stream, false));
         });
         if let Err(e) = ipc::listen(ipc::address("bridge"), on_connection).await {
             log::error!("Werkruimte-brug kon niet luisteren: {e}");
         }
     });
+    let remote_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => {
+                if let Ok(addr) = listener.local_addr() {
+                    remote_bridge::set_local_port(addr.port());
+                }
+                loop {
+                    match listener.accept().await {
+                        Ok((stream, _)) => {
+                            let h = remote_handle.clone();
+                            tauri::async_runtime::spawn(serve(h, Box::new(stream), true));
+                        }
+                        Err(e) => {
+                            log::error!("Remote workspace bridge accept failed: {e}");
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => log::error!("Remote workspace bridge could not listen: {e}"),
+        }
+    });
 }
 
-async fn serve(app: AppHandle, stream: BoxStream) {
+async fn serve(app: AppHandle, stream: BoxStream, remote: bool) {
     let (mut reader, mut writer) = tokio::io::split(stream);
     let Some(line) = ipc::read_line(&mut reader, Duration::from_secs(5)).await else { return };
     let Ok(object) = serde_json::from_slice::<Value>(&line) else { return };
@@ -222,6 +248,7 @@ async fn serve(app: AppHandle, stream: BoxStream) {
         cwd: object.get("cwd").and_then(Value::as_str).unwrap_or("").into(),
         env: object.get("env").and_then(Value::as_object).cloned().unwrap_or_default(),
         connection: Uuid::new_v4().to_string(),
+        remote,
     };
     let closed = async {
         let mut sink = [0u8; 1024];
@@ -253,7 +280,7 @@ async fn serve(app: AppHandle, stream: BoxStream) {
 }
 
 async fn respond(app: &AppHandle, message: &Value, context: &Context) -> Option<Value> {
-    match handle_rpc(message) {
+    match handle_rpc_for(message, context.remote) {
         RpcAction::Ignore => None,
         RpcAction::Reply(v) => Some(v),
         RpcAction::Call { id, tool, arguments } => {
@@ -271,6 +298,17 @@ fn workspace(app: &AppHandle) -> Option<tauri::State<'_, WorkspaceState>> {
 /// werkt, of een agent die je zelf in een terminal startte en die de brug zelf koppelde.
 fn caller(app: &AppHandle, context: &Context) -> Option<BridgeCaller> {
     let ws = workspace(app)?;
+    if context.remote {
+        let id = context.env.get("NOOK_RUN_ID").and_then(Value::as_str).and_then(|r| Uuid::parse_str(r.trim()).ok())?;
+        let token = context.env.get("NOOK_BRIDGE_TOKEN").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty())?;
+        if !ws.manager.accepts_remote_bridge(id, token) {
+            return None;
+        }
+        let run = ws.manager.run(id)?;
+        let mut c = run_caller(&run);
+        c.remote = true;
+        return Some(c);
+    }
     if let Some(run) =
         context.env.get("NOOK_RUN_ID").and_then(Value::as_str).and_then(|r| Uuid::parse_str(r).ok()).and_then(|id| ws.manager.run(id))
     {
@@ -293,6 +331,7 @@ fn caller(app: &AppHandle, context: &Context) -> Option<BridgeCaller> {
         directory: folder,
         mode: None,
         permission: None,
+        remote: false,
     })
 }
 
@@ -304,6 +343,7 @@ fn run_caller(run: &WorkspaceRun) -> BridgeCaller {
         directory: run.working_directory.clone(),
         mode: Some(run.mode),
         permission: Some(run.permission),
+        remote: run.remote.is_some(),
     }
 }
 
@@ -347,6 +387,16 @@ async fn call(app: &AppHandle, tool: BridgeTool, a: &Map<String, Value>, context
     let Some(caller) = caller(app, context) else {
         return ToolResult::error("Nook could not tell which session this is. Start the agent from a project folder.");
     };
+    if caller.remote {
+        if !remote_bridge::allows(tool) {
+            return ToolResult::error(remote_bridge::REFUSAL);
+        }
+        if tool == BridgeTool::SessionRead
+            && !remote_bridge::may_read(a.get("session_id").and_then(Value::as_str), caller.run.as_deref().unwrap_or(""))
+        {
+            return ToolResult::error(remote_bridge::REFUSAL);
+        }
+    }
     let result = match tool {
         BridgeTool::WorkspaceInfo => workspace_info(app, &caller).await,
         BridgeTool::TerminalRun => terminal_run(app, a, &caller, context).await,

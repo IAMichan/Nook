@@ -29,6 +29,7 @@ pub fn launch(input: &CommandInput) -> (LaunchSpec, CodexDriver) {
         working_directory: input.working_directory.clone(),
         initial_input: vec![first],
         keeps_input_open: true,
+        ..Default::default()
     };
     (spec, driver)
 }
@@ -101,7 +102,7 @@ pub struct CodexDriver {
 impl CodexDriver {
     pub fn new(input: &CommandInput) -> Self {
         let mcp_servers = input.bridge.as_ref().map(|b| {
-            json!({SERVER_NAME: {"command": b.script, "args": ["--agent", "codex"], "env": {"NOOK_RUN_ID": input.run_id}, "tool_timeout_sec": 900}})
+            json!({SERVER_NAME: {"command": b.script, "args": ["--agent", "codex"], "env": b.server_env(&input.run_id), "tool_timeout_sec": 900}})
         });
         Self {
             next: 1,

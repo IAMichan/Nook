@@ -21,6 +21,7 @@ struct RemoteMachinesSection: View {
     @State private var testing: Set<String> = []
     /// Machines whose last test was turned away for want of a password.
     @State private var askPassword: Set<String> = []
+    @State private var localBalance = LocalBalance.level()
 
     var body: some View {
         // The explanation while there is no machine, the list once there is; never an empty list under a heading.
@@ -50,6 +51,7 @@ struct RemoteMachinesSection: View {
 
     /// Every machine in the one connection row: its address and how its last test went on the line under its name,
     /// Test and Lock in its "…" menu with Remove last, and its details (key file, password, last use) once opened.
+    @ViewBuilder
     private var list: some View {
         Section {
             ForEach(machines) { machine in
@@ -92,6 +94,11 @@ struct RemoteMachinesSection: View {
                     if machine.usesPassword, RemotePasswords.shared.isKept(machine.id) {
                         SettingNote(tr("remote.password.inKeychain"))
                     }
+                    // How often "Runs on › Automatic" picks this machine (`MachineBalance`).
+                    Picker(tr("remote.balance"), selection: balanceBinding(machine)) {
+                        ForEach(BalanceLevel.allCases, id: \.self) { Text(Self.balanceName($0)).tag($0) }
+                    }
+                    sharedProjects(machine)
                     LabeledContent(tr("remote.lastUsedTitle")) {
                         Text(machine.lastUsedAt.map { $0.formatted(.relative(presentation: .named)) } ?? tr("remote.neverUsed"))
                             .foregroundStyle(NookTheme.textSecondary)
@@ -108,6 +115,59 @@ struct RemoteMachinesSection: View {
         } header: {
             ConnectionListHeader(title: tr("remote.title"), info: tr("remote.footer"),
                                  add: (tr("remote.add"), { adding = .blank }))
+        }
+        // This Mac takes part in "Automatic" too, with a level of its own.
+        Section {
+            Picker(tr("remote.balance.thisMac"), selection: $localBalance) {
+                ForEach(BalanceLevel.allCases, id: \.self) { Text(Self.balanceName($0)).tag($0) }
+            }
+            .onChange(of: localBalance) { _, level in LocalBalance.set(level) }
+        } header: {
+            Text(tr("remote.balance.title"))
+        } footer: {
+            SettingNote(tr("remote.balance.footer"))
+        }
+    }
+
+    private func balanceBinding(_ machine: RemoteMachine) -> Binding<BalanceLevel> {
+        Binding(get: { machine.balanceLevel }, set: { level in
+            guard level != machine.balanceLevel else { return }
+            RemoteMachines.update(id: machine.id) { $0.balance = level }
+            machines = RemoteMachines.load()
+        })
+    }
+
+    /// The projects of this Mac shared with the machine (a session of them ran there), each with its folder there and a
+    /// way to stop sharing it.
+    @ViewBuilder
+    private func sharedProjects(_ machine: RemoteMachine) -> some View {
+        let folders = (machine.projectFolders ?? [:]).sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+        if !folders.isEmpty {
+            LabeledContent(tr("remote.projects")) {
+                VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
+                    ForEach(folders, id: \.key) { project, folder in
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            Text((project as NSString).lastPathComponent + " → " + folder)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .lineLimit(1).truncationMode(.middle)
+                            NookIconButton(systemName: "xmark", label: tr("remote.projects.remove"), size: 20) {
+                                RemoteMachines.update(id: machine.id) { $0.projectFolders?[project] = nil }
+                                machines = RemoteMachines.load()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static func balanceName(_ level: BalanceLevel) -> String {
+        switch level {
+        case .prefer: return tr("remote.balance.prefer")
+        case .normal: return tr("remote.balance.normal")
+        case .lessOften: return tr("remote.balance.lessOften")
+        case .manualOnly: return tr("remote.balance.manualOnly")
         }
     }
 

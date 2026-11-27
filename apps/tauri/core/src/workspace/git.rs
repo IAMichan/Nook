@@ -163,6 +163,8 @@ pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 #[derive(Debug, Clone)]
 pub struct Git {
     pub executable: String,
+    /// Git on another machine, over ssh (`GitService(remote:)` on the Mac): every command runs there, in the folder there.
+    pub remote: Option<super::remote::RemoteTarget>,
 }
 
 impl Git {
@@ -175,7 +177,7 @@ impl Git {
             candidates.extend([PathBuf::from("/usr/bin/git"), PathBuf::from("/usr/local/bin/git")]);
         }
         for c in candidates {
-            let git = Git { executable: c.to_string_lossy().into_owned() };
+            let git = Git { executable: c.to_string_lossy().into_owned(), remote: None };
             if let Ok(o) = git.raw(&["--version".into()], None, Duration::from_secs(15)) {
                 if o.status == 0 && o.stdout.starts_with("git version") {
                     return Some(git);
@@ -195,8 +197,49 @@ impl Git {
         env
     }
 
+    /// Git on the machine of `target`, found there by its login shell.
+    pub fn on(target: super::remote::RemoteTarget) -> Self {
+        Git { executable: "git".into(), remote: Some(target) }
+    }
+
+    pub fn is_remote(&self) -> bool {
+        self.remote.is_some()
+    }
+
+    /// Runs `program` here, or on the machine through ssh with `extra` exported there (a local temp folder or this
+    /// computer's environment means nothing over there).
+    fn process(
+        &self,
+        program: &str,
+        args: &[String],
+        dir: Option<&str>,
+        extra: &BTreeMap<String, String>,
+        timeout: Duration,
+    ) -> std::io::Result<Output> {
+        let Some(target) = &self.remote else {
+            let mut env = self.environment();
+            env.extend(extra.clone());
+            return run_process(program, args, dir.map(Path::new), &env, timeout);
+        };
+        let mut there: BTreeMap<String, String> = [("GIT_TERMINAL_PROMPT", "0"), ("GIT_OPTIONAL_LOCKS", "0"), ("LC_ALL", "C")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .into();
+        there.extend(extra.clone());
+        let ssh_args = super::remote::command_arguments(target, program, args, dir, &there);
+        let mut env: BTreeMap<String, String> = std::env::vars().collect();
+        env.extend(super::remote_passwords::askpass_environment(super::remote::password_for(target).as_deref()));
+        run_process(&super::remote::ssh_program(), &ssh_args, None, &env, timeout)
+    }
+
+    /// A small shell step on the machine (`rm`, `mkdir`, `test`); here it is never needed. Ok with its status.
+    fn shell_there(&self, program: &str, args: &[&str]) -> Result<i32> {
+        let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        self.process(program, &args, None, &BTreeMap::new(), Duration::from_secs(30)).map(|o| o.status).map_err(|e| GitError(e.to_string()))
+    }
+
     pub fn raw(&self, args: &[String], dir: Option<&Path>, timeout: Duration) -> Result<Output> {
-        run_process(&self.executable, args, dir, &self.environment(), timeout).map_err(|e| GitError(e.to_string()))
+        let dir = dir.map(|d| d.to_string_lossy().into_owned());
+        self.process(&self.executable, args, dir.as_deref(), &BTreeMap::new(), timeout).map_err(|e| GitError(e.to_string()))
     }
 
     /// Draait git in `dir` en geeft bij een fout de foutuitvoer van git.
@@ -207,9 +250,7 @@ impl Git {
     pub fn run_with(&self, args: &[&str], dir: &str, timeout: Duration, ok: &[i32], extra: &BTreeMap<String, String>) -> Result<String> {
         let mut full: Vec<String> = vec!["-C".into(), dir.into()];
         full.extend(args.iter().map(|a| a.to_string()));
-        let mut env = self.environment();
-        env.extend(extra.clone());
-        let output = run_process(&self.executable, &full, Some(Path::new(dir)), &env, timeout).map_err(|e| GitError(e.to_string()))?;
+        let output = self.process(&self.executable, &full, Some(dir), extra, timeout).map_err(|e| GitError(e.to_string()))?;
         let first = args.first().copied().unwrap_or("");
         if output.timed_out {
             return Err(GitError(format!("git {first} duurde te lang en is gestopt.")));
@@ -226,7 +267,8 @@ impl Git {
     pub fn repository_root(&self, path: &str) -> Option<String> {
         let text = self.run(&["rev-parse", "--show-toplevel"], path).ok()?;
         let root = text.trim();
-        (!root.is_empty()).then(|| normalize(root))
+        // A path on another machine stays as git there wrote it.
+        (!root.is_empty()).then(|| if self.is_remote() { root.to_string() } else { normalize(root) })
     }
 
     /// De gedeelde .git-map: dezelfde voor de hoofdmap en al zijn worktrees.
@@ -398,10 +440,17 @@ impl Git {
         if self.local_branch_exists(branch, repo) {
             return Err(GitError(format!("De branch '{branch}' bestaat al. Kies een andere naam.")));
         }
-        if Path::new(path).exists() {
+        if self.is_remote() {
+            // On the machine: the same checks, there.
+            if self.shell_there("test", &["-e", path])? == 0 {
+                return Err(GitError(format!("De map {path} bestaat al.")));
+            }
+            if let Some((parent, _)) = path.rsplit_once('/') {
+                self.shell_there("mkdir", &["-p", parent])?;
+            }
+        } else if Path::new(path).exists() {
             return Err(GitError(format!("De map {path} bestaat al.")));
-        }
-        if let Some(parent) = Path::new(path).parent() {
+        } else if let Some(parent) = Path::new(path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| GitError(e.to_string()))?;
         }
         self.run_with(&["worktree", "add", "-b", branch, path, base], repo, Duration::from_secs(180), &[0], &BTreeMap::new())
@@ -412,9 +461,10 @@ impl Git {
     /// Haalt een worktree weg. Alleen worktrees die git voor deze repository kent, en nooit de hoofdmap. Zonder
     /// `force` weigert git als er niet-vastgelegde wijzigingen zijn.
     pub fn remove_worktree(&self, repo: &str, path: &str, force: bool) -> Result<()> {
-        let target = normalize(path);
+        let same = |p: &str| if self.is_remote() { p.trim_end_matches('/').to_string() } else { normalize(p) };
+        let target = same(path);
         let known = self.worktrees(repo)?;
-        let Some(found) = known.iter().find(|w| normalize(&w.path) == target) else {
+        let Some(found) = known.iter().find(|w| same(&w.path) == target) else {
             return Err(GitError(format!("Git kent geen worktree op {path}.")));
         };
         if found.is_main {
@@ -516,6 +566,14 @@ impl Git {
     }
 
     fn with_index<T>(&self, body: impl FnOnce(&BTreeMap<String, String>) -> Result<T>) -> Result<T> {
+        if self.is_remote() {
+            // The temporary index lives on the machine, where git reads it.
+            let index = format!("/tmp/nook-index-{}", uuid::Uuid::new_v4());
+            let env = Self::identity(&[("GIT_INDEX_FILE", &index)]);
+            let result = body(&env);
+            let _ = self.shell_there("rm", &["-f", &index]);
+            return result;
+        }
         let index = std::env::temp_dir().join(format!("nook-index-{}", uuid::Uuid::new_v4()));
         let env = Self::identity(&[("GIT_INDEX_FILE", &index.to_string_lossy())]);
         let result = body(&env);
@@ -569,6 +627,17 @@ impl Git {
             self.g(&["read-tree", r], dir, env)?;
             self.g(&["checkout-index", "-a", "-f", "-q"], dir, env).map(|_| ())
         })?;
+        if self.is_remote() {
+            // Files that were not there at `ref` go, on the machine.
+            let gone: Vec<&str> = current.difference(&target).map(String::as_str).filter(|p| !p.contains("..")).collect();
+            for chunk in gone.chunks(200) {
+                let mut args = vec!["-f", "--"];
+                args.extend(chunk.iter().copied());
+                let names: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                let _ = self.process("rm", &names, Some(dir), &BTreeMap::new(), Duration::from_secs(60));
+            }
+            return Ok(());
+        }
         let root = PathBuf::from(normalize(dir));
         for path in current.difference(&target) {
             if path.contains("..") {

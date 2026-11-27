@@ -62,6 +62,7 @@ export const table: Table = {
     fr: "Connexion…",
     es: "Conectando…",
   },
+  "current branch there": { de: "aktueller Branch dort", fr: "branche actuelle là-bas", es: "rama actual allí" },
   "Folder on {machine}:": {
     de: "Ordner auf {machine}:",
     fr: "Dossier sur {machine} :",
@@ -92,11 +93,30 @@ export const table: Table = {
     fr: "Aucune machine pour l’instant. Ajoutez-en une avec un alias ssh ou utilisateur@hôte.",
     es: "Aún no hay ninguna máquina. Añade una con un alias de ssh o usuario@host.",
   },
-  "Nook logs in with a key (from your ssh agent, your ssh config or the key file). Logging in with a password is not available here yet. Connect once yourself with ssh in a terminal first, so ssh knows the machine.": {
-    de: "Nook meldet sich mit einem Schlüssel an (aus deinem ssh-Agent, deiner ssh-Konfiguration oder der Schlüsseldatei). Die Anmeldung mit Passwort ist hier noch nicht möglich. Verbinde dich zuerst einmal selbst mit ssh in einem Terminal, damit ssh den Rechner kennt.",
-    fr: "Nook se connecte avec une clé (de votre agent ssh, de votre configuration ssh ou du fichier de clé). La connexion par mot de passe n’est pas encore disponible ici. Connectez-vous d’abord une fois vous-même avec ssh dans un terminal, pour que ssh connaisse la machine.",
-    es: "Nook inicia sesión con una clave (de tu agente ssh, tu configuración de ssh o el archivo de clave). Iniciar sesión con contraseña aún no está disponible aquí. Conéctate primero una vez tú mismo con ssh en una terminal, para que ssh conozca la máquina.",
+  "Nook logs in with a key (from your ssh agent, your ssh config or the key file), or with a password you type once each time Nook runs. Connect once yourself with ssh in a terminal first, so ssh knows the machine.": {
+    de: "Nook meldet sich mit einem Schlüssel an (aus deinem ssh-Agent, deiner ssh-Konfiguration oder der Schlüsseldatei) oder mit einem Passwort, das du einmal pro Nook-Start eingibst. Verbinde dich zuerst einmal selbst mit ssh in einem Terminal, damit ssh den Rechner kennt.",
+    fr: "Nook se connecte avec une clé (de votre agent ssh, de votre configuration ssh ou du fichier de clé), ou avec un mot de passe que vous saisissez une fois à chaque lancement de Nook. Connectez-vous d’abord une fois vous-même avec ssh dans un terminal, pour que ssh connaisse la machine.",
+    es: "Nook inicia sesión con una clave (de tu agente ssh, tu configuración de ssh o el archivo de clave), o con una contraseña que escribes una vez cada vez que Nook se ejecuta. Conéctate primero una vez tú mismo con ssh en una terminal, para que ssh conozca la máquina.",
   },
+  "Keep in the secret store": {
+    de: "Im Schlüsselspeicher behalten",
+    fr: "Garder dans le coffre de secrets",
+    es: "Guardar en el almacén de secretos",
+  },
+  "Lock": { de: "Sperren", fr: "Verrouiller", es: "Bloquear" },
+  "Logs in with a password": { de: "Meldet sich mit Passwort an", fr: "Se connecte avec un mot de passe", es: "Inicia sesión con contraseña" },
+  "Password for {machine}": { de: "Passwort für {machine}", fr: "Mot de passe pour {machine}", es: "Contraseña de {machine}" },
+  "The password is in the secret store.": {
+    de: "Das Passwort liegt im Schlüsselspeicher.",
+    fr: "Le mot de passe est dans le coffre de secrets.",
+    es: "La contraseña está en el almacén de secretos.",
+  },
+  "Type the password for {machine} first.": {
+    de: "Gib zuerst das Passwort für {machine} ein.",
+    fr: "Saisissez d’abord le mot de passe de {machine}.",
+    es: "Escribe primero la contraseña de {machine}.",
+  },
+  "Unlock": { de: "Entsperren", fr: "Déverrouiller", es: "Desbloquear" },
   "Nook on your phone, and the machines your agents work on": {
     de: "Nook auf deinem Telefon und die Rechner, auf denen deine Agents arbeiten",
     fr: "Nook sur votre téléphone, et les machines sur lesquelles vos agents travaillent",
