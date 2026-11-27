@@ -29,6 +29,7 @@ mod e2e_automation_tests;
 pub mod favicon;
 pub mod file_view;
 pub mod git;
+pub mod governor;
 pub mod handoff;
 pub mod hunk;
 pub mod limits;

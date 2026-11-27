@@ -719,6 +719,7 @@ struct BackgroundCommandLink: View {
                     .font(NookTheme.font(8.5, .bold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
             }
+            .lineLimit(1)
             .font(NookTheme.TextStyle.caption)
             .padding(.horizontal, NookTheme.Spacing.sm)
             .padding(.vertical, NookTheme.Spacing.xxs)

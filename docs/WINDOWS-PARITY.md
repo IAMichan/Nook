@@ -538,7 +538,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-75** Cap on sessions working at once (`+Capacity`, `SessionCapacity`) · S
 
-- [ ] **AG-76** Build slots and priority (`AgentGovernor`, #1480, #1403): Job Objects on Windows, `nice` on Linux · M
+- [x] **AG-76** Build slots and priority (`AgentGovernor`, #1480, #1403): Job Objects on Windows, `nice` on Linux · M
 
 - [ ] **AG-77** Keep sessions running while Nook is closed (`SessionKeeper`, `KeptRuns`, `KeptTransport`, `KeptSessionsSettings`), reusing `companion/background.rs` · L
 

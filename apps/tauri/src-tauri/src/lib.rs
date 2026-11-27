@@ -687,6 +687,8 @@ pub fn run() {
             commands::workspace::workspace_custom_acp_add_registry,
             commands::workspace::workspace_custom_acp_add_manual,
             commands::workspace::workspace_custom_acp_remove,
+            commands::workspace::workspace_governor_status,
+            commands::workspace::workspace_governor_let_go_on,
             commands::workspace_tools::browser_pick_element,
             commands::workspace_tools::browser_cancel_pick,
             commands::workspace_tools::browser_clear_picks,
