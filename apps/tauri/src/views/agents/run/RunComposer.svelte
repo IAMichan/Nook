@@ -80,18 +80,34 @@
   // `/clear` (`FreshConversation` on the Mac) arms the session: your next message starts a new conversation.
   let fresh = $state(false);
 
-  // Files, folders and pictures you add, and the `@` / `#` references you typed (`ComposerContext`).
+  // Files, folders, snippets (PDF points / web elements) and pictures you add, and the `@` / `#` references you typed (`ComposerContext`).
   let attached = $state<ContextRef[]>([]);
   let pictures = $state<string[]>([]);
   let mentions = $state<ContextRef[]>([]);
+  let excerpts = $state<Record<string, string>>({});
   let context = $state<ReturnType<typeof ComposerContext>>();
   let promptTools = $state<ReturnType<typeof PromptTools>>();
 
-  // What the side panel handed this session (Explain, Ask, Fix): above what you wrote, for you to read and send.
+  // What the side panel handed this session (Explain, Ask, Fix, PDF spots): above what you wrote, for you to read and send.
   $effect(() => {
     const waiting = composerInbox.waiting[runId];
-    if (!waiting?.length) return;
-    for (const block of composerInbox.take(runId)) draft = merging(block, draft);
+    if (!waiting || (!waiting.texts.length && !waiting.snippets.length && !waiting.pictures.length)) return;
+    const delivery = composerInbox.takeDelivery(runId);
+    for (const block of delivery.texts) draft = merging(block, draft);
+    if (delivery.snippets.length) {
+      const nextExcerpts = { ...excerpts };
+      const nextAttached = [...attached];
+      for (const s of delivery.snippets) {
+        nextExcerpts[s.ref.id] = s.content;
+        if (!nextAttached.some((a) => a.id === s.ref.id)) nextAttached.push(s.ref);
+      }
+      excerpts = nextExcerpts;
+      attached = nextAttached;
+    }
+    if (delivery.pictures.length) {
+      const added = delivery.pictures.filter((p) => !pictures.includes(p));
+      if (added.length) pictures = [...pictures, ...added];
+    }
     requestAnimationFrame(() => textarea?.focus());
   });
   let listOpen = $state(false);
@@ -103,6 +119,7 @@
     editing = null;
     fresh = false;
     mentions = [];
+    excerpts = {};
     pictures = unpacked.paths.filter(isPicture);
     attached = unpacked.paths.filter((p) => !isPicture(p)).map(fileRef);
     draft = unpacked.words;
@@ -111,11 +128,12 @@
 
   /// The message as the agent gets it (`ContextRefs.project`), and the composer emptied for the next one.
   function takeMessage(): string {
-    const out = project(compose(draft, attached, mentions), pictures);
+    const out = project(compose(draft, attached, mentions), pictures, excerpts);
     draft = "";
     attached = [];
     pictures = [];
     mentions = [];
+    excerpts = {};
     return out;
   }
 

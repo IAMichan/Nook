@@ -330,16 +330,16 @@ pub async fn workspace_files(root: String, query: String) -> Res<Vec<String>> {
     Ok(nook_core::workspace::project_files::search(&files, &query, 30))
 }
 
-/// A picture pasted or dropped into a composer, kept as a file the agent reads (`ImageAttachment` on the Mac).
+/// A picture pasted, dropped or captured (PDF spot crop) into a composer, kept as a file the agent reads (`ImageAttachment` on the Mac).
 #[tauri::command]
-pub async fn workspace_save_picture(data: String, extension: String) -> Res<String> {
+pub async fn workspace_save_picture(data: String, extension: String, name: Option<String>) -> Res<String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD.decode(data.split(',').next_back().unwrap_or("")).map_err(|e| e.to_string())?;
     if bytes.len() > 20 * 1024 * 1024 {
         return Err(tr("Deze afbeelding is te groot.", "This picture is too large.").into());
     }
     blocking(move || {
-        nook_core::workspace::project_files::save_picture(&bytes, &extension)
+        nook_core::workspace::project_files::save_picture_named(&bytes, &extension, name.as_deref())
             .map(|p| p.to_string_lossy().into_owned())
             .map_err(|e| e.to_string())
     })

@@ -14,16 +14,18 @@
   import EmptyState from "../EmptyState.svelte";
   import Markdown from "../../../components/Markdown.svelte";
   import TaskChecklist from "../../../components/TaskChecklist.svelte";
+  import PdfPointViewer from "./PdfPointViewer.svelte";
   import Spinner from "../../../components/ui/Spinner.svelte";
   import Ico from "../../../components/ui/Ico.svelte";
 
-  let { outputs, selected, onselect, folder = null, live = false, onrun }: {
+  let { outputs, selected, onselect, folder = null, live = false, onrun, runId = null }: {
     outputs: SessionOutput[];
     selected: string | null;
     onselect: (id: string) => void;
     folder?: string | null;
     live?: boolean;
     onrun?: (command: string, title: string | null) => void;
+    runId?: string | null;
   } = $props();
 
   const current = $derived(outputs.find((o) => o.id === selected) ?? outputs[0] ?? null);
@@ -43,7 +45,7 @@
     text = null;
     url = null;
     missing = null;
-    if (!o?.path) return;
+    if (!o?.path || o.kind === "pdf") return;
     const path = o.path;
     void o.date;
     let stale = false;
@@ -94,6 +96,8 @@
         <div class="pad"><TaskChecklist steps={current.steps ?? []} {live} /></div>
       {:else if current.kind === "plan"}
         <div class="pad"><Markdown text={current.text ?? ""} baseFolder={folder} {onrun} /></div>
+      {:else if current.kind === "pdf" && current.path}
+        <PdfPointViewer {runId} path={current.path} version={current.date} />
       {:else if missing}
         <p class="note">{missing}</p>
       {:else if current.kind === "design"}
@@ -104,8 +108,6 @@
         <div class="center"><Spinner /></div>
       {:else if current.kind === "image"}
         <img src={url} alt={title(current)} />
-      {:else if current.kind === "pdf"}
-        <iframe class="page" src={url} title={title(current)}></iframe>
       {:else}
         <!-- svelte-ignore a11y_media_has_caption -->
         <video src={url} controls></video>

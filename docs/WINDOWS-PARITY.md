@@ -594,7 +594,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [x] **AG-105** Browser element snippets into the composer (#1570) · S Done (2026-11-23): interactive browser element picker (`src-tauri/src/workspace/browser.rs`, `views/workspace/Browser.svelte`) inserts picked element snippets into the composer.
 
-- [ ] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
+- [x] **AG-106** Point at a spot in a PDF beside a session: crosshair, mark, snippet with page and distance from every edge, and a picture of the area into the composer (`PdfPointPicker`, `PdfPointCapture`, `PdfPointView`) · S
 
 ### 4.7 Agents list
 

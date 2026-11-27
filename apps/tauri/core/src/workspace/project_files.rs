@@ -97,12 +97,34 @@ pub fn pictures() -> PathBuf {
 
 /// Keeps a picture's bytes under a new name and gives its path.
 pub fn save_picture(bytes: &[u8], extension: &str) -> std::io::Result<PathBuf> {
+    save_picture_named(bytes, extension, None)
+}
+
+/// Keeps a picture's bytes under a requested stem (when given) or a timestamped name, and gives its path.
+pub fn save_picture_named(bytes: &[u8], extension: &str, name: Option<&str>) -> std::io::Result<PathBuf> {
     let ext: String = extension.chars().filter(|c| c.is_ascii_alphanumeric()).take(5).collect::<String>().to_lowercase();
     let ext = if ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(&ext.as_str()) { ext } else { "png".into() };
     let dir = pictures();
     std::fs::create_dir_all(&dir)?;
-    let path =
-        dir.join(format!("{}-{}.{ext}", chrono::Local::now().format("%Y%m%d-%H%M%S"), &uuid::Uuid::new_v4().simple().to_string()[..6]));
+    let stem: String = name
+        .unwrap_or("")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .take(64)
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    let file_name = if !stem.is_empty() {
+        let preferred = format!("{stem}.{ext}");
+        if !dir.join(&preferred).exists() {
+            preferred
+        } else {
+            format!("{stem}-{}.{ext}", &uuid::Uuid::new_v4().simple().to_string()[..6])
+        }
+    } else {
+        format!("{}-{}.{ext}", chrono::Local::now().format("%Y%m%d-%H%M%S"), &uuid::Uuid::new_v4().simple().to_string()[..6])
+    };
+    let path = dir.join(file_name);
     std::fs::write(&path, bytes)?;
     Ok(path)
 }
@@ -125,5 +147,18 @@ mod tests {
         assert_eq!(search(&files, "login", 2), vec!["src/Login.swift", "src/app/login_view.rs"]);
         assert!(search(&files, "zzz", 5).is_empty());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sanitizes_named_picture_stems() {
+        let stem = format!("pdf-test-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+        let path = save_picture_named(b"png", "png", Some(&format!("../{stem} "))).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(name, format!("{stem}.png"));
+        let second = save_picture_named(b"png", "png", Some(&stem)).unwrap();
+        let second_name = second.file_name().unwrap().to_string_lossy().to_string();
+        assert!(second_name.starts_with(&format!("{stem}-")) && second_name.ends_with(".png"));
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(second);
     }
 }
