@@ -156,6 +156,28 @@ export function normalizeURL(input) {
   return null;
 }
 
+/** An address without its #fragment and with one trailing slash less, to tell whether two tabs show the same page. */
+function pageKey(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.origin + parsed.pathname.replace(/\/+$/, '') + parsed.search;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The tab that already shows `url`, so opening it uses the user's tab instead of a second one: the tab Nook works in
+ * first, then the one in front (`front`), then an active one, then any other. Null when no tab shows it.
+ */
+export function tabShowing(tabs, url, { current, front } = {}) {
+  const key = pageKey(url);
+  if (!key) return null;
+  const matches = (tabs || []).filter((tab) => pageKey(tab.url || tab.pendingUrl || '') === key);
+  const rank = (tab) => (tab.id === current ? 0 : tab.id === front ? 1 : tab.active ? 2 : 3);
+  return matches.sort((a, b) => rank(a) - rank(b))[0] || null;
+}
+
 /** How a target element is given: exactly one of ref, selector and text. Returns an error text or null. */
 export function targetError(params) {
   const given = ['ref', 'selector', 'text'].filter((key) => typeof params?.[key] === 'string' && params[key].trim() !== '');
@@ -718,7 +740,7 @@ export const DRIVER_COLORS = 4;
 /**
  * The coding agent that takes a step (`command.by`, from `BrowserExtensionConnector.driver` on the Mac): its name for
  * the strip and its logo's colors for the glow, as Nook's own browser draws it. Only `#RRGGBB` colors pass, so nothing
- * else reaches the page's style. null for Nook itself, which keeps its own violet.
+ * else reaches the page's style. null for Nook itself, which keeps its own accent.
  */
 export function driverOf(by) {
   if (!by || typeof by !== 'object') return null;

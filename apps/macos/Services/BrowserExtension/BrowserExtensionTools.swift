@@ -83,7 +83,7 @@ enum BrowserExtensionTools {
             required: [], timeout: 15),
         Definition(
             name: "chrome_open", method: "open", isAction: true,
-            description: "Opens a web address in the user's own browser, in a new tab in Nook's tab group (default) or, with new_tab: false or tab, in that tab; waits for it to load and says what can be used on it (with refs). url \"back\", \"forward\" or \"reload\" acts on the tab Nook works in. The user approves first.",
+            description: "Opens a web address in the user's own browser, in a new tab in Nook's tab group (default) or, with new_tab: false or tab, in that tab. When a tab already shows that address (the page the user is on, often), Nook works in that tab as it is instead of opening a second one. Waits for it to load and says what can be used on it (with refs). url \"back\", \"forward\" or \"reload\" acts on the tab Nook works in. The user approves first.",
             properties: [
                 "url": ["type": "string", "description": "https address (http only for localhost), or back, forward or reload."],
                 "new_tab": ["type": "boolean", "description": "False: open it in the tab Nook works in instead of a new one."]
