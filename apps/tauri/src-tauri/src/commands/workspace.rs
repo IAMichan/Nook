@@ -538,6 +538,44 @@ pub fn workspace_keep_scratch(app: AppHandle, state: State<'_, WorkspaceState>, 
     Ok(())
 }
 
+/// The git folders you worked in recently (`AgentReadiness.projectCandidates` on the Mac), for the first-run flow's
+/// "Coding agents" step: every session's folder taken up to its repository's root, newest first, with whether it is
+/// already one of your projects. `sessions` are the folders and dates the view knows (past sessions and Nook's own).
+#[tauri::command]
+pub async fn workspace_project_candidates(
+    state: State<'_, WorkspaceState>,
+    sessions: Vec<nook_core::workspace::readiness::SessionFolder>,
+) -> Res<Vec<nook_core::workspace::readiness::ProjectCandidate>> {
+    use nook_core::workspace::readiness;
+    let known: Vec<String> = {
+        let s = lock(&state.settings);
+        s.favorite_projects.iter().chain(s.recent_projects.iter()).cloned().collect()
+    };
+    blocking(move || {
+        let home = dirs::home_dir().unwrap_or_default().to_string_lossy().into_owned();
+        let sessions: Vec<(String, DateTime<Utc>)> = sessions.into_iter().map(|s| (s.folder, s.date)).collect();
+        readiness::project_candidates(&sessions, &known, &home, Utc::now(), readiness::LIMIT, |folder| {
+            readiness::git_root(folder, |p| std::path::Path::new(p).exists())
+        })
+    })
+    .await
+}
+
+/// "Add" on a recent folder in the first-run flow: only remembers it as a project (a recent one); nothing runs.
+#[tauri::command]
+pub fn workspace_remember_project(app: AppHandle, state: State<'_, WorkspaceState>, path: String) -> Res<()> {
+    if path.trim().is_empty() || !std::path::Path::new(path.trim()).is_dir() {
+        return Err(tr("Deze map bestaat niet.", "This folder doesn't exist.").into());
+    }
+    {
+        let mut s = lock(&state.settings);
+        s.remember_project(path.trim());
+        s.save_to(&WorkspaceSettings::file());
+    }
+    let _ = app.emit("workspace-changed", ());
+    Ok(())
+}
+
 /// "Make it a git repository": `git init` in a session's folder, then git is read again for the sessions there.
 #[tauri::command]
 pub async fn workspace_init_git(state: State<'_, WorkspaceState>, path: String) -> Res<()> {
@@ -2356,6 +2394,48 @@ pub async fn workspace_suggest_next_prompt(app: AppHandle, state: State<'_, Work
         return Ok(None);
     }
     Ok(Some(stripped.to_string()))
+}
+
+// MARK: Guest links (`GuestShares` on the Mac, AG-81)
+
+/// Current guest share state across all sessions, plus whether a relay is available to create new links.
+#[tauri::command]
+pub fn workspace_guest_shares(state: State<'_, WorkspaceState>) -> nook_core::workspace::guest_shares::GuestSharesSnapshot {
+    state.guest_shares.snapshot()
+}
+
+/// Starts (or returns an existing) 24-hour end-to-end encrypted guest link for a session.
+#[tauri::command]
+pub fn workspace_guest_share(state: State<'_, WorkspaceState>, run: String) -> Res<String> {
+    state.guest_shares.share(id(&run)?)
+}
+
+/// Revokes a session's active guest link, disconnects viewers, and deletes any held guest messages & files.
+#[tauri::command]
+pub fn workspace_guest_stop(state: State<'_, WorkspaceState>, run: String) -> Res<()> {
+    state.guest_shares.stop(id(&run)?);
+    Ok(())
+}
+
+/// Sends a held guest message to the session's agent (framed as untrusted guest input).
+#[tauri::command]
+pub fn workspace_guest_send_held(state: State<'_, WorkspaceState>, run: String, message_id: String) -> Res<()> {
+    let msg = message_id.trim();
+    if msg.is_empty() {
+        return Err(tr("Dit bericht bestaat niet meer.", "This message no longer exists.").to_string());
+    }
+    state.guest_shares.send_held(id(&run)?, msg)
+}
+
+/// Dismisses a held guest message and deletes any files the guest attached to it.
+#[tauri::command]
+pub fn workspace_guest_dismiss_held(state: State<'_, WorkspaceState>, run: String, message_id: String) -> Res<()> {
+    let msg = message_id.trim();
+    if msg.is_empty() {
+        return Err(tr("Dit bericht bestaat niet meer.", "This message no longer exists.").to_string());
+    }
+    state.guest_shares.dismiss_held(id(&run)?, msg);
+    Ok(())
 }
 
 // MARK: Token tuning, agent readiness & session advice (AG-32)

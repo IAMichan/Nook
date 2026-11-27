@@ -593,9 +593,24 @@ export function inCategory(selected: string | null, category: string): boolean {
 }
 
 /** Whether a search matches the text of a card or row (case-insensitive, empty matches everything). */
+/** Lowercase, without accents, words split on anything that is not a letter or a digit. */
+function fold(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** The gallery's search (`ConnectorGallerySearch` on the Mac): name, category and what it can do, case and accents
+ * ignored, and every word of the query must match somewhere ("agenda work" finds a work calendar, "cafe" finds "Café"). */
 export function matchesQuery(query: string, text: string): boolean {
-  const q = query.trim().toLowerCase();
-  return !q || text.toLowerCase().includes(q);
+  const words = fold(query).split(" ").filter(Boolean);
+  if (!words.length) return true;
+  const haystack = fold(text);
+  return words.every((w) => haystack.includes(w));
 }
 
 /** The words for a GitLab host's state, shared by the row and the sheet. `null` while Nook is still asking GitLab. */

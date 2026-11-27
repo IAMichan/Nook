@@ -30,6 +30,8 @@
   import { nook } from "../../../lib/state.svelte";
   import { listening } from "../../../lib/listening.svelte";
   import { oneLine } from "../../../lib/workspace/timeline";
+  import { replacingPasted } from "../../../lib/workspace/session-link";
+  import { continued as continuedList } from "../../../lib/workspace/composer-lists";
 
   let { run, onsidechat }: { run: WorkspaceRun; onsidechat?: (question: string) => void } = $props();
 
@@ -86,6 +88,24 @@
   let pictures = $state<string[]>([]);
   let mentions = $state<ContextRef[]>([]);
   let excerpts = $state<Record<string, string>>({});
+
+  // A pasted session link (`nook://session/…`, "Copy session link") becomes that session's mention, the same as picking
+  // it after `@` (`SessionLink.replacingPasted` on the Mac).
+  function paste(e: ClipboardEvent) {
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    if (!text.includes("nook://session/") || !textarea) return;
+    const from = textarea.selectionStart ?? draft.length;
+    const to = textarea.selectionEnd ?? from;
+    const next = draft.slice(0, from) + text + draft.slice(to);
+    const replaced = replacingPasted(draft, next);
+    if (!replaced) return;
+    e.preventDefault();
+    const caret = replaced.text.length - (draft.length - to);
+    draft = replaced.text;
+    const fresh = replaced.refs.filter((r) => !mentions.some((m) => m.kind === r.kind && m.id === r.id));
+    if (fresh.length) mentions = [...mentions, ...fresh];
+    requestAnimationFrame(() => textarea?.setSelectionRange(caret, caret));
+  }
   let context = $state<ReturnType<typeof ComposerContext>>();
   let promptTools = $state<ReturnType<typeof PromptTools>>();
 
@@ -465,6 +485,18 @@
       workspace.error = String(e);
     }
   }
+
+  // Markdown lists keep going (`ComposerLists`): a new line after "- item" or "7." starts the next item; one after an
+  // empty item ends the list.
+  function listInput(e: Event) {
+    const field = e.currentTarget as HTMLTextAreaElement;
+    if ((e as InputEvent).inputType !== "insertLineBreak" && !((e as InputEvent).inputType === "insertText" && (e as InputEvent).data === "\n")) return;
+    const next = continuedList(field.value, field.selectionStart ?? field.value.length);
+    if (!next) return;
+    draft = next.text;
+    field.value = next.text;
+    field.setSelectionRange(next.caret, next.caret);
+  }
 </script>
 
 
@@ -523,7 +555,7 @@
     {/if}
     <ComposerContext bind:this={context} {textarea} bind:draft root={run.workingDirectory || null} bind:attached bind:pictures bind:mentions exclude={run.id} bind:open={listOpen} />
     <div class="input-wrap">
-      <textarea bind:this={textarea} bind:value={draft} placeholder={ghostSuggestion ? "" : editing ? tr("Bewerk het bericht in de wachtrij (Enter bewaart, Esc annuleert)", "Edit the queued message (Enter saves, Esc cancels)") : prompt} rows="1" onkeydown={keydown}></textarea>
+      <textarea bind:this={textarea} bind:value={draft} placeholder={ghostSuggestion ? "" : editing ? tr("Bewerk het bericht in de wachtrij (Enter bewaart, Esc annuleert)", "Edit the queued message (Enter saves, Esc cancels)") : prompt} rows="1" onkeydown={keydown} onpaste={paste} oninput={listInput}></textarea>
       {#if ghostSuggestion}
         <button
           type="button"
