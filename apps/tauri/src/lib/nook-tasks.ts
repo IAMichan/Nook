@@ -5,7 +5,7 @@ import { api } from "./api";
 import { tr } from "./i18n.svelte";
 import type { Target } from "./inbox";
 import type { ConversationSummary } from "./types";
-import { ruleLabel, type TaskView } from "./workspace/automation";
+import { autonomyLabel, ruleLabel, type TaskView } from "./workspace/automation";
 
 /** A once-task that has run: nothing more to do. */
 export function isDone(task: TaskView): boolean {
@@ -39,9 +39,9 @@ export function taskStatus(task: TaskView, now = new Date()): string {
   return "";
 }
 
-/** The schedule, then the status: "Every day at 09:00 · next Tue 09:00". */
+/** The schedule, optional autonomy level, then the status: "Every day at 09:00 · Nook decides · next Tue 09:00". */
 export function taskDetail(task: TaskView, now = new Date()): string {
-  return [ruleLabel(task.rule), taskStatus(task, now)].filter(Boolean).join(" · ");
+  return [ruleLabel(task.rule), autonomyLabel(task.autonomy), taskStatus(task, now)].filter(Boolean).join(" · ");
 }
 
 /** A moment to come, short: the time today, the weekday and time this week, else the date. */

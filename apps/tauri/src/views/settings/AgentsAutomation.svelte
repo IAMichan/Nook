@@ -8,13 +8,15 @@
   import { agents } from "../../lib/agents.svelte";
   import { permissionLabels, type RunProvider } from "../../lib/workspace/api";
   import {
-    automationApi, autonomyLevels, blankTask, curlExample, editorValues, presetOf, problem, reasonLabel, ruleFor, ruleLabel, statusLabel,
+    automationApi, autonomyLabel, autonomyLevels, blankTask, curlExample, editorValues, mayRunTask, presetOf, problem, reasonLabel, ruleFor, ruleLabel, statusLabel,
     weekdayOrder, weekdayShort, type AutomationOverview, type NookAutonomy, type Preset, type ScheduledTask,
   } from "../../lib/workspace/automation";
   import { workspace } from "../../lib/workspace/store.svelte";
   import { tr } from "../../lib/i18n.svelte";
   import Ico from "../../components/ui/Ico.svelte";
   import AgentsWorkspace from "./AgentsWorkspace.svelte";
+
+  const SECRETARY_PRESETS = ["secretary.morning", "secretary.midday", "secretary.evening"];
 
   let view = $state<AutomationOverview | null>(null);
   let error = $state<string | null>(null);
@@ -68,6 +70,24 @@
   const projects = $derived([...new Set([...(workspace.settings?.favoriteProjects ?? []), ...(workspace.settings?.recentProjects ?? [])])]);
   const providers = $derived(workspace.providers.filter((p) => p.supported));
   const sessions = $derived(workspace.runs.filter((r) => !r.archived));
+  const hasAllSecretary = $derived(
+    !!view && SECRETARY_PRESETS.every((p) => view!.tasks.some((t) => t.preset === p)),
+  );
+  const hasGlobalGatedTasks = $derived(
+    !!view && view.tasks.some((t) => !mayRunTask(t, false)),
+  );
+
+  async function addSecretary() {
+    error = null;
+    notice = null;
+    try {
+      const added = await automationApi.addSecretary();
+      if (added > 0) notice = tr("Persoonlijke assistent toegevoegd.", "Personal secretary added.");
+    } catch (e) {
+      error = String(e);
+    }
+    await load();
+  }
 
   function begin(task?: ScheduledTask) {
     const t = task ? structuredClone($state.snapshot(task)) : blankTask(projects[0] ?? "", (workspace.settings?.defaultProvider ?? "claude") as RunProvider);
@@ -130,7 +150,12 @@
   <div class="section-head">
     <h3>{tr("Geplande taken", "Scheduled tasks")}</h3>
     {#if !editing}
-      <button class="head-action" onclick={() => begin()}><Ico name="plus" size={14} />{tr("Nieuwe taak", "New task")}</button>
+      <div class="head-actions">
+        {#if !hasAllSecretary}
+          <button class="head-action" onclick={addSecretary}>{tr("Persoonlijke assistent toevoegen", "Add personal secretary")}</button>
+        {/if}
+        <button class="head-action" onclick={() => begin()}><Ico name="plus" size={14} />{tr("Nieuwe taak", "New task")}</button>
+      </div>
     {/if}
   </div>
   <p class="section-info">{tr("Een taak start een gewone sessie met de rechten die jij bij de taak koos, standaard “Vragen”. Zolang dit uit staat, loopt er niets automatisch.", "A task starts an ordinary session with the permissions you chose for the task, “Ask” by default. While this is off nothing runs by itself.")}</p>
@@ -145,13 +170,15 @@
       {#if view.listenerError}<p class="note err">{tr("De webhook-luisteraar kon niet starten: {error}", "The webhook listener could not start: {error}", { error: view.listenerError })}</p>{/if}
     {/if}
     {#each view.tasks as t (t.id)}
+      {@const badge = t.target.type === "nook" ? autonomyLabel(t.autonomy) : null}
       <div class="task" class:off={!t.enabled}>
         <div class="line">
           <input type="checkbox" role="switch" use:tip={tr("Aan", "Enabled")} checked={t.enabled} onchange={(e) => act(() => automationApi.setEnabled(t.id, (e.target as HTMLInputElement).checked))} />
           <strong>{t.title || tr("Taak zonder naam", "Untitled task")}</strong>
           <span class="faint">{ruleLabel(t.rule)}</span>
+          {#if badge}<span class="pill" class:warn={t.autonomy === "auto"}>{badge}</span>{/if}
           <span class="spacer"></span>
-          <button class="ghost" disabled={t.running || !view.settings.scheduledTasks} onclick={() => runNow(t.id, t.title)}>{tr("Nu draaien", "Run now")}</button>
+          <button class="ghost" disabled={t.running || !mayRunTask(t, view.settings.scheduledTasks)} onclick={() => runNow(t.id, t.title)}>{tr("Nu draaien", "Run now")}</button>
           <button class="ghost" onclick={() => begin(t)}>{tr("Bewerk", "Edit")}</button>
           <button class="ghost danger" onclick={() => (confirmDelete = t.id)}>{tr("Verwijder", "Delete")}</button>
         </div>
@@ -189,7 +216,7 @@
     {/each}
   </div>
   <p class="note">{tr("Taken draaien zolang Nook open is; een vast tijdstip dat meer dan 10 minuten gemist is (de computer sliep), wordt overgeslagen.", "Tasks run while Nook is open; a fixed time missed by more than 10 minutes (the computer was asleep) is skipped.")}</p>
-  {#if !view.settings.scheduledTasks && view.tasks.length}
+  {#if !view.settings.scheduledTasks && hasGlobalGatedTasks}
     <p class="faint note">{tr("Geplande taken staan uit. Tot je ze aanzet, draait er niets vanzelf.", "Scheduled tasks are off. Until you turn them on, nothing runs by itself.")}</p>
   {/if}
 
@@ -249,13 +276,15 @@
             {#each autonomyLevels() as level (level.id)}<option value={level.id}>{level.label}</option>{/each}
           </select>
         </label>
-        <p class="faint note">{autonomyLevels().find((l) => l.id === (editing?.autonomy ?? "ask"))?.detail}</p>
+        <p class="faint note" class:warn={(editing.autonomy ?? "ask") === "auto"}>{autonomyLevels().find((l) => l.id === (editing?.autonomy ?? "ask"))?.detail}</p>
         {#if (editing.autonomy ?? "ask") !== "ask"}
-          <p class="faint note">{preset === "webhook"
-            ? tr("Deze taak start op een webhook van iemand anders, dus Nook controleert elke stap eerst, ook bij Gewoon doen. Verwijderen, mergen, opdrachten, instellingen en betalingen wachten altijd op jou.", "This task starts on a webhook from someone else, so Nook always checks each step first, also on Do it. Deleting, merging, commands, settings and payments always wait for you.")
-            : tr("Alleen berichten, je agenda, herinneringen, notities en reacties kunnen vanzelf, hooguit 12 stappen per run. Mail wacht altijd op jou, net als verwijderen, mergen, opdrachten, instellingen en betalingen; alles wat draait staat in het auditlog.", "Only messages, your calendar, reminders, notes and comments can run by themselves, at most 12 steps a run. Mail always waits for you, as do deleting, merging, commands, settings and payments; everything that runs is in the audit log.")}</p>
+          <p class="faint note">{preset === "webhook" || preset === "message"
+            ? tr("Deze taak start op een webhook of binnenkomend bericht van iemand anders, dus Nook controleert elke stap eerst, ook bij Gewoon doen. Verwijderen, mergen, opdrachten, instellingen en betalingen wachten altijd op jou.", "This task starts on a webhook or incoming message from someone else, so Nook always checks each step first, also on Do it. Deleting, merging, commands, settings and payments always wait for you.")
+            : tr("Alleen berichten, mail, je agenda, herinneringen, notities en reacties kunnen vanzelf, hooguit 12 stappen per run. Verwijderen, mergen, opdrachten, instellingen en betalingen wachten altijd op jou; alles wat draait staat in het auditlog.", "Only messages, mail, your calendar, reminders, notes and comments can run by themselves, at most 12 steps a run. Deleting, merging, commands, settings and payments always wait for you; everything that runs is in the audit log.")}</p>
+          <p class="faint note">{tr("Elke run is een eigen gesprek in Nook Chat.", "Each run is a conversation of its own in Nook Chat.")}</p>
+        {:else}
+          <p class="faint note">{tr("Elke run is een eigen gesprek in Nook Chat. Nook zoekt zelf op en zet antwoorden en acties klaar; niets wordt verstuurd of veranderd zonder jouw OK.", "Each run is a conversation of its own in Nook Chat. Nook looks things up and prepares replies and actions; nothing is sent or changed without your OK.")}</p>
         {/if}
-        <p class="faint note">{tr("Elke run is een eigen gesprek in Nook Chat. Nook zoekt zelf op en zet antwoorden en acties klaar; niets wordt verstuurd of veranderd zonder jouw OK.", "Each run is a conversation of its own in Nook Chat. Nook looks things up and prepares replies and actions; nothing is sent or changed without your OK.")}</p>
       {:else if editing.target.type === "newSession"}
         <div class="row"><span>{tr("Projectmap", "Project folder")}</span>
           <span class="inline">
@@ -322,6 +351,10 @@
   .check { display: flex; gap: var(--space-8); align-items: center; }
   .ok { color: var(--mint) !important; }
   .err { color: var(--coral) !important; }
+  .warn { color: var(--amber) !important; }
+  .head-actions { display: flex; gap: var(--space-8); align-items: center; }
+  .pill { font: var(--text-detail); padding: var(--space-2) var(--space-8); border-radius: var(--radius-chip); background: var(--row-hover); color: var(--ink-secondary); }
+  .pill.warn { color: var(--amber); }
   .port { width: 90px; }
   .task { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-12) 0; border-bottom: 1px solid var(--separator); }
   .task:last-child { border-bottom: none; }
