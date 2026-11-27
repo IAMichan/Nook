@@ -578,6 +578,7 @@ pub fn counts(raw: Option<&Value>) -> TokenCounts {
         output: n("outputTokens"),
         cache_read: cached,
         cache_write: n("cacheWriteInputTokens"),
+        cache_ttl: None,
     }
 }
 
@@ -685,6 +686,9 @@ mod tests {
             profile_id: "default".into(),
             bridge: None,
             effort: Some("high".into()),
+            tool_search: None,
+            tuning: Default::default(),
+            omit_agent_credits: false,
         }
     }
 

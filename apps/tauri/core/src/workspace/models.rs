@@ -123,6 +123,7 @@ impl RunProvider {
                 speed_tiers: true,
                 ultracode: true,
                 echoes_steers: false,
+                reports_prompt_cache_lifetime: true,
             },
             Self::Codex => ProviderCapabilities {
                 approvals: true,
@@ -142,6 +143,7 @@ impl RunProvider {
                 speed_tiers: true,
                 ultracode: false,
                 echoes_steers: true,
+                reports_prompt_cache_lifetime: false,
             },
             Self::Gemini => ProviderCapabilities {
                 approvals: true,
@@ -161,6 +163,7 @@ impl RunProvider {
                 speed_tiers: false,
                 ultracode: false,
                 echoes_steers: false,
+                reports_prompt_cache_lifetime: false,
             },
             Self::Opencode | Self::Cursor | Self::Grok | Self::Antigravity => ProviderCapabilities {
                 approvals: true,
@@ -182,6 +185,7 @@ impl RunProvider {
                 speed_tiers: false,
                 ultracode: false,
                 echoes_steers: false,
+                reports_prompt_cache_lifetime: false,
             },
         }
     }
@@ -241,6 +245,8 @@ pub struct ProviderCapabilities {
     /// The agent echoes a steered message as yours once it reads it (a Codex app-server `userMessage` item), so a steer
     /// can show "waiting to be read" until then (`SteerReceipts`).
     pub echoes_steers: bool,
+    /// The agent reports how long its prompt cache lives (`usage.cache_creation` on Claude Code, AG-32).
+    pub reports_prompt_cache_lifetime: bool,
 }
 
 /// Agent: mag uitvoeren. Plan: alleen lezen en een plan maken, niets wijzigen.
@@ -489,6 +495,9 @@ pub struct WorkspaceRun {
     /// (`RestartContinuation` on the Mac).
     #[serde(default, skip_serializing_if = "super::restart::RestartState::is_empty")]
     pub restart: super::restart::RestartState,
+    /// Prompt cache expiry window from the last model request (Claude Code `usage.cache_creation`, AG-32).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache: Option<super::token_savings::PromptCacheWindow>,
 }
 
 impl WorkspaceRun {
@@ -958,6 +967,7 @@ pub(crate) mod tests {
             compacting: false,
             tasks: None,
             restart: Default::default(),
+            prompt_cache: None,
         }
     }
 

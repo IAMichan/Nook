@@ -457,8 +457,7 @@ The Mac's bridge has 48 tools (`apps/macos/Services/Workspace/WorkspaceBridgePro
 
 - [ ] **AG-31** MCP connectors waiting for sign-in above the composer (`ConnectorSignIn`, `WorkspaceManager+ConnectorSignIn`) · M
 
-- [ ] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M
-  - Open: the advice lives in Settings › Coding agents and Settings › Sessions (`AgentReadiness`, `TokenSettingsSection`), which belong to the Settings pages.
+- [x] **AG-32** Readiness and token advice (`AgentReadiness`, `AgentAdvice`, `TokenSavings`, `AgentTuning`, `TokenSettingsSection`) · M — ported `readiness.rs`, `advice.rs`, `token_savings.rs`, and `tuning.rs` in `nook-core`, wired prompt-cache tracking, idle/size/return compaction, `AutoCompactMark`, `ClaudeToolSearch`, and `AppliedTuning` into `Manager`/`CommandInput`, added Tauri commands (`workspace_tuning_scan`, `workspace_tuning_set`, `workspace_readiness`, `workspace_limit_advice`, `workspace_offers_compact_first`), and added `TokenSettingsSection.svelte` under Settings › Coding agents › Usage & costs.
 
 - [x] **AG-33** OpenTelemetry environment passed to agents Nook starts (`AgentTelemetry`; the exporter is SV-05) · S
   - Done (2026-11-21): every coding agent Nook starts gets the receiver from Settings › System › Maintenance (or `OTEL_EXPORTER_OTLP_*` in Nook's environment) at its next start: the standard `OTEL_EXPORTER_OTLP_*` variables for all, plus Claude Code's `CLAUDE_CODE_ENABLE_TELEMETRY`, Codex's `-c otel.*` overrides, Gemini's `GEMINI_TELEMETRY_*` and Grok's `GROK_EXTERNAL_OTEL` (`workspace::command::apply_telemetry`, wired in `Manager`); with no endpoint nothing is passed, as on the Mac.

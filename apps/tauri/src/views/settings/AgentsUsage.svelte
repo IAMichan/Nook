@@ -37,6 +37,7 @@
   import UsagePage from "../workspace/UsagePage.svelte";
   import CliProxyHubs from "./CliProxyHubs.svelte";
   import SettingsSection from "./SettingsSection.svelte";
+  import TokenSettingsSection from "./TokenSettingsSection.svelte";
 
   // Period and agent of the sessions' figures, as rows of the card (the Mac's Period and Agent pickers).
   let range = $state<UsageRange>((localStorage.getItem("ws.usage.range") as UsageRange) || "week");
@@ -407,6 +408,8 @@
   </label>
   <div class="report"><UsagePage part="cost" controls={false} bind:range bind:provider /></div>
 </div>
+
+<TokenSettingsSection />
 
 {#if showLimitsModal}
   <UsageModal initialTab="limits" onclose={() => (showLimitsModal = false)} />

@@ -122,6 +122,9 @@ pub fn setup(app: &AppHandle) {
                 let m = manager.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || m.refresh_worktrees()).await;
             }
+            if tick % 30 == 10 {
+                manager.check_idle_compactions();
+            }
             // Auto-pull default branches roughly every 15 minutes per repo, when enabled globally or per project.
             if tick % 30 == 15 {
                 let global_auto_pull =

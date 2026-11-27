@@ -154,6 +154,10 @@ pub struct WorkspaceSettings {
     pub suggest_next_prompt: bool,
     /// Per-kind text generator choice (`"titles"`, `"gitText"`, `"nextPrompt"` -> `"agent"` or `"api:<provider>:<model>"`).
     pub text_generators: BTreeMap<String, String>,
+    /// Summarize long idle sessions shortly before their prompt cache expires (`ws.idleCompaction`, AG-32).
+    pub idle_compaction: bool,
+    /// Automatically summarize a session once its context passes this token count (`ws.autoCompactTokens`, AG-32; `0` = off).
+    pub auto_compact_tokens: u64,
 }
 
 impl Default for WorkspaceSettings {
@@ -192,6 +196,8 @@ impl Default for WorkspaceSettings {
             strip_agent_credits: false,
             suggest_next_prompt: true,
             text_generators: BTreeMap::new(),
+            idle_compaction: true,
+            auto_compact_tokens: super::token_savings::SizeCompaction::DEFAULT_TOKENS,
         }
     }
 }
@@ -220,6 +226,9 @@ impl WorkspaceSettings {
         super::traffic::set_enabled(settings.keep_traffic);
         super::model_manifest::set_online(settings.online_model_list);
         super::capacity::set_max_working_sessions(settings.max_working_sessions);
+        super::token_savings::set_idle_compaction_enabled(settings.idle_compaction);
+        super::token_savings::set_auto_compact_tokens(settings.auto_compact_tokens);
+        super::token_savings::set_omit_agent_credits(settings.no_agent_credits);
         settings
     }
 
@@ -228,6 +237,9 @@ impl WorkspaceSettings {
         super::traffic::set_enabled(self.keep_traffic);
         super::model_manifest::set_online(self.online_model_list);
         super::capacity::set_max_working_sessions(self.max_working_sessions);
+        super::token_savings::set_idle_compaction_enabled(self.idle_compaction);
+        super::token_savings::set_auto_compact_tokens(self.auto_compact_tokens);
+        super::token_savings::set_omit_agent_credits(self.no_agent_credits);
         if let Ok(bytes) = serde_json::to_vec_pretty(self) {
             let _ = crate::paths::write_atomic(file, &bytes);
         }
