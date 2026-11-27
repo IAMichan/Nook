@@ -768,6 +768,16 @@ private struct TableBlock: View, Equatable {
     let rows: [[String]]
     let size: CGFloat
     @State private var showChart = false
+    /// The free room beside the conversation's column, which a table too wide for the column may grow into.
+    @Environment(\.chatColumnMargin) private var margin
+    /// Whether tables wider than the column use that room: one choice for every table, kept across launches.
+    @AppStorage("chat.tablesUseWidth") private var usesWidth = false
+    /// The width the column gives the table, and the width the table's columns want side by side.
+    @State private var columnWidth: CGFloat = 0
+    @State private var contentWidth: CGFloat = 0
+
+    /// What stays free at each edge of the conversation when a table grows: the rail of prompts lies on the leading one.
+    private static let edge: CGFloat = NookTheme.Spacing.xxxl
 
     nonisolated static func == (a: TableBlock, b: TableBlock) -> Bool {
         a.header == b.header && a.rows == b.rows && a.size == b.size
@@ -797,14 +807,35 @@ private struct TableBlock: View, Equatable {
                 grid(numbers)
             }
             if !showChart || chart == nil {
-                HStack {
+                HStack(spacing: NookTheme.Spacing.xxs) {
                     Spacer(minLength: 0)
+                    if canGrow {
+                        ToolbarIconButton("arrow.left.and.right", usesWidth ? tr("table.fitColumn") : tr("table.useWidth"),
+                                          selected: usesWidth) {
+                            withAnimation(NookTheme.swap) { usesWidth.toggle() }
+                        }
+                    }
                     TableCopyMenu(header: header, rows: rows)
                 }
                 .padding(.top, -NookTheme.Spacing.xs)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded() } action: { columnWidth = $0 }
+    }
+
+    /// The most a table may grow past the column on both sides together.
+    private var room: CGFloat { 2 * max(0, margin - Self.edge) }
+
+    /// Whether the table is cut off by the column while there is room beside it: only then is growing an option.
+    private var canGrow: Bool {
+        columnWidth > 0 && contentWidth > columnWidth + 1 && room >= NookTheme.Spacing.xxl
+    }
+
+    /// How much wider than the column the table is drawn: as much as it needs, as far as the room goes.
+    private var growth: CGFloat {
+        guard usesWidth, canGrow else { return 0 }
+        return min(contentWidth - columnWidth, room)
     }
 
     // Split into small typed parts: as one expression the grid takes the compiler too long to type-check.
@@ -818,7 +849,10 @@ private struct TableBlock: View, Equatable {
                 }
             }
             .padding(.vertical, NookTheme.Spacing.xxs)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width.rounded() } action: { contentWidth = $0 }
         }
+        // Grows out of the column evenly on both sides, into the room beside it, without taking room from it.
+        .padding(.horizontal, -growth / 2)
     }
 
     private func headerRow(_ numbers: [Bool]) -> some View {

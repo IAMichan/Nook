@@ -260,6 +260,31 @@ extension EnvironmentValues {
     @Entry var chatColumnSlide: CGFloat = 0
     /// Whether a view is already inside a conversation's column (`chatColumn()`).
     @Entry var insideChatColumn = false
+    /// The free room on each side of a centered conversation column (`chatColumn()`, the Nook chat's readable column),
+    /// which a wide block may grow into (`TableBlock`). 0 where the column fills its room (the notch, a narrow window).
+    @Entry var chatColumnMargin: CGFloat = 0
+}
+
+extension View {
+    /// Tells the views in this column of at most `column` wide how much room is left on each side of it
+    /// (`chatColumnMargin`), measured over the room this view is given, in layout steps.
+    func reportsColumnMargin(column: CGFloat) -> some View {
+        modifier(ColumnMargin(column: column))
+    }
+}
+
+private struct ColumnMargin: ViewModifier {
+    let column: CGFloat
+    @State private var margin: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.chatColumnMargin, margin)
+            .onLayoutWidthChange { room in
+                let free = max(0, (CGFloat(room) - column) / 2)
+                if free != margin { margin = free }
+            }
+    }
 }
 
 private struct ChatColumn: ViewModifier {
@@ -277,6 +302,7 @@ private struct ChatColumn: ViewModifier {
                     .frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
                     .environment(\.insideChatColumn, true)
             }
+            .reportsColumnMargin(column: PanelLayout.chatColumn)
             .offset(x: slide)
         }
     }
