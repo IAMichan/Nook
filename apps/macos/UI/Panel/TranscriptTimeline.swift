@@ -42,12 +42,12 @@ struct TranscriptConversation: View {
     @State private var overflows = false
     /// Read only by the handlers: as state, each start and stop of a scroll drew every row of the conversation again.
     @State private var scrollPhase = Unobserved(ScrollPhase.idle)
-    /// Rows the lazy stack draws now, for `recoversBlankRows`; nothing draws from it.
+    /// Where the drawn rows stand, for the new turn held near the top (`TurnPinRoom`); nothing draws from it.
     @State private var drawnRows = DrawnRows()
+    /// Which rows are drawn: the last ones, more as you scroll up (`ConversationRows`).
+    @State private var rowWindow = RowWindow()
     /// Holds the row you read in place while you read back and what is above it changes height (`TimelineReadingAnchor`).
     @State private var reading = TimelineReadingAnchor()
-    /// Bumped to make the conversation's scroll view again when its lazy stack is stuck drawing nothing (`recoversBlankRows`).
-    @State private var timelineBuild = 0
     /// The step that just ended, held on the live line a moment and kept out of the rows meanwhile.
     @State private var endedHold = EndedStepHold<String>()
     /// The agent that just finished, as two steps: the fold, then the end's finished look in a glide (`FinishGlide`).
@@ -144,13 +144,16 @@ struct TranscriptConversation: View {
         let rows = firstRow > 0 ? Array(allRows[firstRow...]) : allRows
         let outputs = derived.outputs
         let turns = derived.turns
+        // Drawn in full, the last rows and more as you scroll up (`ConversationRows`).
+        let drawnFrom = rowWindow.start(rows.map { AnyHashable($0.id) },
+                                        minimum: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start), key: path)
         let beforeNew = newSince.flatMap { id in rows.firstIndex { $0.id == id } }.flatMap { $0 > 0 ? rows[$0 - 1].id : nil }
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
                 // No scroll bar, not even when the system shows them always: the rail beside it marks your messages and scrolls.
                 ScrollView {
-                    // Lazy, but for its latest turns (`ConversationRows`): a long conversation only lays out what is on
-                    // screen, and its end never stays blank.
+                    // Every row drawn in full, only the last ones of a long conversation until you scroll up
+                    // (`ConversationRows`).
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
                             if readFinished {
@@ -162,7 +165,8 @@ struct TranscriptConversation: View {
                                 PatientSpinner().frame(height: 160)
                             }
                         }
-                        if firstRow > 0 {
+                        // Once every row of the window is drawn: before that, scrolling up draws them (`RowWindow`).
+                        if firstRow > 0, drawnFrom == 0 {
                             TimelineEarlierRow {
                                 // What you looked at stays where it is: the earlier turns go above it.
                                 let anchor = rows.first?.id
@@ -173,10 +177,9 @@ struct TranscriptConversation: View {
                         }
                         // While the agent works, its last rows never get shorter: what folds away into "Ran 3 commands"
                         // leaves room instead of bouncing the conversation down, also once you scroll up (`AgentRunPanel`).
-                        ConversationRows(items: rows, eager: HistoryWindow.eagerRows(rowsPerTurn: perTurn, start: start),
+                        ConversationRows(items: rows, from: drawnFrom,
                                          holdsHeight: (working || settling) && !finding,
                                          holdKey: Self.holdKey(turns: perTurn.count, open: open, start: start),
-                                         holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows,
                                          glidesGrowth: (working || settling && !glidingEnd) && scroll.shouldFollowEnd && !finding,
                                          working: working) { row in
                             if row.id == newSince {
@@ -221,8 +224,6 @@ struct TranscriptConversation: View {
                     .padding(.vertical, NookTheme.Spacing.xs)
                     .coordinateSpace(name: TimelineSpace.content)
                 }
-                // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
-                .id(timelineBuild)
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
@@ -243,6 +244,8 @@ struct TranscriptConversation: View {
                     reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop,
                                   holding: !scroll.shouldFollowEnd && !finding && scrollPhase.value != .animating)
                     keepEnd(old, frame, proxy)
+                    // Near the top of the drawn rows: a page more above, what you read staying put (`RowWindow`).
+                    rowWindow.scrolled(frame)
                 }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     // Within the toolbar and composer around the view: forgetting the toolbar left the pill up at the end.
@@ -256,34 +259,17 @@ struct TranscriptConversation: View {
                 .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                     overflows = now
                 }
-                // Never a black conversation: at rest with none of its rows in view, back to the one you last saw (or the end).
-                .recoversBlankRows(String.self, rows: rows.count, drawn: drawnRows, idle: { scrollPhase.value == .idle }) { last, attempt in
-                    var still = Transaction()
-                    still.disablesAnimations = true
-                    withTransaction(still) {
-                        if let last, last != "bottom", !scroll.shouldFollowEnd, !atEnd {
-                            proxy.scrollTo(last, anchor: .top)
-                        } else if attempt == 0 {
-                            proxy.scrollTo("bottom", anchor: .bottom)
-                        } else {
-                            // Still blank at the end: follow the end again, land on the last row
-                            // itself (one the lazy stack must draw), and only then on the very end.
-                            scroll.jumpedToEnd()
-                            // Scrolling brought nothing back: a new scroll view, which opens at its end.
-                            if RowsInView.rebuilds(attempt: attempt) { timelineBuild += 1 }
-                            if let lastRow = rows.last?.id { proxy.scrollTo(lastRow, anchor: .bottom) }
-                            DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                        }
-                    }
-                }
                 .overlay(alignment: .leading) {
                     if overflows, !finding, !derived.marks.isEmpty {
                         TranscriptPromptRail(marks: derived.marks) { mark in
                             scroll.userScrolled()
+                            let drawing = rowWindow.reveal(mark.row)
                             // A message the window leaves out widens it first.
                             let turn = TranscriptPresentation.turn(ofRow: mark.row, in: derived.rows)
-                            if let turn, turn < start {
-                                historyStart = HistoryWindow.revealing(turn, from: start)
+                            let widens = turn.map { $0 < start } ?? false
+                            if widens, let turn { historyStart = HistoryWindow.revealing(turn, from: start) }
+                            // Drawn in the next pass: the scroll waits for it.
+                            if widens || drawing {
                                 DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) } }
                             } else {
                                 withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
@@ -341,6 +327,7 @@ struct TranscriptConversation: View {
                 .onChange(of: freshRead) { _, read in if read { land(proxy) } }
                 .onAppear {
                     drawnRows.pin = pinRoom
+                    rowWindow.reading = reading
                     visit = visitKey.flatMap { TimelineVisitStore.shared.visit(for: $0) }
                     if let visit { open = visit.open }
                     scrollToEnd(proxy)
@@ -463,6 +450,8 @@ struct TranscriptConversation: View {
         guard found.matches.indices.contains(index) else { return }
         let match = found.matches[index]
         scroll.userScrolled()
+        // Drawn down from its top-level row (`RowWindow`).
+        rowWindow.reveal(match.containers.first ?? match.rowID)
         // A match in a turn the window leaves out widens it first (its top-level row: the outermost fold, or itself).
         let perTurn = TranscriptPresentation.rowsPerTurn(derived.rows)
         let start = HistoryWindow.clamped(historyStart ?? HistoryWindow.initialStart(rowsPerTurn: perTurn), turnCount: perTurn.count)

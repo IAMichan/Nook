@@ -144,8 +144,9 @@ extension AgentRunPanel {
                                          directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
                                          openEvents: expanded, shownFile: sideLink.shownFile, counted: countedLines,
                                          settling: settling)
-        // The latest turns drawn in full, the rest lazily (`ConversationRows`): the end never stays blank.
+        // Drawn in full, the last blocks and more as you scroll up (`ConversationRows`).
         let eager = HistoryWindow.eagerRows(rowsPerTurn: memo.rowsPerTurn, start: start)
+        let drawnFrom = rowWindow.start(shownBlocks.map { AnyHashable($0.id) }, minimum: eager, key: runID)
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -157,7 +158,8 @@ extension AgentRunPanel {
                             PatientSpinner().frame(height: 160)
                         }
                     }
-                    if firstRow > 0 {
+                    // Once every block of the window is drawn: before that, scrolling up draws them (`RowWindow`).
+                    if firstRow > 0, drawnFrom == 0 {
                         TimelineEarlierRow {
                             // What you looked at stays where it is: the earlier turns go above it.
                             let anchor = shownBlocks.first?.id
@@ -170,10 +172,9 @@ extension AgentRunPanel {
                     // While the agent works, its last rows never get shorter: what folds away into "Ran 3 commands"
                     // leaves room instead of bouncing the conversation down. Also once you scroll up: letting go then
                     // shrank the end the moment you started to scroll, and the view jumped under your fingers.
-                    ConversationRows(items: shownBlocks, eager: eager,
+                    ConversationRows(items: shownBlocks, from: drawnFrom,
                                      holdsHeight: (active || settling) && !finding,
                                      holdKey: Self.holdKey(turn: workingUnder, open: openBlocks, expanded: expanded, start: start),
-                                     holdsSplit: !scroll.shouldFollowEnd, drawn: drawnRows,
                                      glidesGrowth: mayGlide || (settling && !glidingEnd), working: active) { block in
                         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
@@ -253,8 +254,6 @@ extension AgentRunPanel {
                 .chatColumn()
                 .coordinateSpace(name: TimelineSpace.content)
             }
-            // Made again when the blank guard finds its lazy stack stuck (`RowsInView.rebuilds`).
-            .id(timelineBuild)
             // The files and lines of every finished turn from git (`countTurns`): again when a turn ends or a snapshot is made.
             .task(id: "\(runID)|\(memo.turns.count)|\(memo.turns.last?.files.count ?? 0)|\(run.checkpoints?.count ?? 0)") {
                 await countTurns(memo.turns, run: run)
@@ -293,29 +292,11 @@ extension AgentRunPanel {
                 // Reading back: what you read stays put while the rows above it change height.
                 reading.moved(offset: frame.offset, container: frame.container, insetTop: frame.insetTop, holding: holdsReading)
                 keepEnd(old, frame, proxy)
+                // Near the top of the drawn blocks: a page more above, what you read staying put (`RowWindow`).
+                rowWindow.scrolled(frame)
             }
             .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
                 overflows = now
-            }
-            // Never a black conversation: at rest with none of its blocks in view, back to the one you last saw (or the end).
-            .recoversBlankRows(UUID.self, rows: shownBlocks.count, drawn: drawnRows, idle: { scrollPhase.value == .idle }) { last, attempt in
-                var still = Transaction()
-                still.disablesAnimations = true
-                withTransaction(still) {
-                    if let last, !scroll.shouldFollowEnd, !atEnd {
-                        proxy.scrollTo(last, anchor: .top)
-                    } else if attempt == 0 {
-                        proxy.scrollTo("bottom", anchor: .bottom)
-                    } else {
-                        // Still blank at the end: follow the end again, land on the last block
-                        // itself (a row the lazy stack must draw), and only then on the very end.
-                        scroll.jumpedToEnd()
-                        // Scrolling brought nothing back: a new scroll view, which opens at its end.
-                        if RowsInView.rebuilds(attempt: attempt) { timelineBuild += 1 }
-                        if let lastBlock = shownBlocks.last?.id { proxy.scrollTo(lastBlock, anchor: .bottom) }
-                        DispatchQueue.main.async { withTransaction(still) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                    }
-                }
             }
             // Below the scroll modifiers: the composer has scroll views of its own, and a scroll modifier over both picks one.
             // A mark per message of yours on the leading edge, as in an agent's own transcript: a click jumps to it.
@@ -426,7 +407,10 @@ extension AgentRunPanel {
                 finishGlided += 1
             }
             .onChange(of: runID) { _, _ in pinRoom.reset() }
-            .onAppear { drawnRows.pin = pinRoom }
+            .onAppear {
+                drawnRows.pin = pinRoom
+                rowWindow.reading = reading
+            }
         }
         // VoiceOver hears the step, the finished replies and what waits on you, as for an agent's own transcript.
         .announcesAgentProgress(key: "run:" + runID.uuidString, author: run.provider.displayName, snapshot: announcement(run))
