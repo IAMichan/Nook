@@ -22,6 +22,7 @@
   import ConnectorSignInBanner from "./ConnectorSignInBanner.svelte";
   import ConnectorSignInGroup from "./ConnectorSignInGroup.svelte";
   import GoalStrip from "./GoalStrip.svelte";
+  import ResourceWaitStrip from "./ResourceWaitStrip.svelte";
   import TaskChecklist from "../../../components/TaskChecklist.svelte";
   import RunComposer from "./RunComposer.svelte";
   import SessionSidePanel from "./SessionSidePanel.svelte";
@@ -582,6 +583,7 @@
               <!-- The agent's own task list with the step it is on (`TaskChecklistCard`, `RunTasks.progress`). -->
               <TaskChecklist steps={run.tasks} live={isActive(run.status)} phase />
             {/if}
+            <ResourceWaitStrip runId={run.id} />
             <SideChatStrip items={sideChats} ondismiss={dismissSideChat} />
             {#if connectorSignIns.length > 0}
               <ConnectorSignInBanner runId={run.id} connectors={connectorSignIns} dismissed={workspace.dismissedConnectorSignIns} />

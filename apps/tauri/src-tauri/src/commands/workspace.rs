@@ -1602,6 +1602,21 @@ pub fn workspace_open_skills_folder(app: AppHandle, path: String) -> Res<String>
     Ok(folder.display().to_string())
 }
 
+/// Current per-session resource throttles from `AgentGovernor` (AG-76).
+#[tauri::command]
+pub fn workspace_governor_status(
+    state: State<'_, WorkspaceState>,
+) -> std::collections::HashMap<Uuid, nook_core::workspace::governor::AgentThrottle> {
+    state.governor.throttles()
+}
+
+/// Exempts a session from being paused under memory pressure and immediately resumes its commands (`AgentGovernor`, AG-76).
+#[tauri::command]
+pub fn workspace_governor_let_go_on(state: State<'_, WorkspaceState>, run: String) -> Res<()> {
+    state.governor.let_go_on(id(&run)?);
+    Ok(())
+}
+
 // MARK: Worktree cleanup (`WorktreeCleanupReportView` on the Mac)
 
 #[derive(Debug, Clone, Serialize)]

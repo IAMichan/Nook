@@ -267,6 +267,8 @@ pub type ScriptRunner = Arc<dyn Fn(&str, &str, &str) -> Option<Box<dyn Fn() -> b
 pub type AccountExecutable = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 /// Resolves extra arguments appended to every launch under an account (`accountArguments` on the Mac, CH-98).
 pub type AccountArguments = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
+/// Runs right before an agent process is interrupted or terminated so paused child commands can receive the signal (`AgentGovernor`, AG-76).
+pub type BeforeStop = Arc<dyn Fn(u32) + Send + Sync>;
 
 pub struct Manager {
     inner: Mutex<Inner>,
@@ -285,6 +287,8 @@ pub struct Manager {
     account_executable: Mutex<Option<AccountExecutable>>,
     /// Optional per-account extra arguments (`accountArguments` on the Mac, CH-98).
     account_arguments: Mutex<Option<AccountArguments>>,
+    /// Optional callback fired right before interrupting an agent PID (`AgentGovernor`, AG-76).
+    before_stop: Mutex<Option<BeforeStop>>,
 }
 
 /// Verzamelt events en stuurt ze pas als de mutex los is.
@@ -319,6 +323,7 @@ impl Manager {
             script_runner: Mutex::new(None),
             account_executable: Mutex::new(None),
             account_arguments: Mutex::new(None),
+            before_stop: Mutex::new(None),
         });
         manager.restore_waiting();
         // Na een herstart: wat op de reset van een limiet wachtte, wacht weer.
@@ -327,6 +332,37 @@ impl Manager {
             manager.arm_limit_resume(id);
         }
         manager
+    }
+
+    /// Registers a callback invoked right before an agent process is interrupted (`AgentGovernor`, AG-76).
+    pub fn set_before_stop(&self, f: impl Fn(u32) + Send + Sync + 'static) {
+        *self.before_stop.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+    }
+
+    fn notify_before_stop(&self, pid: Option<u32>) {
+        if let Some(pid) = pid {
+            if let Some(cb) = self.before_stop.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                cb(pid);
+            }
+        }
+    }
+
+    /// Currently running agent processes with their session ID, OS PID, and turn start time (`AgentGovernor`, AG-76).
+    pub fn running_agents(&self) -> Vec<(Uuid, u32, DateTime<Utc>)> {
+        let s = self.lock();
+        s.processes
+            .iter()
+            .filter_map(|(&id, proc_)| {
+                let pid = proc_.pid?;
+                let started = s
+                    .turns
+                    .get(&id)
+                    .and_then(|t| t.started)
+                    .or_else(|| s.runs.iter().find(|r| r.id == id).map(|r| r.updated_at))
+                    .unwrap_or_else(Utc::now);
+                Some((id, pid, started))
+            })
+            .collect()
     }
 
     /// Registers a per-account executable override resolver (`accountExecutable` on the Mac, CH-98).
@@ -2977,6 +3013,7 @@ impl Manager {
                     let _ = i.send(Input::Close);
                 }
             }
+            manager.notify_before_stop(pid);
             interrupt(pid);
             tokio::time::sleep(Duration::from_secs(4)).await;
             if manager.same_process(id, generation) {
@@ -4913,6 +4950,10 @@ impl Manager {
     /// deadline, hoeveel agents er ook draaien. Wat de sessies bezighield (vragen) wordt bewaard, en de sessies die dit
     /// afbrak gaan na de volgende start verder als dat aan staat.
     pub fn shutdown(&self) {
+        let release_pids: Vec<u32> = self.lock().processes.values().filter_map(|p| p.pid).collect();
+        for pid in release_pids {
+            self.notify_before_stop(Some(pid));
+        }
         let cut: Vec<(Uuid, bool)> = {
             let mut s = self.lock();
             s.quitting = true;
