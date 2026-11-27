@@ -417,7 +417,7 @@
           <PullRequests session={run.id} />
         </div>
       {:else if panel.active === "outputs"}
-        <OutputsPanel {outputs} selected={panel.outputId} onselect={(id) => sidePanel.setOutput(run.id, id)} folder={run.workingDirectory} live={isActive(run.status)} {onrun} />
+        <OutputsPanel {outputs} selected={panel.outputId} onselect={(id) => sidePanel.setOutput(run.id, id)} folder={run.workingDirectory} live={isActive(run.status)} {onrun} runId={run.id} />
       {:else if panel.active === "subagents"}
         <!-- SessionSubagentsPanel (`AgentWorkStrips.swift` on macOS, AG-73): both background commands and subagents -->
         <div class="pane-scroll">

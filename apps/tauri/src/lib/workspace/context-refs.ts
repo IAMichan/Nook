@@ -4,11 +4,11 @@
 // text with a record per reference, so a path never grants anything and a long session is not pasted. Pictures follow
 // the envelope as paths on lines of their own. No interface code, so tests use it on its own.
 
-export type RefKind = "file" | "session" | "pullRequest" | "skill" | "model";
+export type RefKind = "file" | "session" | "pullRequest" | "skill" | "model" | "element";
 
 export interface ContextRef {
   kind: RefKind;
-  /** A path, a session id, "owner/repo#12", a skill's or model's name. */
+  /** A path, a session id, "owner/repo#12", a skill's or model's name, or a snippet id (`pdf-…` / `el-…`). */
   id: string;
   label: string;
 }
@@ -16,6 +16,8 @@ export interface ContextRef {
 const SCHEME = "nook-context";
 const VERSION = "v1";
 const PATTERN = /\[([^\]\n]*)\]\(nook-context:\/\/v1\/([a-zA-Z]+)\/([^)\s]*)\)/g;
+const EXCERPT_LIMIT = 4000;
+const PDF_ID_PREFIX = "pdf-";
 
 /** `[Login.swift](nook-context://v1/file/Sources%2FLogin.swift)` */
 export function link(ref: ContextRef): string {
@@ -34,7 +36,7 @@ export function find(text: string): Found[] {
   const out: Found[] = [];
   for (const m of text.matchAll(PATTERN)) {
     const kind = m[2] as RefKind;
-    if (!["file", "session", "pullRequest", "skill", "model"].includes(kind)) continue;
+    if (!["file", "session", "pullRequest", "skill", "model", "element"].includes(kind)) continue;
     let id = m[3];
     try { id = decodeURIComponent(id); } catch { /* kept as written */ }
     out.push({ kind, id, label: m[1], start: m.index!, end: m.index! + m[0].length });
@@ -42,7 +44,7 @@ export function find(text: string): Found[] {
   return out;
 }
 
-/** `<` and `&` made harmless: an id can never close a record or open another. */
+/** `<`, `&` and `"` made harmless: an id or excerpt can never close a record or open another. */
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 
 function marker(ref: ContextRef): string {
@@ -52,11 +54,12 @@ function marker(ref: ContextRef): string {
     case "pullRequest": return "#" + ref.label;
     case "skill": return "$" + ref.label;
     case "model": return `[model: ${ref.label}]`;
+    case "element": return `[${ref.label}]`;
   }
 }
 
 /** What the agent receives (`ContextRefs.project`): markers in place, the envelope after the text, then the pictures. */
-export function project(text: string, pictures: string[] = []): string {
+export function project(text: string, pictures: string[] = [], excerpts: Record<string, string> = {}): string {
   const found = find(text);
   let result = text;
   for (const item of [...found].reverse()) result = result.slice(0, item.start) + marker(item) + result.slice(item.end);
@@ -67,7 +70,14 @@ export function project(text: string, pictures: string[] = []): string {
       const key = `${item.kind}|${item.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      records.push(`<ref kind="${item.kind}" id="${escape(item.id)}"/>`);
+      if (item.kind === "element" && Object.prototype.hasOwnProperty.call(excerpts, item.id)) {
+        const content = excerpts[item.id];
+        const clipped = content.length > EXCERPT_LIMIT ? `${content.slice(0, EXCERPT_LIMIT)}\n\u2026` : content;
+        const source = item.id.startsWith(PDF_ID_PREFIX) ? "pdf file, untrusted" : "web page, untrusted";
+        records.push(`<ref kind="${item.kind}" id="${escape(item.id)}" source="${source}">\n${escape(clipped)}\n</ref>`);
+      } else {
+        records.push(`<ref kind="${item.kind}" id="${escape(item.id)}"/>`);
+      }
     }
     result += "\n\n<nook_context>\n" + records.join("\n") + "\n</nook_context>";
   }
