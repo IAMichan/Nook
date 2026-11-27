@@ -44,6 +44,27 @@
   let hovered = $state(null);
   const shown = $derived(levels.find((level) => level.trusted === (hovered ?? panel.access?.trusted)) ?? levels[0]);
 
+  /** Picks a level, unless it is the one in use already. */
+  function pickAccess(trusted) {
+    if (panel.access && panel.access.trusted !== trusted) onaccess(trusted);
+  }
+
+  /** The arrows move through the levels as in any radio group: they pick the next one and take the focus to it. */
+  function accessKey(event) {
+    const by = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (!by || !panel.access) return;
+    event.preventDefault();
+    const index = levels.findIndex((level) => level.trusted === panel.access.trusted);
+    const next = (index + by + levels.length) % levels.length;
+    pickAccess(levels[next].trusted);
+    event.currentTarget.querySelectorAll('button')[next]?.focus();
+  }
+
+  /** The footer goes away with the menu (Escape, a click outside): what the pointer was on no longer counts. */
+  function forgetHover() {
+    return () => (hovered = null);
+  }
+
   function send({ text, images }) {
     onsend(text || t('imageQuestion'), images);
   }
@@ -75,14 +96,15 @@
         >
           {#snippet footer()}
             {#if panel.access}
-              <div class="access">
+              <div class="access" {@attach forgetHover}>
                 <div class="access-title">{t('accessTitle').replace('$1', panel.access.site)}</div>
-                <div class="access-levels" role="radiogroup" aria-label={t('accessTitle').replace('$1', panel.access.site)}>
+                <div class="access-levels" role="radiogroup" aria-label={t('accessTitle').replace('$1', panel.access.site)} onkeydown={accessKey}>
                   {#each levels as level (level.trusted)}
                     <button type="button" role="radio" class:on={panel.access.trusted === level.trusted}
                             aria-checked={panel.access.trusted === level.trusted} title={level.label}
+                            tabindex={panel.access.trusted === level.trusted ? 0 : -1}
                             onmouseenter={() => (hovered = level.trusted)} onmouseleave={() => (hovered = null)}
-                            onclick={() => panel.access.trusted !== level.trusted && onaccess(level.trusted)}>
+                            onclick={() => pickAccess(level.trusted)}>
                       <svg viewBox="0 0 16 16" aria-hidden="true">
                         {#if level.icon === 'lock'}
                           <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
@@ -94,7 +116,13 @@
                     </button>
                   {/each}
                 </div>
-                <p class="access-help">{shown.help}</p>
+                <!-- Both texts take their room, only the shown one is visible: the panel grows upward from the chip, so a
+                     text of another length would move the levels under the pointer. -->
+                <div class="access-help">
+                  {#each levels as level (level.trusted)}
+                    <p class:shown={level === shown} aria-hidden={level !== shown}>{level.help}</p>
+                  {/each}
+                </div>
               </div>
             {/if}
           {/snippet}
@@ -159,5 +187,7 @@
   .access-levels button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .access-levels svg { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .access-levels span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .access-help { margin: 0; color: var(--text-tertiary); font-size: var(--label); line-height: 1.35; }
+  .access-help { display: grid; color: var(--text-tertiary); font-size: var(--label); line-height: 1.35; }
+  .access-help p { grid-area: 1 / 1; margin: 0; visibility: hidden; }
+  .access-help p.shown { visibility: visible; }
 </style>

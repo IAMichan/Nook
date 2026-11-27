@@ -39,6 +39,12 @@ function deferred() {
 		reject
 	};
 }
+// node_modules/svelte/src/internal/client/constants.js
+/**
+* An effect that does not destroy its child effects when it reruns.
+* Runs as part of render effects, i.e. not eagerly as part of tree traversal or effect flushing.
+*/
+var MANAGED_EFFECT = 1 << 24;
 var CLEAN = 1024;
 var DIRTY = 2048;
 var MAYBE_DIRTY = 4096;
@@ -2203,6 +2209,13 @@ function block(fn, flags = 0) {
 }
 /**
 * @param {(() => void)} fn
+* @param {number} flags
+*/
+function managed(fn, flags = 0) {
+	return create_effect(MANAGED_EFFECT | flags, fn);
+}
+/**
+* @param {(() => void)} fn
 */
 function branch(fn) {
 	return create_effect(32 | EFFECT_PRESERVED, fn);
@@ -4340,6 +4353,29 @@ function append_styles$1(anchor, css) {
 		}
 	});
 }
+// node_modules/svelte/src/internal/client/dom/elements/attachments.js
+/** @import { Effect } from '#client' */
+/**
+* @param {Element} node
+* @param {() => (node: Element) => void} get_fn
+*/
+function attach(node, get_fn) {
+	/** @type {false | undefined | ((node: Element) => void)} */
+	var fn = void 0;
+	/** @type {Effect | null} */
+	var e;
+	managed(() => {
+		if (fn !== (fn = get_fn())) {
+			if (e) {
+				destroy_effect(e);
+				e = null;
+			}
+			if (fn) e = branch(() => {
+				effect(() => fn(node));
+			});
+		}
+	});
+}
 // node_modules/clsx/dist/clsx.mjs
 function r(e) {
 	var t, f, n = "";
@@ -5025,7 +5061,7 @@ var root_1$4 = /* @__PURE__ */ from_html(`<span class="file faint svelte-r7ttdz"
 var root_2$4 = /* @__PURE__ */ from_html(`<button type="button" class="file svelte-r7ttdz"> <span class="faint svelte-r7ttdz"> </span></button>`);
 var root_3$4 = /* @__PURE__ */ from_html(`<span class="slot svelte-r7ttdz" aria-hidden="true">+</span>`);
 var root_4$4 = /* @__PURE__ */ from_html(`<div class="thumbs svelte-r7ttdz"><!> <!> <!> <!></div>`);
-var root_5$3 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
+var root_5$4 = /* @__PURE__ */ from_html(`<p class="err svelte-r7ttdz"> </p>`);
 var root_6$2 = /* @__PURE__ */ from_html(`<span> </span>`);
 var root_7$2 = /* @__PURE__ */ from_html(`<div class="layer svelte-r7ttdz" aria-hidden="true"><!> </div>`);
 var root_8$2 = /* @__PURE__ */ from_html(`<button type="button" class="icon svelte-r7ttdz"><svg viewBox="0 0 24 24" aria-hidden="true" class="svelte-r7ttdz"><path d="M12 5v14M5 12h14"></path></svg></button>`);
@@ -5187,7 +5223,7 @@ function Composer($$anchor, $$props) {
 	});
 	var node_6 = sibling(node_1, 2);
 	var consequent_4 = ($$anchor) => {
-		var p = root_5$3();
+		var p = root_5$4();
 		var text_4 = only_child(p, true);
 		template_effect(() => set_text(text_4, draft().fileError));
 		append($$anchor, p);
@@ -5411,7 +5447,7 @@ var root_1$3 = /* @__PURE__ */ from_svg(`<defs><linearGradient x1="0" y1="1" x2=
 var root_2$3 = /* @__PURE__ */ from_svg(`<path fill-rule="evenodd"></path>`);
 var root_3$3 = /* @__PURE__ */ from_svg(`<svg class="mark svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><!><!></svg>`);
 var root_4$3 = /* @__PURE__ */ from_svg(`<svg class="mark tile svelte-1vbdbgh" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#4F8BF7"></stop><stop offset="0.5" stop-color="#EA4335"></stop><stop offset="1" stop-color="#FBBC04"></stop></linearGradient></defs><rect x="0.25" y="0.25" width="23.5" height="23.5" rx="6.7" fill="#171717" stroke="var(--nc-line, #3f3f46)" stroke-width="0.5"></rect><path d="M5.3 18.7 12 5.3l6.7 13.4M8.8 14.1h6.4" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>`);
-var root_5$2 = /* @__PURE__ */ from_html(`<span class="mark letter svelte-1vbdbgh" aria-hidden="true"> </span>`);
+var root_5$3 = /* @__PURE__ */ from_html(`<span class="mark letter svelte-1vbdbgh" aria-hidden="true"> </span>`);
 var $$css$4 = {
 	hash: "svelte-1vbdbgh",
 	code: ".mark.svelte-1vbdbgh {flex-shrink:0;display:block;}.laptop.svelte-1vbdbgh {fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}.letter.svelte-1vbdbgh {display:grid;place-items:center;border-radius:28%;background:color-mix(in srgb, currentColor 20%, transparent);font-weight:700;line-height:1;}"
@@ -5485,7 +5521,7 @@ function AgentMark($$anchor, $$props) {
 		append($$anchor, svg_2);
 	};
 	var consequent_4 = ($$anchor) => {
-		var span = root_5$2();
+		var span = root_5$3();
 		let styles;
 		var text = only_child(span, true);
 		template_effect(($0) => {
@@ -5513,7 +5549,7 @@ var root_1$2 = /* @__PURE__ */ from_html(`<span class="mp-rail-line svelte-9tg97
 var root_2$2 = /* @__PURE__ */ from_html(`<span class="mp-in-use svelte-9tg97k" aria-hidden="true"></span>`);
 var root_3$2 = /* @__PURE__ */ from_html(`<!> <button type="button"><!> <!></button>`, 1);
 var root_4$2 = /* @__PURE__ */ from_html(`<div class="mp-header svelte-9tg97k"> </div>`);
-var root_5$1 = /* @__PURE__ */ from_html(`<button type="button" role="option"><!> <span class="mp-title svelte-9tg97k"> </span></button>`);
+var root_5$2 = /* @__PURE__ */ from_html(`<button type="button" role="option"><!> <span class="mp-title svelte-9tg97k"> </span></button>`);
 var root_6$1 = /* @__PURE__ */ from_html(`<p class="mp-empty svelte-9tg97k"> </p>`);
 var root_7$1 = /* @__PURE__ */ from_html(`<div class="mp-footer svelte-9tg97k"><!></div>`);
 var root_8$1 = /* @__PURE__ */ from_html(`<div class="mp-panel svelte-9tg97k" role="dialog"><div class="mp-body svelte-9tg97k"><div class="mp-rail svelte-9tg97k"></div> <div class="mp-column svelte-9tg97k"><!> <label class="mp-search svelte-9tg97k"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-9tg97k"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3 3"></path></svg> <input type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" class="svelte-9tg97k"/></label> <div class="mp-list svelte-9tg97k" role="listbox"></div></div></div> <!></div>`);
@@ -5695,7 +5731,7 @@ function ModelPicker($$anchor, $$props) {
 		reset(label_1);
 		var div_6 = sibling(label_1, 2);
 		each(div_6, 23, () => get(rows), (choice) => choice.id, ($$anchor, choice, index) => {
-			var button_2 = root_5$1();
+			var button_2 = root_5$2();
 			let classes_2;
 			var node_6 = child(button_2);
 			{
@@ -5890,11 +5926,12 @@ function fileBase64(file) {
 var root$2 = /* @__PURE__ */ from_svg(`<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path>`, 1);
 var root_1$1 = /* @__PURE__ */ from_svg(`<path d="M8 1.8 13 3.6v4c0 3-2.1 5.3-5 6.6-2.9-1.3-5-3.6-5-6.6v-4Z"></path><path d="m5.8 8 1.6 1.6 2.9-3"></path>`, 1);
 var root_2$1 = /* @__PURE__ */ from_html(`<button type="button" role="radio"><svg viewBox="0 0 16 16" aria-hidden="true" class="svelte-1dv7v2j"><!></svg> <span class="svelte-1dv7v2j"> </span></button>`);
-var root_3$1 = /* @__PURE__ */ from_html(`<div class="access svelte-1dv7v2j"><div class="access-title svelte-1dv7v2j"> </div> <div class="access-levels svelte-1dv7v2j" role="radiogroup"></div> <p class="access-help svelte-1dv7v2j"> </p></div>`);
-var root_4$1 = /* @__PURE__ */ from_html(`<div class="panel-composer svelte-1dv7v2j"><!></div>`);
+var root_3$1 = /* @__PURE__ */ from_html(`<p> </p>`);
+var root_4$1 = /* @__PURE__ */ from_html(`<div class="access svelte-1dv7v2j"><div class="access-title svelte-1dv7v2j"> </div> <div class="access-levels svelte-1dv7v2j" role="radiogroup"></div> <div class="access-help svelte-1dv7v2j"></div></div>`);
+var root_5$1 = /* @__PURE__ */ from_html(`<div class="panel-composer svelte-1dv7v2j"><!></div>`);
 var $$css$2 = {
 	hash: "svelte-1dv7v2j",
-	code: "\n  /* The shared composer in the panel's tokens (sidepanel.css), which follow the look Nook sends. */.panel-composer.svelte-1dv7v2j {--nc-surface: var(--composer);--nc-surface-focus: var(--composer);--nc-line: var(--field-stroke);--nc-line-focus: var(--line2);--nc-radius: var(--radius-composer);--nc-control-radius: var(--radius-control);--nc-chip-radius: var(--radius-chip);--nc-menu: var(--surface);--nc-menu-radius: var(--radius-panel);--nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);--nc-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 4%, transparent), 0 8px 24px rgb(0 0 0 / 0.12);--nc-text: var(--paper);--nc-faint: var(--text-tertiary);--nc-hover: var(--row-hover);--nc-accent: var(--accent);--nc-on-accent: var(--on-accent);--nc-accent-hover: var(--accent-hover);--nc-disabled: var(--smoke);--nc-stop: var(--paper);--nc-on-stop: var(--canvas);--nc-error: var(--coral);font:var(--body)/1.45 var(--sans);}\n\n  /* The access under the models: as the Mac's access panel, the levels side by side in a well, the one in use filled,\n     and under them what the one shown allows. */.access.svelte-1dv7v2j {display:flex;flex-direction:column;gap:var(--space-sm);padding:var(--space-md);}.access-title.svelte-1dv7v2j {color:var(--text-tertiary);font-size:var(--label);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.access-levels.svelte-1dv7v2j {display:flex;gap:2px;padding:2px;border-radius:var(--radius-control);background:var(--smoke);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j) {flex:1;display:flex;align-items:center;justify-content:center;gap:var(--space-sm);min-width:0;height:28px;margin:0;padding:0 var(--space-md);border:0;border-radius:var(--radius-chip);background:transparent;color:var(--text-secondary);font:inherit;font-size:var(--detail);cursor:pointer;}.access-levels.svelte-1dv7v2j button.on:where(.svelte-1dv7v2j) {background:color-mix(in srgb, var(--paper) 12%, transparent);color:var(--paper);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j):hover:not(.on) {color:var(--paper);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j):focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}.access-levels.svelte-1dv7v2j svg:where(.svelte-1dv7v2j) {flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}.access-levels.svelte-1dv7v2j span:where(.svelte-1dv7v2j) {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.access-help.svelte-1dv7v2j {margin:0;color:var(--text-tertiary);font-size:var(--label);line-height:1.35;}"
+	code: "\n  /* The shared composer in the panel's tokens (sidepanel.css), which follow the look Nook sends. */.panel-composer.svelte-1dv7v2j {--nc-surface: var(--composer);--nc-surface-focus: var(--composer);--nc-line: var(--field-stroke);--nc-line-focus: var(--line2);--nc-radius: var(--radius-composer);--nc-control-radius: var(--radius-control);--nc-chip-radius: var(--radius-chip);--nc-menu: var(--surface);--nc-menu-radius: var(--radius-panel);--nc-pad: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);--nc-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 4%, transparent), 0 8px 24px rgb(0 0 0 / 0.12);--nc-text: var(--paper);--nc-faint: var(--text-tertiary);--nc-hover: var(--row-hover);--nc-accent: var(--accent);--nc-on-accent: var(--on-accent);--nc-accent-hover: var(--accent-hover);--nc-disabled: var(--smoke);--nc-stop: var(--paper);--nc-on-stop: var(--canvas);--nc-error: var(--coral);font:var(--body)/1.45 var(--sans);}\n\n  /* The access under the models: as the Mac's access panel, the levels side by side in a well, the one in use filled,\n     and under them what the one shown allows. */.access.svelte-1dv7v2j {display:flex;flex-direction:column;gap:var(--space-sm);padding:var(--space-md);}.access-title.svelte-1dv7v2j {color:var(--text-tertiary);font-size:var(--label);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.access-levels.svelte-1dv7v2j {display:flex;gap:2px;padding:2px;border-radius:var(--radius-control);background:var(--smoke);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j) {flex:1;display:flex;align-items:center;justify-content:center;gap:var(--space-sm);min-width:0;height:28px;margin:0;padding:0 var(--space-md);border:0;border-radius:var(--radius-chip);background:transparent;color:var(--text-secondary);font:inherit;font-size:var(--detail);cursor:pointer;}.access-levels.svelte-1dv7v2j button.on:where(.svelte-1dv7v2j) {background:color-mix(in srgb, var(--paper) 12%, transparent);color:var(--paper);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j):hover:not(.on) {color:var(--paper);}.access-levels.svelte-1dv7v2j button:where(.svelte-1dv7v2j):focus-visible {outline:2px solid var(--accent);outline-offset:-2px;}.access-levels.svelte-1dv7v2j svg:where(.svelte-1dv7v2j) {flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}.access-levels.svelte-1dv7v2j span:where(.svelte-1dv7v2j) {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.access-help.svelte-1dv7v2j {display:grid;color:var(--text-tertiary);font-size:var(--label);line-height:1.35;}.access-help.svelte-1dv7v2j p:where(.svelte-1dv7v2j) {grid-area:1 / 1;margin:0;visibility:hidden;}.access-help.svelte-1dv7v2j p.shown:where(.svelte-1dv7v2j) {visibility:visible;}"
 };
 function PanelComposer($$anchor, $$props) {
 	push($$props, true);
@@ -5938,6 +5975,28 @@ function PanelComposer($$anchor, $$props) {
 	/** The level under the pointer, else the chosen one: its name and help show under the choice. */
 	let hovered = /* @__PURE__ */ state(null);
 	const shown = /* @__PURE__ */ user_derived(() => levels.find((level) => level.trusted === (get(hovered) ?? $$props.panel.access?.trusted)) ?? levels[0]);
+	/** Picks a level, unless it is the one in use already. */
+	function pickAccess(trusted) {
+		if ($$props.panel.access && $$props.panel.access.trusted !== trusted) $$props.onaccess(trusted);
+	}
+	/** The arrows move through the levels as in any radio group: they pick the next one and take the focus to it. */
+	function accessKey(event) {
+		const by = {
+			ArrowRight: 1,
+			ArrowDown: 1,
+			ArrowLeft: -1,
+			ArrowUp: -1
+		}[event.key];
+		if (!by || !$$props.panel.access) return;
+		event.preventDefault();
+		const next = (levels.findIndex((level) => level.trusted === $$props.panel.access.trusted) + by + levels.length) % levels.length;
+		pickAccess(levels[next].trusted);
+		event.currentTarget.querySelectorAll("button")[next]?.focus();
+	}
+	/** The footer goes away with the menu (Escape, a click outside): what the pointer was on no longer counts. */
+	function forgetHover() {
+		return () => set(hovered, null);
+	}
 	function send({ text, images }) {
 		$$props.onsend(text || t("imageQuestion"), images);
 	}
@@ -5945,7 +6004,7 @@ function PanelComposer($$anchor, $$props) {
 		focus,
 		fill
 	};
-	var div = root_4$1();
+	var div = root_5$1();
 	var node = child(div);
 	{
 		const controls = ($$anchor) => {
@@ -5957,7 +6016,7 @@ function PanelComposer($$anchor, $$props) {
 						var fragment_2 = comment();
 						var node_2 = first_child(fragment_2);
 						var consequent_1 = ($$anchor) => {
-							var div_1 = root_3$1();
+							var div_1 = root_4$1();
 							var div_2 = child(div_1);
 							var text_1 = only_child(div_2, true);
 							var div_3 = sibling(div_2, 2);
@@ -5986,22 +6045,36 @@ function PanelComposer($$anchor, $$props) {
 								template_effect(() => {
 									set_attribute(button, "aria-checked", $$props.panel.access.trusted === get(level).trusted);
 									set_attribute(button, "title", get(level).label);
+									set_attribute(button, "tabindex", $$props.panel.access.trusted === get(level).trusted ? 0 : -1);
 									classes = set_class(button, 1, "svelte-1dv7v2j", null, classes, { on: $$props.panel.access.trusted === get(level).trusted });
 									set_text(text_2, get(level).label);
 								});
 								event("mouseenter", button, () => set(hovered, get(level).trusted, true));
 								event("mouseleave", button, () => set(hovered, null));
-								delegated("click", button, () => $$props.panel.access.trusted !== get(level).trusted && $$props.onaccess(get(level).trusted));
+								delegated("click", button, () => pickAccess(get(level).trusted));
 								append($$anchor, button);
 							});
 							reset(div_3);
-							var text_3 = only_child(sibling(div_3, 2), true);
+							var div_4 = sibling(div_3, 2);
+							each(div_4, 21, () => levels, (level) => level.trusted, ($$anchor, level) => {
+								var p = root_3$1();
+								let classes_1;
+								var text_3 = only_child(p, true);
+								template_effect(() => {
+									set_attribute(p, "aria-hidden", get(level) !== get(shown));
+									classes_1 = set_class(p, 1, "svelte-1dv7v2j", null, classes_1, { shown: get(level) === get(shown) });
+									set_text(text_3, get(level).help);
+								});
+								append($$anchor, p);
+							});
+							reset(div_4);
 							reset(div_1);
+							attach(div_1, () => forgetHover);
 							template_effect(($0, $1) => {
 								set_text(text_1, $0);
 								set_attribute(div_3, "aria-label", $1);
-								set_text(text_3, get(shown).help);
 							}, [() => t("accessTitle").replace("$1", $$props.panel.access.site), () => t("accessTitle").replace("$1", $$props.panel.access.site)]);
+							delegated("keydown", div_3, accessKey);
 							append($$anchor, div_1);
 						};
 						if_block(node_2, ($$render) => {
@@ -6076,7 +6149,7 @@ function PanelComposer($$anchor, $$props) {
 	append($$anchor, div);
 	return pop($$exports);
 }
-delegate(["click"]);
+delegate(["keydown", "click"]);
 // src/markdown.ts
 var englishTexts = {
 	copy: "Copy",
