@@ -512,11 +512,11 @@ mod platform {
             return;
         }
         unsafe {
-            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr());
+            let ntdll = GetModuleHandleA(c"ntdll.dll".as_ptr().cast());
             if ntdll.is_null() {
                 return;
             }
-            let symbol = if suspend { b"NtSuspendProcess\0".as_ptr() } else { b"NtResumeProcess\0".as_ptr() };
+            let symbol: *const u8 = if suspend { c"NtSuspendProcess".as_ptr().cast() } else { c"NtResumeProcess".as_ptr().cast() };
             let Some(proc_fn) = GetProcAddress(ntdll, symbol) else { return };
             let call: unsafe extern "system" fn(HANDLE) -> i32 = std::mem::transmute(proc_fn);
             let h = OpenProcess(PROCESS_SUSPEND_RESUME, 0, pid);
