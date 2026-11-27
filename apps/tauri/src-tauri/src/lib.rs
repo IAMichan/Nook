@@ -686,6 +686,8 @@ pub fn run() {
             commands::services::handle_deep_link,
             commands::workspace::workspace_regenerate_title,
             commands::workspace::workspace_suggest_next_prompt,
+            commands::workspace::workspace_governor_status,
+            commands::workspace::workspace_governor_let_go_on,
             commands::workspace_tools::browser_pick_element,
             commands::workspace_tools::browser_cancel_pick,
             commands::workspace_tools::browser_clear_picks,

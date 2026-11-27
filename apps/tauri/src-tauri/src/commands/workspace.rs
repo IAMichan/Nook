@@ -1813,6 +1813,21 @@ pub fn workspace_open_skills_folder(app: AppHandle, path: String) -> Res<String>
     Ok(folder.display().to_string())
 }
 
+/// Current per-session resource throttles from `AgentGovernor` (AG-76).
+#[tauri::command]
+pub fn workspace_governor_status(
+    state: State<'_, WorkspaceState>,
+) -> std::collections::HashMap<Uuid, nook_core::workspace::governor::AgentThrottle> {
+    state.governor.throttles()
+}
+
+/// Exempts a session from being paused under memory pressure and immediately resumes its commands (`AgentGovernor`, AG-76).
+#[tauri::command]
+pub fn workspace_governor_let_go_on(state: State<'_, WorkspaceState>, run: String) -> Res<()> {
+    state.governor.let_go_on(id(&run)?);
+    Ok(())
+}
+
 // MARK: Worktree cleanup (`WorktreeCleanupReportView` on the Mac)
 
 #[derive(Debug, Clone, Serialize)]
@@ -2496,12 +2511,10 @@ pub fn workspace_limit_advice(app: AppHandle, state: State<'_, WorkspaceState>, 
                     let frac = reading.and_then(|u| {
                         [u.five_hour.as_ref(), u.seven_day.as_ref()].into_iter().flatten().map(|w| w.used_percent / 100.0).reduce(f64::max)
                     });
-                    let reset = reading.and_then(|u| u.five_hour.as_ref().map(|w| w.resets_at)).or_else(|| {
-                        if is_current {
-                            session.limit_reset_at
-                        } else {
-                            None
-                        }
+                    let reset = reading.and_then(|u| u.five_hour.as_ref().map(|w| w.resets_at)).or(if is_current {
+                        session.limit_reset_at
+                    } else {
+                        None
                     });
                     (frac, reset)
                 }
@@ -2510,12 +2523,10 @@ pub fn workspace_limit_advice(app: AppHandle, state: State<'_, WorkspaceState>, 
                     let frac = reading.and_then(|u| {
                         [u.five_hour.as_ref(), u.weekly.as_ref()].into_iter().flatten().map(|w| w.used_percent / 100.0).reduce(f64::max)
                     });
-                    let reset = reading.and_then(|u| u.five_hour.as_ref().and_then(|w| w.resets_at)).or_else(|| {
-                        if is_current {
-                            session.limit_reset_at
-                        } else {
-                            None
-                        }
+                    let reset = reading.and_then(|u| u.five_hour.as_ref().and_then(|w| w.resets_at)).or(if is_current {
+                        session.limit_reset_at
+                    } else {
+                        None
                     });
                     (frac, reset)
                 }
