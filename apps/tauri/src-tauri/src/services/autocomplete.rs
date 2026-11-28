@@ -1,23 +1,27 @@
 //! Autocomplete Anywhere in the app: the controller between the platform's keyboard hook and field reader
 //! (`TextInput`), the model (`nook_core::services::autocomplete::engine`) and the ghost-text window. The Mac's
-//! `AutocompleteController`, smaller: one suggestion at a time, no writing ahead, no emoji or typo cards.
+//! `AutocompleteController`, smaller: one suggestion at a time, no writing ahead, no typo cards.
 //!
-//! Flow: a key → (debounce) read the focused field → the suggestion on screen still fits (typed through) or the model is
-//! asked → the answer becomes a suggestion → ghost text at the caret, accept keys armed. An accept key types the word
-//! with `SendInput` and reads the field again to move the ghost along.
+//! Flow: a key → (debounce) read the focused field → the suggestion on screen still fits (typed through), or a learned
+//! phrase fits at once, or the model is asked → the answer becomes a suggestion → ghost text at the caret, accept keys
+//! armed. An accept key types the word with `SendInput` and reads the field again to move the ghost along.
 //!
-//! Privacy: typed text and field contents live only in memory for the current suggestion and are never logged or
-//! written to disk; only counts go to `autocomplete/stats.json`. Typed text goes to the local server unless the user
-//! chose the external brain in Settings › Autocomplete.
+//! Privacy: counts go to `autocomplete/stats.json`. When learning is on, sanitized writing samples and turned-down
+//! learned phrases are stored locally, encrypted with a key in the system credential store (`autocomplete/samples.json`
+//! and `autocomplete/rejected-phrases.json`), and can be viewed or deleted in Settings › Typing › Style and context.
+//! Typed text goes to the local server unless the user chose the external brain in Settings › Typing.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
 use nook_core::brain::memory::MemoryItem;
 use nook_core::platform::{FieldSkip, FocusedField, InputEvent, ScreenRect, TextInput};
+use nook_core::secrets::SecretStore;
 use nook_core::services::autocomplete::emoji::{self, EmojiUsage, Picker, PickerLayout};
 use nook_core::services::autocomplete::engine::{self, Engine, EngineOutput, EngineTarget, Plan};
+use nook_core::services::autocomplete::learning::{self, CompletionPhrases, CompletionSamples, Sample};
 use nook_core::services::autocomplete::prefs::{EscapeAction, KeyChord};
 use nook_core::services::autocomplete::prompt::{field_key, CompletionContext, CompletionPrompt, PromptBuilder};
 use nook_core::services::autocomplete::session::{ReadOutcome, Session};
@@ -41,6 +45,10 @@ const CLIPBOARD_SECONDS: u64 = 300;
 /// After Nook typed, the app may show the text a moment later: read again this often before giving up.
 const SETTLE_ATTEMPTS: u32 = 6;
 const SETTLE_INTERVAL: Duration = Duration::from_millis(30);
+/// Newest writing samples shown in Settings.
+const SAMPLES_SHOWN: usize = 100;
+/// More characters than this arriving between two keys is a paste, not typing.
+const PASTE_JUMP: usize = 40;
 
 /// What Settings shows as the live status.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -65,6 +73,8 @@ pub struct View {
     pub off_by_default: Vec<String>,
     pub accept_keys: Vec<String>,
     pub paused: bool,
+    pub sample_count: usize,
+    pub samples: Vec<Sample>,
 }
 
 /// What the Playground shows.
@@ -85,6 +95,114 @@ struct EngineCache {
     at: Instant,
 }
 
+/// Writing samples, learned phrases, spelling habit and sealing state kept together under one lock.
+struct LearningState {
+    samples: CompletionSamples,
+    phrase_rejections: HashMap<String, u32>,
+    phrases: CompletionPhrases,
+    frequent_phrases: Vec<String>,
+    writing_habit: spelling::Habit,
+    key: Option<[u8; 32]>,
+    samples_locked: bool,
+    rejections_locked: bool,
+}
+
+impl LearningState {
+    fn load(secrets: &dyn SecretStore, learn: bool) -> Self {
+        let samples_path = learning::samples_file();
+        let rejections_path = learning::rejected_phrases_file();
+        let key = learning::load_or_create_key(secrets, &[samples_path.clone(), rejections_path.clone()]);
+        let samples_load = learning::load_sealed::<CompletionSamples>(&samples_path, key.as_ref());
+        let rejections_load = learning::load_sealed::<HashMap<String, u32>>(&rejections_path, key.as_ref());
+
+        if let Some(k) = key.as_ref() {
+            if samples_load.was_plain {
+                let _ = learning::save_sealed(&samples_load.value, &samples_path, Some(k));
+            }
+            if rejections_load.was_plain {
+                let _ = learning::save_sealed(&rejections_load.value, &rejections_path, Some(k));
+            }
+        }
+
+        let mut state = Self {
+            samples: samples_load.value,
+            phrase_rejections: rejections_load.value,
+            phrases: CompletionPhrases::default(),
+            frequent_phrases: Vec::new(),
+            writing_habit: spelling::Habit::default(),
+            key,
+            samples_locked: samples_load.locked,
+            rejections_locked: rejections_load.locked,
+        };
+        state.rebuild(learn);
+        state
+    }
+
+    fn rebuild(&mut self, learn: bool) {
+        if learn {
+            self.phrases = CompletionPhrases::from_samples(&self.samples.samples, self.phrase_rejections.clone(), Utc::now());
+            self.frequent_phrases = self.phrases.frequent(12);
+            let combined: String = self.samples.samples.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("\n");
+            self.writing_habit = spelling::habit(&combined);
+        } else {
+            self.phrases = CompletionPhrases::default();
+            self.frequent_phrases.clear();
+            self.writing_habit = spelling::Habit::default();
+        }
+    }
+
+    fn save_samples(&self) {
+        if !self.samples_locked {
+            if let Err(e) = learning::save_sealed(&self.samples, &learning::samples_file(), self.key.as_ref()) {
+                log::warn!("Aanvullen: voorbeelden niet bewaard: {e}");
+            }
+        }
+    }
+
+    fn save_rejections(&self) {
+        if !self.rejections_locked {
+            if let Err(e) = learning::save_sealed(&self.phrase_rejections, &learning::rejected_phrases_file(), self.key.as_ref()) {
+                log::warn!("Aanvullen: afgewezen zinnen niet bewaard: {e}");
+            }
+        }
+    }
+
+    fn add_sample(&mut self, text: &str, app: &str, context: Option<String>, learn: bool) -> bool {
+        let mut next = self.samples.clone();
+        next.add(&privacy::sanitize(text), app, context, Utc::now());
+        if next == self.samples {
+            return false;
+        }
+        self.samples = next;
+        self.save_samples();
+        self.rebuild(learn);
+        true
+    }
+
+    fn forget_sample(&mut self, sample: &Sample, learn: bool) {
+        if self.samples.remove(sample) {
+            self.save_samples();
+            self.rebuild(learn);
+        }
+    }
+
+    fn forget_samples(&mut self, learn: bool) {
+        self.samples_locked = false;
+        self.rejections_locked = false;
+        self.samples.remove_all();
+        self.phrase_rejections.clear();
+        self.save_samples();
+        self.save_rejections();
+        self.rebuild(learn);
+    }
+
+    fn reject_phrase(&mut self, key: &str) {
+        *self.phrase_rejections.entry(key.to_string()).or_insert(0) += 1;
+        self.phrases.reject(key);
+        self.save_rejections();
+    }
+}
+
 /// Shared with the commands. The controller itself runs as one task (see [`setup`]).
 pub struct Autocomplete {
     tx: UnboundedSender<Msg>,
@@ -97,6 +215,8 @@ pub struct Autocomplete {
     playground: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     /// The emoji taken from the picker (emoji and counts only).
     emoji: Mutex<EmojiUsage>,
+    /// Writing samples and learned phrases.
+    learning: Mutex<LearningState>,
 }
 
 /// One choice in the picker, for the window and the Playground.
@@ -122,6 +242,15 @@ struct OpenPicker {
     app: String,
     layout: PickerLayout,
     scale: f64,
+}
+
+/// The field being written in, to learn from once the user leaves it or sends the message.
+struct PendingSample {
+    app: String,
+    start: String,
+    text: String,
+    context: Option<CompletionContext>,
+    pasted: bool,
 }
 
 enum Msg {
@@ -175,6 +304,12 @@ impl Autocomplete {
     }
 
     pub fn view(&self) -> View {
+        let (sample_count, samples) = {
+            let learning = self.learning.lock().unwrap_or_else(|e| e.into_inner());
+            let count = learning.samples.len();
+            let newest: Vec<Sample> = learning.samples.samples.iter().rev().take(SAMPLES_SHOWN).cloned().collect();
+            (count, newest)
+        };
         View {
             status: self.status(),
             stats: self.stats.lock().unwrap_or_else(|e| e.into_inner()).summary(chrono::Local::now().date_naive()),
@@ -182,6 +317,8 @@ impl Autocomplete {
             off_by_default: nook_core::services::autocomplete::prefs::OFF_BY_DEFAULT.iter().map(|s| s.to_string()).collect(),
             accept_keys: nook_core::services::autocomplete::prefs::ACCEPT_KEYS.iter().map(|s| s.to_string()).collect(),
             paused: self.is_paused(),
+            sample_count,
+            samples,
         }
     }
 
@@ -189,6 +326,39 @@ impl Autocomplete {
         let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
         *stats = CompletionStats::default();
         let _ = stats::save(&*stats, &stats::stats_file());
+    }
+
+    pub fn forget_sample(&self, sample: &Sample, learn: bool) {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).forget_sample(sample, learn);
+    }
+
+    pub fn forget_samples(&self, learn: bool) {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).forget_samples(learn);
+    }
+
+    fn apply_personalization(&self, learn: bool) {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).rebuild(learn);
+    }
+
+    fn add_sample(&self, text: &str, app: &str, context: Option<String>, learn: bool) {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).add_sample(text, app, context, learn);
+    }
+
+    fn reject_phrase(&self, key: &str) {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).reject_phrase(key);
+    }
+
+    fn predict_phrase(&self, before: &str, max_words: usize) -> Option<String> {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).phrases.predict(before, max_words)
+    }
+
+    fn prompt_learning(&self, app: &str, topic: &str, excluding: &str) -> (Vec<String>, Vec<String>) {
+        let learning = self.learning.lock().unwrap_or_else(|e| e.into_inner());
+        (learning.samples.relevant(app, topic, excluding, 2), learning.frequent_phrases.clone())
+    }
+
+    fn writing_habit(&self) -> spelling::Habit {
+        self.learning.lock().unwrap_or_else(|e| e.into_inner()).writing_habit.clone()
     }
 
     fn record(&self, f: impl FnOnce(&mut CompletionStats)) {
@@ -381,6 +551,8 @@ struct Controller {
     clipboard: Option<(u64, Instant)>,
     builder: PromptBuilder,
     picker: Option<OpenPicker>,
+    pending_sample: Option<PendingSample>,
+    sample_taken: bool,
 }
 
 impl Controller {
@@ -403,6 +575,7 @@ impl Controller {
     fn apply_settings(&mut self) {
         self.settings = self.app.state::<AppState>().settings();
         self.context = None;
+        self.shared().apply_personalization(self.settings.autocomplete.learn);
         let wanted = self.settings.autocomplete.enabled && self.input.available();
         if wanted && !self.running {
             let tx = self.tx.clone();
@@ -413,6 +586,7 @@ impl Controller {
                 Err(e) => log::warn!("Aanvullen start niet: {e}"),
             }
         } else if !wanted && self.running {
+            self.commit_sample();
             self.input.stop();
             self.running = false;
             self.dismiss();
@@ -477,6 +651,14 @@ impl Controller {
             InputEvent::AcceptWord | InputEvent::AcceptAll => self.accept(event == InputEvent::AcceptAll),
             InputEvent::Escape => {
                 self.cancel_work();
+                // A learned phrase sent away before any of it was taken or typed counts less from now on.
+                if let Some(proposal) = self.session.proposal() {
+                    if proposal.learned && proposal.anchor == proposal.initial_anchor {
+                        if let Some(key) = CompletionPhrases::rejection_key(&proposal.anchor, proposal.suggestion.remaining()) {
+                            self.shared().reject_phrase(&key);
+                        }
+                    }
+                }
                 let app = self.session.proposal().map(|p| p.app.clone());
                 self.dismiss();
                 if let Some(app) = app {
@@ -636,6 +818,7 @@ impl Controller {
             self.dismiss();
             return;
         }
+        self.sample_taken = true;
         let today = chrono::Local::now().date_naive();
         self.shared().record(|s| s.record_accepted(&accepted.text, accepted.first, Some(&accepted.app), today));
         #[cfg(desktop)]
@@ -683,13 +866,73 @@ impl Controller {
         settings.is_enabled_in_app(&field.app_id)
     }
 
+    fn record_sample(&mut self, field: &FocusedField, key: &str) {
+        let ac = &self.settings.autocomplete;
+        if !ac.learn || !ac.app(&field.app_id).learn {
+            return;
+        }
+        let text = format!("{}{}", field.before, field.after);
+        let text_len = text.chars().count();
+        // Much shorter text or another app: the field was emptied (message sent) or focus moved. Keep what was written.
+        let should_commit = self.pending_sample.as_ref().is_some_and(|p| p.app != field.app_id || text_len < p.text.chars().count() / 2);
+        if should_commit {
+            self.commit_sample();
+        }
+        let ctx = self.context.as_ref().and_then(|(k, _, c)| (k == key).then(|| c.clone()));
+        if let Some(pending) = self.pending_sample.as_mut() {
+            if text_len.saturating_sub(pending.text.chars().count()) > PASTE_JUMP {
+                pending.pasted = true;
+            }
+            pending.text = text;
+            if let Some(ctx) = ctx {
+                pending.context = Some(ctx);
+            }
+        } else {
+            self.pending_sample = Some(PendingSample { app: field.app_id.clone(), start: text.clone(), text, context: ctx, pasted: false });
+        }
+    }
+
+    fn commit_sample(&mut self) {
+        let taken = self.sample_taken;
+        self.sample_taken = false;
+        let Some(sample) = self.pending_sample.take() else {
+            return;
+        };
+        let ac = &self.settings.autocomplete;
+        let text = if taken {
+            sample.text
+        } else {
+            if !ac.learn_without_suggestion || sample.pasted {
+                return;
+            }
+            let Some(typed) = CompletionSamples::typed(&sample.start, &sample.text) else {
+                return;
+            };
+            typed
+        };
+        let context = sample.context.and_then(|c| CompletionSamples::context_words(&c.topic("", None, None, None), 60));
+        self.shared().add_sample(&text, &sample.app, context, ac.learn);
+    }
+
+    fn learned_phrase(&self, before: &str, app: &str, max_words: usize) -> Option<String> {
+        let ac = &self.settings.autocomplete;
+        if !ac.learn || !ac.app(app).learn {
+            return None;
+        }
+        self.shared().predict_phrase(before, max_words)
+    }
+
     fn on_read(&mut self, field: Result<FocusedField, FieldSkip>, mut continuing: bool, attempt: u32) {
         let Ok(field) = field else {
+            self.commit_sample();
             self.dismiss();
             return;
         };
         self.shared().remember_app(&field.app_id, &field.app_name);
         if !self.eligible(&field) {
+            if self.pending_sample.as_ref().is_some_and(|p| p.app != field.app_id) {
+                self.commit_sample();
+            }
             self.dismiss();
             return;
         }
@@ -713,6 +956,7 @@ impl Controller {
             return;
         }
         let key = field_key(Some(&field.app_id), None, None, Some(&field.window_title));
+        self.record_sample(&field, &key);
         match self.session.on_read(&key, &field.before) {
             ReadOutcome::Kept => {
                 self.caret = field.caret;
@@ -769,6 +1013,13 @@ impl Controller {
                 }
             }
         }
+        let own = format!("{}{}", field.before, field.after);
+        let topic = context.topic(&own, Some(&field.window_title), None, None);
+        if settings.learn && settings.personal_strength > 0.0 {
+            let (samples, phrases) = self.shared().prompt_learning(&field.app_id, &topic, &own);
+            context.samples = samples;
+            context.phrases = phrases;
+        }
         self.context = Some((key.to_string(), Instant::now(), context.clone()));
         context
     }
@@ -783,6 +1034,23 @@ impl Controller {
         let mut options = CompletionOptions::new(settings.max_words.clamp(1, 30), settings.eagerness);
         if continuing {
             options = options.continuing();
+        }
+        // A phrase the user nearly always writes this way: shown at once, without waiting for the model.
+        if let Some(learned) = self.learned_phrase(&field.before, &field.app_id, options.max_words) {
+            if self.present_suggestion(
+                &learned,
+                &field.before,
+                &field.after,
+                &key,
+                &field.app_id,
+                caret,
+                options.max_words,
+                false,
+                false,
+                true,
+            ) {
+                return;
+            }
         }
         let generation = self.generation;
         let app = self.app.clone();
@@ -825,6 +1093,45 @@ impl Controller {
         }));
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn present_suggestion(
+        &mut self,
+        raw: &str,
+        before: &str,
+        after: &str,
+        field: &str,
+        app: &str,
+        caret: ScreenRect,
+        max_words: usize,
+        truncated: bool,
+        unfinished: bool,
+        learned: bool,
+    ) -> bool {
+        // In the user's British or American spelling: the field first, then earlier writing.
+        let text = if self.settings.autocomplete.match_spelling {
+            let tail: String = before.chars().rev().take(2_000).collect::<Vec<_>>().into_iter().rev().collect();
+            let habit = spelling::habit(&format!("{tail} {after}")).filling(&self.shared().writing_habit());
+            spelling::apply(&habit, raw, before)
+        } else {
+            raw.to_string()
+        };
+        let Some(suggestion) = CompletionSuggestion::make(&text, before, after, max_words, truncated, unfinished) else {
+            return false;
+        };
+        let shown = suggestion.remaining().to_string();
+        if learned {
+            self.session.show_learned(suggestion, before, field, app);
+        } else {
+            self.session.show(suggestion, before, field, app);
+        }
+        self.caret = Some(caret);
+        show_ghost(&self.app, &self.input, Some(caret), &shown);
+        self.arm_for(app);
+        let today = chrono::Local::now().date_naive();
+        self.shared().record(|s| s.record_shown(today));
+        true
+    }
+
     fn on_answer(&mut self, answer: Answer) {
         let output = match answer.output {
             Ok(output) => output,
@@ -836,31 +1143,27 @@ impl Controller {
             }
         };
         let Some(result) = output.result else { return };
-        // In the user's British or American spelling, as the field shows.
-        let text = if self.settings.autocomplete.match_spelling {
-            let field: String = answer.before.chars().rev().take(2_000).collect::<Vec<_>>().into_iter().rev().collect();
-            spelling::apply(&spelling::habit(&format!("{field} {}", answer.after)), &result.text, &answer.before)
-        } else {
-            result.text.clone()
-        };
-        let Some(suggestion) =
-            CompletionSuggestion::make(&text, &answer.before, &answer.after, answer.max_words, result.truncated, result.unfinished)
-        else {
-            return;
-        };
-        let text = suggestion.remaining().to_string();
-        self.session.show(suggestion, &answer.before, &answer.field, &answer.app);
-        self.caret = Some(answer.caret);
-        show_ghost(&self.app, &self.input, Some(answer.caret), &text);
-        self.arm_for(&answer.app);
-        let today = chrono::Local::now().date_naive();
-        self.shared().record(|s| s.record_shown(today));
+        self.present_suggestion(
+            &result.text,
+            &answer.before,
+            &answer.after,
+            &answer.field,
+            &answer.app,
+            answer.caret,
+            answer.max_words,
+            result.truncated,
+            result.unfinished,
+            false,
+        );
     }
 }
 
 /// Starts autocomplete: shared state, the controller task, the ghost window. From `services::setup`.
 pub fn setup(app: &AppHandle, input: Arc<dyn TextInput>) {
     let (tx, mut rx) = unbounded_channel::<Msg>();
+    let state = app.state::<AppState>();
+    let learn = state.settings().autocomplete.learn;
+    let learning = LearningState::load(&*state.secrets, learn);
     app.manage(Autocomplete {
         tx: tx.clone(),
         status: Mutex::new(Status::default()),
@@ -871,6 +1174,7 @@ pub fn setup(app: &AppHandle, input: Arc<dyn TextInput>) {
         paused_until: Mutex::new(None),
         playground: Mutex::new(None),
         emoji: Mutex::new(stats::load(&stats::emoji_file())),
+        learning: Mutex::new(learning),
     });
     #[cfg(desktop)]
     if input.available() {
@@ -894,6 +1198,8 @@ pub fn setup(app: &AppHandle, input: Arc<dyn TextInput>) {
         clipboard: None,
         builder: PromptBuilder::default(),
         picker: None,
+        pending_sample: None,
+        sample_taken: false,
     };
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -953,6 +1259,11 @@ async fn playground_run(app: &AppHandle, before: String, continuing: bool) -> Re
     };
     if ac.memory_context && settings.use_memory {
         context.facts = facts(app, local);
+    }
+    if ac.learn && ac.personal_strength > 0.0 {
+        let (samples, phrases) = app.state::<Autocomplete>().prompt_learning("", &before, &before);
+        context.samples = samples;
+        context.phrases = phrases;
     }
     let prompt = PromptBuilder::default().build(&context);
     let mut options = CompletionOptions::new(ac.max_words.clamp(1, 30), ac.eagerness);

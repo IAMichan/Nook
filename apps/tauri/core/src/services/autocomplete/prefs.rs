@@ -64,14 +64,22 @@ pub enum LocalServer {
 }
 
 /// Settings for one app, by its id (the exe name on Windows).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppRule {
     pub enabled: TriState,
     pub mid_line: TriState,
     /// Leave Tab to the app (indenting, moving between fields).
     pub leave_tab: bool,
+    /// Learn from writing in this app (on by default).
+    pub learn: bool,
     pub instructions: String,
+}
+
+impl Default for AppRule {
+    fn default() -> Self {
+        Self { enabled: TriState::Inherit, mid_line: TriState::Inherit, leave_tab: false, learn: true, instructions: String::new() }
+    }
 }
 
 impl AppRule {
@@ -116,6 +124,14 @@ pub struct AutocompleteSettings {
     pub window_context: bool,
     pub memory_context: bool,
     pub clipboard_context: bool,
+    /// Learn from the user's own writing (samples, repeated phrases, spelling habit).
+    pub learn: bool,
+    /// Also learn what the user typed in a field where suggestions ran even when none was accepted.
+    pub learn_without_suggestion: bool,
+    /// How strongly personal writing shapes prompts and suggestions (0..=1).
+    pub personal_strength: f64,
+    /// Whether the user dismissed the personalization hint banner.
+    pub personal_hints_dismissed: bool,
     pub instructions: String,
 
     pub apps: BTreeMap<String, AppRule>,
@@ -157,6 +173,10 @@ impl Default for AutocompleteSettings {
             window_context: true,
             memory_context: true,
             clipboard_context: false,
+            learn: true,
+            learn_without_suggestion: true,
+            personal_strength: 0.3,
+            personal_hints_dismissed: false,
             instructions: String::new(),
             apps: BTreeMap::new(),
             sites: BTreeMap::new(),
@@ -336,8 +356,16 @@ mod tests {
         let s: AutocompleteSettings = serde_json::from_str(r#"{"enabled":true,"apps":{"Slack.exe":{"leaveTab":true}}}"#).unwrap();
         assert!(s.enabled);
         assert_eq!(s.max_words, 8);
+        assert!(s.learn);
+        assert!(s.learn_without_suggestion);
+        assert_eq!(s.personal_strength, 0.3);
+        assert!(!s.personal_hints_dismissed);
         assert!(s.app("slack").leave_tab);
+        assert!(s.app("slack").learn);
         assert_eq!(s.app("slack").enabled, TriState::Inherit);
+        let s2: AutocompleteSettings = serde_json::from_str(r#"{"learn":false}"#).unwrap();
+        assert!(!s2.learn);
+        assert!(!s2.personal_hints_dismissed);
     }
 
     #[test]

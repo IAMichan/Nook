@@ -9,12 +9,16 @@ pub struct Proposal {
     pub suggestion: CompletionSuggestion,
     /// The text before the cursor the suggestion continues; it grows as words are taken or typed through.
     pub anchor: String,
+    /// The anchor when the suggestion first appeared (used to detect an untouched Escape rejection of a learned phrase).
+    pub initial_anchor: String,
     /// The field it belongs to (`prompt::field_key`).
     pub field: String,
     /// The app it was made in (for the statistics).
     pub app: String,
     /// No word of it taken yet: the first take counts as a suggestion accepted.
     pub fresh: bool,
+    /// From the user's own phrases (`learning::CompletionPhrases`), not the model: Escape makes it count less.
+    pub learned: bool,
 }
 
 /// What a fresh read of the field did to the suggestion.
@@ -58,7 +62,23 @@ impl Session {
     }
 
     pub fn show(&mut self, suggestion: CompletionSuggestion, anchor: &str, field: &str, app: &str) {
-        self.proposal = Some(Proposal { suggestion, anchor: anchor.into(), field: field.into(), app: app.into(), fresh: true });
+        self.show_with_origin(suggestion, anchor, field, app, false);
+    }
+
+    pub fn show_learned(&mut self, suggestion: CompletionSuggestion, anchor: &str, field: &str, app: &str) {
+        self.show_with_origin(suggestion, anchor, field, app, true);
+    }
+
+    fn show_with_origin(&mut self, suggestion: CompletionSuggestion, anchor: &str, field: &str, app: &str, learned: bool) {
+        self.proposal = Some(Proposal {
+            suggestion,
+            anchor: anchor.into(),
+            initial_anchor: anchor.into(),
+            field: field.into(),
+            app: app.into(),
+            fresh: true,
+            learned,
+        });
     }
 
     /// Hides the suggestion; true when there was one.

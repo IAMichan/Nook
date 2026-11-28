@@ -12,6 +12,7 @@ export interface AppRule {
   enabled: TriState;
   midLine: TriState;
   leaveTab: boolean;
+  learn: boolean;
   instructions: string;
 }
 
@@ -36,6 +37,10 @@ export interface AutocompleteSettings {
   windowContext: boolean;
   memoryContext: boolean;
   clipboardContext: boolean;
+  learn: boolean;
+  learnWithoutSuggestion: boolean;
+  personalStrength: number;
+  personalHintsDismissed: boolean;
   instructions: string;
   apps: Record<string, AppRule>;
   sites: Record<string, SiteRule>;
@@ -47,6 +52,13 @@ export interface AutocompleteSettings {
   acceptWord: string;
   acceptAll: string;
   menuBarCount?: boolean;
+}
+
+export interface WritingSample {
+  app: string;
+  text: string;
+  date: string;
+  context?: string;
 }
 
 export interface AutocompleteStatus {
@@ -86,6 +98,8 @@ export interface AutocompleteView {
   offByDefault: string[];
   acceptKeys: string[];
   paused: boolean;
+  sampleCount: number;
+  samples: WritingSample[];
 }
 
 export interface PlaygroundResult {
@@ -124,6 +138,8 @@ export const autocomplete = {
   pause: (minutes: number | null) => invoke<AutocompleteView>("autocomplete_pause", { minutes }),
   resume: () => invoke<AutocompleteView>("autocomplete_resume"),
   resetStats: () => invoke<AutocompleteView>("autocomplete_reset_stats"),
+  forgetSample: (sample: WritingSample) => invoke<AutocompleteView>("autocomplete_forget_sample", { sample }),
+  forgetSamples: () => invoke<AutocompleteView>("autocomplete_forget_samples"),
   models: () => invoke<string[]>("autocomplete_models"),
   playground: (before: string, continuing: boolean) => invoke<PlaygroundResult | null>("autocomplete_playground", { before, continuing }),
   cancelPlayground: () => invoke<void>("autocomplete_playground_cancel"),
@@ -156,14 +172,17 @@ export function offByDefault(id: string, patterns: string[]): boolean {
 export function appRule(settings: AutocompleteSettings, id: string): AppRule {
   const wanted = normalizeApp(id);
   const key = Object.keys(settings.apps).find((k) => normalizeApp(k) === wanted);
-  return key ? settings.apps[key] : { enabled: "inherit", midLine: "inherit", leaveTab: false, instructions: "" };
+  if (!key) return { enabled: "inherit", midLine: "inherit", leaveTab: false, learn: true, instructions: "" };
+  const rule = settings.apps[key];
+  return { ...rule, learn: rule.learn ?? true };
 }
 
 /// The settings with an app's rule changed; a rule back at its defaults goes.
 export function withAppRule(settings: AutocompleteSettings, id: string, rule: AppRule): AutocompleteSettings {
   const wanted = normalizeApp(id);
   const apps = Object.fromEntries(Object.entries(settings.apps).filter(([k]) => normalizeApp(k) !== wanted));
-  const isDefault = rule.enabled === "inherit" && rule.midLine === "inherit" && !rule.leaveTab && !rule.instructions.trim();
+  const isDefault =
+    rule.enabled === "inherit" && rule.midLine === "inherit" && !rule.leaveTab && rule.learn !== false && !rule.instructions.trim();
   if (!isDefault) apps[id] = rule;
   return { ...settings, apps };
 }

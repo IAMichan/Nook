@@ -962,7 +962,7 @@ WhatsApp is the only chat app in Tauri today (read, send text, unread, bar card,
 
 - [ ] **SV-61** Chat context in autocomplete, reply suggestion in an empty chat field (a2de49d80, 372f2bdba; with CH-61) · M
 
-- [ ] **SV-62** Learning from your writing (`CompletionLearning`, b51aadf82) · M
+- [x] **SV-62** Learning from your writing (`CompletionLearning`, b51aadf82) · M
 
 - [ ] **SV-63** Personal adapter training (`CompletionAdapter*`, `CompletionGGUFWriter`, `AutocompleteAdapterSection`) with llama.cpp finetune, or record as left out · L
 
