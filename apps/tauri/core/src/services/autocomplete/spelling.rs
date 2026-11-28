@@ -49,6 +49,15 @@ impl Habit {
         let first = others.next()?;
         others.all(|v| v == first).then_some(first)
     }
+
+    /// This habit, with `fallback` for the families it says nothing about (the field first, then earlier writing).
+    pub fn filling(&self, fallback: &Habit) -> Habit {
+        let mut families = fallback.families.clone();
+        for (&k, &v) in &self.families {
+            families.insert(k, v);
+        }
+        Habit { families }
+    }
 }
 
 struct Pair {

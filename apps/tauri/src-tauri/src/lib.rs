@@ -428,6 +428,8 @@ pub fn run() {
             commands::autocomplete::autocomplete_pause,
             commands::autocomplete::autocomplete_resume,
             commands::autocomplete::autocomplete_reset_stats,
+            commands::autocomplete::autocomplete_forget_sample,
+            commands::autocomplete::autocomplete_forget_samples,
             commands::autocomplete::autocomplete_models,
             commands::autocomplete::autocomplete_playground,
             commands::autocomplete::autocomplete_playground_cancel,

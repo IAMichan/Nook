@@ -22,9 +22,12 @@ describe("autocomplete helpers", () => {
   });
 
   it("keeps only rules that differ from the default", () => {
-    let s = withAppRule(base, "Slack.exe", { enabled: "off", midLine: "inherit", leaveTab: false, instructions: "" });
+    expect(appRule(base, "slack").learn).toBe(true);
+    let s = withAppRule(base, "Slack.exe", { enabled: "off", midLine: "inherit", leaveTab: false, learn: true, instructions: "" });
     expect(appRule(s, "slack").enabled).toBe("off");
-    s = withAppRule(s, "SLACK", { enabled: "inherit", midLine: "inherit", leaveTab: false, instructions: " " });
+    s = withAppRule(s, "SLACK", { enabled: "inherit", midLine: "inherit", leaveTab: false, learn: false, instructions: "" });
+    expect(appRule(s, "slack").learn).toBe(false);
+    s = withAppRule(s, "SLACK", { enabled: "inherit", midLine: "inherit", leaveTab: false, learn: true, instructions: " " });
     expect(Object.keys(s.apps)).toEqual([]);
   });
 });

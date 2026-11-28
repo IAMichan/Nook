@@ -1,8 +1,10 @@
 //! The commands of Settings › Autocomplete: status, statistics, seen apps, pausing, the local models and the Playground.
 
-use tauri::{AppHandle, State};
+use nook_core::services::autocomplete::learning::Sample;
+use tauri::{AppHandle, Manager, State};
 
 use crate::services::autocomplete::{self, Autocomplete, PlaygroundResult, View};
+use crate::state::AppState;
 
 #[tauri::command]
 pub fn autocomplete_view(state: State<'_, Autocomplete>) -> View {
@@ -36,6 +38,20 @@ pub fn autocomplete_reset_stats(app: AppHandle, state: State<'_, Autocomplete>) 
     crate::platform::tray_live::refresh(&app);
     #[cfg(not(desktop))]
     let _ = app;
+    state.view()
+}
+
+#[tauri::command]
+pub fn autocomplete_forget_sample(app: AppHandle, state: State<'_, Autocomplete>, sample: Sample) -> View {
+    let learn = app.state::<AppState>().settings().autocomplete.learn;
+    state.forget_sample(&sample, learn);
+    state.view()
+}
+
+#[tauri::command]
+pub fn autocomplete_forget_samples(app: AppHandle, state: State<'_, Autocomplete>) -> View {
+    let learn = app.state::<AppState>().settings().autocomplete.learn;
+    state.forget_samples(learn);
     state.view()
 }
 

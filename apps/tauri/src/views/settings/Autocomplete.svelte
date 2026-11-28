@@ -5,11 +5,11 @@
   import { nook } from "../../lib/state.svelte";
   import {
     autocomplete, autocompleteEvents, appRule, offByDefault, withAppRule,
-    type AutocompleteSettings, type AutocompleteStatus, type AutocompleteView, type AppRule, type TriState,
+    type AutocompleteSettings, type AutocompleteStatus, type AutocompleteView, type AppRule, type TriState, type WritingSample,
   } from "../../lib/autocomplete";
   import Playground from "./AutocompletePlayground.svelte";
   import StatusRow from "./StatusRow.svelte";
-  import { tr } from "../../lib/i18n.svelte";
+  import { locale, tr } from "../../lib/i18n.svelte";
   import { api } from "../../lib/api";
 
   // The models a suggestion can use, as the Mac's `TextGeneratorRow` offers them: the brain's own, then the models of
@@ -35,6 +35,19 @@
   let openApp = $state<string | null>(null);
   let newApp = $state("");
   let confirmReset = $state(false);
+  let confirmForgetAll = $state(false);
+  let showSamples = $state(false);
+  let confirmDeleteKey = $state<string | null>(null);
+
+  function sampleKey(sample: WritingSample): string {
+    return `${sample.app}|${sample.date}|${sample.text}`;
+  }
+
+  function formatSampleDate(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" });
+  }
 
   async function load() {
     view = await autocomplete.view();
@@ -346,11 +359,15 @@
             <span>{tr("Tab aan de app laten", "Leave Tab to the app")}</span>
             <input type="checkbox" role="switch" checked={rule.leaveTab} onchange={(e) => saveRule(a.id, { leaveTab: e.currentTarget.checked })} />
           </label>
+          <label class="row">
+            <span>{tr("Leren van wat je hier schrijft", "Learn from what you write here")}</span>
+            <input type="checkbox" role="switch" checked={rule.learn} onchange={(e) => saveRule(a.id, { learn: e.currentTarget.checked })} />
+          </label>
           <label class="column">
             <span>{tr("Extra uitleg voor deze app (bijv. kort en los voor Slack)", "Extra instructions for this app (e.g. short and casual for Slack)")}</span>
             <textarea rows="2" value={rule.instructions} onchange={(e) => saveRule(a.id, { instructions: e.currentTarget.value })}></textarea>
           </label>
-          <button onclick={() => saveRule(a.id, { enabled: "inherit", midLine: "inherit", leaveTab: false, instructions: "" })}>{tr("Standaard", "Default")}</button>
+          <button onclick={() => saveRule(a.id, { enabled: "inherit", midLine: "inherit", leaveTab: false, learn: true, instructions: "" })}>{tr("Standaard", "Default")}</button>
         </div>
       {/if}
     {/each}
@@ -396,6 +413,70 @@
       <span>{tr("Over jou en hoe je schrijft", "About you and how you write")}</span>
       <textarea rows="3" placeholder={tr("Bijvoorbeeld: Ik ben Anna, ik werk bij een reisbureau. Ik schrijf kort en informeel, in het Nederlands.", "For example: I'm Anna, I work at a travel agency. I write short and informal, in English.")} value={ac.instructions} onchange={(e) => save({ instructions: e.currentTarget.value })}></textarea>
     </label>
+    <label class="row">
+      <span>
+        {tr("Leren van wat je schrijft", "Learn from what you write")}<br />
+        <small class="faint">{tr("Nook onthoudt zinnen die je vaak schrijft en hoe je schrijft. Alles blijft versleuteld op deze computer.", "Nook remembers phrases you write often and how you write. Everything stays encrypted on this computer.")}</small>
+      </span>
+      <input type="checkbox" role="switch" checked={ac.learn !== false} onchange={(e) => save({ learn: e.currentTarget.checked })} />
+    </label>
+    {#if ac.learn !== false}
+      <label class="row">
+        <span>
+          {tr("Ook leren zonder een voorstel te nemen", "Also learn without taking a suggestion")}<br />
+          <small class="faint">{tr("Onthoudt wat je zelf typt in velden waar aanvullen aan staat, zonder geplakte tekst of oudere tekst.", "Remembers what you type yourself in fields where autocomplete is on, without pasted or existing text.")}</small>
+        </span>
+        <input type="checkbox" role="switch" checked={ac.learnWithoutSuggestion !== false} onchange={(e) => save({ learnWithoutSuggestion: e.currentTarget.checked })} />
+      </label>
+      <label class="row">
+        <span>{tr("Hoe sterk je eigen stijl meetelt", "How strongly your own style counts")}</span>
+        <input type="range" min="0" max="1" step="0.05" value={ac.personalStrength ?? 0.3} onchange={(e) => save({ personalStrength: Number(e.currentTarget.value) })} />
+      </label>
+    {/if}
+    <div class="row">
+      <span>{tr("{n} voorbeelden bewaard", "{n} samples kept", { n: view?.sampleCount ?? 0 })}</span>
+      {#if confirmForgetAll}
+        <span class="inline">
+          <small class="faint">{tr("Alle bewaarde schrijfvoorbeelden en geleerde zinnen vergeten?", "Forget all saved writing samples and learned phrases?")}</small>
+          <button class="primary" onclick={async () => { view = await autocomplete.forgetSamples(); confirmForgetAll = false; showSamples = false; }}>{tr("Vergeet alles", "Forget everything")}</button>
+          <button onclick={() => (confirmForgetAll = false)}>{tr("Nee", "No")}</button>
+        </span>
+      {:else}
+        <button disabled={(view?.sampleCount ?? 0) === 0} onclick={() => (confirmForgetAll = true)}>{tr("Vergeet alles", "Forget everything")}</button>
+      {/if}
+    </div>
+    {#if (view?.sampleCount ?? 0) > 0}
+      <div class="row">
+        <button class="ghost" onclick={() => (showSamples = !showSamples)}>
+          {showSamples ? tr("Verberg bewaarde voorbeelden", "Hide saved samples") : tr("Bekijk bewaarde voorbeelden", "View saved samples")}
+        </button>
+      </div>
+      {#if showSamples && view}
+        <div class="samples">
+          {#each view.samples as sample (sampleKey(sample))}
+            {@const key = sampleKey(sample)}
+            <div class="sample-row">
+              <div class="sample-body">
+                <small class="faint">{appName(sample.app)} · {formatSampleDate(sample.date)}</small>
+                <p class="sample-text">{sample.text}</p>
+              </div>
+              {#if confirmDeleteKey === key}
+                <span class="inline">
+                  <small class="faint">{tr("Dit voorbeeld verwijderen?", "Delete this sample?")}</small>
+                  <button class="primary" onclick={async () => { view = await autocomplete.forgetSample(sample); confirmDeleteKey = null; }}>{tr("Verwijder", "Delete")}</button>
+                  <button onclick={() => (confirmDeleteKey = null)}>{tr("Nee", "No")}</button>
+                </span>
+              {:else}
+                <button class="ghost" onclick={() => (confirmDeleteKey = key)}>{tr("Verwijder", "Delete")}</button>
+              {/if}
+            </div>
+          {/each}
+          {#if view.sampleCount > view.samples.length}
+            <p class="faint note">{tr("+ {n} oudere voorbeelden", "+ {n} older samples", { n: view.sampleCount - view.samples.length })}</p>
+          {/if}
+        </div>
+      {/if}
+    {/if}
   </div>
 
   <h3>{tr("Emoji", "Emoji")}</h3>
@@ -440,8 +521,8 @@
   <h3>{tr("Nog niet op Windows", "Not on Windows yet")}</h3>
   <p class="faint note">
     {tr(
-      "Wat er op je scherm staat, leren van wat je schrijft, typfouten verbeteren, andere woorden kiezen en het gedrag op batterij komen later.",
-      "What's on your screen, learning from what you write, fixing typos, choosing other words and behavior on battery come later.",
+      "Wat er op je scherm staat, typfouten verbeteren, andere woorden kiezen en het gedrag op batterij komen later.",
+      "What's on your screen, fixing typos, choosing other words and behavior on battery come later.",
     )}
   </p>
 {:else if tab === "playground"}
@@ -488,6 +569,10 @@
   .column textarea { width: 100%; box-sizing: border-box; }
   .detail { padding: 4px 0 10px 14px; border-bottom: 1px solid var(--line); }
   .appname { text-align: left; display: flex; flex-direction: column; align-items: flex-start; padding: 0; }
+  .samples { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+  .sample-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .sample-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .sample-text { margin: 0; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; user-select: text; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
   .tile { display: flex; flex-direction: column; gap: 2px; background: var(--field); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
   .tile strong { font: var(--text-heading); }

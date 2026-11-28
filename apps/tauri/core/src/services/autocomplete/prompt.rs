@@ -15,6 +15,10 @@ pub struct CompletionContext {
     pub instructions: Vec<String>,
     /// What Nook knows about the user (Memory): name, work, people.
     pub facts: Vec<String>,
+    /// Earlier writing of the user, for their style.
+    pub samples: Vec<String>,
+    /// Phrases the user writes again and again (see `CompletionPhrases::frequent`).
+    pub phrases: Vec<String>,
     pub app_name: Option<String>,
     pub window_title: Option<String>,
     /// Placeholder of the field ("Write a reply…").
@@ -23,6 +27,43 @@ pub struct CompletionContext {
     /// The text of the window around the field.
     pub screen_text: Option<String>,
     pub clipboard: Option<String>,
+}
+
+impl CompletionContext {
+    /// The end of the screen text and of the text so far that [`Self::topic`] reads.
+    pub const TOPIC_SCREEN_LENGTH: usize = 1_200;
+    pub const TOPIC_TEXT_LENGTH: usize = 600;
+
+    /// What the writing is about, to pick the memories and earlier writing that fit it: where it is written, the newest
+    /// text on screen around the field (what it answers) and the text so far. `window_title`, `site` and `field_hint`
+    /// only fill in what this context left out.
+    pub fn topic(&self, before: &str, window_title: Option<&str>, site: Option<&str>, field_hint: Option<&str>) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for part in
+            [self.window_title.as_deref().or(window_title), self.site.as_deref().or(site), self.field_hint.as_deref().or(field_hint)]
+        {
+            if let Some(part) = part.filter(|p| !p.is_empty()) {
+                parts.push(part.to_string());
+            }
+        }
+        if let Some(screen) = self.screen_text.as_deref().filter(|s| !s.is_empty()) {
+            parts.push(tail_chars(screen, Self::TOPIC_SCREEN_LENGTH));
+        }
+        let text = before.trim();
+        if !text.is_empty() {
+            parts.push(tail_chars(text, Self::TOPIC_TEXT_LENGTH));
+        }
+        parts.join("\n")
+    }
+}
+
+fn tail_chars(text: &str, max: usize) -> String {
+    let count = text.chars().count();
+    if count <= max {
+        text.to_string()
+    } else {
+        text.chars().skip(count - max).collect()
+    }
 }
 
 /// Which field a prompt's context belongs to: while it stays the same, the context is kept and the model's cache reused.
@@ -60,11 +101,12 @@ pub struct PromptBuilder {
     /// reused: one more letter costs one token, not a whole prompt.
     pub window_step: usize,
     pub max_context_length: usize,
+    pub max_sample_length: usize,
 }
 
 impl Default for PromptBuilder {
     fn default() -> Self {
-        Self { window_length: 2_000, window_step: 500, max_context_length: 1_600 }
+        Self { window_length: 2_000, window_step: 500, max_context_length: 1_600, max_sample_length: 400 }
     }
 }
 
@@ -90,6 +132,15 @@ impl PromptBuilder {
         let facts: Vec<String> = input.facts.iter().filter_map(|f| cleaned(Some(f))).map(|f| format!("- {}", clip(f, 160))).collect();
         if !facts.is_empty() {
             sections.push(format!("Facts about the author:\n{}", facts.join("\n")));
+        }
+        if !input.samples.is_empty() {
+            let samples: Vec<String> =
+                input.samples.iter().map(|s| format!("- {}", clip(s, self.max_sample_length).replace('\n', " "))).collect();
+            sections.push(format!("Earlier writing by the author:\n{}", samples.join("\n")));
+        }
+        let phrases: Vec<String> = input.phrases.iter().filter_map(|p| cleaned(Some(p))).map(|p| format!("- {}", clip(p, 80))).collect();
+        if !phrases.is_empty() {
+            sections.push(format!("Phrases the author often uses:\n{}", phrases.join("\n")));
         }
         if let Some(screen) = cleaned(input.screen_text.as_deref()) {
             sections.push(format!("On screen, around where the author writes (newest last):\n{}", recent(screen, self.max_context_length)));
@@ -306,6 +357,8 @@ mod tests {
             before: "Hello there ".into(),
             instructions: vec!["I am Anna.".into(), "  ".into()],
             facts: vec!["Works at a travel agency".into()],
+            samples: vec!["Earlier writing line one\nline two".into()],
+            phrases: vec!["met vriendelijke groet Michan".into()],
             app_name: Some("Outlook".into()),
             window_title: Some("Re: trip (3)".into()),
             clipboard: Some("Flight AB123".into()),
@@ -315,6 +368,8 @@ mod tests {
         assert_eq!(prompt.text, "Hello there");
         assert!(prompt.context.starts_with("About the author:\nI am Anna."));
         assert!(prompt.context.contains("- Works at a travel agency"));
+        assert!(prompt.context.contains("Earlier writing by the author:\n- Earlier writing line one line two"));
+        assert!(prompt.context.contains("Phrases the author often uses:\n- met vriendelijke groet Michan"));
         assert!(prompt.context.contains("Clipboard:\nFlight AB123"));
         assert!(prompt.context.ends_with("The author is now writing in Outlook — Re: trip (3):"));
         assert_eq!(prompt.document(), format!("{}\n\n{}", prompt.context, "Hello there"));
@@ -322,8 +377,21 @@ mod tests {
     }
 
     #[test]
+    fn topic_reads_where_and_what_is_written() {
+        let input = CompletionContext {
+            window_title: Some("Lisa".into()),
+            screen_text: Some(format!("{}Gaan we zaterdag naar het strand?", "oud ".repeat(500))),
+            ..Default::default()
+        };
+        let topic = input.topic("Ja leuk, ik ", None, Some("web.whatsapp.com"), None);
+        assert!(topic.starts_with("Lisa\nweb.whatsapp.com"));
+        assert!(topic.contains("strand?\nJa leuk, ik"));
+        assert!(topic.chars().count() < 2_000);
+    }
+
+    #[test]
     fn window_slides_in_steps() {
-        let builder = PromptBuilder { window_length: 10, window_step: 5, max_context_length: 100 };
+        let builder = PromptBuilder { window_length: 10, window_step: 5, max_context_length: 100, max_sample_length: 400 };
         assert_eq!(builder.window("short"), "short");
         let text: String = ('a'..='z').collect();
         // 26 chars, 16 too many: start at 15.

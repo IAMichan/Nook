@@ -120,6 +120,8 @@ export const SETTINGS_INDEX: readonly (readonly [string, string, SettingsSection
   ["Wat het model weet", "What the model knows", "autocompleteStyle"],
   ["Jouw stijl", "Your style", "autocompleteStyle"],
   ["Over jou en hoe je schrijft", "About you and how you write", "autocompleteStyle"],
+  ["Leren van wat je schrijft", "Learn from what you write", "autocompleteStyle"],
+  ["Ook leren zonder een voorstel te nemen", "Also learn without taking a suggestion", "autocompleteStyle"],
   ["Emoji", "Emoji", "autocompleteStyle"],
   ["Emoji met een dubbele punt", "Emoji with a colon", "autocompleteStyle"],
   ["Huidskleur", "Skin tone", "autocompleteStyle"],
